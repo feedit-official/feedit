@@ -1,0 +1,53 @@
+/* ══════════════════════════════════════════════════════
+   챗봇 리포트 블록
+   ------------------------------------------------------
+   질문 유형마다 구조가 달라진다(서버의 templates.py 가 정한다).
+   여기서는 **기존에 없던 것만** 새로 만든다.
+   .rank · .bars · .mTable · .kpis · .note · .kwReq 는 이미 있는 것을 그대로 쓴다.
+
+   ★ 기존 규칙을 고치지 않는다. 트렌드 탭이 같은 클래스를 쓰고 있어서,
+     .kpis 를 직접 손대면 그쪽이 깨진다. 말풍선 안에서만 덮어쓴다.
+   ══════════════════════════════════════════════════════ */
+
+/* .kpis 는 4열 고정이다. 팝업은 사이드바(296px)를 뺀 폭이라 4열이면 글자가 눌린다.
+   말풍선 안에서만 2열로 접는다. */
+.msg.ai .kpis{grid-template-columns:repeat(2,minmax(0,1fr));margin-bottom:10px}
+@media(min-width:1180px){
+  .msg.ai .kpis{grid-template-columns:repeat(4,minmax(0,1fr))}
+}
+
+/* 카드 위에 오는 전체 폭 블록(판정·방향 요약)과 카드 사이 간격 */
+.rpFull{margin-bottom:10px}
+
+/* 웹 검색 요약 같은 문단. .say 는 .msg.ai 아래로 스코프돼 있어 카드 안에서는 안 걸린다. */
+.rpProse{
+  font-size:14px;line-height:1.78;color:var(--pink-1);letter-spacing:-.02em;
+  word-break:keep-all;
+}
+.rpProse b{font-weight:600;color:var(--pink-0)}
+/* 문단은 문단답게. <br> 로만 잇던 것을 바꿨다 — 간격이 없어 한 덩어리로 읽혔다. */
+.rpProse p{margin:0 0 10px}
+.rpProse p:last-child{margin-bottom:0}
+.rpProse ul{margin:0 0 10px;padding-left:0;list-style:none}
+.rpProse li{position:relative;padding-left:13px;margin-bottom:4px}
+.rpProse li::before{content:'·';position:absolute;left:2px;color:var(--coral)}
+
+/* 근거 인용 — 말이 먼저, 출처는 아래 작게.
+   .note 가 flex 라 형제로 두면 옆으로 붙는다. 한 칸 안에서 나눈다. */
+.msg.ai .note > span{min-width:0}
+.msg.ai .note b{display:block;font-weight:400;color:var(--pink-1);
+  font-size:12.5px;line-height:1.6;word-break:keep-all}
+.msg.ai .note em{display:block;margin-top:2px;font-style:normal;
+  font-size:10.5px;letter-spacing:.02em;color:var(--pink-2)}
+
+/* 출처 목록은 .rank .row 를 그대로 쓴다 — 이미 눌리는 모양이다.
+   다만 링크라는 걸 보여 주려 커서만 바꾼다. */
+.rank .row[data-href]{cursor:none}
+.rank .row[data-href]:hover .d{color:var(--coral)}
+
+/* 팝업이 좁아지면 카드 2단을 1단으로 접는다. 안 접으면 오른쪽 칸이 30px 남는다. */
+@media(max-width:900px){
+  .msg.ai .ansBody{grid-template-columns:minmax(0,1fr)}
+  .msg.ai .ansBody > div + div{border-left:0;border-top:1px solid var(--pink-3)}
+  .msg.ai .kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
+}

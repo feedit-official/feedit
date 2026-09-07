@@ -1,0 +1,212 @@
+/* ══════════════════════════════════════════════════════
+   챗봇 API — feedit-chat 과 이야기하고, 받은 리포트를 카드로 그린다.
+
+   ★ 없는 클래스를 쓰지 않는다.
+     여기서 쓰는 것은 전부 이미 CSS 에 있는 것들이다 —
+       .ansCard .ansBar .ansBody .ansH .rank .bars   (home/static/css/chat.css)
+       .kwReq .kwReq .near .kwReq .ask               (trend/static/css/dispatch.css)
+       .note                                          (trend/static/css/weekly_report.css)
+       .pill .pill.ghost                              (app_shell/static/css/layout.css)
+     main.css 가 전부 한 문서로 @import 하므로 챗봇 팝업 안에서도 그대로 걸린다.
+
+   ★ 서버가 없으면 조용히 실패한다.
+     목업 데모가 깨지면 안 된다. isUp() 이 false 면 부르는 쪽이 기존 응답으로 떨어진다.
+   ══════════════════════════════════════════════════════ */
+
+/* 개발 중에는 vite 프록시(/api)를 쓴다. 프록시가 없으면 로컬 서버를 직접 부른다. */
+const DIRECT = 'http://127.0.0.1:8770';
+export const API_BASE = (location.port === '5173' || location.port === '4173')
+  ? '/api' : DIRECT;
+
+let _up = null;          /* null = 아직 모름, true/false = 확인됨 */
+let _upAt = 0;
+
+export function esc(s){
+  return String(s==null?'':s).replace(/[&<>"']/g,m=>(
+    {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+}
+
+/* 서버가 떠 있나. 30초 동안은 결과를 재사용한다 — 매 질문마다 물으면 느려진다. */
+export async function isUp(){
+  const now = Date.now();
+  if(_up !== null && now - _upAt < 30000) return _up;
+  try{
+    const c = new AbortController();
+    const t = setTimeout(()=>c.abort(), 1500);
+    const r = await fetch(API_BASE + '/v1/health', {signal:c.signal});
+    clearTimeout(t);
+    _up = r.ok;
+  }catch(e){ _up = false }
+  _upAt = now;
+  return _up;
+}
+
+/* ── SSE 스트림 읽기 ──────────────────────────────────
+   EventSource 는 POST 를 못 보낸다. fetch + ReadableStream 으로 직접 판다. */
+export async function askStream(payload, on){
+  const res = await fetch(API_BASE + '/v1/chat', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify(payload)
+  });
+  if(!res.ok || !res.body) throw new Error('HTTP ' + res.status);
+
+  const reader = res.body.getReader();
+  const dec = new TextDecoder();
+  let buf = '';
+  for(;;){
+    const {done, value} = await reader.read();
+    if(done) break;
+    buf += dec.decode(value, {stream:true});
+    let i;
+    /* 이벤트 하나는 빈 줄로 끝난다 */
+    while((i = buf.indexOf('\n\n')) >= 0){
+      const chunk = buf.slice(0, i); buf = buf.slice(i + 2);
+      let ev = 'message', data = '';
+      chunk.split('\n').forEach(ln=>{
+        if(ln.startsWith('event: ')) ev = ln.slice(7).trim();
+        else if(ln.startsWith('data: ')) data += ln.slice(6);
+      });
+      if(!data) continue;
+      let parsed; try{ parsed = JSON.parse(data) }catch(e){ continue }
+      if(on[ev]) on[ev](parsed);
+    }
+  }
+}
+
+/* ── 리포트 → 카드 ────────────────────────────────────
+   서버가 질문 유형에 맞는 **블록 배열**을 준다. 여기서는 그걸 그리기만 한다.
+   구조를 여기서 정하지 않는다 — 정하는 곳은 서버의 templates.py 하나다.
+
+   슬롯
+     full   카드 위 전체 폭
+     left   카드 왼쪽 (1.15fr)
+     right  카드 오른쪽 (1fr)
+
+   ★ 모르는 블록 타입은 조용히 건너뛴다.
+     서버가 먼저 새 블록을 내보내도 화면이 깨지지 않게. */
+
+const H = (title, meta) => (title || meta)
+  ? '<div class="ansH">' + (title ? '<h3>' + esc(title) + '</h3>' : '') +
+    (meta ? '<em>' + esc(meta) + '</em>' : '') + '</div>' : '';
+
+const BLOCK = {
+  rank: b => H(b.title, b.meta) + '<div class="rank">' + (b.rows || []).map((r, i) =>
+    '<div class="row"' + (r.href ? ' data-href="' + esc(r.href) + '"' : '') + '>' +
+    '<span class="n">' + String(i + 1).padStart(2, '0') + '</span>' +
+    '<span class="k">' + esc(r.k) + (r.small ? '<small>' + esc(r.small) + '</small>' : '') + '</span>' +
+    '<span class="d ' + (r.up ? 'up' : 'dn') + '">' + esc(r.v) + '</span></div>').join('') + '</div>',
+
+  bars: b => H(b.title, b.meta) + '<div class="bars">' + (b.items || []).map(x =>
+    '<div class="b"><span>' + esc(x.k) + '</span>' +
+    '<u><i data-w="' + (x.w | 0) + '"></i></u>' +
+    '<em>' + esc(x.v) + '</em></div>').join('') + '</div>',
+
+  table: b => H(b.title, b.meta) +
+    '<table class="mTable"><tr>' + (b.head || []).map(h => '<th>' + esc(h) + '</th>').join('') + '</tr>' +
+    (b.rows || []).map(r =>
+      '<tr><td>' + esc(r.k) + '</td>' +
+      '<td><span class="bar" style="display:block"><i data-w="' + (r.w | 0) + '"' +
+      (r.up ? ' class="c"' : '') + '></i></span></td>' +
+      '<td class="n ' + (r.up ? 'up' : 'dn') + '">' + esc(r.v) + '</td></tr>').join('') + '</table>',
+
+  kpis: b => '<div class="kpis">' + (b.items || []).map(x =>
+    '<div class="kpi"><span>' + esc(x.k) + '</span>' +
+    '<b>' + esc(x.v) + (x.unit ? '<u>' + esc(x.unit) + '</u>' : '') + '</b>' +
+    (x.note ? '<div class="dl ' + (x.up ? 'up' : 'dn') + '">' + esc(x.note) + '</div>' : '') +
+    '</div>').join('') + '</div>',
+
+  quotes: b => H(b.title, b.meta) + (b.items || []).map(x =>
+    '<div class="note"><i>◆</i>' + esc(x.src) + (x.kind ? ' · ' + esc(x.kind) : '') +
+    ' — ' + esc(x.body) + '</div>').join(''),
+
+  prose: b => H(b.title, b.meta) +
+    '<div class="rpProse">' + esc(b.text).replace(/\n/g, '<br>') + '</div>',
+
+  links: b => '<div class="rank" style="margin-top:14px">' + (b.items || []).map((o, i) => {
+    let host = ''; try{ host = new URL(o.url).hostname.replace(/^www\./, '') }catch(e){}
+    return '<div class="row" data-href="' + esc(o.url) + '">' +
+      '<span class="n">' + String(i + 1).padStart(2, '0') + '</span>' +
+      '<span class="k">' + esc(String(o.title || '').slice(0, 46)) + '</span>' +
+      '<span class="d dn">' + esc(host) + '</span></div>';
+  }).join('') + '</div>',
+
+  note: b => '<div class="note"><i>◆</i>' + esc(b.text) + '</div>',
+
+  upsell: b => H(b.title, b.meta) +
+    '<div class="kwReq"><p>' + esc(b.why || '') + '</p>' +
+    '<div class="ask"><span>프로 플랜에서 ' + esc((b.unlocks || []).join(' · ')) +
+    ' 을 볼 수 있습니다.</span>' +
+    '<button type="button" data-v="price">요금제 보기</button></div></div>',
+};
+
+export function reportHTML(rep){
+  const asOf = (rep.as_of && rep.as_of.metric) || '';
+  const bar = '<div class="ansBar"><u></u><u></u><u></u><span>' +
+    esc('feedit.ai / ' + (rep.intent || 'chat') + ' / ' + asOf) + '</span></div>';
+
+  const blocks = rep.blocks || [];
+  if(!blocks.length) return '<div class="ansCard">' + bar + '</div>';
+
+  const draw = b => {
+    const fn = BLOCK[b.type];
+    return fn ? fn(b) : '';          /* 모르는 타입은 건너뛴다 */
+  };
+  const full  = blocks.filter(b => b.slot === 'full').map(draw).filter(Boolean).join('');
+  const left  = blocks.filter(b => b.slot === 'left').map(draw).filter(Boolean).join('');
+  const right = blocks.filter(b => b.slot === 'right').map(draw).filter(Boolean).join('');
+
+  /* .ansBody 는 2단 그리드다. 자식이 셋이면 다음 줄로 흘러 레이아웃이 깨진다.
+     항상 정확히 두 칸만 넣는다. */
+  const body = (left || right)
+    ? '<div class="ansBody"><div>' + left + '</div><div>' + right + '</div></div>'
+    : '';
+  const card = body ? '<div class="ansCard">' + bar + body + '</div>' : '';
+  return (full ? '<div class="rpFull">' + full + '</div>' : '') + card;
+}
+
+/* ── 사전에 없는 말 ───────────────────────────────────
+   실패로 끝내지 않는다. 가까운 말과 등록 요청을 같이 준다.
+   찜한 키워드 화면(saved_keywords.js)이 쓰는 것과 같은 마크업이다. */
+export function refusalHTML(err){
+  const near = err.near || [];
+  return '<div class="kwReq">' +
+    '<p>' + esc(err.message || '답을 만들 수 없습니다.').replace(/\n/g, '<br>') + '</p>' +
+    (near.length
+      ? '<div class="near"><em>' + esc(err.near_label || '혹시 이건가요') + '</em>' +
+        near.map(o => '<button type="button" data-kw="' + esc(o.canonical) + '">' +
+          esc(o.canonical) + '</button>').join('') + '</div>'
+      : '') +
+    /* JS 훅은 클래스가 아니라 data 속성으로 단다.
+       CSS 에 없는 클래스를 붙이면 "이건 스타일이 있나" 를 매번 확인해야 한다.
+       버튼 모양은 .kwReq .ask button 이 이미 갖고 있다. */
+    '<div class="ask"><span>패션 용어가 맞다면 등록을 요청해 주세요. 검토 후 사전에 추가됩니다.</span>' +
+    '<button type="button" data-lexreq="1">등록 요청</button></div></div>';
+}
+
+/* ── 다음 행동 버튼 ──────────────────────────────────
+   .msg.ai .act 안에서만 스타일이 걸린다. AI 말풍선 안에 넣어야 한다. */
+export function actionsHTML(acts){
+  if(!acts || !acts.length) return '';
+  return '<div class="act">' + acts.map(a => {
+    const d = ['<button class="pill ghost"'];
+    if(a.view) d.push('data-v="' + esc(a.view) + '"');
+    /* 스타일은 **이름** 으로 보낸다. 라우터는 id 를 기대하므로
+       chat_popup 의 cpFixStyleLinks() 가 이름 → id 로 바꿔 단다.
+       여기서 data-style 을 직접 달면 조용히 첫 번째 스타일로 떨어진다. */
+    if(a.style) d.push('data-style-name="' + esc(a.style) + '"');
+    if(a.keyword) d.push('data-kw="' + esc(a.keyword) + '"');
+    if(a.type === 'switch_mode') d.push('data-mode="' + esc(a.to) + '"');
+    return d.join(' ') + '>' + esc(a.label) + ' <i>→</i></button>';
+  }).join('') + '</div>';
+}
+
+/* 막대는 0에서 시작해 채운다 — 카드가 뜨는 순간 함께 자란다 */
+export function fillBars(root){
+  root.querySelectorAll('i[data-w]').forEach(i => {
+    i.style.width = '0%';
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      i.style.transition = 'width .9s cubic-bezier(.19,1,.22,1)';
+      i.style.width = i.dataset.w + '%';
+    }));
+  });
+}
