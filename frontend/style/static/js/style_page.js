@@ -1,5 +1,5 @@
 import { $, $$, HAS_A, aAnimate, aStagger } from '../../../core/static/js/dom.js';
-import { IMG, INF_NAMES, ITEM_BRANDS, STYLES } from '../../../home/static/js/chat.js';
+import { IMG, INF_NAMES, ITEM_BRANDS, itemCard, STYLES } from '../../../home/static/js/chat.js';
 
 /* ── Style ──────────────────────────────────────────── */
 export var stShowI=0, stItemPage=0, stCur=null;
@@ -32,6 +32,21 @@ export function stBuild(){
   },3400);
   $('#stBack').addEventListener('click',()=>{
     $('#styleDetail').style.display='none'; $('#styleHome').style.display=''; scrollTo(0,0) });
+  $('#stFitClose')&&$('#stFitClose').addEventListener('click',stCloseFit);
+  $('#styleFitModal')&&$('#styleFitModal').addEventListener('click',e=>{
+    if(e.target.id==='styleFitModal')stCloseFit();
+  });
+}
+/* '이 스타일 더 보기' — 스타일 상세로 이동하지 않고, 그 스타일의 Virtual Fitting
+   카드만 팝업으로 보여준다 (금주의 리포트 히어로 버튼에서 연결) */
+export function stOpenFit(id){
+  const s=STYLES.find(x=>x.id===id)||STYLES[0];
+  const t=$('#stFitTitle'); if(t)t.textContent=s.n+' · Virtual Fitting';
+  const g=$('#stFitGrid'); if(g)g.innerHTML=infCards(s);
+  const m=$('#styleFitModal'); if(m)m.classList.add('on');
+}
+export function stCloseFit(){
+  const m=$('#styleFitModal'); if(m)m.classList.remove('on');
 }
 function stKeepAll(text,kwList){
   let t=text;
@@ -40,6 +55,14 @@ function stKeepAll(text,kwList){
 }
 function stSentences(text){
   return text.split(/(?<=[.!?])\s+/).map(t=>t.trim()).filter(Boolean).join('<br>');
+}
+/* Virtual Fitting 카드 — 스타일 상세 페이지(#stInf)와 '이 스타일 더 보기' 팝업이
+   같은 카드를 그대로 재사용한다 */
+export function infCards(s){
+  return INF_NAMES.slice(0,5).map((n,i)=>
+    '<div class="infC"><div class="im"><img src="'+IMG(((s.img+i*3)%35)+1)+'" alt="" loading="lazy"></div>'+
+    '<div class="bd"><span class="av">'+n[1].toUpperCase()+'</span>'+
+    '<span><b>'+n+'</b><span>'+(12+i*7)+'.'+(i%9)+'k 팔로워</span></span></div></div>').join('');
 }
 export function stOpen(id){
   const s=STYLES.find(x=>x.id===id)||STYLES[0];
@@ -55,10 +78,7 @@ export function stOpen(id){
     '<dl><div><dt>시작</dt><dd>'+s.st+'</dd></div>'+
     '<div><dt>확산 계기</dt><dd>'+s.by+'</dd></div>'+
     '<div><dt>핵심 키워드</dt><dd>'+s.kw.join(' · ')+'</dd></div></dl>';
-  $('#stInf').innerHTML=INF_NAMES.slice(0,5).map((n,i)=>
-    '<div class="infC"><div class="im"><img src="'+IMG(((s.img+i*3)%35)+1)+'" alt="" loading="lazy"></div>'+
-    '<div class="bd"><span class="av">'+n[1].toUpperCase()+'</span>'+
-    '<span><b>'+n+'</b><span>'+(12+i*7)+'.'+(i%9)+'k 팔로워</span></span></div></div>').join('');
+  $('#stInf').innerHTML=infCards(s);
   $('#stItems').innerHTML=''; stMoreItems(); stMoreItems();
   if(HAS_A)aAnimate('#stHero .in',{opacity:[0,1],translateY:[22,0],duration:900,ease:'out(3)'});
   scrollTo(0,0);
@@ -68,10 +88,13 @@ export function stMoreItems(){
   const s=stCur, add=[];
   for(let i=0;i<8;i++){
     const k=stItemPage*8+i;
-    add.push('<div class="itC"><div class="im"></div><div class="bd">'+
-      '<em>'+ITEM_BRANDS[k%ITEM_BRANDS.length]+'</em>'+
-      '<b>'+s.kw[(k+1)%s.kw.length]+'</b>'+
-      '<span>'+(39+((k*17)%46))+'9,000원</span></div></div>');
+    add.push(itemCard({
+      id:s.id+'-'+k,
+      img:IMG(((s.img+k*2)%35)+1),
+      br:ITEM_BRANDS[k%ITEM_BRANDS.length],
+      nm:s.kw[(k+1)%s.kw.length],
+      pr:(39+((k*17)%46))+'9,000원'
+    }));
   }
   stItemPage++;
   const frag=document.createElement('div'); frag.innerHTML=add.join('');

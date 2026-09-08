@@ -1,6 +1,7 @@
 import { $, $$, HAS_A, aAnimate } from '../../../core/static/js/dom.js';
 import { SAY, SM_ON, SM_SAY, STYLES, ansCardHTML, smSwitch } from './chat.js';
 import { isUp, askStream, reportHTML, actionsHTML, refusalHTML, requestLexicon, fillBars } from './chat_api.js';
+import { requireAuth } from '../../../account/static/js/profile.js';
 
 /* ══════════════════════════════════════════════════════
    챗봇 팝업 — 일반 모드 · 살말 모드
@@ -296,6 +297,7 @@ function cpAsk(text,key,opts){
   })();
 }
 export function cpSend(){
+  if(!requireAuth())return;
   const ta=$('#cpInput'); const v=(ta&&ta.value.trim())||'';
   if(!v)return;
   cpAsk(v,cpKeyFor(v));
@@ -318,6 +320,7 @@ export function closeChatPopup(){
    {fresh:true} 면 무조건 새 대화 — 홈에서 한 줄 치는 건 새로 묻는 동작이지
    마지막 대화를 잇는 동작이 아니다. 없으면 열려 있던(또는 마지막) 대화에 잇는다. */
 export function openChatWith(text,key,opts){
+  if(!requireAuth())return;
   openChatPopup();
   if(opts&&opts.fresh) cpNewConvo();
   cpAsk(text, key||cpKeyFor(text), opts);

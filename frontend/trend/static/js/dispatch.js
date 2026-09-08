@@ -1,6 +1,8 @@
 import { $, $$, HAS_A, aAnimate, aSpring, aStagger, aUtils } from '../../../core/static/js/dom.js';
 import { ASSOC_BALLET, PLATFORM_TEMP, SENT_NEG, SENT_POS, TEMP_KW } from './data.js';
 import { FEED_SM_PICKS, WK } from './my_feed.js';
+import { STYLES } from '../../../home/static/js/chat.js';
+import { SIMG } from '../../../style/static/js/style_page.js';
 import { FS, fsBuild, fsHideSug, fsLoadDictionary } from '../../../style/static/js/search.js';
 import { G_CFG, KW, fsItem, fsItemFull, gMount, josa, trEmpty, trFillBars } from './render_helpers.js';
 import { ME, bioPaint } from '../../../account/static/js/profile.js';
@@ -266,66 +268,40 @@ export function trRender(id){
   }
 
   else if(id==='report'){
-    const hit=WK.hit, band=hit>=85?3:hit>=70?2:hit>=50?1:0;   /* 0 아쉬움 → 3 아주 좋음 */
-    const ST=[['POOR','아쉬웠습니다','서두른 구매가 많았습니다. 다음 주엔 수명주기 단계를 먼저 확인해 보세요.'],
-              ['MIXED','반반이었습니다','참은 게 맞은 만큼 놓친 것도 있었습니다. 품절 알림을 함께 쓰면 나아집니다.'],
-              ['GOOD','괜찮았습니다','대체로 맞았습니다. 놓친 건 대부분 가격보다 재고가 먼저 빠진 경우였습니다. 다음 주에는 할인 신호와 함께 재고 속도를 같이 보세요.'],
-              ['EXCELLENT','아주 좋았습니다','참을 것과 살 것을 거의 다 맞췄습니다. 지금 판단 기준을 그대로 유지하셔도 됩니다.']][band];
-    const SCALE=['아쉬움','반반','괜찮음','아주 좋음'];
+    const top=STYLES.find(s=>s.id===WK.topStyle)||STYLES[0];
+    const rise=['확산','재상승','재점화','정점 통과'];
+    const others=STYLES.filter(s=>s.id!==top.id&&rise.includes(s.pk)).slice(0,3);
     const maxAct=Math.max.apply(null,WK.days), DAY=['월','화','수','목','금','토','일'];
-    const mSum=WK.missReason.reduce((a,r)=>a+r[1],0);
-    /* 절약 추이 스파크라인 */
-    const H=WK.savedHist, hw=560, hh=96, hp=10;
-    const hMax=Math.max.apply(null,H)*1.14;
-    const HX=i=>hp+(hw-hp*2)*(i/(H.length-1));
-    const HY=v=>hh-6-(hh-22)*(v/hMax);
-    const hLine=H.map((v,i)=>(i?'L':'M')+HX(i).toFixed(1)+' '+HY(v).toFixed(1)).join(' ');
-    const hArea=hLine+' L'+HX(H.length-1).toFixed(1)+' '+(hh-6)+' L'+hp+' '+(hh-6)+' Z';
+    const searchShare=Math.round(WK.topSearchN/WK.search*100);
+    const ytQ=encodeURIComponent(top.n+' 스타일링');
+    const rp=WK.range.split(' · ');
 
     body.innerHTML='<div class="wkReport" id="wkReport">'+
-      /* ── 한 줄 요약 — 문서 머리는 위 제목줄이 대신한다 ── */
+      /* ── 한 줄 요약 — 이번 주 가장 많이 검색·투표한 스타일이 리포트의 축이다 ── */
       '<div class="wkLine">'+
-        '<h2>이번 주, <em>'+WK.saved.toLocaleString()+'원</em>을 아끼고 '+
-          '<em>'+WK.missed+'건</em>을 놓쳤습니다.</h2>'+
-        '<span>'+WK.range+'</span>'+
+        '<h2>이번 주 가장 관심 있었던 스타일은 <em>'+top.n+'</em>입니다.</h2>'+
+        '<span>'+WK.range+' · 매주 '+WK.updateDay+' 갱신</span>'+
       '</div>'+
-      /* ── 히어로 ── */
+      /* ── 관심 스타일 히어로 ── */
       '<section class="wkHero">'+
-        '<div class="wkScore">'+
-          '<div class="wkEyebrow"><span>WEEKLY DECISION SCORE</span><em>PERSONAL</em></div>'+
-          '<div>'+
-            '<div class="wkScoreMain"><strong>'+hit+'</strong><small>%</small>'+
-              '<span class="lb">판단 적중률</span></div>'+
-            '<div class="wkTrack"><i class="fill" data-w="'+hit+'"></i>'+
-              '<i class="dot" data-w="'+hit+'"></i></div>'+
-            '<div class="wkScale">'+SCALE.map((s,i)=>
-              '<span'+(i===band?' class="on"':'')+'>'+s+'</span>').join('')+'</div>'+
-          '</div>'+
-        '</div>'+
+        '<div class="wkHeroImg"><img src="'+SIMG(top)+'" alt="'+top.n+'" loading="lazy"></div>'+
         '<div class="wkCopy">'+
-          '<div class="wkState">THIS WEEK · '+ST[0]+'</div>'+
-          '<h3>이번 주 판단은 <em>'+ST[1]+'</em></h3>'+
-          '<p>'+ST[2]+'</p>'+
-          '<div class="wkLedger">'+
-            '<div class="ac"><span>아낀 돈</span><b>'+WK.saved.toLocaleString()+'원</b></div>'+
-            '<div><span>내린 결정</span><b>'+WK.decided+'건</b></div>'+
-            '<div><span>놓친 기회</span><b>'+WK.missed+'건</b></div>'+
-            '<div><span>연속 기록</span><b>'+WK.streak+'주</b></div>'+
+          '<div class="wkState">THIS WEEK · '+top.g+'</div>'+
+          '<h3>'+top.n+' <em>'+top.en+'</em></h3>'+
+          '<p>'+top.ab2+'</p>'+
+          '<div class="wkLedger c3">'+
+            '<div class="ac"><span>이 스타일 검색</span><b>'+WK.topSearchN+'회</b></div>'+
+            '<div><span>이 스타일 투표</span><b>'+WK.topVoteN+'표</b></div>'+
+            '<div><span>전체 검색 중 비중</span><b>'+searchShare+'%</b></div>'+
           '</div>'+
+          '<button type="button" class="pill sm" style="margin-top:20px" data-fit-style="'+top.id+'">→ 이 스타일 더 보기</button>'+
         '</div>'+
       '</section>'+
-      /* ── 컨설팅 노트 ── */
-      '<section class="wkConsult">'+
-        '<div class="mk">AI</div>'+
-        '<div class="tx"><span>FEEDiT CONSULTING NOTE</span>'+
-          '<p>'+WK.note+'</p></div>'+
-        '<span class="tag">'+WK.noteTag+'</span>'+
-      '</section>'+
-      /* ── 지표 4칸 ── */
+      /* ── 지표 4칸 — 실제로 셀 수 있는 로그만 ── */
       '<section class="wkMetrics">'+
         [['검색한 키워드',WK.search,'개','+'+WK.searchD+' · 지난주 대비',1],
          ['새로 찜한 것',WK.fav,'개','총 '+WK.favTotal+'개 추적 중',0],
-         ['살!말? 투표',WK.vote,'표','적중 '+WK.voteHit+'%',1],
+         ['살!말? 투표',WK.vote,'표','+'+WK.voteD+' · 지난주 대비',1],
          ['읽은 분석',WK.read,'건','평균 '+WK.readMin+'분 열람',0]]
         .map((m,i)=>'<div class="wkMetric'+(m[4]?' hot':'')+'">'+
           '<span class="idx">'+String(i+1).padStart(2,'0')+'</span>'+
@@ -359,63 +335,38 @@ export function trRender(id){
             '추천에 반영되기 시작했습니다.</span></div>'+
         '</article>'+
       '</section>'+
-      /* ── 놓친 이유 · 또래 비교 ── */
+      /* ── 추천 영상 · 웹매거진 — 지어낸 기사가 아니라, 실제 검색 결과로 바로 연결한다 ── */
       '<section class="wkG2 wkG2b">'+
         '<article class="wkCard">'+
-          '<div class="wkCardHead"><h3>놓친 이유</h3><em>'+WK.missed+' MISSED</em></div>'+
-          '<div class="wkStack">'+WK.missReason.map(r=>
-            '<i data-w="'+Math.round(r[1]/mSum*100)+'"></i>').join('')+'</div>'+
-          '<div class="wkLegend">'+WK.missReason.map((r,i)=>
-            '<span><i style="background:'+['var(--coral)','rgba(10,10,10,.42)','rgba(10,10,10,.16)'][i]+
-            '"></i>'+r[0]+' <b>'+r[1]+'%</b></span>').join('')+'</div>'+
-          '<div class="wkNote"><i>◆</i><span>놓친 것의 대부분은 가격이 아니라 <b>재고</b>였습니다. '+
-            '재입고 알림을 함께 쓰면 다음 주엔 줄어듭니다.</span></div>'+
+          '<div class="wkCardHead"><h3>이번 주 추천 영상</h3><em>'+top.n+'</em></div>'+
+          '<div class="wkVideoFrame"><iframe src="https://www.youtube.com/embed?listType=search&list='+ytQ+'" '+
+            'title="'+top.n+' 관련 영상" loading="lazy" allow="accelerometer; autoplay; clipboard-write; '+
+            'encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe></div>'+
+          '<div class="wkNote"><i>◆</i><span>유튜브에서 이 스타일과 관련해 지금 올라오는 영상을 그대로 불러옵니다.</span></div>'+
         '</article>'+
         '<article class="wkCard">'+
-          '<div class="wkCardHead"><h3>또래 비교</h3><em>SAME TASTE GROUP</em></div>'+
-          '<div class="wkPeer">'+
-            '<div class="bar"><i data-w="'+(100-WK.percentile)+'"></i>'+
-              '<u data-l="'+(100-WK.percentile)+'"></u></div>'+
-            '<p>취향이 비슷한 사용자 중 <b>상위 '+WK.percentile+'%</b>입니다. '+
-              '평균보다 주당 <b>'+WK.peerGap.toLocaleString()+'원</b> 더 아꼈습니다.</p>'+
+          '<div class="wkCardHead"><h3>추천 웹매거진</h3><em>'+top.n+'</em></div>'+
+          '<div class="wkMagList">'+WK.webzine.map(w=>
+            '<a class="wkMagRow" target="_blank" rel="noopener" href="https://www.google.com/search?q=site:'+
+            w.domain+'+'+encodeURIComponent(top.n)+'">'+
+            '<span class="tx"><b>'+w.src+'</b><span>“'+top.n+'” 관련 글 찾아보기</span></span>'+
+            '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8">'+
+            '<path d="M7 17L17 7M9 7h8v8"/></svg></a>').join('')+
           '</div>'+
         '</article>'+
       '</section>'+
-      /* ── 결정 원장 ── */
-      '<section class="wkDecision">'+
-        '<div class="wkDecHead"><h3>내가 내린 결정 · 그 뒤에 벌어진 일</h3>'+
-          '<em>'+WK.range.split(' · ')[0]+' · '+WK.range.split(' · ')[1]+'</em></div>'+
-        WK.log.map(v=>{const lb={danger:'놓침',warn:'지켜보는 중',safe:'잘한 판단'}[v.badge];
-          const cls={danger:'missed',warn:'watch',safe:'good'}[v.badge];
-          return '<div class="wkRow"><div class="wkRowTop">'+
-            '<span class="wkItem"><span class="wkAction">'+v.act+'</span>'+v.k+'</span>'+
-            '<span class="wkBadge '+cls+'">'+lb+'</span></div>'+
-            '<div class="wkMeta"><span>'+v.when+'</span><span>'+v.res+'</span></div>'+
-            '<div class="wkMsg">'+v.msg+'</div></div>'}).join('')+
-      '</section>'+
-      /* ── 찜 변화 ── */
+      /* ── 같이 지켜볼 만한 스타일 ── */
       '<section class="wkCard" style="margin-top:10px">'+
-        '<div class="wkCardHead"><h3>찜한 키워드에 생긴 변화</h3>'+
-          '<em>'+WK.watch.length+' SIGNALS DETECTED</em></div>'+
-        '<table class="wkTable"><thead><tr><th>키워드</th><th>무슨 일이 있었나</th>'+
-          '<th>지금 할 일</th></tr></thead><tbody>'+
-        WK.watch.map(r=>'<tr><td><b>'+r[0]+'</b></td>'+
-          '<td class="'+(r[2]?'up':'dn')+'">'+r[1]+'</td>'+
-          '<td>'+r[3]+'</td></tr>').join('')+
-        '</tbody></table>'+
-        '<div class="wkNote"><i>◆</i><span>변화가 생긴 것만 모았습니다. 나머지 <b>'+
-          (WK.favTotal-WK.watch.length)+'개</b>는 지난주와 같습니다.</span></div>'+
+        '<div class="wkCardHead"><h3>같이 지켜볼 만한 스타일</h3><em>HOT NOW</em></div>'+
+        '<div class="wkNextGrid">'+others.map(s=>
+          '<div class="wkNextCard" data-style="'+s.id+'" style="cursor:pointer">'+
+          '<div class="wkNextHead"><i></i><b>'+s.n+'</b><span>'+s.pk+'</span></div>'+
+          '<p>'+s.ab+'</p></div>').join('')+
+        '</div>'+
       '</section>'+
-      /* ── 다음 주 ── */
-      '<section class="wkCard" style="margin-top:10px">'+
-        '<div class="wkCardHead"><h3>다음 주에 볼 것</h3><em>EXPECTED INFLECTION</em></div>'+
-        '<div class="wkNextGrid">'+WK.next.map(n=>
-          '<div class="wkNextCard"><div class="wkNextHead"><i></i><b>'+n[0]+'</b>'+
-          '<span>'+n[1]+'</span></div><p>'+n[2]+'</p></div>').join('')+
-        '</div></section>'+
       '<div class="wkFoot">'+
         '<span>FEEDiT · FASHION TREND ANALYSIS &amp; RECOMMENDATION CONSULTING</span>'+
-        '<span>PERSONAL REPORT · W33 / 2026</span>'+
+        '<span>PERSONAL REPORT · '+(rp[1]||'')+' / '+(rp[0]||'')+'</span>'+
       '</div>'+
     '</div>';
     wkAnimate();
@@ -527,7 +478,7 @@ export function trRender(id){
                 ['#3d7fd6','활발한 확산','연관어가 절반 이상 채워졌습니다. 축마다 고르게 늘고 있는지 확인해볼 때입니다.'],
                 ['#c98a1b','완만한 확산','연관어가 서서히 쌓이고 있지만 아직 절반에 못 미칩니다. 확산 초반 구간입니다.'],
                 ['#b23b3b','정체','연관어 수가 아직 적어 판단하기엔 이릅니다. 소재가 한정적으로 소비되고 있을 가능성이 있습니다.']][band];
-    const badgeHtml=ch=>ch==='new'?'<span class="axChg new">NEW</span>':
+    const badgeHtml=ch=>ch==='new'?'':
       ch>0?'<span class="axChg up">▲'+ch+'</span>':ch<0?'<span class="axChg">▼'+Math.abs(ch)+'</span>':
       '<span class="axChg">–</span>';
     body.innerHTML=
@@ -630,22 +581,25 @@ export function trRender(id){
         kpi('총 신호량',(posSum+negSum).toLocaleString(),'건','긍정+부정 합산',1)+
         kpi('최다 긍정 신호',SENT_POS[0][0],'',SENT_POS[0][1].toLocaleString()+'건',1)+
         kpi('최다 부정 신호',SENT_NEG[0][0],'',SENT_NEG[0][1].toLocaleString()+'건',0)+'</div>'+
-      '<div class="trGrid">'+
-        '<div class="panelC"><div class="gHead"><h3>구매의향 지수 추이</h3></div>'+
+      '<div class="trGrid" style="align-items:start">'+
+        '<div class="panelC" id="sentChartCard"><div class="gHead"><h3>구매의향 지수 추이</h3></div>'+
           '<div data-chart="sentMain"></div>'+
           '<div class="note"><i>◆</i>두 선이 벌어질수록 구매 의향이 뚜렷해지는 구간이고, 좁아지면 망설임이 커지는 구간입니다.</div></div>'+
-        '<div class="panelC"><div class="ph"><h3>신호 유형별 건수</h3><em>POS · NEG</em></div>'+
-          '<table class="mTable"><tr><th>신호</th><th></th><th>건수</th></tr>'+
+        '<div class="panelC" id="sentSigCard"><div class="ph"><h3>신호 유형별 건수</h3><em>POS · NEG</em></div>'+
+          '<div class="sigWrap" id="sigWrap"><table class="mTable"><tr><th>신호</th><th></th><th>건수</th></tr>'+
           SENT_POS.concat(SENT_NEG).sort((a,b)=>b[1]-a[1]).map(p=>{const isPos=SENT_POS.indexOf(p)>=0;
             return '<tr><td>'+p[0]+'</td>'+
               '<td><span class="bar" style="display:block"><i class="'+(isPos?'c':'')+'" style="width:'+Math.round(p[1]/1240*100)+'%"></i></span></td>'+
               '<td class="n '+(isPos?'up':'dn')+'">'+p[1].toLocaleString()+'</td></tr>'}).join('')+
-          '</table><div class="note"><i>◆</i>주황이 긍정, 회색이 부정 신호입니다.</div></div>'+
+          '</table></div>'+
+          '<button class="sigMore" id="sigMoreBtn" type="button" hidden>+ 더보기</button>'+
+          '<div class="note"><i>◆</i>주황이 긍정, 검정이 부정 신호입니다.</div></div>'+
       '</div>';
     G_CFG.sentMain={key:kw+'sent',term:kw,min:0,max:100,
       sets:[{id:'p',name:'긍정 신호 비중 (%)',field:'sentiment',shape:'rise',lo:Math.max(10,posPct-30),hi:posPct+8,unit:'%',accent:1},
             {id:'n',name:'부정 신호 비중 (%)',shape:'fall',lo:Math.max(4,negPct-6),hi:negPct+22,unit:'%'}]};
     gChart('[data-chart="sentMain"]',G_CFG.sentMain); trDial(); trFillBars();
+    sentFitSignals();   /* 왼쪽 차트 카드 높이에 맞춰 넘치는 신호 목록을 접고 '+더보기' 로 연다 */
   }
   else if(id==='stock'){
     const it=fsItem(), full=fsItemFull(), sd=gSeed(it);
@@ -693,7 +647,7 @@ export function trRender(id){
               '<div><b>'+now.toLocaleString()+'원</b><span>최저가</span></div>'+
             '</div>'+
           '</div></div>'+
-        '<div class="kpis">'+kpi('할인 시작','D-'+Math.round(6+sd*40),'','처음 감지된 시점',0)+
+        '<div class="kpis">'+kpi('할인 시작','D+'+Math.round(6+sd*40),'','처음 감지된 시점',0)+
           kpi('정가 유지 비율',Math.round(64-disc)+'','%','판매처 기준',0)+
           kpi('최대 할인폭',Math.round(disc+8+sd*12)+'','%','기간 내 최고',0)+
           kpi('재입고 횟수',Math.round(1+sd*5)+'','회','최근 8주',1)+'</div>'+
@@ -703,10 +657,12 @@ export function trRender(id){
             '<div class="note"><i>◆</i>두 선이 벌어질수록 "식은 뒤 붙는 할인"입니다. '+
               '겹쳐 움직이면 아직 수요가 남아 있는 정상 세일입니다.</div></div>'+
           '<div class="panelC"><div class="ph"><h3>판매처별 최저가</h3><em>실시간</em></div>'+
-            '<table class="mTable"><tr><th>판매처</th><th>할인률</th><th>최저가</th></tr>'+
+            '<table class="mTable xl"><tr><th>판매처</th><th>할인률</th><th>최저가</th></tr>'+
             SITES.map((s,i)=>{const pv=Math.round(price*(1-s[1]/100)/100)*100;
+              const bw=Math.round(s[1]/SITES[0][1]*100);
               return '<tr><td>'+(i===0?'<b>'+s[0]+'</b>':s[0])+'</td>'+
-                '<td class="n '+(i===0?'up':'dn')+'">'+s[1]+'%</td>'+
+                '<td class="n '+(i===0?'up':'dn')+'">'+s[1]+'%'+
+                  '<span class="bar" style="display:block;margin-top:7px"><i class="'+(i===0?'c':'')+'" style="width:'+bw+'%"></i></span></td>'+
                 '<td class="n">'+pv.toLocaleString()+'원</td></tr>'}).join('')+'</table>'+
             '<div class="note"><i>◆</i>같은 상품이라도 판매처별 할인률이 '+
               (SITES[0][1]-SITES[SITES.length-1][1])+'%p 차이 납니다.</div></div>'+
@@ -764,6 +720,11 @@ export function trRender(id){
     const vol=Math.round(40+sd*760);
     const days=Math.round(3+sd*26);                  /* 평균 거래 소요일 */
     const prem=idx>=1;
+    const volChg=Math.round((gSeed(it+'volchg')-0.35)*66);          /* 거래량 증감률 — 최근 4주 */
+    const premDays=Math.round(6+sd*40);                              /* 프리미엄 지속 기간 */
+    const premRank=Math.max(1,Math.min(99,Math.round(58-keep/2)));   /* 프리미엄 순위 — 상위 N% */
+    const spreadPct=Math.round(6+sd*22);                             /* 호가-체결가 간격 % */
+    const listPrice=Math.round(used*(1+spreadPct/100)/1000)*1000;    /* 등록가 중앙값(이상치 제외) */
     const RAMP=['#b23b3b','#c98a1b','#1f9e6e'].slice(0,(prem?3:idx>=.7?2:1));
     const SZ=['XS','S','M','L','XL'].map(z=>[z,+(idx*(0.82+gSeed(it+z+'p')*0.42)).toFixed(2)]);
     const best=SZ.slice().sort((a,b)=>b[1]-a[1])[0];
@@ -791,24 +752,23 @@ export function trRender(id){
         '</div></div>'+
       '<div class="kpis">'+
         kpi('거래량',vol.toLocaleString(),'건','최근 4주',vol>300?1:0)+
-        kpi('소셜 대비 선행',lead+'','일','시세가 먼저 움직임',1)+
-        kpi('실수령액',Math.round(used*0.945/100*100).toLocaleString(),'원','수수료 5.5% 차감',0)+
-        kpi('손익분기',Math.round(retail*0.945/(used||1)*100)>100?'미달':'달성','',
-            '정가 대비 회수 가능성',Math.round(retail*0.945/(used||1)*100)>100?0:1)+'</div>'+
+        kpi('거래량 증감률',(volChg>0?'+':'')+volChg,'%','최근 4주',volChg>=0?1:0)+
+        kpi('프리미엄 지속 기간',(prem?premDays:0)+'','일',
+            prem?('정가 '+keep+'% 이상 유지 중'):'프리미엄 미형성',prem?1:0)+
+        kpi('프리미엄 순위','상위 '+premRank,'%',it+' 전체 대비',premRank<=20?1:0)+'</div>'+
       '<div class="trGrid">'+
         '<div class="panelC"><div class="gHead"><h3>중고 시세 vs 언급 온도</h3></div>'+
           '<div data-chart="resMain"></div>'+
           '<div class="note"><i>◆</i>시세(검정)가 온도(주황)보다 <b>'+lead+'일</b> 먼저 꺾이는 패턴입니다. '+
             '되팔 계획이라면 온도가 아니라 이 선을 보세요.</div></div>'+
         '<div class="panelC"><div class="ph"><h3>사이즈별 시세 배수</h3><em>정가=1.00</em></div>'+
-          '<table class="mTable"><tr><th>사이즈</th><th>배수</th><th>실거래가</th></tr>'+
+          '<table class="mTable lg"><tr><th>사이즈</th><th>배수</th><th>실거래가</th></tr>'+
           SZ.map(z=>'<tr><td>'+(z[0]===best[0]?'<b>'+z[0]+'</b>':z[0])+'</td>'+
             '<td class="n '+(z[1]>=1?'up':'dn')+'">×'+z[1].toFixed(2)+'</td>'+
             '<td class="n">'+(Math.round(retail*z[1]/1000)*1000).toLocaleString()+'원</td></tr>').join('')+
-          '</table><div class="note"><i>◆</i>흔한 사이즈일수록 배수가 낮습니다. '+
-            '<b>'+best[0]+'</b>가 가장 잘 받습니다.</div></div>'+
+          '</table><div class="note"><i>◆</i>흔한 사이즈일수록 배수가 낮습니다.</div></div>'+
       '</div>'+
-      '<div class="trGrid" style="margin-top:12px">'+
+      '<div class="trGrid" style="margin-top:12px;align-items:start">'+
         '<div class="panelC"><div class="gHead"><h3>상태별 가격대</h3></div>'+
           '<table class="mTable"><tr><th>상태</th><th>비중</th><th>시세</th></tr>'+
           [['미착용 (택 포함)',1.14,18],['S급 (착용 3회 이하)',1.0,34],
@@ -816,21 +776,14 @@ export function trRender(id){
           .map(r=>'<tr><td>'+r[0]+'</td>'+
             '<td><span class="bar" style="display:block"><i style="width:'+(r[2]*2.6)+'%"></i></span></td>'+
             '<td class="n">'+(Math.round(used*r[1]/1000)*1000).toLocaleString()+'원</td></tr>').join('')+
-          '</table><div class="note"><i>◆</i>택만 살려도 <b>'+
-            Math.round((1.14/0.84-1)*100)+'%</b> 더 받습니다.</div></div>'+
-        '<div class="panelC"><div class="ph"><h3>되팔기 체크리스트</h3><em>지금 기준</em></div>'+
-          '<div class="statRow" style="grid-template-columns:1fr">'+
-          [['언제 팔면 가장 비싼가', (idx>=1?'지금':'약 '+Math.round(2+sd*7)+'주 내'),
-            prem?'프리미엄 구간은 평균 5주를 넘기지 않습니다.':'시세 하락 속도가 붙기 전 구간입니다.'],
-           ['어디서 가장 빨리 팔리나', ['크림','번개장터','당근'][Math.floor(sd*3)],
-            '이 카테고리 평균 '+days+'일 · 수수료 5.5%'],
-           ['얼마에 올려야 팔리나', (Math.round(used*1.06/1000)*1000).toLocaleString()+'원',
-            '실거래가보다 6% 높게 올려 협상 여지를 둡니다.']]
-          .map(x=>'<div class="bigStat" style="padding:11px 0;border-bottom:1px solid var(--pink-3)">'+
-            '<span style="font-size:11.5px;color:var(--pink-2)">'+x[0]+'</span>'+
-            '<b style="font-size:20px">'+x[1]+'</b>'+
-            '<span>'+x[2]+'</span></div>').join('')+
-          '</div></div>'+
+          '</table></div>'+
+        '<div class="panelC svSpread"><div class="svSpreadLabel">호가-체결가 스프레드</div>'+
+          '<div class="svSpreadHead">간격 <b>'+spreadPct+'%</b></div>'+
+          '<div class="svSpreadRow"><span>등록가(호가) 평균</span><b>'+listPrice.toLocaleString()+'<u>원</u></b></div>'+
+          '<div class="svSpreadBar"><i style="width:100%"></i></div>'+
+          '<div class="svSpreadRow"><span>실제 체결가</span><b>'+used.toLocaleString()+'<u>원</u></b></div>'+
+          '<div class="svSpreadBar"><i style="width:'+Math.min(100,Math.round(used/listPrice*100))+'%"></i></div>'+
+          '<div class="note"><i>◆</i>간격이 클수록 표면 시세 대비 실제 수요가 약할 수 있습니다.</div></div>'+
       '</div>';
     G_CFG.resMain=item=>({key:item+'res',
       sets:[{id:'r',name:'중고 시세 배수',shape:'fall',lo:Math.max(.3,idx-.3),hi:idx+.35,unit:'배'},
@@ -839,7 +792,8 @@ export function trRender(id){
   }
 
   /* ══════════════ 수명주기 ══════════════
-     "지금 사도 되나 · 언제까지 입을 수 있나" 로만 답한다. */
+     "지금 사도 되나 · 언제까지 입을 수 있나" 로만 답한다.
+     (구매 타이밍 / 신규 유입률 / 성장 모멘텀 / 시장 포화도 4개 KPI로 요약) */
   else{
     const it=fsItem(), full=fsItemFull(), sd=gSeed(it+'l');
     const stages=['태동','확산','정점','쇠퇴'];
@@ -850,13 +804,22 @@ export function trRender(id){
     const SC=['#3d7fd6','#1f9e6e','#c98a1b','#b23b3b'][si];
     const RAMP=['#3d7fd6','#1f9e6e','#c98a1b','#b23b3b'].slice(0,si+1);
     const pct=[22,58,92,40][si];
+    const timing=['적기','적기','주의','비추천'][si];
+    const inflow=[Math.round(24+sd*56),Math.round(6+sd*28),-Math.round(4+sd*18),-Math.round(14+sd*36)][si];
+    const momentum=+((si<2?1:-1)*(4+sd*22)).toFixed(1);
     const MSG=[
       ['아직 아무도 모릅니다','지금 사면 남들보다 먼저 입는 구간입니다. 다만 물량이 적어 선택지가 좁고, 그대로 사라질 위험도 함께 있습니다.'],
       ['가장 안전한 구간입니다','올라가는 중이라 앞으로 '+weeks+'주는 더 입을 수 있습니다. 물량도 충분해 고르기 좋습니다.'],
       ['지금이 마지막입니다','정점입니다. 사도 되지만 오래 못 갑니다. 오래 입을 옷이라면 다음 것을 보세요.'],
       ['이미 지났습니다','내려온 지 꽤 됐습니다. 싸게 나와도 올해 안에 안 입게 될 확률이 높습니다.']][si];
-    const ALT=[['블록코어',62],['아메카지',58],['포엣코어',34],['놈코어',48],['발레코어',88]]
-      .filter(x=>x[0]!==it).slice(0,3);
+    /* 검색 여정 브릿지 — SNS·커머스 "언급"이 아니라 FEEDIT 자체 검색 로그에서
+       이 키워드 조회 직후 실제로 이어진 검색어. 행동 로그 기반이라 나머지
+       지표들과 데이터 소스 자체가 다르다. */
+    const BRIDGE=[['무신사 스탠다드',Math.round(48+sd*30)],
+                  ['비슷한 코디',Math.round(20+sd*22)],
+                  ['다른 사이즈',Math.round(10+sd*14)],
+                  ['가격 비교',Math.round(6+sd*10)],
+                  ['재입고 알림',Math.round(3+sd*7)]].sort((a,b)=>b[1]-a[1]);
     body.innerHTML=
       '<div class="verdict" style="--sc:'+SC+'">'+
         '<div class="dial"><svg viewBox="0 0 120 120">'+
@@ -877,17 +840,17 @@ export function trRender(id){
           '</div>'+
         '</div></div>'+
       '<div class="kpis">'+
-        kpi('지금 사도 되나',(si===3?'아니오':'예'),'',MSG[0],si===3?0:1)+
-        kpi('되팔 때 가치',['높음','높음','보통','낮음'][si],'','1년 뒤 기준',si<2?1:0)+
-        kpi('비슷한 옷 보유',Math.round(2+sd*7)+'','벌','옷장 기준 추정',0)+
-        kpi('회당 비용',Math.round(2400+sd*9000).toLocaleString(),'원','예상 착용 횟수로 나눈 값',0)+'</div>'+
+        kpi('구매 타이밍',timing,'',MSG[0],si<2?1:0)+
+        kpi('신규 유입률',(inflow>0?'+':'')+inflow,'%','최근 4주 신규 진입',inflow>0?1:0)+
+        kpi('성장 모멘텀',(momentum>0?'+':'')+momentum,'%','전월 대비 확산 속도',momentum>0?1:0)+
+        kpi('시장 포화도',pct+'','%','유행 진행도 기준',pct>=60?1:0)+'</div>'+
       '<div class="trGrid">'+
         '<div class="panelC"><div class="gHead"><h3>유행 곡선 · 지금 위치</h3></div>'+
           '<div data-chart="lifeMain"></div>'+
           '<div class="note"><i>◆</i>주황 구간이 <b>지금</b>입니다. '+
             (si<2?'아직 올라가는 중이라 여유가 있습니다.':'꼭짓점을 지나면 회복하지 않습니다.')+'</div></div>'+
-        '<div class="panelC"><div class="ph"><h3>계절 · 착용 예측</h3><em>앞으로 12개월</em></div>'+
-          '<table class="mTable"><tr><th>시기</th><th>착용 가능성</th><th></th></tr>'+
+        '<div class="panelC"><div class="ph"><h3>계절 · 착용 예측</h3></div>'+
+          '<table class="mTable lg"><tr><th>시기</th><th>착용 가능성</th><th></th></tr>'+
           [['이번 시즌',[70,96,88,44][si]],['다음 시즌',[88,82,52,18][si]],
            ['1년 뒤',[74,54,26,7][si]],['2년 뒤',[46,28,11,3][si]]]
           .map(r=>'<tr><td>'+r[0]+'</td>'+
@@ -900,13 +863,11 @@ export function trRender(id){
           '<div data-chart="lifeGap"></div>'+
           '<div class="note"><i>◆</i>말만 많고 실제로 안 입는 구간은 거품입니다. '+
             '두 선이 붙어 갈수록 진짜 유행입니다.</div></div>'+
-        '<div class="panelC"><div class="ph"><h3>대신 볼 만한 것</h3><em>더 오래 갑니다</em></div>'+
-          '<div class="flow">'+ALT.map(x=>'<div class="st"><span>'+x[0]+'</span>'+
-            '<u><i data-w="'+x[1]+'" '+(x[1]>=60?'class="c"':'')+'></i></u>'+
-            '<em>'+(x[1]>=60?'상승':'유지')+'</em></div>').join('')+'</div>'+
-          '<div class="note"><i>◆</i>'+(si>=2
-            ? '지금 것이 내려오는 중이라 대체 후보를 같이 봅니다.'
-            : '지금 것으로 충분합니다. 참고용입니다.')+'</div></div>'+
+        '<div class="panelC"><div class="ph"><h3>검색 여정 브릿지</h3><em>이 검색어 조회 직후 이어진 검색어</em></div>'+
+          '<div class="flow">'+BRIDGE.map(x=>'<div class="st"><span>'+x[0]+'</span>'+
+            '<u><i data-w="'+x[1]+'" '+(x[1]>=50?'class="c"':'')+'></i></u>'+
+            '<em>'+x[1]+'%</em></div>').join('')+'</div>'+
+          '<div class="note"><i>◆</i>FEEDIT 자체 검색 행동 로그 기준입니다.</div></div>'+
       '</div>';
     G_CFG.lifeMain=item=>({key:item+'life',band:[si*.25,si*.25+.25],
       sets:[{id:'l',name:'언급량 지수',shape:['rise','rise','peak','fall'][si],lo:8,hi:96,unit:''}]});
@@ -920,6 +881,58 @@ export function trRender(id){
   trCountUp();   /* 카드가 올라오는 동안 숫자도 같이 굴러 올라간다 */
 }
 function trAnimateSvg(){ gDraw($$('#trBody .lifeSvg path'),1250,320) }
+/* 긍부정 - '신호 유형별 건수' 카드는 왼쪽 '구매의향 지수 추이' 차트 카드 높이에 '정확히' 맞아야 한다.
+   신호가 8개(POS 4 + NEG 4)라 표가 차트보다 자연 높이가 더 큰 경우가 있는데, 이걸 grid stretch 에
+   맡기면 반대로 차트 카드가 늘어나며 차트 쪽에 빈 공백이 생긴다(오른쪽이 원인 제공, 왼쪽이 피해).
+   그래서 이 trGrid 는 align-items:start 로 두고(둘 다 각자 내용 높이로 따로 계산), 왼쪽 차트 카드의
+   '있는 그대로'(공백 없는) 높이를 잰 뒤 그 값을 오른쪽 카드 height 로 직접 강제한다.
+   오른쪽 목록이 그 높이에 안 들어가면 잘라내고 '+더보기' 로 나머지를 연다(펼치면 카드도 같이 자란다).
+   차트 높이는 자기 칼럼 너비에 따라 바뀌므로(뷰포트 리사이즈) 창 크기 변경 시에도 다시 잰다. */
+function sentFitSignals(){
+  const chart=$('#sentChartCard'), card=$('#sentSigCard'), wrap=$('#sigWrap'), btn=$('#sigMoreBtn');
+  if(!chart||!card||!wrap||!btn)return;
+  const wasOpen=btn.dataset.state==='open';   /* 리사이즈로 다시 잴 때 펼친 상태는 유지한다 */
+  card.style.height='';wrap.style.maxHeight='';wrap.style.overflow='';btn.hidden=true;btn.onclick=null;
+  const targetH=chart.offsetHeight;   /* 차트 카드 자체의 공백 없는 높이 */
+  const cs=getComputedStyle(card);
+  const padV=parseFloat(cs.paddingTop)+parseFloat(cs.paddingBottom);
+  let used=padV;
+  card.querySelectorAll(':scope > *').forEach(ch=>{ if(ch===wrap)return;
+    const m=getComputedStyle(ch); used+=ch.offsetHeight+parseFloat(m.marginTop)+parseFloat(m.marginBottom); });
+  const full=wrap.scrollHeight;
+  if(full+used<=targetH){ card.style.height=targetH+'px'; return; }
+
+  const btnH=btn.offsetHeight||34, gap=12;   /* .sigMore 의 margin-top 과 맞춘 값 */
+  const avail=Math.max(40,targetH-used-btnH-gap);
+  const openH=used+full+btnH+gap;            /* 펼쳤을 때 카드가 필요로 하는 자연 높이 */
+
+  /* 접힘·펼침 전환을 anime.js 로 부드럽게 잇는다 — 그냥 값만 바꾸면 뚝뚝 끊겨서 정적으로 보인다 */
+  const setTo=(wrapH,cardH,animated)=>{
+    wrap.style.overflow='hidden';
+    const curW=parseFloat(wrap.style.maxHeight)||wrap.getBoundingClientRect().height;
+    const curC=parseFloat(card.style.height)||card.getBoundingClientRect().height;
+    if(HAS_A&&animated){
+      aAnimate(wrap,{maxHeight:[curW,wrapH],duration:380,ease:'out(3)'});
+      aAnimate(card,{height:[curC,cardH],duration:380,ease:'out(3)',
+        onComplete:()=>{ if(cardH>targetH+2)wrap.style.overflow='visible'; }});
+      aAnimate(btn,{opacity:[.35,1],duration:320,ease:'out(2)'});
+    } else {
+      wrap.style.maxHeight=wrapH+'px'; card.style.height=cardH+'px';
+      if(cardH>targetH+2)wrap.style.overflow='visible';
+    }
+  };
+  const collapse=animated=>{ btn.textContent='+ 더보기'; btn.dataset.state='closed'; setTo(avail,targetH,animated); };
+  const expand  =animated=>{ btn.textContent='- 줄이기'; btn.dataset.state='open';   setTo(full,openH,animated); };
+
+  btn.hidden=false;
+  btn.onclick=()=>{ if(btn.dataset.state==='open') collapse(true); else expand(true); };
+  if(wasOpen) expand(false); else collapse(false);
+}
+var __sentFitT=null;
+window.addEventListener('resize',()=>{
+  clearTimeout(__sentFitT);
+  __sentFitT=setTimeout(sentFitSignals,140);
+});
 var TR_TAB='통합';
 
 export function trBuild(){

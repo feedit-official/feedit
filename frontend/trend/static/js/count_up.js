@@ -17,7 +17,7 @@ const CU_SEL=[
   '.wkLine h2 em','.wkScoreMain strong','.wkLedger b','.wkMetric strong','.wkMetric em',
   '.wkDay .v','.wkTaste b','.wkTaste em','.wkLegend b','.wkTable .up','.wkTable .dn',
   '.wkMeta span:last-child','.wkPeer p b',
-  '.svFill b','.svRest','.svIdx b','.svIdx em','.svPrice b',   /* 찜한 키워드 */
+  '.svIdx b','.svIdx em','.svPrice b',   /* 찜한 키워드 */
   '.concl .vRow .meta span:last-child'   /* 앞 칸은 날짜라 굴리지 않는다 */
 ].map(s=>'#trBody '+s).join(', ');
 const CU_RE=/(\d[\d,]*(?:\.\d+)?)/g;
@@ -42,6 +42,13 @@ function cuFmt(v,spec){
 export function lockWidths(items){
   const lockedCols=new Map();     /* table → 이미 폭을 잠근 열 index 집합 */
   const restores=[];
+  /* .tpPulseGrid(내 취향 브리핑 카드 두 개)는 fr 트랙 — 여기서 JS 로 폭을
+     재던 시도(2026-09)는 측정 시점이 진입 애니메이션과 겹치면 오히려
+     한쪽 트랙이 0에 가깝게 잡혀 다른 쪽이 뷰포트 밖으로 밀려나는 더 큰
+     문제를 냈다. 원인 자체(fr 트랙의 자동 최소 크기가 내용의 min-content를
+     따라가는 것)는 my_feed.css 의 grid-template-columns 를
+     minmax(0,1.18fr) minmax(0,.82fr) 로 선언해 CSS 단에서 막아뒀다 —
+     내용이 몇이든 트랙 비율이 항상 고정되므로 여기서는 더 손댈 게 없다. */
   items.forEach(({el})=>{
     const td=el.closest('td,th');
     if(td){

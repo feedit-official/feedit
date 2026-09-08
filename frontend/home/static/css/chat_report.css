@@ -40,9 +40,6 @@
 .msg.ai .note em{display:block;margin-top:2px;font-style:normal;
   font-size:10.5px;letter-spacing:.02em;color:var(--pink-2)}
 
-/* 출처 목록은 .rank .row 를 그대로 쓴다 — 이미 눌리는 모양이다.
-   다만 링크라는 걸 보여 주려 커서만 바꾼다. */
-.rank .row[data-href]{cursor:none}
 .rank .row[data-href]:hover .d{color:var(--coral)}
 
 /* 팝업이 좁아지면 카드 2단을 1단으로 접는다. 안 접으면 오른쪽 칸이 30px 남는다. */

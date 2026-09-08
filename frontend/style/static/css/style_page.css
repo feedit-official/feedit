@@ -1,13 +1,13 @@
 /* ══════════════ Style ══════════════ */
 .stCats{display:flex;gap:7px;flex-wrap:wrap}
-.stCat{border-radius:999px;padding:10px 17px;font-size:13px;cursor:none;color:var(--pink-1);
+.stCat{border-radius:999px;padding:10px 17px;font-size:13px;color:var(--pink-1);
   box-shadow:inset 0 0 0 1px var(--pink-3);transition:all .32s var(--ease)}
 .stCat:hover{color:var(--pink-0);box-shadow:inset 0 0 0 1px var(--pink-2);transform:translateY(-2px)}
 .stCat.on{background:var(--pink-0);color:var(--paper);box-shadow:none}
 /* 자동으로 바뀌는 쇼케이스 */
 .stShow{
   position:relative;margin-top:clamp(24px,3.6vh,44px);border-radius:12px;overflow:hidden;
-  aspect-ratio:16/7;background:#e8e4dd;cursor:none;
+  aspect-ratio:16/7;background:#e8e4dd;
 }
 .stShow .sl{position:absolute;inset:0;opacity:0;transition:opacity 1.1s var(--ease)}
 .stShow .sl.on{opacity:1}
@@ -27,7 +27,7 @@
 .stShow .dots i.on{background:var(--coral);transform:scale(1.4)}
 .stGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:12px;
   margin-top:clamp(22px,3vh,38px)}
-.stTile{position:relative;aspect-ratio:3/4;border-radius:9px;overflow:hidden;cursor:none;background:#e8e4dd}
+.stTile{position:relative;aspect-ratio:3/4;border-radius:9px;overflow:hidden;background:#e8e4dd}
 .stTile img{width:100%;height:100%;object-fit:cover;filter:grayscale(.3);
   transition:transform 1.1s var(--ease),filter 1.1s var(--ease)}
 .stTile:hover img{transform:scale(1.07);filter:grayscale(0)}
@@ -78,6 +78,7 @@
 .stAbout dt{font-size:12.5px;color:var(--pink-2)}
 .stAbout dd{font-size:13px;text-align:right;letter-spacing:-.02em}
 .infFeed{display:grid;grid-template-columns:repeat(5,1fr);gap:16px}
+.acctModal .infFeed{grid-template-columns:repeat(3,1fr)}
 .infC{background:#fff;border:1px solid var(--pink-3);border-radius:9px;overflow:hidden}
 .infC .im{aspect-ratio:1;overflow:hidden;background:#e8e4dd}
 .infC .im img{width:100%;height:100%;object-fit:cover;filter:grayscale(.2);
@@ -89,18 +90,30 @@
 .infC .bd b{display:block;font-size:14.5px;font-weight:500}
 .infC .bd span:not(.av){display:block;font-size:12px;color:var(--pink-2);margin-top:3px}
 .itGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(196px,1fr));gap:12px}
-.itC{background:#fff;border:1px solid var(--pink-3);border-radius:9px;overflow:hidden;cursor:none}
-.itC .im{aspect-ratio:1;overflow:hidden;position:relative;
+/* ── 아이템 카드(공용) — 스타일 상세('이 스타일의 아이템')와 마이페이지('오늘의 추천'),
+   찜 목록 모달까지 전부 같은 마크업(itemCard/itemFig/itemBody)과 이 CSS를 그대로 쓴다.
+   화면마다 비율 · 여백을 따로 덮어쓰지 않는다 — 완전히 같은 카드여야 하니까. */
+.itemCard{background:#fff;border:1px solid var(--pink-3);border-radius:9px;overflow:hidden;
+  cursor:pointer;transition:transform .35s var(--ease),border-color .3s}
+.itemCard:hover{transform:translateY(-4px);border-color:var(--pink-2)}
+.itemFig{aspect-ratio:1;overflow:hidden;position:relative;
   background:linear-gradient(150deg,#efe9df 0%,#e4ddd2 42%,#d8cfc0 68%,#ffb49c 100%)}
-.itC .im img{width:100%;height:100%;object-fit:cover;filter:grayscale(.24);
+.itemFig img{width:100%;height:100%;object-fit:cover;filter:grayscale(.24);
   transition:transform 1s var(--ease),filter 1s var(--ease)}
-.itC:hover .im img{transform:scale(1.06);filter:grayscale(0)}
-.itC .im u{position:absolute;left:10px;top:10px;background:rgba(255,255,255,.93);border-radius:99px;
-  padding:5px 10px;font-family:var(--num);font-size:9px;letter-spacing:.12em;color:var(--pink-0)}
-.itC .bd{padding:13px 15px}
-.itC .bd em{font-style:normal;font-family:var(--num);font-size:9.5px;letter-spacing:.16em;color:var(--pink-2)}
-.itC .bd b{display:block;margin-top:7px;font-size:13.5px;font-weight:500;letter-spacing:-.025em}
-.itC .bd span{display:block;margin-top:8px;font-family:var(--num);font-size:12.5px;
+.itemCard:hover .itemFig img{transform:scale(1.06);filter:grayscale(0)}
+.matchTag{position:absolute;left:9px;top:9px;background:rgba(10,10,10,.78);color:#fff;
+  font-family:var(--num);font-size:10px;letter-spacing:.02em;padding:4px 9px;border-radius:999px;z-index:2}
+.likeBtn{position:absolute;right:9px;top:9px;z-index:3;width:29px;height:29px;border-radius:50%;
+  border:none;background:rgba(255,255,255,.9);display:grid;place-items:center;cursor:pointer;
+  transition:transform .25s var(--ease),background .25s var(--ease)}
+.likeBtn:hover{transform:scale(1.08);background:#fff}
+.likeBtn svg{width:15px;height:15px;fill:none;stroke:#1c1a17;stroke-width:1.8px;transition:fill .2s,stroke .2s}
+.likeBtn.on svg{fill:var(--coral);stroke:var(--coral)}
+.itemBody{padding:13px 15px}
+.itemBody .br{font-family:var(--num);font-size:9.5px;letter-spacing:.16em;color:var(--pink-2);
+  text-transform:uppercase;margin-bottom:6px}
+.itemBody .nm{font-size:13.5px;font-weight:500;letter-spacing:-.025em;margin-bottom:7px;line-height:1.35}
+.itemBody .pr{font-family:var(--num);font-size:12.5px;font-weight:600;
   font-feature-settings:'tnum' 1,'zero' 0}
 .itMore{display:flex;justify-content:center;padding:34px 0 8px;
   font-family:var(--num);font-size:10px;letter-spacing:.24em;color:var(--pink-2)}

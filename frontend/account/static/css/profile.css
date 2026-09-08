@@ -17,6 +17,7 @@
 }
 .acct .cInput:focus{box-shadow:inset 0 0 0 1.5px var(--pink-0)}
 .acct .cInput.err{box-shadow:inset 0 0 0 1.5px #c73a24}
+.acct .cInput[readonly]{background:#f3f1ec;color:var(--pink-2);cursor:not-allowed}
 .acct select.cInput{
   appearance:none;-webkit-appearance:none;cursor:pointer;padding-right:34px;
   background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%23999' stroke-width='1.6'%3E%3Cpath d='M5 7.5L10 12.5L15 7.5'/%3E%3C/svg%3E");
@@ -125,7 +126,6 @@
   display:grid;grid-template-columns:repeat(3,1fr);gap:12px;
   max-height:56vh;overflow-y:auto;padding-right:2px;
 }
-.acct .itemCard{background:var(--paper);border:1px solid var(--pink-3);border-radius:12px;overflow:hidden}
 @media(max-width:560px){
   .acct .itemGrid{grid-template-columns:repeat(2,1fr)}
 }
@@ -143,11 +143,6 @@
 .acct .rangeSlider::-moz-range-thumb{width:18px;height:18px;border:none;border-radius:50%;background:var(--coral);cursor:pointer}
 .acct .rangeLab{display:flex;justify-content:space-between;font-size:10.5px;color:var(--pink-2);margin-top:9px}
 .acct .recGrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
-.acct .recCard{
-  background:var(--paper);border:1px solid var(--pink-3);border-radius:12px;overflow:hidden;
-  cursor:pointer;transition:transform .35s var(--ease),border-color .3s;
-}
-.acct .recCard:hover{transform:translateY(-4px);border-color:var(--pink-2)}
 @media(max-width:980px){
   .acct .myGrid{grid-template-columns:1fr}
   .acct .recGrid{grid-template-columns:repeat(2,1fr)}
@@ -161,8 +156,6 @@
 .acct{padding-top:clamp(30px,4vh,54px);padding-bottom:clamp(48px,8vh,96px)}
 .acct .wrap,.acct .authWrap{width:min(1180px,90vw);margin:0 auto}
 .acct .authWrap{display:grid;place-items:center;min-height:calc(100vh - 200px)}
-/* 계정 화면의 칩은 우리 챗 칩과 다른 물건이다 — 여기서만 쓰는 모양 */
-.acct .chip{cursor:none}
 .acctModal{
   position:fixed;inset:0;z-index:60;display:none;place-items:center;
   background:rgba(10,10,10,.42);backdrop-filter:blur(3px);padding:24px;
@@ -181,7 +174,7 @@
    여기서는 헤더 안에 그냥 놓이는 버튼이니 배치를 원위치시킨다. */
 .acctModal .modalClose{position:static;width:30px;height:30px;border-radius:8px;
   display:grid;place-items:center;flex:0 0 auto;box-shadow:none;background:none;
-  color:var(--pink-2);cursor:none;transition:.3s var(--ease)}
+  color:var(--pink-2);transition:.3s var(--ease)}
 .acctModal .modalClose:hover{transform:none}
 .acctModal .modalClose:hover{background:rgba(10,10,10,.05);color:var(--pink-0)}
 .acctModal .modalClose svg{width:16px;height:16px}
@@ -209,7 +202,7 @@
 /* ── 이식하면서 놓쳤던 것들 ──────────────────────────────
    1) .panel 은 이 목업에서 이미 '덱 한 장(100vw × 100vh)' 이다.
       마이페이지 패널이 그걸 물려받아 화면을 통째로 먹고 있었다. 여기서 끊는다.
-   2) 카드 안쪽(.recFig / .recBody / .itemFig …) 규칙이 추출에서 빠져
+   2) 카드 안쪽(.itemFig / .itemBody / .itemFig …) 규칙이 추출에서 빠져
       사진이 크기 제한 없이 늘어났다. 원본 규칙을 그대로 가져온다. */
 .acct .panel{
   flex:0 1 auto;width:auto;height:auto;min-height:0;
@@ -304,7 +297,7 @@
 .acct .leaveBtn:hover{color:#c83a2c;text-decoration-color:rgba(200,58,44,.7)}
 .acct .statRow{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--pink-3);
   border:1px solid var(--pink-3);border-radius:12px;overflow:hidden;margin-top:18px}
-.acct .statCell{background:var(--paper);padding:15px 4px;width:100%;cursor:none;
+.acct .statCell{background:var(--paper);padding:15px 4px;width:100%;
   transition:background .25s var(--ease)}
 .acct .statCell:hover{background:#fff}
 .acct .statCell .n{font-family:var(--num);font-size:17px;font-weight:600;color:var(--pink-0);
@@ -370,7 +363,7 @@
 .bgTiles{display:grid;grid-template-columns:repeat(5,1fr);gap:4px}
 .bgTile{
   display:flex;flex-direction:column;align-items:center;text-align:center;gap:7px;
-  padding:10px 3px;border-radius:12px;cursor:none;
+  padding:10px 3px;border-radius:12px;
   transition:background .22s var(--ease),transform .4s var(--ease);
 }
 .bgTile:hover{background:#fff;transform:translateY(-2px)}
@@ -406,31 +399,7 @@
 .acct .formRow:last-child{margin-bottom:0}
 .acct .formRow>label{display:block;font-size:12.5px;font-weight:600;color:var(--pink-1);margin-bottom:11px}
 .acct .formRow>label span{font-weight:400;color:var(--pink-2);margin-left:5px}
-.acct .recGrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
-.acct .recCard{background:var(--paper);border:1px solid var(--pink-3);border-radius:12px;
-  overflow:hidden;cursor:none;transition:transform .35s var(--ease),border-color .3s}
-.acct .recCard:hover{transform:translateY(-4px);border-color:var(--pink-2)}
-.acct .recFig{aspect-ratio:3/4;position:relative;overflow:hidden;background:#e8e4dd}
-.acct .recFig img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
-.acct .recFig .fitTag{position:absolute;left:9px;top:9px;background:rgba(10,10,10,.78);color:#fff;
-  font-family:var(--num);font-size:10px;letter-spacing:.02em;padding:4px 9px;border-radius:999px;z-index:2}
-.acct .recBody{padding:12px 13px}
-.acct .recBody .br{font-family:var(--num);font-size:9.5px;letter-spacing:.09em;color:var(--pink-2);
-  text-transform:uppercase;margin-bottom:4px}
-.acct .recBody .nm{font-size:12.5px;font-weight:600;margin-bottom:6px;line-height:1.35}
-.acct .recBody .pr{font-family:var(--num);font-size:12.5px;font-weight:600;
-  font-feature-settings:'tnum' 1,'zero' 0}
 .acctModal .itemGrid{max-height:56vh;overflow-y:auto;padding-right:2px}
-.acctModal .recCard{background:var(--paper);border:1px solid var(--pink-3);border-radius:12px;overflow:hidden}
-.acctModal .recFig{aspect-ratio:3/4;position:relative;overflow:hidden;background:#e8e4dd}
-.acctModal .recFig img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
-.acctModal .recFig .fitTag{position:absolute;left:8px;top:8px;background:rgba(10,10,10,.78);color:#fff;
-  font-family:var(--num);font-size:9.5px;padding:3px 8px;border-radius:999px;z-index:2}
-.acctModal .recBody{padding:10px 11px}
-.acctModal .recBody .br{font-family:var(--num);font-size:9px;letter-spacing:.09em;color:var(--pink-2);
-  text-transform:uppercase;margin-bottom:3px}
-.acctModal .recBody .nm{font-size:12px;font-weight:600;line-height:1.35;margin-bottom:4px}
-.acctModal .recBody .pr{font-family:var(--num);font-size:12px;font-weight:600}
 @media(max-width:1080px){
   .acct .myGrid{grid-template-columns:1fr}
   .acct .recGrid{grid-template-columns:repeat(2,1fr)}
@@ -447,7 +416,7 @@
 }
 .acctMenu.on{opacity:1;visibility:visible;transform:translateY(0)}
 .acctMenu button{
-  display:flex;align-items:center;gap:9px;width:100%;cursor:none;
+  display:flex;align-items:center;gap:9px;width:100%;
   padding:10px 12px;border-radius:8px;font-size:13px;color:var(--pink-1);
   letter-spacing:-.02em;transition:.24s var(--ease);text-align:left;
 }
@@ -455,3 +424,32 @@
 .acctMenu button i{font-style:normal;font-size:12px;color:var(--pink-2);width:14px}
 .acctMenu hr{border:0;border-top:1px solid var(--pink-3);margin:4px 6px}
 .acctMenu button.out:hover{color:var(--coral)}
+
+
+/* ── 오늘의 추천 패널 — 높이는 profile.js 가 왼쪽 두 패널 합산 높이에 맞춰 인라인으로
+   맞춘다(syncTodayRecHeight). 카드가 그 높이를 넘으면 잘리지 않고 안에서 스크롤한다. */
+.acct #todayRecPanel{overflow-y:auto}
+
+/* ── 즐겨입는 스타일 저장 버튼 (마이페이지 필터 패널) ── */
+.acct .styleSaveBtn{display:block;width:100%;justify-content:center}
+
+/* ── 가입 완료 후 뜨는 '즐겨입는 스타일' 선택 팝업 ── */
+.acctModal .styleHint{font-size:11px;color:var(--pink-2);margin-top:12px;text-align:center}
+.styleSelectSave{display:block;width:100%;justify-content:center;margin-top:16px}
+.styleSelectGrid{
+  display:grid;grid-template-columns:repeat(4,1fr);gap:12px;
+  max-height:56vh;overflow-y:auto;padding-right:2px;margin-top:2px;
+}
+.styleSelCard{
+  display:flex;flex-direction:column;align-items:center;gap:8px;
+  padding:10px 6px 12px;border-radius:12px;box-shadow:inset 0 0 0 1px var(--pink-3);
+  transition:all .25s var(--ease);text-align:center;
+}
+.styleSelCard img{width:100%;aspect-ratio:3/4;object-fit:cover;border-radius:8px;display:block}
+.styleSelCard span{font-size:12px;color:var(--pink-1);font-weight:500}
+.styleSelCard:hover{box-shadow:inset 0 0 0 1px var(--pink-0)}
+.styleSelCard.on{box-shadow:inset 0 0 0 2px var(--coral)}
+.styleSelCard.on span{color:var(--pink-0);font-weight:600}
+@media(max-width:640px){
+  .styleSelectGrid{grid-template-columns:repeat(2,1fr)}
+}

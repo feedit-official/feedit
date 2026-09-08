@@ -1,5 +1,5 @@
 import { HAS_A, aAnimate, aSpring, aStagger, aUtils } from '../../../core/static/js/dom.js';
-import { ME } from '../../../account/static/js/profile.js';
+import { ME, requireAuth } from '../../../account/static/js/profile.js';
 import { rkClamp, rkRingHTML } from '../../../account/static/js/rank.js';
 import { smBarFill, smBarLabels } from '../../../trend/static/js/discount_resale.js';
 
@@ -298,6 +298,7 @@ function updateCard(i){
 }
 
 function castVote(i,side){
+  if(!requireAuth())return;
   const v=VOTES[i];
   v.voted = (v.voted===side) ? null : side;
   if(v.voted===0) v.a=Math.min(97, v.base+4);
@@ -406,6 +407,7 @@ function escapeHtml(s){
 }
 
 function openModal(i){
+  if(!requireAuth())return;
   modalState.i=i;
   const v=VOTES[i];
   const plate=$('#modalPlate');
@@ -608,6 +610,7 @@ function resetCreateForm(){
   $('#imgDrop').classList.remove('has-img');
 }
 function openCreateModal(){
+  if(!requireAuth())return;
   resetCreateForm();
   $('#createOverlay').classList.add('on');
   document.body.style.overflow='hidden';

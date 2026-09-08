@@ -11,11 +11,10 @@ import { trRender } from './dispatch.js';
    ══════════════════════════════════════════════════════════════ */
 /* 이슈 유형 — [배지 문구, 큰 제목, 색] */
 const SV_KIND={
-  surge:['급등',     '트렌드 지수 폭등',   '#ff6b4a'],
-  low  :['최저가',   '역대 최저가 경신',   '#1f9e6e'],
-  stock:['품절 임박','재고가 얼마 안 남음','#c98a1b'],
-  drop :['급락',     '열기가 빠지는 중',   '#3d7fd6'],
-  calm :['잠잠',     '한 달째 조용함',     '#8a8781']
+  surge:['급등',     '트렌드 지수 <em>폭등</em>',   '#ff6b4a'],
+  low  :['최저가',   '역대 <em>최저가</em> 경신',   '#1f9e6e'],
+  drop :['급락',     '열기가 <em>빠지는 중</em>',   '#3d7fd6'],
+  calm :['잠잠',     '한 달째 <em>조용함</em>',     '#8a8781']
 };
 /* 찜해둔 것들. 위에서부터 오늘 시끄러운 순서다. */
 export const SV=[
@@ -25,9 +24,9 @@ export const SV=[
   {n:'스웨이드 블루종', b:'ANDERSSON',p:329000,lo:298000,img:21, d:23,idx:74,was:71,k:'low',
    why:'클래식',
    note:'298,000원 — 찜한 뒤 가장 낮습니다. 지난 최저가보다 9% 아래.'},
-  {n:'와이드 셀비지',   b:'MUSINSA',  p:159000,lo:159000,img:19, d:14,idx:68,was:64,k:'stock',
+  {n:'와이드 셀비지',   b:'MUSINSA',  p:159000,lo:159000,img:19, d:14,idx:68,was:58,k:'surge',
    why:'아메카지',
-   note:'내 사이즈(32) 재고가 두 자리에서 한 자리로 떨어졌습니다.'},
+   note:'아메카지 검색량이 사흘 새 크게 늘었습니다. 같은 걸 찜해둔 사람도 함께 늘고 있습니다.'},
   {n:'후디 집업',       b:'OFF-WHITE',p:429000,lo:398000,img:18, d:31,idx:38,was:59,k:'drop',
    why:'스트릿',
    note:'2주 연속 내려오는 중입니다. 서두를 이유가 없어졌습니다.'},
@@ -48,7 +47,7 @@ export const SV=[
    note:'고프코어 전반이 식는 흐름을 그대로 따라갑니다.'}
 ];
 const SV_TABS=[['all','전체'],['surge','급등'],['low','최저가'],
-               ['stock','품절 임박'],['drop','급락'],['calm','잠잠']];
+               ['drop','급락'],['calm','잠잠']];
 var SV_F='all';
 
 export const svWon=v=>v.toLocaleString('ko-KR')+'원';
@@ -65,31 +64,24 @@ export function svRender(body){
 
   body.innerHTML=
     /* ── 오늘의 이슈 ─────────────────────────────────
-       좌: 아이템 한 장을 크게. 우: 무슨 일이 벌어졌는지. */
+       금주의 리포트 히어로와 같은 틀 — 사진은 카드 가장자리까지 꽉 차고,
+       문구 칸은 wkCopy/wkLedger/.pill 을 그대로 재사용해 두 히어로가
+       같은 가문의 카드처럼 읽힌다. */
     '<section class="svHero">'+
       '<div class="svShot">'+
         '<img src="'+IMG(h.img)+'" alt="" loading="lazy">'+
-        '<span class="svCap">'+h.b+' '+h.n+' · '+svWon(h.p)+'</span>'+
       '</div>'+
-      '<div class="svSide">'+
-        '<div class="svTop">'+
-          '<span class="svKicker">찜한 것 중에서 · 오늘</span>'+
-          '<i class="svMark" style="--k:'+hk[2]+'"></i>'+
-        '</div>'+
-        '<h2 class="svTitle">'+hk[1]+'</h2>'+
+      '<div class="wkCopy">'+
+        '<div class="wkState">찜한 것 중에서 · 오늘 · '+h.why+'</div>'+
+        '<h3>'+hk[1]+'</h3>'+
         '<p class="svLead">'+h.note+'</p>'+
-        '<div class="svGauge">'+
-          '<div class="svBar">'+
-            '<i class="svFill" data-w="'+h.idx+'" style="--k:'+hk[2]+'"><b>트렌드 지수 '+h.idx+'</b></i>'+
-            '<span class="svRest">지난주 대비 +'+dl+'</span>'+
-            '<u class="svTick" data-x="'+h.was+'"><em>지난주 '+h.was+'</em></u>'+
-          '</div>'+
+        '<div class="wkLedger c3">'+
+          '<div class="ac"><span>트렌드 지수</span><b>'+h.idx+'</b></div>'+
+          '<div><span>지난주 지수</span><b>'+h.was+'</b></div>'+
+          '<div><span>지난주 대비</span><b>'+(dl>=0?'+':'')+dl+'</b></div>'+
         '</div>'+
-        '<div class="svActs">'+
-          '<button type="button" class="svBtn" data-go="life">수명주기에서 보기</button>'+
-          '<button type="button" class="svBtn" data-v="salmal">살!말?에 올리기</button>'+
-        '</div>'+
-        '<div class="svMeta">'+h.d+'일 전 찜 · 같은 걸 찜한 사람 1,284명 · 오늘 04:12 감지</div>'+
+        '<div class="svMeta">'+h.b+' '+h.n+' · '+svWon(h.p)+' · '+h.d+'일 전 찜 · 같은 걸 찜한 사람 1,284명 · 오늘 04:12 감지</div>'+
+        '<button type="button" class="pill" style="margin-top:16px" data-v="salmal"><i>→</i> 살!말?에 올리기</button>'+
       '</div>'+
     '</section>'+
 
@@ -126,13 +118,6 @@ export function svRender(body){
         '지켜볼 게 많아지면 정작 움직인 것을 놓칩니다. <b>정리를 권합니다.</b></span></div>'+
     '</section>';
 
-  /* 사이드바를 거치지 않고 다른 파트로 건너뛴다 — 그쪽 항목도 같이 켜 준다 */
-  const go=$('#trBody .svBtn[data-go]');
-  if(go)go.addEventListener('click',()=>{
-    const id=go.dataset.go;
-    $$('.sItem').forEach(x=>x.classList.toggle('on',x.dataset.tr===id));
-    trRender(id);
-  });
   const fl=$('#trBody .svFilter');
   if(fl)fl.addEventListener('click',e=>{
     const b=e.target.closest('button[data-sv]'); if(!b)return;
@@ -173,24 +158,12 @@ function svRowsIn(){
 }
 
 function svAnimate(){
-  const fill=$('#trBody .svFill'), tick=$('#trBody .svTick');
-  if(tick)tick.style.left=tick.dataset.x+'%';
-  if(!HAS_A){ if(fill)fill.style.width=fill.dataset.w+'%'; svRowsIn(); return }
-  /* 카드가 먼저 조용히 나타나고, 그 안에서 이미지와 문구가 움직인다 */
-  const card=$('#trBody .svHero');
-  if(card)aAnimate(card,{opacity:[0,1],duration:520,ease:'out(2)'});
-  /* 이미지는 아래에서 살짝 올라오며 열린다 */
-  const shot=$('#trBody .svShot');
-  if(shot)aAnimate(shot,{opacity:[0,1],translateY:[22,0],duration:1000,
-    ease:aSpring({stiffness:62,damping:17})});
-  const side=$$('#trBody .svTop, #trBody .svTitle, #trBody .svLead, '+
-                '#trBody .svGauge, #trBody .svActs, #trBody .svMeta');
-  aAnimate(side,{opacity:[0,1],translateY:[14,0],duration:760,
-    delay:aStagger(70,{start:120}),ease:'out(3)'});
-  if(fill){ aUtils.set(fill,{width:'0%'});
-    aAnimate(fill,{width:fill.dataset.w+'%',duration:1180,delay:420,
-      ease:aSpring({stiffness:58,damping:18})}); }
-  if(tick)aAnimate(tick,{opacity:[0,1],duration:600,delay:1000,ease:'out(2)'});
+  if(!HAS_A){ svRowsIn(); return }
+  /* 금주의 리포트 히어로와 같은 방식 — 사진·문구를 따로 움직이지 않고
+     카드 전체가 한 덩어리로 슬라이드+페이드된다(wkAnimate 의 섹션 리빌과 동일 값).
+     따로 움직이면 그 사이로 카드 배경이 드러나 보였다. */
+  const hero=$('#trBody .svHero');
+  if(hero)aAnimate(hero,{opacity:[0,1],translateY:[18,0],duration:820,ease:'out(3)'});
   svRowsIn();
 }
 
@@ -204,25 +177,30 @@ function svAnimate(){
    진행 중인 값을 목표로 잘못 삼는다. */
 /* 좁은 쪽 라벨 처리.
    예전에는 20% 미만이면 글씨를 아예 숨겼는데, 88:12 처럼 한쪽이 크게 이기면
-   진 쪽 %가 통째로 사라져 버렸다. 이제는 숨기지 않고 tight 를 달아
-   글씨가 칸 밖(=상대 막대 위)으로 넘쳐 나오게 둔다. 양쪽 다 항상 읽힌다. */
+   진 쪽 %가 통째로 사라져 버렸다. .tight 로 글씨를 칸 밖(=상대 막대 위)으로
+   넘기던 처리는 이제 CSS(.smBar i 기본 스타일)로 항상 켜져 있다 — 애니메이션이
+   언제 끝났다고 "판정"되는지와 무관하게 어느 순간에 봐도 글씨가 안 묻힌다.
+   이 함수는 그 판정에 쓰던 옛 인라인 opacity 값 정리 용도로만 남는다. */
 export function smBarLabels(bars){
   bars.forEach(b=>{
     const sp=b.querySelector('span');
     if(sp)sp.style.opacity='';               /* 혹시 남아 있을 옛 인라인 값 제거 */
-    b.classList.toggle('tight', +b.dataset.w < 28);
   });
 }
 export function smBarFill(bars, opt){
   bars=(bars||[]).filter(Boolean);
   if(!bars.length)return;
   const o=opt||{};
-  /* 차오르는 동안에는 칸 안에서 글씨가 드러나야 예쁘니 tight 는 끝나고 붙인다 */
-  bars.forEach(b=>{ b.classList.remove('tight'); const sp=b.querySelector('span'); if(sp)sp.style.opacity='' });
-  if(!HAS_A){ bars.forEach(b=>{ b.style.width=b.dataset.w+'%' }); smBarLabels(bars); return }
-  aUtils.remove(bars);                        /* 돌고 있던 게 있으면 먼저 끊는다 */
-  bars.forEach(b=>aUtils.set(b,{width:b.classList.contains('no')?'100%':'0%'}));
-  aAnimate(bars,{width:el=>el.dataset.w+'%',
+  /* .buy 와 .no 를 각자 따로(0%→목표, 100%→목표) 스프링으로 굴리면, 스프링 특유의
+     오버슈트가 둘 사이에서 안 맞아떨어지는 프레임이 생긴다 — 그 순간 두 폭의 합이
+     100%를 넘거나 모자라, .no 쪽이 밀려나거나 좁아져 안의 '말' 글씨가 잠깐 파묻혀
+     보였다(2026-09 실측). .no 는 CSS 에서 flex:1 로 "나머지 전부"를 차지하게 두고,
+     .buy 하나만 애니메이션하면 두 폭의 합은 매 프레임 항상 정확히 100%라 어긋날 수가 없다. */
+  const buys=bars.filter(b=>b.classList.contains('buy'));
+  if(!HAS_A){ buys.forEach(b=>{ b.style.width=b.dataset.w+'%' }); smBarLabels(bars); return }
+  aUtils.remove(buys);                        /* 돌고 있던 게 있으면 먼저 끊는다 */
+  buys.forEach(b=>aUtils.set(b,{width:'0%'}));
+  aAnimate(buys,{width:el=>el.dataset.w+'%',
     duration:o.duration||1000,
     delay:aStagger(o.step==null?26:o.step,{start:o.start||180}),
     ease:aSpring({stiffness:66,damping:17}),

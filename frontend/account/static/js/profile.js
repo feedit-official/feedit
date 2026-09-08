@@ -1,6 +1,6 @@
 import { $, $$, HAS_A, aAnimate, aStagger } from '../../../core/static/js/dom.js';
 import { BADGES, bgDetail, bgRender } from './badges.js';
-import { IMG, STYLES } from '../../../home/static/js/chat.js';
+import { IMG, itemCard, LIKED, STYLES, toggleLike } from '../../../home/static/js/chat.js';
 import { SIMG } from '../../../style/static/js/style_page.js';
 import { SV, svWon } from '../../../trend/static/js/discount_resale.js';
 import { goView } from '../../../app_shell/static/js/router.js';
@@ -87,6 +87,20 @@ bioBind();
    연결해 둔다. API 가 붙으면 authLogin / authSignup / acctSave 안쪽만 갈아 끼우면 된다.
    ══════════════════════════════════════════════════════════════ */
 export var AUTH = { in: false };
+/* 로그인 없이 쓸 수 없는 기능(챗봇 사용 · 트렌드 분석 · 살!말? 투표/등록)의
+   공통 관문. 로그인 전이면 로그인 화면으로 보내고 false 를 돌려준다. */
+export function requireAuth(){
+  if(AUTH.in)return true;
+  goView('login');
+  return false;
+}
+/* 회원가입 진행 중 구글 모드 여부 — 가입 폼을 벗어나면 반드시 초기화된다 */
+let signupGoogleMode = false;
+/* 찜(위시리스트) 데모 시드 — 트렌드의 SV 데이터를 그대로 '찜' 목록 초기값으로 쓴다.
+   이후로는 카드의 하트를 눌러 오가는 것이 유일한 출처다. */
+SV.forEach((s, i) => {
+  LIKED.set('sv-' + i, { img: IMG(s.img), tag: s.d + '일 전', br: s.b, nm: s.n, pr: svWon(s.p) });
+});
 
 /* 헤더 오른쪽 — 로그인 전에는 [로그인], 후에는 [혁진] 버튼이 마이페이지로 */
 function authPaint(){
@@ -126,6 +140,23 @@ function authLogout(){
   authPaint();
   goView('home');
 }
+/* 회원가입 완료(구글 · 아이디 공통) — 홈 화면으로 보낸 뒤 그 위에
+   '즐겨입는 스타일' 선택 팝업을 띄운다. 팝업을 닫아도 화면은 홈에 그대로 남는다. */
+function signupComplete(){
+  AUTH.in = true;
+  authPaint();
+  ME.styles.clear();   /* 팝업은 항상 빈 상태에서 시작한다 */
+  goView('home');
+  openStyleSelect();
+}
+/* 작은 확인 토스트 — 살!말? 쪽과 같은 #toast 를 그대로 쓴다 */
+var acctToastT;
+function acctToast(msg){
+  const t = $('#toast'); if(!t) return;
+  t.textContent = msg; t.classList.add('on');
+  clearTimeout(acctToastT);
+  acctToastT = setTimeout(() => t.classList.remove('on'), 2200);
+}
 
 /* 스타일 칩 — 가입·마이페이지가 같은 14종을 쓴다 */
 function acctChips(host, sel){
@@ -143,16 +174,64 @@ function acctChips(host, sel){
   };
 }
 
-/* 마이페이지 카드 한 장 — 스타일 사진과 대표 아이템을 쓴다 */
-/* 원본 마이페이지 카드 구조 그대로 — 사진 / 브랜드 / 이름 / 가격 */
-function acctCard(o){
-  return '<div class="recCard"' + (o.style ? ' data-style="' + o.style + '"' : '') + '>' +
-    '<div class="recFig"><img src="' + o.img + '" alt="" loading="lazy">' +
-      (o.tag ? '<span class="fitTag">' + o.tag + '</span>' : '') + '</div>' +
-    '<div class="recBody"><div class="br">' + o.br + '</div>' +
-      '<div class="nm">' + o.nm + '</div>' +
-      '<div class="pr">' + o.pr + '</div></div></div>';
+/* 가입 완료 팝업 — 코어/원형 구분 없이 STYLES 순서 그대로, 최대 3개까지 중복 선택.
+   처음엔 아무것도 선택돼 있지 않고(= signupComplete 에서 비워 둔다),
+   3개가 찬 상태에서 새로 고르면 '가장 최근에 골랐던 것'의 테두리가 새 선택으로 옮겨간다. */
+let styleSelOrder = [];
+function styleSelectBuild(){
+  styleSelOrder = [...ME.styles];
+  const host = $('#styleSelectGrid'); if(!host) return;
+  host.innerHTML = STYLES.map(s =>
+    '<button type="button" class="styleSelCard' + (ME.styles.has(s.id) ? ' on' : '') +
+    '" data-style-pick="' + s.id + '"><img src="' + SIMG(s) + '" alt="" draggable="false">' +
+    '<span>' + s.n + '</span></button>').join('');
 }
+function styleSelectBind(){
+  const host = $('#styleSelectGrid');
+  if(host && !host.dataset.bound){
+    host.dataset.bound = '1';
+    host.addEventListener('click', e => {
+      const b = e.target.closest('[data-style-pick]'); if(!b) return;
+      const id = b.dataset.stylePick;
+      if(ME.styles.has(id)){
+        ME.styles.delete(id); b.classList.remove('on');
+        styleSelOrder = styleSelOrder.filter(x => x !== id);
+      }else{
+        if(ME.styles.size >= 3){
+          const last = styleSelOrder.pop();   /* 가장 최근 선택을 밀어낸다 */
+          if(last){
+            ME.styles.delete(last);
+            const prev = host.querySelector('[data-style-pick="' + last + '"]');
+            if(prev) prev.classList.remove('on');
+          }
+        }
+        ME.styles.add(id); b.classList.add('on');
+        styleSelOrder.push(id);
+      }
+    });
+  }
+  const save = $('#styleSelectSave');
+  if(save && !save.dataset.bound){
+    save.dataset.bound = '1';
+    save.addEventListener('click', () => {
+      acctModal('styleSelectModal', false);
+      acctChips($('#styleWrap'), ME.styles);   /* 마이페이지 칩과 동기화 */
+      myRender();
+    });
+  }
+  const close = $('#styleSelectClose');
+  if(close && !close.dataset.bound){
+    close.dataset.bound = '1';
+    close.addEventListener('click', () => acctModal('styleSelectModal', false));
+  }
+}
+function openStyleSelect(){
+  styleSelectBuild();
+  styleSelectBind();
+  acctModal('styleSelectModal', true);
+}
+
+/* 아이템 카드 — '스타일' 상세와 마이페이지가 같은 chat.js 의 itemCard() 를 그대로 쓴다 */
 
 export function myRender(){
   /* 프로필 */
@@ -165,7 +244,7 @@ export function myRender(){
 
   /* 저장 · 투표 수는 실제 데이터에서 센다 */
   const savedN = $('#statSavedN'), votedN = $('#statVotedN');
-  if(savedN) savedN.textContent = (typeof SV !== 'undefined' ? SV.length : ME.saved);
+  if(savedN) savedN.textContent = LIKED.size;
   const voted = (typeof VOTES !== 'undefined')
     ? VOTES.filter(v => v.voted !== null && v.voted !== undefined) : [];
   if(votedN) votedN.textContent = voted.length || ME.votes;
@@ -174,25 +253,23 @@ export function myRender(){
   const badgeN = $('#statBadgeN');
   if(badgeN) badgeN.textContent = BADGES.filter(b => b.earned).length;
 
-  /* 추천 — 고른 취향에 맞춰 바뀐다. 아무것도 안 골랐으면 지금 뜨는 코어 순 */
+  /* 추천 — 고른 취향(최대 3개)을 먼저 채우고, 모자란 자리는 지금 뜨는 코어로 채워
+     왼쪽 프로필·필터 두 패널을 합친 높이만큼 카드가 넉넉히 들어차게 한다.
+     '무난템 · 국밥템' 패널은 없앴고, 그 자리는 이 카드들이 대신 채운다. */
   const picked = STYLES.filter(s => ME.styles.has(s.id));
   const rise = ['확산','재상승','재점화','정점 통과'];
-  const rec = (picked.length ? picked : STYLES.filter(s => rise.includes(s.pk))).slice(0, 6);
+  const seen = new Set();
+  const rec = [...picked, ...STYLES.filter(s => rise.includes(s.pk))]
+    .filter(s => (seen.has(s.id) ? false : (seen.add(s.id), true)))
+    .slice(0, 8);
   const g1 = $('#recGrid');
-  if(g1) g1.innerHTML = rec.slice(0, 4).map((s, i) => acctCard({
-    style: s.id, img: SIMG(s), tag: '매칭 ' + (96 - i * 3) + '%',
-    br: s.en, nm: s.n + ' 룩', pr: s.kw.slice(0, 2).join(' · ')
+  if(g1) g1.innerHTML = rec.map((s, i) => itemCard({
+    id: 'rec-' + s.id, style: s.id, img: SIMG(s), tag: '매칭 ' + (96 - i * 3) + '%',
+    br: s.en, nm: s.kw[(i + 1) % s.kw.length], pr: (45 + ((i * 29 + s.img * 7) % 53)) + '9,000원'
   })).join('');
   const sub = $('#recSub');
   if(sub) sub.textContent = picked.length ? '내 취향 ' + picked.length + '개 기준' : '지금 뜨는 코어 기준';
-
-  /* 무난템 — 흔들림이 적은 원형에서 */
-  const basic = STYLES.filter(s => s.g === '원형').slice(0, 4);
-  const g2 = $('#basicGrid');
-  if(g2) g2.innerHTML = basic.map(s => acctCard({
-    style: s.id, img: SIMG(s), tag: '국밥템',
-    br: s.en, nm: s.n + ' 기본', pr: s.kw[0]
-  })).join('');
+  syncTodayRecHeight();
 
   if(HAS_A){
     aAnimate($$('#v-mypage .panel'), {opacity:[0,1],translateY:[14,0],
@@ -201,10 +278,54 @@ export function myRender(){
   }
 }
 
+/* '오늘의 추천' 패널 높이를 왼쪽 컬럼(프로필+필터) 높이에 정확히 맞춘다 */
+function syncTodayRecHeight(){
+  const left = $('.myGrid .myCol:first-child');
+  const panel = $('#todayRecPanel');
+  if(!left || !panel || !panel.offsetParent) return;
+  panel.style.height = Math.round(left.getBoundingClientRect().height) + 'px';
+}
+if(!window.__recHeightBound){
+  window.__recHeightBound = true;
+  addEventListener('resize', () => syncTodayRecHeight());
+}
+
 /* 모달 */
 function acctModal(id, on){
   const m = $('#' + id);
   if(m) m.classList.toggle('on', on);
+}
+
+/* 카드 오른쪽 위 하트 — 눌러서 찜 토글. 어느 카드에서 누르든(스타일 상세 · 오늘의 추천 ·
+   찜 목록 모달) 같은 저장소(chat.js 의 LIKED)로 모여 마이페이지 '찜'과 곧장 이어진다. */
+export function likeClick(btn){
+  if(!requireAuth())return;
+  const id = btn.dataset.likeId; if(!id) return;
+  const on = toggleLike(id);
+  btn.classList.toggle('on', on);
+  const n = $('#statSavedN');
+  if(n) n.textContent = LIKED.size;
+}
+
+/* 회원가입 폼 초기화 — 완료하지 않고 다른 화면으로 나가면 구글 모드를 포함해
+   다음에 다시 들어왔을 때 처음 상태 그대로 보이게 한다. */
+export function resetSignupForm(){
+  signupGoogleMode = false;
+  const gs = $('#googleSignupBtn'), suIdField = $('#suIdField'), suPwBlock = $('#suPwBlock'),
+        div = $('#signupGoogleDivider'), note = $('#signupGoogleNote'), suId = $('#suId'),
+        err = $('#signupErr'), form = $('#signupForm'),
+        idMsg = $('#suIdMsg'), pwMsg = $('#suPwMsg'), bodyMsg = $('#suBodyMsg');
+  if(gs) gs.hidden = false;
+  if(suIdField) suIdField.hidden = false;
+  if(suPwBlock) suPwBlock.hidden = false;
+  if(div) div.hidden = false;
+  if(note) note.hidden = true;
+  if(suId) suId.readOnly = false;
+  if(err) err.style.display = 'none';
+  if(form) form.reset();
+  if(idMsg){ idMsg.textContent = ''; idMsg.className = 'fieldMsg'; }
+  if(pwMsg){ pwMsg.textContent = ''; pwMsg.className = 'fieldMsg'; }
+  if(bodyMsg){ bodyMsg.textContent = ''; bodyMsg.className = 'fieldMsg'; }
 }
 
 export function acctBoot(){
@@ -224,34 +345,58 @@ export function acctBoot(){
   if(gl) gl.addEventListener('click', authLogin);
 
   /* ── 회원가입 ── */
-  acctChips($('#styleChips'), ME.styles);
   const sf = $('#signupForm');
   if(sf) sf.addEventListener('submit', e => {
     e.preventDefault();
     const err = $('#signupErr');
-    const id = $('#suId').value.trim(), nick = $('#suNickname').value.trim();
+    const nick = $('#suNickname').value.trim();
     const pw = $('#suPw').value, pw2 = $('#suPw2').value;
+    const id = $('#suId').value.trim();
     let msg = '';
-    if(!/^[A-Za-z0-9]{4,16}$/.test(id)) msg = '아이디는 영문·숫자 4~16자로 입력해 주세요.';
-    else if(nick.length < 2 || nick.length > 12) msg = '닉네임은 2~12자로 입력해 주세요.';
-    else if(pw.length < 8) msg = '비밀번호는 8자 이상이어야 합니다.';
-    else if(pw !== pw2) msg = '비밀번호가 서로 다릅니다.';
-    else if(!ME.styles.size) msg = '즐겨입는 스타일을 하나 이상 골라 주세요.';
-    else {
-      const b = bodyCheck($('#suHeight').value, $('#suWeight').value);
-      if(b) msg = b;
+    if(signupGoogleMode){
+      /* 구글로 가입 — 아이디 칸엔 구글 이메일이 이미 채워져 있고 수정할 수 없다.
+         비밀번호도 구글이 대신하니 닉네임·체형만 본다 */
+      if(nick.length < 2 || nick.length > 12) msg = '닉네임은 2~12자로 입력해 주세요.';
+      else {
+        const b = bodyCheck($('#suHeight').value, $('#suWeight').value);
+        if(b) msg = b;
+      }
+    }else{
+      if(!/^[A-Za-z0-9]{4,16}$/.test(id)) msg = '아이디는 영문·숫자 4~16자로 입력해 주세요.';
+      else if(nick.length < 2 || nick.length > 12) msg = '닉네임은 2~12자로 입력해 주세요.';
+      else if(pw.length < 8) msg = '비밀번호는 8자 이상이어야 합니다.';
+      else if(pw !== pw2) msg = '비밀번호가 서로 다릅니다.';
+      else {
+        const b = bodyCheck($('#suHeight').value, $('#suWeight').value);
+        if(b) msg = b;
+      }
     }
     if(msg){ err.textContent = msg; err.style.display = 'block'; return; }
     err.style.display = 'none';
     ME.name = nick; ME.initial = nick[0];
-    ME.mail = id + '@feedit.co.kr';
+    ME.mail = id;   /* 구글 가입=구글 이메일, 아이디 가입=입력한 아이디 그대로 */
     ME.birth = $('#suBirth').value || ME.birth;
     ME.height = $('#suHeight').value || '';
     ME.weight = $('#suWeight').value || '';
-    authLogin();
+    signupComplete();
   });
+  /* 구글로 계속하기 — 목업이라 실제 구글 인증은 없지만, 흐름은 그대로 흉내낸다.
+     같은 회원가입 폼 위에서 아이디/비밀번호 입력만 막고 닉네임·생년월일·체형을 마저 받는다. */
   const gs = $('#googleSignupBtn');
-  if(gs) gs.addEventListener('click', authLogin);
+  if(gs) gs.addEventListener('click', () => {
+    signupGoogleMode = true;
+    const suId = $('#suId'), suIdMsg = $('#suIdMsg');
+    if(suId){
+      suId.value = 'google.' + (Date.now() % 100000) + '@gmail.com';
+      suId.readOnly = true;
+    }
+    if(suIdMsg){ suIdMsg.textContent = 'Google 계정 이메일이라 수정할 수 없어요.'; suIdMsg.className = 'fieldMsg ok'; }
+    $('#suPwBlock').hidden = true;
+    $('#signupGoogleDivider').hidden = true;
+    $('#signupGoogleNote').hidden = false;
+    gs.hidden = true;
+    $('#suNickname').focus();
+  });
   /* 아이디·비밀번호 안내는 치는 동안 바로 알려 준다 */
   const suId = $('#suId'), suIdMsg = $('#suIdMsg');
   if(suId) suId.addEventListener('input', () => {
@@ -296,6 +441,11 @@ if(suW) suW.addEventListener('input', bodyHint);
 
 /* ── 마이페이지 ── */
   acctChips($('#styleWrap'), ME.styles);
+  const ssb = $('#styleSaveBtn');
+  if(ssb) ssb.addEventListener('click', () => {
+    myRender();
+    acctToast('즐겨입는 스타일이 저장됐어요.');
+  });
   /* 로그아웃은 헤더 계정 메뉴 한 곳으로 모았다 (#menuLogout) */
   /* 아이콘 색 바꾸기 */
   const avb = $('#avatarEditBtn');
@@ -352,9 +502,9 @@ if(suW) suW.addEventListener('input', bodyHint);
   const sb = $('#statSavedBtn');
   if(sb) sb.addEventListener('click', () => {
     const g = $('#savedGrid');
-    if(g) g.innerHTML = (typeof SV !== 'undefined' ? SV : []).map(s => acctCard({
-      img: IMG(s.img), tag: s.d + '일 전', br: s.b, nm: s.n, pr: svWon(s.p)
-    })).join('') || '<p class="fieldMsg">저장한 아이템이 없습니다.</p>';
+    const items = [...LIKED.entries()];
+    if(g) g.innerHTML = items.map(([id, d]) => itemCard({ ...d, id })).join('') ||
+      '<p class="fieldMsg">찜한 아이템이 없습니다.</p>';
     acctModal('savedModal', true);
   });
   const vb = $('#statVotedBtn');
@@ -362,7 +512,7 @@ if(suW) suW.addEventListener('input', bodyHint);
     const g = $('#votedGrid');
     const voted = (typeof VOTES !== 'undefined')
       ? VOTES.filter(v => v.voted !== null && v.voted !== undefined) : [];
-    if(g) g.innerHTML = voted.map(v => acctCard({
+    if(g) g.innerHTML = voted.map(v => itemCard({
       img: v.imgURL, tag: v.voted === 0 ? '살! 선택' : '말? 선택',
       br: v.b, nm: v.t, pr: fmtWon(v.p)
     })).join('') || '<p class="fieldMsg">아직 투표한 카드가 없습니다. 살!말? 에서 골라 보세요.</p>';

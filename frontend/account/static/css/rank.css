@@ -60,6 +60,12 @@
   mask-composite:exclude;
   animation:rkSpin var(--rk-dur) linear infinite;
 }
+/* i 는 흔한 아이콘 태그라, 링이 .pill 안에 들어가는 네비바 프로필에서는
+   ".pill:hover i{transform:translateX(4px)}" 같은 범용 호버 규칙이 이 회전판(<i>)에도
+   걸려 버려 마우스를 올릴 때 하이라이트만 오른쪽으로 밀려 "링이 딸려오는" 것처럼 보였다.
+   이 레이어의 회전은 --rka 각도로만 표현하고 transform 은 절대 쓰지 않으니
+   .pill 호버에서 들어오는 transform 은 항상 무시한다. */
+.mAuth .pill.me:hover .rkRing i{transform:none}
 /* 두 번째 겹 — 한 칸 바깥에서 반대편을 돈다. 주기를 어긋내야 패턴이 생긴다 */
 .rkRing i.o2{inset:calc(var(--rkS,72px) * -.052);opacity:.62;
   animation-delay:calc(var(--rk-dur) * -.5);

@@ -65,7 +65,7 @@
 /* Hot Trend Top 10 — 배경 없이 글자만. 오른쪽에 붙어 위로 열린다. */
 .hot{width:100%;position:relative;z-index:7;display:flex;justify-content:flex-end}
 .hotBar{
-  display:flex;align-items:center;gap:12px;cursor:none;
+  display:flex;align-items:center;gap:12px;
   background:none;color:var(--pink-0);padding:4px 2px 6px;
   transition:opacity .32s var(--ease);
 }
@@ -108,7 +108,7 @@
 }
 .hotList button{
   display:flex;justify-content:flex-end;align-items:center;gap:12px;width:100%;
-  padding:6px 2px;cursor:none;background:none;opacity:0;
+  padding:6px 2px;background:none;opacity:0;
   transition:opacity .3s;
 }
 .hotList button:hover .k{color:var(--coral)}
@@ -167,7 +167,7 @@
 }
 .ghostQ .qline i b{color:var(--coral);font-weight:400}
 .salmalBtn{
-  display:inline-flex;align-items:center;gap:7px;cursor:none;flex:0 0 auto;z-index:2;
+  display:inline-flex;align-items:center;gap:7px;flex:0 0 auto;z-index:2;
   border-radius:999px;padding:10px 14px;font-size:12.5px;white-space:nowrap;
   box-shadow:inset 0 0 0 1px var(--pink-3);color:var(--pink-1);background:#fff;
   transition:color .3s,box-shadow .3s;
@@ -175,14 +175,14 @@
 .salmalBtn:hover{color:var(--coral);box-shadow:inset 0 0 0 1px var(--coral)}
 .sendBtn{
   width:40px;height:40px;border-radius:50%;background:var(--pink-0);color:var(--paper);
-  display:grid;place-items:center;font-size:15px;flex:0 0 auto;cursor:none;z-index:2;
+  display:grid;place-items:center;font-size:15px;flex:0 0 auto;z-index:2;
   transition:transform .35s var(--ease);
 }
 .sendBtn:hover{transform:scale(1.08)}
 /* 예시 질문 — 여유 있게 키우고 챗바와 같은 오른쪽 기준으로 맞춘다 */
 .chips{display:flex;gap:8px;flex-wrap:wrap;width:100%;justify-content:flex-end}
 .chip{
-  border-radius:999px;padding:10px 15px;font-size:12.5px;cursor:none;white-space:nowrap;
+  border-radius:999px;padding:10px 15px;font-size:12.5px;white-space:nowrap;
   color:var(--pink-1);box-shadow:inset 0 0 0 1px var(--pink-3);
   transition:color .3s,box-shadow .3s,transform .3s var(--ease);
 }
@@ -208,7 +208,7 @@
   color:var(--pink-2);font-feature-settings:'zero' 0}
 .rank{display:flex;flex-direction:column}
 .rank .row{display:grid;grid-template-columns:22px 1fr auto;align-items:center;gap:12px;
-  padding:10px 0;border-bottom:1px solid var(--pink-3);cursor:none}
+  padding:10px 0;border-bottom:1px solid var(--pink-3)}
 .rank .row:last-child{border-bottom:0}
 .rank .row:hover .k{color:var(--coral)}
 .rank .n{font-family:var(--num);font-size:11.5px;color:var(--pink-2);font-feature-settings:'zero' 0}

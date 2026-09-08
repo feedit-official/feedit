@@ -108,6 +108,31 @@ export const INF_NAMES=['@seoul.layer','@quiet_wardrobe','@rok.archive','@fitche
                  '@wovenmood','@studio.plain','@thread.note'];
 export const ITEM_BRANDS=['NIKE','MUSINSA STANDARD','ETCE','POLO','ADIDAS','LEMAIRE','ANDERSSON BELL','AMOMENTO'];
 
+/* ── 아이템 카드 — '스타일' 상세의 '이 스타일의 아이템'과 마이페이지 '오늘의 추천'
+   두 곳에서 그대로 재사용하는 공용 컴포넌트. match 를 넘긴 경우(마이페이지 추천)에만
+   왼쪽 위에 매칭률 뱃지가 붙고, 하단은 브랜드 · 상품명 · 가격이 항상 세로로 쌓인다. */
+export const LIKED = new Map();      /* 찜 저장소 — id → 카드 데이터. 마이페이지 '찜'이 여기서 나온다 */
+const ITEM_REGISTRY = new Map();     /* 하트를 누를 때 어떤 카드였는지 되찾기 위한 등록부 */
+export function toggleLike(id){
+  if(LIKED.has(id)){ LIKED.delete(id); return false; }
+  const d = ITEM_REGISTRY.get(id); if(!d) return false;
+  LIKED.set(id, d);
+  return true;
+}
+export function itemCard(o){
+  if(o.id) ITEM_REGISTRY.set(o.id, { img: o.img, br: o.br, nm: o.nm, pr: o.pr, tag: o.tag, style: o.style });
+  const liked = !!(o.id && LIKED.has(o.id));
+  return '<div class="itemCard"' + (o.style ? ' data-style="' + o.style + '"' : '') + '>' +
+    '<div class="itemFig"><img src="' + o.img + '" alt="" loading="lazy">' +
+      (o.tag ? '<span class="matchTag">' + o.tag + '</span>' : '') +
+      (o.id ? '<button type="button" class="likeBtn' + (liked ? ' on' : '') + '" data-like-id="' + o.id + '" aria-label="찜하기">' +
+        '<svg viewBox="0 0 24 24"><path d="M12 21s-7.6-4.6-10.3-9.1C.2 9 1 5.5 4 4.1c2.4-1.1 5-.2 6.5 1.8L12 8l1.5-2.1c1.5-2 4.1-2.9 6.5-1.8 3 1.4 3.8 4.9 2.3 7.8C19.6 16.4 12 21 12 21z"/></svg></button>' : '') +
+    '</div>' +
+    '<div class="itemBody"><div class="br">' + o.br + '</div>' +
+      '<div class="nm">' + o.nm + '</div>' +
+      '<div class="pr">' + o.pr + '</div></div></div>';
+}
+
 /* ── Hot Trend Top 10 ───────────────────────────────── */
 var hotI=0, hotOpen=false;
 function hotStep(){

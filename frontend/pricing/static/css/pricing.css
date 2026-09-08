@@ -20,12 +20,12 @@
 .prCard li u{color:var(--coral);text-decoration:none;flex:0 0 auto}
 .faq{margin-top:clamp(46px,7vh,86px);border-top:1px solid var(--pink-3)}
 .faq details{border-bottom:1px solid var(--pink-3)}
-.faq summary{padding:20px 0;font-size:14.5px;letter-spacing:-.025em;cursor:none;
+.faq summary{padding:20px 0;font-size:14.5px;letter-spacing:-.025em;
   display:flex;justify-content:space-between;gap:20px;list-style:none}
 .faq summary::-webkit-details-marker{display:none}
 .faq summary::after{content:"+";color:var(--pink-2);font-size:16px;transition:transform .35s var(--ease)}
 .faq details[open] summary::after{transform:rotate(45deg)}
-.faq p{padding:0 0 22px;color:var(--pink-1);font-size:13.5px;line-height:1.85;max-width:64ch}
+.faq p{padding:0 0 22px;color:var(--pink-1);font-size:13.5px;line-height:1.85}
 
 @media (max-width:1000px){
   .heroR{width:100%;margin-top:clamp(30px,5vh,56px)}
@@ -141,7 +141,7 @@
   background:rgba(12,20,28,.16);overflow:hidden;opacity:0}
 .stBar i{display:block;height:100%;width:0;background:var(--coral);border-radius:99px}
 .stCta{
-  display:inline-flex;align-items:center;gap:10px;cursor:none;white-space:nowrap;opacity:0;
+  display:inline-flex;align-items:center;gap:10px;white-space:nowrap;opacity:0;
   background:#0c1116;color:#f4f6f8;border-radius:999px;padding:16px 32px;font-size:15px;
   letter-spacing:-.015em;box-shadow:0 22px 44px -24px rgba(12,20,28,.6);
   transition:transform .4s var(--ease),background .3s,color .3s;

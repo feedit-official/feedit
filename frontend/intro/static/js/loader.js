@@ -34,19 +34,13 @@ ALL.forEach(o=>{
   slot.appendChild(im); o.el=im;
 });
 
-/* ---------- 커서 ---------- */
+/* ---------- 커서 ----------
+   커스텀 점+링 커서는 껐다 — 기본 마우스 포인터를 그대로 쓴다.
+   (본문 전체의 cursor:none 도 함께 제거했다 — core/static/css/tokens.css 등) */
 (function cursor(){
   const dot=$('#cur'), ring=$('#curRing');
-  if(!dot||!window.matchMedia||!matchMedia('(hover:hover) and (pointer:fine)').matches){
-    if(dot)dot.style.display='none'; if(ring)ring.style.display='none'; return;
-  }
-  let mx=innerWidth/2,my=innerHeight/2,rx=mx,ry=my;
-  addEventListener('mousemove',e=>{mx=e.clientX;my=e.clientY});
-  (function l(){requestAnimationFrame(l);
-    rx+=(mx-rx)*.16; ry+=(my-ry)*.16;
-    dot.style.transform='translate3d('+mx+'px,'+my+'px,0)';
-    ring.style.transform='translate3d('+rx+'px,'+ry+'px,0)';
-  })();
+  if(dot)dot.style.display='none';
+  if(ring)ring.style.display='none';
 })();
 
 /* ============================================================

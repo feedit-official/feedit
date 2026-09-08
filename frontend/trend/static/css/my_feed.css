@@ -4,7 +4,8 @@
 .tpSecLabel{display:flex;align-items:baseline;justify-content:space-between;gap:20px;margin-bottom:14px}
 .tpSecLabel h3{font-size:clamp(22px,2.8vw,32px);font-weight:600;letter-spacing:-.04em}
 .tpSecLabel span{font-family:var(--num);font-size:9px;letter-spacing:.18em;color:var(--pink-2)}
-.tpPulseGrid{display:grid;grid-template-columns:1.18fr .82fr;gap:14px}
+/* fr 트랙만 쓰면 트랙의 최소 크기가 내용(숫자)의 min-content 폭을 따라가 카운트업 도중 오른쪽 카드 폭이 흔들렸다(2026-09 실측). minmax(0,...)로 최소 크기를 0으로 못박아 내용과 무관하게 비율이 고정되게 한다. */
+.tpPulseGrid{display:grid;grid-template-columns:minmax(0,1.18fr) minmax(0,.82fr);gap:14px}
 .tpCard{background:#fff;border:1px solid var(--pink-3);border-radius:12px}
 .tpHero{padding:28px 30px;min-height:260px;display:flex;flex-direction:column;justify-content:space-between;
   position:relative;overflow:hidden}
@@ -90,7 +91,7 @@
 .mfProf h4{font-size:16px;font-weight:600;letter-spacing:-.03em}
 .mfProf .em{margin-top:6px;font-size:11.5px;color:var(--pink-2)}
 .mfProf .rkRow{margin-top:13px;display:flex;justify-content:center;gap:6px;flex-wrap:wrap}
-.mfEdit{display:block;width:100%;margin-top:18px;padding:11px;border-radius:8px;cursor:none;
+.mfEdit{display:block;width:100%;margin-top:18px;padding:11px;border-radius:8px;
   border:1px solid var(--pink-3);font-size:12.5px;color:var(--pink-1);
   transition:border-color .3s,color .3s}
 .mfEdit:hover{border-color:var(--pink-0);color:var(--pink-0)}
@@ -115,16 +116,16 @@
   font-size:12px;color:var(--pink-1)}
 .mfFil .sub em{font-style:normal;font-size:10.5px;color:var(--pink-2)}
 .mfChips{display:flex;flex-wrap:wrap;gap:6px;margin-top:11px}
-.mfChips button{padding:7px 13px;border-radius:999px;cursor:none;font-size:11.5px;
+.mfChips button{padding:7px 13px;border-radius:999px;font-size:11.5px;
   border:1px solid var(--pink-3);color:var(--pink-1);
   transition:background .28s,color .28s,border-color .28s}
 .mfChips button:hover{border-color:var(--pink-1)}
 .mfChips button.on{background:var(--pink-0);border-color:var(--pink-0);color:var(--paper)}
 .mfRange{margin-top:20px}
 .mfRange input{-webkit-appearance:none;appearance:none;width:100%;height:4px;border-radius:99px;
-  background:rgba(10,10,10,.09);outline:none;margin-top:12px;cursor:none}
+  background:rgba(10,10,10,.09);outline:none;margin-top:12px}
 .mfRange input::-webkit-slider-thumb{-webkit-appearance:none;width:17px;height:17px;
-  border-radius:50%;background:var(--coral);cursor:none;
+  border-radius:50%;background:var(--coral);
   box-shadow:0 3px 9px -3px rgba(240,78,40,.9)}
 .mfRange input::-moz-range-thumb{width:17px;height:17px;border:0;border-radius:50%;
   background:var(--coral)}
@@ -137,7 +138,7 @@
 .mfSec .ph h3{font-size:15px;font-weight:600;letter-spacing:-.03em}
 .mfSec .ph em{font-style:normal;font-size:11px;color:var(--pink-2)}
 .mfGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(168px,1fr));gap:12px}
-.pItem{position:relative;border-radius:9px;overflow:hidden;background:#efece7;cursor:none;
+.pItem{position:relative;border-radius:9px;overflow:hidden;background:#efece7;
   border:1px solid var(--pink-3);
   transition:transform .5s var(--ease),box-shadow .5s var(--ease)}
 .pItem:hover{transform:translateY(-4px);box-shadow:0 26px 44px -30px rgba(10,10,10,.5)}
@@ -167,7 +168,10 @@
 /* ── 공용 패션 검색 (할인률 · 리세일 · 수명주기) ──────────
    자유롭게 치되 결과는 반드시 어휘로 해석된다. 해석되면 칩이 되고,
    안 되면 세부 검색으로 넘겨 사용자가 직접 짚게 한다. */
-.fsWrap{position:relative;z-index:20;margin:0 0 18px}
+/* z-index:20 이 상단 고정 헤더(.mHead, z-index:20)와 같아서 천천히 스크롤하면
+   동률 시 DOM 순서상 나중인 이 검색바가 헤더 위로 올라와 걸쳐 보였다.
+   헤더보다 항상 아래에 깔리도록 낮춘다. */
+.fsWrap{position:relative;z-index:5;margin:0 0 18px}
 .fsRow{display:flex;gap:10px;align-items:stretch;
   width:min(720px,100%);margin:0 auto}
 .fsBar{
@@ -195,14 +199,14 @@
 .fsBar.typing .fsGhost{opacity:0}
 .fsClear{width:22px;height:22px;padding:0;border-radius:50%;flex:0 0 22px;
   background:rgba(10,10,10,.06);color:var(--pink-1);font-size:13px;line-height:1;
-  display:grid;place-items:center;cursor:none;box-shadow:none}
+  display:grid;place-items:center;box-shadow:none}
 /* display:grid 가 [hidden] 의 display:none 을 이겨 버린다 — 명시적으로 되돌린다 */
 .fsClear[hidden]{display:none}
 .fsClear:hover{background:var(--coral);color:#fff}
 .fsMore{
   flex:0 0 auto;display:inline-flex;align-items:center;gap:7px;padding:0 18px;
   border-radius:999px;background:var(--pink-0);color:var(--paper);
-  font-size:13px;letter-spacing:-.02em;white-space:nowrap;cursor:none;
+  font-size:13px;letter-spacing:-.02em;white-space:nowrap;
   transition:background .3s,transform .3s var(--ease);
 }
 .fsMore u{text-decoration:none;font-size:10px;opacity:.7;
@@ -220,7 +224,7 @@
 }
 .fsSug .sg{
   display:flex;align-items:center;gap:11px;width:100%;padding:10px 12px;
-  border-radius:9px;text-align:left;cursor:none;transition:background .16s;
+  border-radius:9px;text-align:left;transition:background .16s;
 }
 .fsSug .sg.on{background:rgba(255,107,74,.09)}
 .fsSug .sg .fc{
@@ -243,7 +247,7 @@
   border-radius:999px;background:var(--pink-0);color:var(--paper);
   font-size:12px;letter-spacing:-.02em;white-space:nowrap}
 .fsChip small{font-family:var(--num);font-size:8.5px;letter-spacing:.08em;opacity:.55}
-.fsChip button{width:16px;height:16px;border-radius:50%;cursor:none;
+.fsChip button{width:16px;height:16px;border-radius:50%;
   background:rgba(241,239,234,.18);color:var(--paper);font-size:11px;line-height:1;
   display:grid;place-items:center}
 .fsChip button:hover{background:var(--coral)}
@@ -266,7 +270,7 @@
   padding:22px 24px 18px;border-bottom:1px solid var(--pink-3)}
 .fsPopHead h3{font-size:16px;font-weight:600;letter-spacing:-.03em}
 .fsPopHead p{margin-top:6px;font-size:12px;color:var(--pink-2);line-height:1.65;max-width:56ch}
-.fsX{width:30px;height:30px;border-radius:50%;flex:0 0 auto;cursor:none;
+.fsX{width:30px;height:30px;border-radius:50%;flex:0 0 auto;
   background:rgba(10,10,10,.06);color:var(--pink-1);font-size:16px;line-height:1;
   display:grid;place-items:center}
 .fsX:hover{background:var(--coral);color:#fff}
@@ -278,7 +282,7 @@
 .fsList{flex:1;min-height:0;overflow-y:auto;padding:6px}
 .fsList button{
   display:flex;align-items:center;justify-content:space-between;gap:8px;
-  width:100%;padding:9px 11px;border-radius:8px;cursor:none;text-align:left;
+  width:100%;padding:9px 11px;border-radius:8px;text-align:left;
   font-size:13px;letter-spacing:-.02em;color:var(--pink-1);
   transition:background .16s,color .16s;
 }
@@ -299,10 +303,10 @@
 .fsPicked{display:flex;flex-wrap:wrap;gap:7px;min-height:28px;align-items:center}
 .fsPicked .ph2{font-size:12px;color:var(--pink-2)}
 .fsActs{display:flex;gap:9px;flex:0 0 auto}
-.fsReset{padding:11px 16px;border-radius:999px;font-size:12.5px;cursor:none;
+.fsReset{padding:11px 16px;border-radius:999px;font-size:12.5px;
   color:var(--pink-1);background:rgba(10,10,10,.05)}
 .fsReset:hover{background:rgba(10,10,10,.1)}
-.fsApply{padding:11px 20px;border-radius:999px;font-size:12.5px;cursor:none;
+.fsApply{padding:11px 20px;border-radius:999px;font-size:12.5px;
   background:var(--coral);color:#fff;display:inline-flex;align-items:center;gap:8px;
   transition:transform .3s var(--ease),filter .3s}
 .fsApply u{text-decoration:none;transition:transform .3s var(--ease)}

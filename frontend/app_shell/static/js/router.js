@@ -1,12 +1,12 @@
 import { $, $$, HAS_A, aAnimate, aSpring, aStagger, aTimeline, aUtils } from '../../../core/static/js/dom.js';
-import { AUTH, acctBoot, myRender } from '../../../account/static/js/profile.js';
+import { AUTH, acctBoot, likeClick, myRender, requireAuth, resetSignupForm } from '../../../account/static/js/profile.js';
 import { M_CHIPS, SM_ON, hotBuild, newChat, qRoll, sendChat, smSwitch } from '../../../home/static/js/chat.js';
 import { closeChatPopup, cpEditTitle, cpNewConvo, cpRenderList, cpRenderThread, cpSend, cpStore, cpToggleMode, openChatWith } from '../../../home/static/js/chat_popup.js';
 import { mPaintVote, mVote, smBuild } from '../../../salmal/static/js/nav_widget.js';
 import { prBuild } from '../../../pricing/static/js/pricing.js';
 import { renderDeck } from '../../../intro/static/js/deck.js';
 import { salmalBoot } from '../../../salmal/static/js/vote_app.js';
-import { stBuild, stItemPage, stMoreItems, stOpen } from '../../../style/static/js/style_page.js';
+import { stBuild, stItemPage, stMoreItems, stOpen, stOpenFit } from '../../../style/static/js/style_page.js';
 import { trBuild, trRender } from '../../../trend/static/js/dispatch.js';
 
 /* ============================================================
@@ -15,6 +15,21 @@ import { trBuild, trRender } from '../../../trend/static/js/dispatch.js';
    스크롤을 따라 한 단어씩 물드는 문단, 검정 알약 버튼.
    ============================================================ */
 export var mainMode=false, mainReady=false, curView='home';
+
+/* ── 브라우저 뒤로가기 ─────────────────────────────────
+   화면이 바뀔 때마다 히스토리 항목을 쌓아 두고(pushNav), popstate 로 그
+   항목을 다시 읽어 같은 화면 · 같은 탭 · 같은 스타일로 복원한다.
+   navSkip 은 popstate 로 인한 복원 자체가 새 히스토리 항목을 또 쌓는 걸
+   막는 플래그다. */
+let curTr='myfeed', curStyleId=null, navSkip=false;
+function navState(){
+  return { view:curView, tr:curView==='trend'?curTr:null, style:curView==='style'?curStyleId:null };
+}
+function pushNav(){
+  if(navSkip){ navSkip=false; return }
+  if(!mainMode)return;   /* 랜딩(인트로) 단계에서는 기록하지 않는다 */
+  history.pushState(navState(), '', location.href);
+}
 
 /* ── 히어로 등장 ────────────────────────────────────── */
 function mHeroIn(){
@@ -56,6 +71,7 @@ function trSideReset(){
 export function goView(v){
   if(!v)return;
   if(v===curView){ scrollTo(0,0); return }
+  if(curView==='signup'&&v!=='signup')resetSignupForm();   /* 완료 안 하고 나가면 다음엔 처음 상태로 */
   curView=v;
   $$('#mNav button').forEach(b=>b.classList.toggle('on',b.dataset.v===v));
   document.body.classList.toggle('acctmode',v==='login'||v==='signup'||v==='mypage');
@@ -96,20 +112,24 @@ export function goView(v){
   /* 트렌드 분석 — 들어올 때마다 내 피드에서 다시 시작하고,
      사이드바는 접힌 상태에서 스르륵 열리며 화면이 전개된다. */
   if(v==='trend'){
+    if(!AUTH.in){ setTimeout(()=>goView('login'),0); return }
     window.__trOn=1;
     window.__trEnterAt=Date.now();     /* 사이드바 전환과 겹치지 않게 재는 기준점 */
     trSideReset();                       /* 전환 없이 접어 둔다 — 열리는 장면을 보여 주려고 */
-    $$('.sItem').forEach(x=>x.classList.toggle('on',x.dataset.tr==='myfeed'));
-    setTimeout(()=>trRender('myfeed'),130);
+    const startTr=window.__trWant||'myfeed'; window.__trWant=null; curTr=startTr;
+    $$('.sItem').forEach(x=>x.classList.toggle('on',x.dataset.tr===startTr));
+    setTimeout(()=>trRender(startTr),130);
     setTimeout(()=>trSideOpen(true),240); /* 본문이 올라오기 시작할 때 같이 열린다 */
   }
+  pushNav();
 }
 function goStyle(id){
-  curView='style';
+  curView='style'; curStyleId=id;
   document.body.classList.remove('athome');
   $$('#mNav button').forEach(b=>b.classList.toggle('on',b.dataset.v==='style'));
   $$('.view').forEach(s=>s.classList.toggle('on',s.id==='v-style'));
   stOpen(id);
+  pushNav();
 }
 
 /* ── 조립 ───────────────────────────────────────────── */
@@ -134,6 +154,10 @@ function goStyle(id){
 
 /* ── 상호작용 ───────────────────────────────────────── */
 document.addEventListener('click',e=>{
+  const like=e.target.closest('[data-like-id]');
+  if(like)return likeClick(like);
+  const fit=e.target.closest('[data-fit-style]');
+  if(fit)return stOpenFit(fit.dataset.fitStyle);
   const nav=e.target.closest('#mNav button'); if(nav)return goView(nav.dataset.v);
   const st=e.target.closest('[data-style]');
   if(st&&st.dataset.style)return goStyle(st.dataset.style);
@@ -143,6 +167,7 @@ document.addEventListener('click',e=>{
   if(v){ if(v.dataset.sm)window.__smWant=v.dataset.sm; return goView(v.dataset.v) }
   const tr=e.target.closest('[data-tr]');
   if(tr){ $$('.sItem').forEach(x=>x.classList.remove('on')); tr.classList.add('on');
+          curTr=tr.dataset.tr; pushNav();
           return trRender(tr.dataset.tr) }
   const chip=e.target.closest('.chip[data-ans]');
   if(chip){
@@ -215,6 +240,22 @@ export function exitMain(){
 $('#startBtn')&&$('#startBtn').addEventListener('click',enterMain);
 /* 설명이 지루한 사람은 여기서 바로 넘어간다 */
 $('#jumpBtn')&&$('#jumpBtn').addEventListener('click',enterMain);
+
+/* 뒤로가기(및 앞으로가기) — pushNav 로 쌓아 둔 항목을 그대로 복원한다.
+   랜딩(인트로) 단계로 완전히 나가 있었다면 다시 들어올 땐 홈에서 시작하고,
+   기록이 없는(=우리가 처음 pushState 하기 전) 항목으로 돌아가면 인트로로 나간다. */
+addEventListener('popstate', e=>{
+  const st=e.state;
+  navSkip=true;
+  if(!mainMode){
+    if(st&&st.view)enterMain(); else navSkip=false;
+    return;
+  }
+  if(!st||!st.view){ exitMain(); return }
+  if(st.view==='style'&&st.style){ goStyle(st.style); return }
+  if(st.view==='trend')window.__trWant=st.tr||'myfeed';
+  goView(st.view);
+});
 
 /* 아이템 무한 스크롤 */
 addEventListener('scroll',()=>{

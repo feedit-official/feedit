@@ -106,12 +106,18 @@
      새로 시작돼, 막대가 멈춘 듯 끌리다가 애니가 끝나는 순간 뚝 하고 튄다. */
   font-family:var(--num);font-size:11px;letter-spacing:.02em;font-style:normal;
   font-feature-settings:'tnum' 1,'zero' 0;white-space:nowrap;
+  /* 글씨는 항상 막대 색 위에 뜬다 — 자기 칸이 좁아져도 잘리지 않고 상대 막대
+     위로 넘쳐 보이게 늘 overflow:visible + z-index 를 켜 둔다. 예전엔 이걸 폭이
+     28% 밑으로 "확정"된 뒤에만(.tight) 켰는데, 그 판정이 애니메이션 완료 신호에
+     달려 있어 신호가 늦게 오면(스프링 정착 지연, 2026-09 실측) 그 사이 글씨가
+     칸 안에 파묻혀 있다가 뒤늦게 튀어나오는 것처럼 보였다. 타이밍에 기대지 않고
+     항상 켜 두면 어떤 순간에 봐도 절대 안 묻힌다. */
+  overflow:visible;position:relative;z-index:2;
 }
-.smBar .buy{background:var(--coral);color:#fff;justify-content:flex-start;padding-left:13px}
-.smBar .no{background:var(--pink-0);color:var(--paper);justify-content:flex-end;padding-right:13px}
-/* 한쪽이 크게 이겨 칸이 좁아지면 글씨를 지우지 않고 상대 막대 위로 넘겨 읽힌다.
-   .buy 는 코랄 위에 흰 글씨, .no 는 먹 위에 종이색 글씨라 어느 쪽이든 대비가 산다. */
-.smBar i.tight{overflow:visible;position:relative;z-index:2}
+.smBar .buy{background:var(--coral);color:#fff;justify-content:flex-start;padding-left:13px;flex:0 0 auto}
+/* .no 는 애니메이션으로 폭을 직접 받지 않는다 — flex:1 로 .buy 가 차지하고 남은
+   자리를 통째로 먹는다. 그래야 두 조각의 폭 합이 프레임마다 항상 정확히 100%다. */
+.smBar .no{background:var(--pink-0);color:var(--paper);justify-content:flex-end;padding-right:13px;flex:1 1 0%}
 /* 이 세 군데 막대만 anime 없이 style.width 를 직접 쓴다. 여기만 CSS 로 부드럽게. */
 #modalBarAll i, #modalBarSim i, #smBuy, #smNo{transition:width .82s var(--ease)}
 .smBtns{display:flex;gap:8px}
@@ -298,7 +304,8 @@
   font-family:var(--num);font-size:11px;color:var(--pink-2);font-weight:400;
   font-feature-settings:'tnum' 1,'zero' 0;
 }
-.commentsList{flex:1;overflow-y:auto;padding:0 22px;display:flex;flex-direction:column;gap:14px;min-height:120px}
+/* 위아래 패딩을 0으로 두면, 등급 링(.rkRing)이 아바타 밖으로 삐져나오는 만큼(--rkGap, 34px 아바타 기준 약 4px) 스크롤 영역 맨 위/아래 끄트머리에서 잘린다 — 중간 댓글들은 앞뒤 gap(14px) 안에 여유가 있어 안 보였지만 첫/마지막 댓글은 바로 컨테이너 경계에 붙어 있어 잘렸다(2026-09 실측: 맨 위 댓글 프로필 링이 위쪽만 잘려 보임). 링이 넉넉히 들어갈 만큼 위아래에 여백을 둔다. */
+.commentsList{flex:1;overflow-y:auto;padding:8px 22px;display:flex;flex-direction:column;gap:14px;min-height:120px}
 .cItem{display:flex;gap:11px}
 .cAvatar{
   width:34px;height:34px;border-radius:50%;flex-shrink:0;display:grid;place-items:center;
