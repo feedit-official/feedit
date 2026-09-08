@@ -1,0 +1,33 @@
+# 챗봇만 올릴 때 쓰는 앞단.
+#
+# ★ 도메인은 환경변수로 받는다. 이 파일을 고치지 않는다 —
+#   고치면 사람마다 다른 값이 커밋에 섞인다.
+#   서버 .env 에:  CHAT_DOMAIN=feedit-official.duckdns.org
+#
+# ⚠ 인증서를 받으려면 그 도메인의 A 레코드가 이 서버를 가리키고,
+#   보안 그룹에 80·443 인바운드가 열려 있어야 한다.
+#   (Let's Encrypt 가 그 도메인으로 되돌아와 확인한다)
+
+{$CHAT_DOMAIN} {
+	log {
+		output file /var/log/caddy/access.log
+		format console
+	}
+
+	# 챗봇이 쓰는 길만 연다. 나머지는 404 다 — 기본은 닫는 쪽이다.
+	handle /v1/* {
+		reverse_proxy chatbot:8770 {
+			header_up X-Forwarded-Proto {scheme}
+			header_up X-Forwarded-For {remote_host}
+			# SSE 다. 앞단이 모았다 보내면 글자가 한 번에 쏟아진다.
+			flush_interval -1
+			transport http {
+				dial_timeout 5s
+				response_header_timeout 60s
+			}
+		}
+	}
+
+	# 그 외에는 아무것도 안 알려 준다.
+	respond "FEEDiT chat" 404
+}

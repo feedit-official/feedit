@@ -27,6 +27,7 @@
    - [8-2. 처음 받은 사람 — 공통 준비](#8-2-처음-받은-사람--공통-준비)
    - [8-4. AI 챗봇 실행법](#8-4-ai-챗봇-실행법)
    - [8-4b. 챗봇을 서버에 올리기](#8-4b-챗봇을-서버ec2에-올리기--터널-없이-상시-운영)
+   - [8-4c. 챗봇만 서버에 올리기 (Django 없이)](#8-4c-챗봇만-서버에-올리기-django-없이)
    - [8-5. Vercel 배포](#8-5-vercel-배포--이-저장소의-frontend-를-봅니다)
 
 ---
@@ -381,6 +382,57 @@ docker compose --env-file .env -f docker/compose.prod.yml up -d --build
 > 지표를 새로 계산하면 ①~③ 을 다시 하면 됩니다. 8MB 라 몇 초입니다.
 > 크롤러 자체를 서버에 올릴 필요는 없습니다 —
 > `lexicon.py` 와 `question_extract.py` 는 표준 라이브러리와 PyYAML 만 씁니다.
+
+---
+
+### 8-4c. 챗봇만 서버에 올리기 (Django 없이)
+
+**챗봇은 RDS 도 Django 도 쓰지 않습니다.** 크롤러 SQLite 만 읽습니다.
+그래서 서버에 Django 를 세우지 않고 챗봇 하나만 올릴 수 있습니다 —
+`compose.chat.yml` 이 그 용도입니다 (챗봇 + Caddy, 둘뿐).
+
+```bash
+# ① 맥 — 필요한 것만 묶는다 (1.6GB → 8MB)
+./ChatBot/tools_make_bundle.sh
+aws s3 cp ChatBot/feedit-chat-bundle.tar.gz s3://feedit-data-team4/tmp/
+
+# ② 서버 셸 (SSH 키 없이)
+aws ssm start-session --target i-00edfb038f240d56a --region ap-northeast-2
+sudo su - ubuntu          # ssm-user 는 docker 권한이 없다
+
+# ③ 묶음 풀기
+aws s3 cp s3://feedit-data-team4/tmp/feedit-chat-bundle.tar.gz /tmp/
+sudo mkdir -p /opt/feedit-chat-data
+sudo tar -xzf /tmp/feedit-chat-bundle.tar.gz -C /opt/feedit-chat-data --strip-components=1
+
+# ④ 저장소와 .env
+git clone https://github.com/feedit-official/feedit.git
+cd feedit
+cat > .env <<'ENV'
+OPENAI_API_KEY=sk-...
+FEEDIT_CHAT_TOKEN=<버셀 CHAT_BACKEND_TOKEN 과 같은 값>
+FEEDIT_CHAT_RATE_PER_MIN=20
+CHAT_DOMAIN=<도메인>
+CHAT_DATA_DIR=/opt/feedit-chat-data
+ENV
+
+# ⑤ 띄우기
+docker compose --env-file .env -f docker/compose.chat.yml up -d --build
+```
+
+> ⚠ 인증서를 받으려면 **도메인 A 레코드가 이 서버를 가리키고, 보안 그룹에
+> 80·443 인바운드가 열려** 있어야 합니다. Let's Encrypt 가 그 도메인으로
+> 되돌아와 확인하기 때문입니다.
+
+확인 — 토큰 없이 부르면 **401 이 정상**입니다.
+
+```bash
+curl -i -X POST https://<도메인>/v1/chat \
+  -H 'Content-Type: application/json' -d '{"question":"발레코어 어때?"}'
+```
+
+Django 까지 서버에 올릴 때는 `compose.prod.yml` 로 갈아탑니다.
+그때는 이 `compose.chat.yml` 을 내리세요 — 둘 다 80·443 을 씁니다.
 
 ---
 

@@ -1,0 +1,74 @@
+# 챗봇만 올린다 — Django·RDS·SSM 없이.
+#
+# ══════════════════════════════════════════════════════════════
+#  왜 따로 두나
+# ══════════════════════════════════════════════════════════════
+# 챗봇은 RDS 를 안 본다. 크롤러 SQLite 만 읽는다.
+# 그래서 Django·ssm-tunnel·redis 가 하나도 필요 없다.
+# compose.prod.yml 을 쓰면 그 셋까지 같이 세워야 하는데,
+# 챗봇 하나 띄우려고 서버 전체를 구축할 이유가 없다.
+#
+#   docker compose --env-file .env -f docker/compose.chat.yml up -d --build
+#
+# 서버 .env 에 필요한 것 (다섯 줄이면 된다):
+#   OPENAI_API_KEY=sk-...
+#   FEEDIT_CHAT_TOKEN=<버셀 CHAT_BACKEND_TOKEN 과 같은 값>
+#   FEEDIT_CHAT_RATE_PER_MIN=20
+#   CHAT_DOMAIN=feedit-official.duckdns.org
+#   CHAT_DATA_DIR=/opt/feedit-chat-data
+
+services:
+  chatbot:
+    build:
+      context: ..
+      dockerfile: docker/chat.Dockerfile
+
+    container_name: feedit-chatbot
+
+    env_file:
+      - ../.env
+
+    environment:
+      FEEDIT_CHAT_HOST: 0.0.0.0
+      FEEDIT_CHAT_PORT: 8770
+      FEEDIT_CRAWLER_DIR: /crawler
+      FEEDIT_EXTRACTOR_DIR: /tools
+
+    volumes:
+      # tools_make_bundle.sh 로 만든 묶음을 푼 곳. 읽기만 한다.
+      - ${CHAT_DATA_DIR:-/opt/feedit-chat-data}/crawler:/crawler:ro
+      - ${CHAT_DATA_DIR:-/opt/feedit-chat-data}/tools:/tools:ro
+
+    # ★ 포트를 밖에 열지 않는다. Caddy 를 거쳐야 HTTPS 와
+    #   X-Forwarded-For 가 붙는다 (횟수 제한이 그걸 본다).
+    expose:
+      - "8770"
+
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: feedit-chat-caddy
+
+    environment:
+      CHAT_DOMAIN: ${CHAT_DOMAIN:?CHAT_DOMAIN 을 .env 에 넣어 주세요}
+
+    ports:
+      - "80:80"
+      - "443:443"
+
+    volumes:
+      - ./Caddyfile.chat:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data          # 인증서가 여기 산다. 지우면 재발급한다.
+      - caddy_config:/config
+      - caddy_logs:/var/log/caddy
+
+    depends_on:
+      - chatbot
+
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:
+  caddy_logs:
