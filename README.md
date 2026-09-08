@@ -334,8 +334,9 @@ cd ChatBot && python3 server.py                     # http://127.0.0.1:8770
 > RDS 로 옮기는 길은 `docs_RDS_격차분석.md` 의 1번 항목(적재 경로)이
 > 끝나야 열립니다. 자세한 내용은 `ChatBot/README.md`.
 
-> ⚠ **챗봇 서버에는 아직 인증이 없습니다.** 포트를 `127.0.0.1` 에만 묶어 두었고
-> 배포용 compose 에서도 밖으로 열지 않았습니다. 공개하려면 인증부터 붙여야 합니다.
+> ⚠ **챗봇 서버에는 아직 로그인이 없습니다.** 로컬에서는 `127.0.0.1` 에만 묶여 있고,
+> 배포에서는 Caddy 의 `/v1/*` 로만 들어옵니다. 대신 두 가지로 막습니다 —
+> 공유 토큰(`FEEDIT_CHAT_TOKEN`)과 IP 당 분당 횟수 제한. 8-5 를 보세요.
 
 크롤러가 없는 팀원은 챗봇만 빼고 씁니다:
 
@@ -377,18 +378,47 @@ npm workspaces 를 쓰는 저장소에만 적용되는데, 우리는 아닙니�
 | `BACKEND_API_URL` | `api/_lib/db.js` — Django 경유 (권장) | RDS 직결로 떨어짐 |
 | `DATABASE_URL` | RDS 직결 (Django 를 안 쓸 때) | 지표가 '측정 불가' |
 | `CHAT_BACKEND_URL` | `api/v1/chat.js` — 챗봇 서버 주소 | 챗봇이 목업 답변으로 떨어짐 |
+| `CHAT_BACKEND_TOKEN` | `api/v1/chat.js` — 챗봇 공유 토큰 | 챗봇 서버가 401 |
 
 `PGHOST` · `PGPORT` · `PGUSER` · `PGPASSWORD` · `PGDATABASE` 로 나눠 넣어도 됩니다.
 
-> ⚠ `CHAT_BACKEND_URL` 은 **챗봇 서버에 인증이 붙은 뒤에** 넣으세요.
-> 지금 챗봇 서버는 인증이 없어 공개 주소를 주면 누구나 팀 OpenAI 키로 질문할 수 있습니다.
-> 그때까지는 비워 두면 됩니다 — 화면은 목업 답변으로 정상 동작합니다.
+**챗봇을 붙이려면** — Vercel 환경변수 두 개를 짝으로 넣습니다.
+
+```
+CHAT_BACKEND_URL   = https://feedit-official.duckdns.org
+CHAT_BACKEND_TOKEN = (서버 .env 의 FEEDIT_CHAT_TOKEN 과 똑같은 값)
+```
+
+토큰 값은 서버에서 꺼냅니다:
+
+```bash
+grep '^FEEDIT_CHAT_TOKEN=' .env
+```
+
+함수가 `CHAT_BACKEND_URL + '/v1/chat'` 을 부르므로 주소 끝에 경로를 붙이지 마세요.
+Caddy 의 `handle /v1/*` 가 그걸 받아 `chatbot:8770` 으로 넘깁니다.
+
+> ⚠ **토큰을 반드시 같이 넣으세요.** 이 길은 팀 OpenAI 키를 씁니다.
+> "주소를 우리만 안다" 는 방어가 아닙니다 — 공개된 주소는 봇이 몇 시간 안에 찾아냅니다.
+> 토큰은 **버셀 함수가 서버에서 붙이므로 브라우저에는 내려가지 않습니다.**
+> 여기에 더해 IP 당 분당 20회 제한이 항상 켜져 있습니다(`FEEDIT_CHAT_RATE_PER_MIN`).
+>
+> 둘 다 로그인의 대체물은 아닙니다. 사용자별 한도·과금은 `app_user.plan` 이
+> 생긴 뒤에 붙입니다.
 
 **옮긴 뒤 확인**
 
 ```
 https://<배포주소>/api/health     표별 행 수와 지표 컬럼 유무가 그대로 나옵니다
-https://<배포주소>/api/v1/health  챗봇 서버가 붙었는지
+https://<배포주소>/api/v1/health  챗봇 서버가 붙었는지 (200 이면 붙은 것)
+```
+
+챗봇 서버 자체는 이렇게 확인합니다 — 토큰 없이 부르면 **401 이 나와야 정상**입니다.
+
+```bash
+curl -i -X POST https://feedit-official.duckdns.org/v1/chat \
+  -H 'Content-Type: application/json' -d '{"question":"발레코어 어때?"}'
+# → HTTP/1.1 401   {"reason":"UNAUTHORIZED"}      ← 이게 맞는 결과입니다
 ```
 
 ---

@@ -6,7 +6,11 @@
   전송 계층은 나중에 Django/FastAPI 로 갈아 끼울 것이라 지금 얇게 둔다.
   ChatEngine 은 HTTP 를 모른다 — 갈아 끼울 때 손댈 곳은 이 파일뿐이다.
 
-  ⚠ 개발용이다. 인증이 없다. 0.0.0.0 에 열지 말 것.
+  ⚠ 로그인은 아직 없다. 대신 밖에 열 때를 위해 두 가지를 둔다 —
+     ① IP 당 분당 횟수 제한 (항상 켜짐, 설정 필요 없음)
+     ② 공유 토큰 FEEDIT_CHAT_TOKEN (설정했을 때만 검사)
+     둘 다 로그인의 대체물이 아니다. 스캐너가 우리 OpenAI 키를 태우는 것을
+     막는 최소한이다. 사용자별 한도·과금은 여전히 없다.
 
 엔드포인트
   GET  /v1/health                    떠 있나 · 기준일 · 적재 term 수
@@ -54,6 +58,36 @@ ALLOW_ORIGINS = {o.strip() for o in
                  (os.getenv("FEEDIT_CHAT_ORIGINS") or ",".join(_DEFAULT_ORIGINS)).split(",")
                  if o.strip()}
 MAX_BODY = 64 * 1024
+
+# ── 밖에 열 때의 최소 방어 ──────────────────────────────────
+#   ★ 이건 로그인이 아니다. "주소를 아무도 모른다" 는 방어가 아니라서 둔다 —
+#     공개된 주소는 봇이 몇 시간 안에 찾아낸다. 그때 막아 주는 건 이 둘뿐이다.
+#
+#   FEEDIT_CHAT_TOKEN  비워 두면 검사하지 않는다(로컬 개발 그대로).
+#                      넣으면 X-FEEDiT-Token 머리글이 같아야 통과한다.
+#                      버셀 함수가 붙여 주므로 브라우저는 토큰을 모른다.
+CHAT_TOKEN = (os.getenv("FEEDIT_CHAT_TOKEN") or "").strip()
+
+#   IP 당 분당 질문 수. 사람은 분당 몇 번 못 묻는다.
+RATE_PER_MIN = int(os.getenv("FEEDIT_CHAT_RATE_PER_MIN", "20"))
+_hits: dict[str, list[float]] = {}
+_hits_lock = threading.Lock()
+
+
+def rate_ok(ip: str) -> bool:
+    """최근 60초 안에 RATE_PER_MIN 을 넘었나. 넘으면 False."""
+    now = time.time()
+    with _hits_lock:
+        q = [t for t in _hits.get(ip, ()) if now - t < 60]
+        if len(q) >= RATE_PER_MIN:
+            _hits[ip] = q
+            return False
+        q.append(now)
+        _hits[ip] = q
+        if len(_hits) > 5000:                 # 메모리가 무한정 늘지 않게
+            for k in [k for k, v in _hits.items() if not v or now - v[-1] > 300]:
+                _hits.pop(k, None)
+    return True
 
 # 어휘 등록 요청을 어디에 쌓나.
 #   배포되면 RDS 의 dictionary.term_candidate 로 간다 (설계서 3.5).
@@ -203,6 +237,26 @@ class Handler(BaseHTTPRequestHandler):
         except (ValueError, UnicodeDecodeError):
             return None
 
+    def _client_ip(self) -> str:
+        """앞단(Caddy)이 붙여 주는 X-Forwarded-For 의 **맨 앞**이 진짜 손님이다.
+        뒤쪽은 중간 프록시라 그걸 쓰면 전원이 한 IP 로 묶여 다 같이 막힌다."""
+        fwd = self.headers.get("X-Forwarded-For") or ""
+        return (fwd.split(",")[0].strip() or self.client_address[0])
+
+    def _guard(self) -> bool:
+        """토큰·횟수 검사. 막으면 응답까지 보내고 False 를 돌려준다."""
+        if CHAT_TOKEN and self.headers.get("X-FEEDiT-Token") != CHAT_TOKEN:
+            # 왜 막혔는지 자세히 알려 주지 않는다 — 맞히는 데 도움이 된다.
+            self._json(401, {"ok": False, "reason": "UNAUTHORIZED",
+                             "message": "허용되지 않은 요청입니다."})
+            return False
+        if not rate_ok(self._client_ip()):
+            self._json(429, {"ok": False, "reason": "RATE_LIMITED",
+                             "message": f"질문이 너무 잦습니다. 잠시 후 다시 시도해 주세요 "
+                                        f"(분당 {RATE_PER_MIN}회)."})
+            return False
+        return True
+
     def _lexicon_request(self):
         req = self._read_json()
         if not req:
@@ -229,10 +283,14 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = urlparse(self.path).path
+        if path not in ("/v1/chat", "/v1/lexicon/requests"):
+            return self._json(404, {"ok": False, "error": "NOT_FOUND"})
+        # ★ 쓰는 길은 전부 여기를 지난다. 검사를 분기 뒤에 두면
+        #   새 엔드포인트를 더할 때 조용히 빠뜨리게 된다.
+        if not self._guard():
+            return
         if path == "/v1/lexicon/requests":
             return self._lexicon_request()
-        if path != "/v1/chat":
-            return self._json(404, {"ok": False, "error": "NOT_FOUND"})
         try:
             n = int(self.headers.get("Content-Length") or 0)
         except ValueError:
@@ -332,7 +390,9 @@ def main():
     print(f"  기준일 {e.store.latest_day()} · 지표 term {len(e.gate.prefer):,}개")
     print(f"  모델 {llm.MODEL} · 키 {llm.key_hint()}")
     print(f"  허용 오리진 {sorted(ALLOW_ORIGINS)}")
-    print("  개발용입니다. 인증이 없습니다.")
+    print(f"  토큰 {'검사함' if CHAT_TOKEN else '없음(로컬 개발)'} · 분당 {RATE_PER_MIN}회 제한")
+    if HOST not in ("127.0.0.1", "localhost") and not CHAT_TOKEN:
+        print("  ⚠ 밖에 열면서 FEEDIT_CHAT_TOKEN 이 없습니다. 주소가 알려지면 누구나 질문할 수 있습니다.")
     try:
         srv.serve_forever()
     except KeyboardInterrupt:

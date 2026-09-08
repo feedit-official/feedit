@@ -103,15 +103,14 @@ services:
     restart: unless-stopped
 
   # ── 챗봇 (feedit-chat) ────────────────────────────────────
-  #   ★ 포트를 밖에 열지 않는다. Caddy 에도 아직 안 걸었다.
-  #     server.py 에 **인증이 없기 때문이다** — 지금 인터넷에 내놓으면
-  #     누구나 팀 OpenAI 키로 질문을 날릴 수 있다.
+  #   Caddy 의 /v1/* 가 여기로 들어온다. 포트는 **직접 열지 않는다** —
+  #   Caddy 를 거쳐야 HTTPS 와 X-Forwarded-For 가 붙는다.
   #
-  #   공개하려면 순서가 이렇다:
-  #     ① 플랜·사용량 인증을 붙인다 (지금 plan 은 요청에 실린 값을 그대로 믿는다)
-  #     ② Caddyfile 에 경로를 연다:
-  #          handle /v1/chat*  { reverse_proxy chatbot:8770 }
-  #     ③ Vercel 환경변수 CHAT_BACKEND_URL 을 그 주소로 맞춘다
+  #   ★ 아직 로그인이 없다. 대신 둘로 막는다:
+  #       · FEEDIT_CHAT_TOKEN  버셀 함수만 아는 공유 토큰 (.env)
+  #       · 분당 횟수 제한      FEEDIT_CHAT_RATE_PER_MIN (기본 20)
+  #     사용자별 한도·과금은 여전히 없다. 나중에 app_user.plan 이 생기면
+  #     그때 진짜 인증으로 바꾼다.
   chatbot:
     build:
       context: ..
@@ -123,8 +122,11 @@ services:
       FEEDIT_CHAT_HOST: 0.0.0.0
       FEEDIT_CHAT_PORT: 8770
       FEEDIT_CRAWLER_DIR: /crawler
+      # FEEDIT_CHAT_TOKEN 과 FEEDIT_CHAT_RATE_PER_MIN 은 ../.env 에서 온다.
     expose:
       - "8770"
+    depends_on:
+      - web
     volumes:
       - ${FEEDIT_CRAWLER_DIR:-../../feedit-crawler}:/crawler:ro
     restart: unless-stopped

@@ -22,6 +22,26 @@ feedit-official.duckdns.org {
 
 	encode zstd gzip
 
+	# ── 챗봇 (feedit-chat) ────────────────────────────────
+	#   버셀 함수가 CHAT_BACKEND_URL + '/v1/chat' 을 부른다. 그 길만 연다.
+	#
+	#   ★ 로그인이 아직 없다. 챗봇 서버 쪽에서 두 가지로 막는다:
+	#       · FEEDIT_CHAT_TOKEN — 버셀 함수만 아는 공유 토큰
+	#       · IP 당 분당 횟수 제한
+	#     이 길은 우리 OpenAI 키를 쓴다. 열어 두면 봇이 대신 태운다.
+	handle /v1/* {
+		reverse_proxy chatbot:8770 {
+			header_up X-Forwarded-Proto {scheme}
+			header_up X-Forwarded-For {remote_host}
+			# SSE 다. 앞단이 모았다 보내면 글자가 한 번에 쏟아진다.
+			flush_interval -1
+			transport http {
+				dial_timeout 5s
+				response_header_timeout 60s
+			}
+		}
+	}
+
 	# 프론트(Vercel)가 부르는 길과 관리자 화면만 연다.
 	# 나중에 다른 걸 열려면 여기 한 줄씩 더한다 — 기본은 닫는 쪽이다.
 	reverse_proxy web:8000 {

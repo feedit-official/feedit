@@ -41,9 +41,13 @@ export default async function handler(req, res) {
   }
 
   try {
+    /* 토큰은 **여기서** 붙인다. 브라우저에 내려보내면 토큰이 아니게 된다.
+       CHAT_BACKEND_TOKEN 이 비어 있으면 안 붙인다 — 로컬 개발 그대로. */
+    const headers = { 'Content-Type': 'application/json' };
+    if (process.env.CHAT_BACKEND_TOKEN) headers['X-FEEDiT-Token'] = process.env.CHAT_BACKEND_TOKEN;
     const upstream = await fetch(backend + '/v1/chat', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body,
     });
     if (!upstream.ok || !upstream.body) {
