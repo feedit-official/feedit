@@ -16,6 +16,7 @@
 #   FEEDIT_CHAT_RATE_PER_MIN=20
 #   CHAT_DOMAIN=feedit-official.duckdns.org
 #   CHAT_DATA_DIR=/opt/feedit-chat-data
+#   (선택) CHAT_DNS=169.254.169.253   ← EC2 기본값. 다른 환경이면 1.1.1.1
 
 services:
   chatbot:
@@ -38,6 +39,19 @@ services:
       # tools_make_bundle.sh 로 만든 묶음을 푼 곳. 읽기만 한다.
       - ${CHAT_DATA_DIR:-/opt/feedit-chat-data}/crawler:/crawler:ro
       - ${CHAT_DATA_DIR:-/opt/feedit-chat-data}/tools:/tools:ro
+
+
+    # ★ DNS 를 명시한다.
+    #   Ubuntu 호스트의 /etc/resolv.conf 는 systemd-resolved 스텁(127.0.0.53)을
+    #   가리킨다. Docker 가 그걸 그대로 컨테이너에 넣으면, 컨테이너 안에서
+    #   127.0.0.53 은 **자기 자신의 루프백**이라 아무도 안 듣는다:
+    #       lookup … on 127.0.0.53:53: connection refused
+    #   (2026-09-08 서버에서 Caddy 가 Let's Encrypt 주소를 못 찾아 이 오류를 냈다)
+    #
+    #   169.254.169.253 은 AWS VPC 리졸버다. EC2 안에서는 항상 닿는다.
+    #   다른 환경이면 .env 의 CHAT_DNS 로 바꾼다 (예: 1.1.1.1).
+    dns:
+      - ${CHAT_DNS:-169.254.169.253}
 
     # ★ 포트를 밖에 열지 않는다. Caddy 를 거쳐야 HTTPS 와
     #   X-Forwarded-For 가 붙는다 (횟수 제한이 그걸 본다).
@@ -62,6 +76,19 @@ services:
       - caddy_data:/data          # 인증서가 여기 산다. 지우면 재발급한다.
       - caddy_config:/config
       - caddy_logs:/var/log/caddy
+
+
+    # ★ DNS 를 명시한다.
+    #   Ubuntu 호스트의 /etc/resolv.conf 는 systemd-resolved 스텁(127.0.0.53)을
+    #   가리킨다. Docker 가 그걸 그대로 컨테이너에 넣으면, 컨테이너 안에서
+    #   127.0.0.53 은 **자기 자신의 루프백**이라 아무도 안 듣는다:
+    #       lookup … on 127.0.0.53:53: connection refused
+    #   (2026-09-08 서버에서 Caddy 가 Let's Encrypt 주소를 못 찾아 이 오류를 냈다)
+    #
+    #   169.254.169.253 은 AWS VPC 리졸버다. EC2 안에서는 항상 닿는다.
+    #   다른 환경이면 .env 의 CHAT_DNS 로 바꾼다 (예: 1.1.1.1).
+    dns:
+      - ${CHAT_DNS:-169.254.169.253}
 
     depends_on:
       - chatbot
