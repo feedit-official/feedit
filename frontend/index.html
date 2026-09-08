@@ -862,6 +862,20 @@
   </div>
 </div>
 
+<!-- ── 트렌드 분석 — 로그인 전 진입 시, 내 피드 화면은 뒤에 그대로 두고
+     흐릿하게 가린 뒤 이 위에 로그인 안내를 띄운다 (곧장 로그인 화면으로
+     넘겨버리면 탭을 눌렀는데 다른 화면으로 튕기는 느낌이라 이질감이 있었다) ── -->
+<div class="acctModal" id="trendGateModal">
+  <div class="modalCard" style="width:min(360px,92vw);text-align:center">
+    <p style="font-size:14.5px;line-height:1.7;color:var(--pink-1);margin:2px 0 22px">
+      트렌드 분석에는 로그인이 필요합니다.<br>로그인 후 사용하세요.</p>
+    <div class="modalBtns">
+      <button type="button" class="pill ghost" id="trendGateCancel">취소</button>
+      <button type="button" class="pill" id="trendGateLogin">로그인</button>
+    </div>
+  </div>
+</div>
+
 <!-- ── '이 스타일 더 보기' — 스타일 상세로 이동하지 않고 Virtual Fitting 카드만 보여준다 ── -->
 <div class="acctModal" id="styleFitModal">
   <div class="modalCard wide">

@@ -1,5 +1,5 @@
 import { $, $$, HAS_A, aAnimate, aStagger } from '../../../core/static/js/dom.js';
-import { IMG, INF_NAMES, ITEM_BRANDS, itemCard, STYLES } from '../../../home/static/js/chat.js';
+import { IMG, ITEM_BRANDS, itemCard, STYLES } from '../../../home/static/js/chat.js';
 
 /* ── Style ──────────────────────────────────────────── */
 export var stShowI=0, stItemPage=0, stCur=null;
@@ -56,13 +56,30 @@ function stKeepAll(text,kwList){
 function stSentences(text){
   return text.split(/(?<=[.!?])\s+/).map(t=>t.trim()).filter(Boolean).join('<br>');
 }
+/* 스타일별 Virtual Fitting 컷 — 실제 착장 이미지 2장(파일명이 스타일명과 일치) */
+export const VFIT_IMG={
+  gorp:    ['assets/vfit/gorp_1.jpg',    'assets/vfit/gorp_2.jpg'],
+  grunge:  ['assets/vfit/grunge_1.jpg',  'assets/vfit/grunge_2.jpg'],
+  geek:    ['assets/vfit/geek_1.jpg',    'assets/vfit/geek_2.jpg'],
+  norm:    ['assets/vfit/norm_1.jpg',    'assets/vfit/norm_2.jpg'],
+  bike:    ['assets/vfit/bike_1.jpg',    'assets/vfit/bike_2.jpg'],
+  ballet:  ['assets/vfit/ballet_1.jpg',  'assets/vfit/ballet_2.jpg'],
+  block:   ['assets/vfit/block_1.jpg',   'assets/vfit/block_2.jpg'],
+  classic: ['assets/vfit/classic_2.jpg', 'assets/vfit/classic_3.jpg'],
+  street:  ['assets/vfit/street_1.jpg',  'assets/vfit/street_3.jpg'],
+  ameka:   ['assets/vfit/ameka_1.jpg',   'assets/vfit/ameka_2.jpg'],
+  y2k:     ['assets/vfit/y2k_1.jpg',     'assets/vfit/y2k_2.jpg'],
+  feminine:['assets/vfit/feminine_1.jpg','assets/vfit/feminine_2.jpg'],
+  biz:     ['assets/vfit/biz_1.jpg',     'assets/vfit/biz_2.jpg'],
+  ath:     ['assets/vfit/ath_1.jpg',     'assets/vfit/ath_2.jpg']
+};
 /* Virtual Fitting 카드 — 스타일 상세 페이지(#stInf)와 '이 스타일 더 보기' 팝업이
-   같은 카드를 그대로 재사용한다 */
+   같은 카드를 그대로 재사용한다. 인스타 피드가 아니므로 프로필/아이디/팔로워 없이
+   사진만 채운다 — 전용 컷이 없는 스타일은 공용 라이브러리로 대체한다 */
 export function infCards(s){
-  return INF_NAMES.slice(0,5).map((n,i)=>
-    '<div class="infC"><div class="im"><img src="'+IMG(((s.img+i*3)%35)+1)+'" alt="" loading="lazy"></div>'+
-    '<div class="bd"><span class="av">'+n[1].toUpperCase()+'</span>'+
-    '<span><b>'+n+'</b><span>'+(12+i*7)+'.'+(i%9)+'k 팔로워</span></span></div></div>').join('');
+  const imgs=VFIT_IMG[s.id]||[IMG(((s.img)%35)+1),IMG(((s.img+3)%35)+1)];
+  return imgs.map(src=>
+    '<div class="infC"><div class="im"><img src="'+src+'" alt="'+s.n+'" loading="lazy"></div></div>').join('');
 }
 export function stOpen(id){
   const s=STYLES.find(x=>x.id===id)||STYLES[0];

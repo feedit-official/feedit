@@ -77,18 +77,13 @@
   border-bottom:1px solid var(--pink-3)}
 .stAbout dt{font-size:12.5px;color:var(--pink-2)}
 .stAbout dd{font-size:13px;text-align:right;letter-spacing:-.02em}
-.infFeed{display:grid;grid-template-columns:repeat(5,1fr);gap:16px}
-.acctModal .infFeed{grid-template-columns:repeat(3,1fr)}
+.infFeed{display:grid;grid-template-columns:repeat(5,1fr);gap:12px}
+.acctModal .infFeed{grid-template-columns:repeat(5,1fr)}
 .infC{background:#fff;border:1px solid var(--pink-3);border-radius:9px;overflow:hidden}
-.infC .im{aspect-ratio:1;overflow:hidden;background:#e8e4dd}
+.infC .im{aspect-ratio:2/3;overflow:hidden;background:#e8e4dd}
 .infC .im img{width:100%;height:100%;object-fit:cover;filter:grayscale(.2);
   transition:transform 1s var(--ease)}
 .infC:hover .im img{transform:scale(1.06)}
-.infC .bd{padding:16px 18px;display:flex;align-items:center;gap:11px}
-.infC .av{width:32px;height:32px;border-radius:50%;background:var(--pink-3);flex:0 0 auto;
-  display:grid;place-items:center;font-size:10px;color:var(--pink-1);text-align:center;line-height:1;margin-top:0}
-.infC .bd b{display:block;font-size:14.5px;font-weight:500}
-.infC .bd span:not(.av){display:block;font-size:12px;color:var(--pink-2);margin-top:3px}
 .itGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(196px,1fr));gap:12px}
 /* ── 아이템 카드(공용) — 스타일 상세('이 스타일의 아이템')와 마이페이지('오늘의 추천'),
    찜 목록 모달까지 전부 같은 마크업(itemCard/itemFig/itemBody)과 이 CSS를 그대로 쓴다.

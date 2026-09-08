@@ -70,7 +70,26 @@ function trSideReset(){
 /* ── 뷰 라우터 ──────────────────────────────────────── */
 export function goView(v){
   if(!v)return;
-  if(v===curView){ scrollTo(0,0); return }
+  if(v===curView){
+    /* 스타일 탭에서 상세 화면에 들어가 있을 때 스타일 탭을 다시 누르면
+       그 자리에 머무르지 않고 스타일 목록 처음 화면으로 되돌아간다 —
+       이때도 처음 진입할 때와 똑같이 네비 아이콘이 튀고 화면이 살짝
+       떠오르며 나타나는 모션을 그대로 태운다 (정적으로 뚝 끊기지 않게) */
+    if(v==='style'){
+      $('#styleDetail').style.display='none'; $('#styleHome').style.display='';
+      const nb=$$('#mNav button').filter(b=>b.dataset.v===v)[0];
+      if(HAS_A&&nb)aAnimate($('span',nb),{translateY:[-3,0],duration:560,
+        ease:aSpring({stiffness:150,damping:12})});
+      const el=$('#v-style');
+      if(HAS_A&&el){
+        el.style.transform='';
+        aAnimate(el,{opacity:[0,1],translateY:[14,0],duration:640,ease:'out(3)',
+          onComplete:()=>{ el.style.transform='' }});
+      }
+    }
+    scrollTo(0,0);
+    return;
+  }
   if(curView==='signup'&&v!=='signup')resetSignupForm();   /* 완료 안 하고 나가면 다음엔 처음 상태로 */
   curView=v;
   $$('#mNav button').forEach(b=>b.classList.toggle('on',b.dataset.v===v));
@@ -110,9 +129,12 @@ export function goView(v){
     myRender();
   }
   /* 트렌드 분석 — 들어올 때마다 내 피드에서 다시 시작하고,
-     사이드바는 접힌 상태에서 스르륵 열리며 화면이 전개된다. */
+     사이드바는 접힌 상태에서 스르륵 열리며 화면이 전개된다.
+     로그인 전에는 곧장 로그인 화면으로 튕기지 않는다 — 내 피드 화면은 뒤에
+     그대로 두고 흐릿하게 가린 뒤 그 위에 로그인 안내 팝업만 띄운다. */
   if(v==='trend'){
-    if(!AUTH.in){ setTimeout(()=>goView('login'),0); return }
+    const trGate=$('#trendGateModal');
+    if(trGate)trGate.classList.toggle('on',!AUTH.in);
     window.__trOn=1;
     window.__trEnterAt=Date.now();     /* 사이드바 전환과 겹치지 않게 재는 기준점 */
     trSideReset();                       /* 전환 없이 접어 둔다 — 열리는 장면을 보여 주려고 */

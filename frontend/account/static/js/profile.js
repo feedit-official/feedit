@@ -543,6 +543,18 @@ if(suW) suW.addEventListener('input', bodyHint);
   });
   $$('[data-close-modal]').forEach(b =>
     b.addEventListener('click', () => $$('.acctModal').forEach(m => m.classList.remove('on'))));
+
+  /* 트렌드 분석 로그인 안내 팝업 — 로그인은 로그인 화면으로, 취소는 홈으로 */
+  const trGateLogin = $('#trendGateLogin');
+  if(trGateLogin) trGateLogin.addEventListener('click', () => {
+    acctModal('trendGateModal', false);
+    goView('login');
+  });
+  const trGateCancel = $('#trendGateCancel');
+  if(trGateCancel) trGateCancel.addEventListener('click', () => {
+    acctModal('trendGateModal', false);
+    goView('home');
+  });
   $$('.acctModal').forEach(m => m.addEventListener('click', e => {
     if(e.target === m) m.classList.remove('on');
   }));
