@@ -87,7 +87,10 @@ need "$CRAWLER/feedit_crawler/lexicon.py"  "$STAGE/bundle/crawler/feedit_crawler
 need "$CRAWLER/feedit_crawler/__init__.py" "$STAGE/bundle/crawler/feedit_crawler/"
 need "$TOOLS/question_extract.py"          "$STAGE/bundle/tools/"
 
-tar -czf "$OUT" -C "$STAGE" bundle
+# COPYFILE_DISABLE — 맥 tar 가 확장속성을 ._파일로 같이 넣는 것을 막는다.
+#   그게 있으면 리눅스에서 풀 때 경고가 쏟아지고 ._feedit.db 같은 찌꺼기가 남는다.
+COPYFILE_DISABLE=1 tar --no-xattrs -czf "$OUT" -C "$STAGE" bundle 2>/dev/null \
+  || COPYFILE_DISABLE=1 tar -czf "$OUT" -C "$STAGE" bundle
 
 echo "만들었습니다: $OUT  ($(du -h "$OUT" | cut -f1))"
 echo
