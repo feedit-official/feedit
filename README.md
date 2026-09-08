@@ -26,6 +26,7 @@
 8. [배포 정보 및 실행 방법](#8-배포-정보-및-실행-방법)
    - [8-2. 처음 받은 사람 — 공통 준비](#8-2-처음-받은-사람--공통-준비)
    - [8-4. AI 챗봇 실행법](#8-4-ai-챗봇-실행법)
+   - [8-4b. 챗봇을 서버에 올리기](#8-4b-챗봇을-서버ec2에-올리기--터널-없이-상시-운영)
    - [8-5. Vercel 배포](#8-5-vercel-배포--이-저장소의-frontend-를-봅니다)
 
 ---
@@ -345,6 +346,43 @@ docker compose -f docker/compose.yml up ssm-tunnel redis web
 ```
 
 `.env` 에 `FEEDIT_LLM_DISABLED=1` 을 넣으면 OpenAI 키 없이도 규칙만으로 돌아갑니다.
+
+### 8-4b. 챗봇을 서버(EC2)에 올리기 — 터널 없이 상시 운영
+
+로컬에서 `server.py` 를 켜고 Cloudflare 터널로 뚫는 방법은 **데모용**입니다.
+맥을 닫으면 배포 사이트의 챗봇도 같이 죽습니다. 상시로 쓰려면 서버에 올립니다.
+
+**걸림돌은 하나뿐입니다** — 서버에도 지표 DB 와 사전이 있어야 합니다.
+크롤러 저장소는 1.6GB 지만, 챗봇이 실제로 읽는 건 **파일 5개 · 압축 8MB** 뿐입니다.
+
+```bash
+# ① 맥에서 — 필요한 것만 묶는다
+./ChatBot/tools_make_bundle.sh
+#   → ChatBot/feedit-chat-bundle.tar.gz  (약 8MB)
+
+# ② 서버로 보낸다
+scp ChatBot/feedit-chat-bundle.tar.gz  <사용자>@<서버>:/tmp/
+
+# ③ 서버에서 푼다
+sudo mkdir -p /opt/feedit-chat-data
+sudo tar -xzf /tmp/feedit-chat-bundle.tar.gz -C /opt/feedit-chat-data --strip-components=1
+
+# ④ 서버 .env 에 두 줄
+FEEDIT_CRAWLER_DIR=/opt/feedit-chat-data/crawler
+FEEDIT_EXTRACTOR_DIR=/opt/feedit-chat-data/tools
+
+# ⑤ 띄운다
+docker compose --env-file .env -f docker/compose.prod.yml up -d --build
+```
+
+그러면 `CHAT_BACKEND_URL` 이 `https://feedit-official.duckdns.org` 로 **고정**됩니다.
+맥을 꺼도 살아 있고, 터널을 켤 일도 없습니다.
+
+> 지표를 새로 계산하면 ①~③ 을 다시 하면 됩니다. 8MB 라 몇 초입니다.
+> 크롤러 자체를 서버에 올릴 필요는 없습니다 —
+> `lexicon.py` 와 `question_extract.py` 는 표준 라이브러리와 PyYAML 만 씁니다.
+
+---
 
 ### 8-5. Vercel 배포 — 이 저장소의 `frontend/` 를 봅니다
 

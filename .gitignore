@@ -216,3 +216,6 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# 챗봇 배포 묶음 (tools_make_bundle.sh 가 만든다 — 커밋하지 않는다)
+feedit-chat-bundle.tar.gz

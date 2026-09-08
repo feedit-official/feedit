@@ -83,6 +83,11 @@ services:
   #
   #   ★ 크롤러 저장소가 있어야 뜬다. .env 에 이 줄이 필요하다:
   #       FEEDIT_CRAWLER_DIR=/절대/경로/feedit-crawler
+  #
+  #   ★★ 그리고 **--env-file .env 를 꼭 붙여서** 부른다:
+  #       docker compose --env-file .env -f docker/compose.yml up chatbot
+  #     compose 는 아래 ${...} 를 채울 때 자기 파일 옆의 .env 를 본다.
+  #     우리 .env 는 저장소 뿌리에 있어서, 안 붙이면 기본값으로 떨어진다.
   #     없으면 컨테이너가 "무엇이 없는지" 를 찍고 멈춘다 — 조용히 죽지 않는다.
   #     크롤러가 없는 팀원은 이 서비스만 빼고 쓰면 된다:
   #       docker compose up ssm-tunnel redis web
@@ -101,6 +106,7 @@ services:
       FEEDIT_CHAT_HOST: 0.0.0.0
       FEEDIT_CHAT_PORT: 8770
       FEEDIT_CRAWLER_DIR: /crawler
+      FEEDIT_EXTRACTOR_DIR: /tools
 
     ports:
       # ★ 127.0.0.1 을 앞에 붙인다. 이걸 빼면 인증 없는 서버가
@@ -109,6 +115,7 @@ services:
 
     volumes:
       - ../ChatBot:/app                                    # 코드 — 고치면 바로 반영
-      - ${FEEDIT_CRAWLER_DIR:-../../feedit-crawler}:/crawler:ro   # 지표·사전 — 읽기만
+      - ${FEEDIT_CRAWLER_DIR:-../../Final/feedit-crawler}:/crawler:ro
+      - ${FEEDIT_EXTRACTOR_DIR:-../../Final/tools}:/tools:ro   # 지표·사전 — 읽기만
 
     restart: unless-stopped
