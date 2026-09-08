@@ -5,7 +5,7 @@
 # 크롤러 저장소는 1.6GB 다. 그런데 챗봇이 실제로 읽는 건 다섯 개뿐이고
 # 합쳐서 42MB 다. 서버에 크롤러를 통째로 올릴 이유가 없다.
 #
-#   crawler/data/feedit.db              지표 (42MB)
+#   crawler/data/feedit.db              지표 (VACUUM INTO 로 새로 만든 단일 파일)
 #   crawler/config/lexicon.yaml         어휘 사전
 #   crawler/feedit_crawler/lexicon.py   lexicon_gate 가 import
 #   crawler/feedit_crawler/__init__.py  위 import 를 위한 패키지 표시
@@ -53,7 +53,35 @@ need() {   # 없으면 그 자리에서 멈춘다 — 반쪽 묶음을 서버에
   [ -f "$1" ] || { echo "없습니다: $1" >&2; exit 1; }
   cp "$1" "$2"
 }
-need "$CRAWLER/data/feedit.db"             "$STAGE/bundle/crawler/data/"
+# ★ DB 는 그냥 복사하지 않는다. VACUUM INTO 로 새로 만든다.
+#
+#   크롤러 DB 는 **WAL 모드**다. 그러면 feedit.db 하나만 떼어 가는 것으로는
+#   부족하다 — 최근 커밋이 아직 feedit.db-wal 에 남아 있고, SQLite 는
+#   WAL DB 를 읽기 전용으로 열 때도 -shm 을 만들려 든다.
+#   그래서 읽기 전용 마운트(:ro)에 올리면 이렇게 죽는다:
+#
+#       sqlite3.OperationalError: unable to open database file
+#
+#   (2026-09-08 서버에서 실제로 이 오류를 봤다. 로컬에서는 폴더가
+#    쓰기 가능해서 안 났고, 그래서 여기까지 와서야 드러났다.)
+#
+#   VACUUM INTO 는 WAL 내용을 합친 **단일 파일**을 만들고 저널 모드도
+#   delete 로 떨어진다. -wal · -shm 이 필요 없어진다.
+[ -f "$CRAWLER/data/feedit.db" ] || { echo "없습니다: $CRAWLER/data/feedit.db" >&2; exit 1; }
+python3 - "$CRAWLER/data/feedit.db" "$STAGE/bundle/crawler/data/feedit.db" <<'PY'
+import sqlite3, sys
+src, out = sys.argv[1], sys.argv[2]
+c = sqlite3.connect(f"file:{src}?mode=ro", uri=True)
+c.execute("VACUUM INTO ?", (out,))
+c.close()
+d = sqlite3.connect(f"file:{out}?mode=ro", uri=True)
+mode = d.execute("PRAGMA journal_mode").fetchone()[0]
+rows = d.execute("SELECT count(*) FROM metric_term_daily").fetchone()[0]
+day  = d.execute("SELECT max(observed_on) FROM metric_term_daily").fetchone()[0]
+d.close()
+assert mode != "wal", f"저널 모드가 아직 {mode} 입니다"
+print(f"  DB: {rows:,}행 · 최신 {day} · journal={mode}")
+PY
 need "$CRAWLER/config/lexicon.yaml"        "$STAGE/bundle/crawler/config/"
 need "$CRAWLER/feedit_crawler/lexicon.py"  "$STAGE/bundle/crawler/feedit_crawler/"
 need "$CRAWLER/feedit_crawler/__init__.py" "$STAGE/bundle/crawler/feedit_crawler/"
