@@ -420,7 +420,22 @@ ENV
 docker compose --env-file .env -f docker/compose.chat.yml up -d --build
 ```
 
-> ⚠ 인증서를 받으려면 **도메인 A 레코드가 이 서버를 가리키고, 보안 그룹에
+**앞단이 이미 있는 서버라면** (nginx 등이 80·443 을 쓰고 있으면) 위 명령 그대로면
+됩니다 — 챗봇만 `127.0.0.1:8770` 에 뜹니다. 앞단에 경로 한 블록만 더하세요:
+
+```bash
+# 그 도메인을 맡은 server { } 안에 docker/nginx-feedit-chat.conf 내용을 넣고
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+**앞단이 없는 서버라면** Caddy 가 HTTPS 까지 맡습니다:
+
+```bash
+docker compose --env-file .env -f docker/compose.chat.yml \
+  --profile standalone up -d --build
+```
+
+> ⚠ 이 경우 인증서를 받으려면 **도메인 A 레코드가 이 서버를 가리키고, 보안 그룹에
 > 80·443 인바운드가 열려** 있어야 합니다. Let's Encrypt 가 그 도메인으로
 > 되돌아와 확인하기 때문입니다.
 
