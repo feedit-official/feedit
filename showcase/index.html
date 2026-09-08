@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>FEEDiT — LET'S BUILD</title>
+<meta name="description" content="스크롤 속 패션을 하나의 트렌드로. 흩어진 패션 데이터를 모으고(FEED) 정제하여(EDIT) 트렌드의 온도를 읽는 AI 플랫폼.">
+<meta name="theme-color" content="#f4f5f7">
+
+<meta property="og:type" content="website">
+<meta property="og:title" content="FEEDiT — LET'S BUILD">
+<meta property="og:description" content="발견 · 검증 · 비교 · 구매 판단을 하나로 잇는 패션 트렌드 인텔리전스.">
+<meta property="og:locale" content="ko_KR">
+<meta name="twitter:card" content="summary_large_image">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<!-- Wanted Sans — SIL OFL 1.1. 대회 주최사가 공개한 오픈소스 글꼴이라 그대로 쓴다 -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/wanted-sans@1.0.3/fonts/webfonts/variable/split/WantedSansVariable.css">
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="./css/showcase.css">
+
+<script type="importmap">
+{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.1/build/three.module.js"}}
+</script>
+</head>
+
+<body class="is-locked">
+
+<!-- ═══════ 고정 레이어 (뒤 → 앞) ═══════ -->
+
+<!-- 데님 — 지퍼가 잠긴 만큼 드러난다 -->
+<div class="denim" id="denim" aria-hidden="true">
+  <canvas class="denim-tex" id="denimTex"></canvas>
+  <i class="denim-panel L"></i>
+  <i class="denim-panel R"></i>
+</div>
+
+<!-- 백지 시트 — 엔딩에서 데님을 덮는다 -->
+<div class="sheet" id="sheet" aria-hidden="true"></div>
+
+<!-- 3D 파티클 인체 -->
+<canvas class="gl" id="gl" aria-hidden="true"></canvas>
+
+<!-- 지퍼 -->
+<canvas class="zip" id="zip" aria-hidden="true"></canvas>
+
+<!-- 타이틀 · 하단 락업 (파티클 텍스트) -->
+<canvas class="tx tx-title"  id="txTitle"  aria-hidden="true"></canvas>
+<canvas class="tx tx-lockup" id="txLockup" aria-hidden="true"></canvas>
+
+<!-- FEEDiT 마크 — Already. 와 함께 조립된다 -->
+<span class="fmark" id="fmark" aria-hidden="true">
+  <svg viewBox="27 25 68 68">
+    <path d="M88 32V80C88 84.4183 84.4183 88 80 88H32V32H88Z" fill="none" stroke="currentColor" stroke-width="4.5"/>
+    <path d="M49.8546 77V42.92H71.9826V47.672H52.3026L55.0386 44.84V60.488L52.3026 58.04H71.1186V62.648H52.3026L55.0386 60.2V77H49.8546Z" fill="currentColor"/>
+    <path d="M91 29V39H81V29H91Z" fill="#ff5a1f"/>
+  </svg>
+</span>
+
+<!-- 인체 라벨 -->
+<div class="figlabels" id="figlabels" aria-hidden="true"><!-- JS 가 인체 수만큼 만든다 --></div>
+
+<!-- ═══════ UI ═══════ -->
+<header class="topbar" id="topbar">
+  <span class="attrib">AI CHAMPIONSHIP 2026 &nbsp;·&nbsp; WANTED × KRAFTON COFA 출품작</span>
+  <button class="sound" id="sound" type="button" aria-pressed="false" aria-label="사운드 켜기">
+    <i></i><i></i><i></i><i></i>
+  </button>
+</header>
+
+<div class="enter" id="enter">
+  <span class="enter-ring"></span>
+  <span class="enter-label">스크롤하거나 클릭하세요</span>
+</div>
+
+<div class="hint" id="hint" hidden><span class="hint-bar"></span>SCROLL</div>
+
+<!-- 스와이프 제스처 잔상 -->
+<div class="swipe" id="swipe" aria-hidden="true"><i></i><i></i><i></i></div>
+
+<!-- ═══════ 스크롤 구간 ═══════ -->
+<main id="main">
+
+  <!-- S0 · 대기 (잠금이 풀리기 전까지 여기서 멈춘다) -->
+  <section class="sc s-hold" id="sHold"></section>
+
+  <!-- S3 · 지퍼 → 데님 → THINK 재조립 -->
+  <section class="sc s-zip" id="sZip">
+    <div class="pin">
+      <div class="zipcopy" id="zipcopy">
+        <span class="no">01 — FEED &amp; EDIT</span>
+        <h2>스크롤 속 패션을<br>하나의 <em>트렌드</em>로.</h2>
+        <p>매거진·SNS에 흩어진 패션 데이터를 모으고<b>(FEED)</b>,<br>
+           정제하여<b>(EDIT)</b> 트렌드의 온도를 파악합니다.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- S4 · WHY — 신발끈을 따라 내려간다 -->
+  <section class="sc s-why" id="sWhy">
+    <svg class="lace" id="lace" aria-hidden="true" preserveAspectRatio="none"></svg>
+
+    <div class="why-head">
+      <span class="no">02 — WHY</span>
+      <h2 class="why-title">유행은 빨라졌고,<br>정보는 흩어졌습니다.</h2>
+    </div>
+
+    <!-- 수명주기 압축 -->
+    <article class="beat b-life" data-side="left">
+      <span class="beat-no">01</span>
+      <h3>패션 수명주기</h3>
+      <div class="life">
+        <div class="life-row">
+          <span class="life-lab">과거</span>
+          <div class="life-bar"><i class="was"></i></div>
+          <b class="life-val" data-count="36" data-unit="개월">36개월</b>
+        </div>
+        <div class="life-row now">
+          <span class="life-lab">지금</span>
+          <div class="life-bar"><i class="is"></i></div>
+          <b class="life-val">2~6개월</b>
+        </div>
+      </div>
+      <p>한 스타일이 뜨고 지는 데 걸리는 시간이 <b>6분의 1</b>로 줄었습니다.
+         계절 단위로 기획하던 방식으로는 따라잡을 수 없습니다.</p>
+    </article>
+
+    <!-- 신호 다변화 -->
+    <article class="beat b-sig" data-side="right">
+      <span class="beat-no">02</span>
+      <h3>트렌드 신호는<br>다섯 갈래로 흩어졌다</h3>
+      <div class="sigs" id="sigs">
+        <span style="--i:0">SNS</span><span style="--i:1">숏폼</span>
+        <span style="--i:2">커뮤니티</span><span style="--i:3">쇼핑</span>
+        <span style="--i:4">인플루언서</span>
+      </div>
+      <p>이렇게 빨라진 유행을, 우리는 어디서 발견하고 무엇으로 따라가야 할까요.</p>
+    </article>
+
+    <!-- 이탈 -->
+    <article class="beat b-drop" data-side="left">
+      <span class="beat-no">03</span>
+      <h3>정보의 과잉,<br>흐름의 부재</h3>
+      <p class="drop-lead">발견 → 검증 → 비교 → 구매 판단이 <b>한 곳에서 이어지지 않습니다.</b></p>
+      <div class="stats" id="stats">
+        <div class="stat"><b data-count="3" data-suffix="+">0</b><span>구매 전 비교하는<br>플랫폼 수</span></div>
+        <div class="stat"><b data-count="70.19" data-dec="2" data-suffix="%">0</b><span>온라인 장바구니<br>이탈률</span></div>
+        <div class="stat"><b data-count="62" data-suffix="%">0</b><span>가격 비교를 위해<br>구매 보류</span></div>
+      </div>
+    </article>
+
+    <!-- 포지셔닝 -->
+    <article class="beat b-map" data-side="full">
+      <span class="beat-no">04</span>
+      <h3>그래서 아무도<br>가운데에 서 있지 않았습니다</h3>
+      <div class="mapwrap"><svg class="posmap" id="posmap" viewBox="0 0 780 660" role="img"
+        aria-label="데이터 가공·분석과 구매 판단 지원, 자사 플랫폼 한정과 멀티플랫폼 통합 두 축의 포지셔닝 맵. FEEDiT은 멀티플랫폼 통합과 중앙에 위치."></svg></div>
+    </article>
+
+    <!-- 교집합 -->
+    <article class="beat b-venn" data-side="full">
+      <span class="beat-no">05</span>
+      <h3>네 시장이 겹치는 자리</h3>
+      <div class="mapwrap"><svg class="venn" id="venn" viewBox="0 0 760 640" role="img"
+        aria-label="Fashion Tech, AI Personal Styling, Social Listening, Fashion E-commerce 네 영역이 겹치는 중앙에 FEEDiT."></svg></div>
+      <p class="venn-note">각 시장의 기술을 통합해 소비자가 트렌드를 탐색하고, 데이터를 분석하며,
+         구매를 결정하는 전 과정을 <b>하나의 서비스</b>로 연결합니다.</p>
+    </article>
+  </section>
+
+  <!-- S5 · 엔딩 -->
+  <section class="sc s-build" id="sBuild">
+    <div class="pin build-pin">
+      <div class="build-copy" id="buildCopy">
+        <h2 class="lets"><span>LET'S</span> <span>BUILD</span></h2>
+        <p>발견부터 구매 판단까지, 흩어져 있던 과정을 하나로 잇습니다.</p>
+        <a class="build-btn" id="buildBtn" href="#">
+          <span>BUILD FEEDiT</span><u>→</u>
+        </a>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="foot">
+  <span>FEEDiT — Fashion Trend Intelligence</span>
+  <span>AI CHAMPIONSHIP 2026 · WANTED × KRAFTON COFA 출품작</span>
+  <span>2026 · Seoul</span>
+</footer>
+
+<div class="grain" aria-hidden="true"></div>
+
+<audio id="bgm" preload="auto" loop>
+  <source src="./audio/theme.m4a" type="audio/mp4">
+  <source src="./audio/theme.mp3" type="audio/mpeg">
+</audio>
+
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/gsap.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/ScrollTrigger.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/lenis@1.3.26/dist/lenis.min.js"></script>
+<script type="module" src="./js/main.js"></script>
+</body>
+</html>

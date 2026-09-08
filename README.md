@@ -24,6 +24,8 @@
 6. [핵심 기술 상세](#6-핵심-기술-상세)
 7. [데이터 설계](#7-데이터-설계)
 8. [배포 정보 및 실행 방법](#8-배포-정보-및-실행-방법)
+   - [8-2. 처음 받은 사람 — 공통 준비](#8-2-처음-받은-사람--공통-준비)
+   - [8-4. AI 챗봇 실행법](#8-4-ai-챗봇-실행법)
 
 ---
 
@@ -263,7 +265,19 @@ FEEDiT의 수집 시스템은 플랫폼별 Collector를 독립적으로 운영�
 | 🌐 Frontend (배포) | https://fee-di-t-frontend.vercel.app/ |
 | 🖥 Backend | AWS EC2 (내부/추후 공개 URL 기재) |
 
-### 8-2. Backend 실행법
+### 8-2. 처음 받은 사람 — 공통 준비
+
+```bash
+git clone https://github.com/feedit-official/feedit.git
+cd feedit
+cp .env.example .env      # 값을 채웁니다. .env 는 커밋하지 않습니다.
+```
+
+`.env.example` 에 무엇을 왜 넣는지 항목마다 적어 뒀습니다.
+**AWS 키와 OpenAI 키는 각자 발급받아 쓰세요.** 공용 키를 돌려쓰면
+한도가 한 번에 소진되고, 누가 무엇을 했는지 추적이 안 됩니다.
+
+### 8-3. Backend 실행법
 
 **1. Docker Desktop 실행**
 
@@ -284,6 +298,51 @@ docker compose --env-file .env -f docker/compose.yml down
 ```
 
 > Docker가 Django + Redis + SSM Tunnel을 실행하고, DB는 AWS RDS를 사용합니다.
+
+### 8-4. AI 챗봇 실행법
+
+챗봇(`ChatBot/`)은 **gpt-5.6-luna** 를 씁니다. 모델·키·경로는 전부 `.env` 로 뺐습니다.
+
+**1. `.env` 에 두 줄을 채웁니다**
+
+```bash
+OPENAI_API_KEY=sk-...                          # 각자 발급 (platform.openai.com)
+FEEDIT_CRAWLER_DIR=/절대/경로/feedit-crawler     # 크롤러 저장소를 받아 둔 곳
+```
+
+**2. 켜기 전에 점검합니다**
+
+```bash
+python3 ChatBot/tools_env_check.py    # 무엇이 없는지 화면에 나옵니다 (네트워크 안 씀)
+python3 ChatBot/tools_llm_check.py    # 모델을 실제로 한 번 불러 봅니다
+```
+
+**3. 실행**
+
+```bash
+docker compose -f docker/compose.yml up chatbot     # 또는
+cd ChatBot && python3 server.py                     # http://127.0.0.1:8770
+```
+
+프론트는 `npm run dev` 만 하면 `/api/v1/…` 를 챗봇으로 프록시합니다
+(`frontend/vite.config.js`). **챗봇을 안 켜도 프론트는 그냥 돕니다** — 목업으로 떨어집니다.
+
+> ⚠ **챗봇은 크롤러 저장소(`feedit-crawler`)가 있어야 뜹니다.**
+> 지표 DB·어휘 사전뿐 아니라 `feedit_crawler/lexicon.py` 와
+> `tools/question_extract.py` 를 **import** 하기 때문입니다.
+> RDS 로 옮기는 길은 `docs_RDS_격차분석.md` 의 1번 항목(적재 경로)이
+> 끝나야 열립니다. 자세한 내용은 `ChatBot/README.md`.
+
+> ⚠ **챗봇 서버에는 아직 인증이 없습니다.** 포트를 `127.0.0.1` 에만 묶어 두었고
+> 배포용 compose 에서도 밖으로 열지 않았습니다. 공개하려면 인증부터 붙여야 합니다.
+
+크롤러가 없는 팀원은 챗봇만 빼고 씁니다:
+
+```bash
+docker compose -f docker/compose.yml up ssm-tunnel redis web
+```
+
+`.env` 에 `FEEDIT_LLM_DISABLED=1` 을 넣으면 OpenAI 키 없이도 규칙만으로 돌아갑니다.
 
 ---
 

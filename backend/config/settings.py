@@ -32,6 +32,13 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    # ★ gunicorn 은 정적 파일을 안 준다 — runserver 만 대신 해 주던 일이다.
+    #   이게 없으면 admin CSS 가 404 로 통째로 깨진다.
+    #   (2026-09-07 실측: gunicorn 단독 → /static/admin/css/base.css 404,
+    #    whitenoise 를 넣으니 200 · 22,120 bytes · text/css)
+    #   nginx 를 따로 세우는 대신 여기서 해결한다.
+    #   ⚠ 반드시 SecurityMiddleware **바로 다음** 이어야 한다.
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -134,3 +141,39 @@ AWS_REGION = os.getenv(
 YOUTUBE_API_KEY = os.getenv(
     "YOUTUBE_API_KEY"
 )
+
+
+# ══════════════════════════════════════════════════════════════
+#  배포 설정 (2026-09-07)
+# ══════════════════════════════════════════════════════════════
+
+# 정적 파일 — whitenoise 가 압축·해시해서 내보낸다.
+#   배포 전에 반드시 한 번:  python manage.py collectstatic --noinput
+STORAGES = {
+    "default": {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+    },
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+    },
+}
+
+# ★ 앞에 Caddy(또는 ALB)가 서면 Django 는 자기가 HTTP 로 불린 줄 안다.
+#   그러면 request.is_secure() 가 False 라서 CSRF 검사와 리다이렉트가 엉킨다.
+#   앞단이 붙여 주는 머리글을 믿으라고 알려 준다.
+#
+#   ⚠ 앞단이 **반드시 있을 때만** 켠다.
+#     앞단 없이 켜면 누구나 이 머리글을 위조해 https 인 척할 수 있다.
+if os.getenv("DJANGO_BEHIND_PROXY", "False").lower() == "true":
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+    USE_X_FORWARDED_HOST = True
+
+# admin 로그인 폼이 https 로 뜰 때 CSRF 를 통과시키려면 필요하다.
+CSRF_TRUSTED_ORIGINS = [
+    o.strip()
+    for o in os.getenv(
+        "DJANGO_CSRF_TRUSTED_ORIGINS",
+        "https://feedit-official.duckdns.org",
+    ).split(",")
+    if o.strip()
+]

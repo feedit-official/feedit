@@ -1,0 +1,321 @@
+/* ============================================================
+   FEEDiT — 서비스 소개 (AI Championship 2026 출품)
+   지면은 세 번 바뀐다: 포슬린 → 데님(인디고) → 백지.
+   색은 지면이 맡고, 인체 파티클이 유일한 채도를 가진다.
+   ============================================================ */
+
+:root{
+  --porcelain:#f4f5f7;
+  --ink:#0e0f12;
+  --ink-1:rgba(14,15,18,.60);
+  --ink-2:rgba(14,15,18,.34);
+  --ink-3:rgba(14,15,18,.11);
+
+  --indigo:#141c2e;
+  --indigo-2:#0d1320;
+  --denim:#2f4a72;
+
+  --paper:#ffffff;
+  --ember:#ff5a1f;
+
+  --wanted:'Wanted Sans Variable','Wanted Sans',-apple-system,BlinkMacSystemFont,system-ui,sans-serif;
+  --mono:var(--wanted);
+  --serif:'Instrument Serif',Georgia,'Times New Roman',serif;
+  --sans:var(--wanted);
+  --ease:cubic-bezier(.19,1,.22,1);
+
+  --gut:clamp(20px,5vw,64px);
+  --wrap:min(1240px,90vw);
+}
+
+*{margin:0;padding:0;box-sizing:border-box}
+html{background:var(--porcelain)}
+body{
+  background:var(--porcelain);color:var(--ink);
+  font-family:var(--sans);letter-spacing:-.022em;word-break:keep-all;
+  -webkit-font-smoothing:antialiased;overflow-x:hidden;
+}
+body.is-locked{overflow:hidden;height:100%}
+a{color:inherit;text-decoration:none}
+::selection{background:var(--ember);color:#fff}
+svg{display:block}
+
+.no{
+  display:block;font-family:var(--mono);font-size:10.5px;font-weight:500;
+  letter-spacing:.24em;color:var(--ink-2);margin-bottom:18px;
+}
+
+/* ═══════ 고정 캔버스 레이어 ═══════ */
+.denim,.sheet,.gl,.zip,.tx{position:fixed;inset:0;pointer-events:none}
+.denim{z-index:1;opacity:0}
+.sheet{z-index:2;background:var(--paper);opacity:0}
+.gl   {z-index:3;width:100%;height:100%}
+.zip  {z-index:4;width:100%;height:100%;opacity:0}
+.tx   {z-index:6;width:100%;height:100%}
+
+/* 데님 — 좌우 두 폭이 지퍼를 따라 맞물린다 */
+.denim-tex{display:none}          /* 텍스처 생성용 원본 — 화면에는 쓰지 않는다 */
+.denim-panel{
+  position:absolute;inset:0;display:block;
+  background:var(--denim) var(--tex) center/cover no-repeat;
+  /* 지퍼 진행도(--zp)와 벌어짐(--zo)이 폴리곤을 움직인다 */
+}
+.denim-panel.L{
+  clip-path:polygon(0% 0%, 50% 0%, 50% var(--zp,0%), calc(50% - var(--zo,50%)) 100%, 0% 100%);
+}
+.denim-panel.R{
+  clip-path:polygon(100% 0%, 50% 0%, 50% var(--zp,0%), calc(50% + var(--zo,50%)) 100%, 100% 100%);
+}
+
+/* ═══════ 상단 · UI ═══════ */
+.topbar{
+  position:fixed;top:0;left:0;right:0;z-index:20;
+  display:flex;align-items:center;justify-content:space-between;gap:16px;
+  padding:16px var(--gut);
+  transition:color .6s var(--ease);
+}
+.attrib{
+  font-family:var(--mono);font-size:9.5px;font-weight:500;letter-spacing:.2em;
+  color:var(--ink-2);transition:color .6s var(--ease);
+}
+body.on-dark .attrib{color:rgba(255,255,255,.44)}
+
+.sound{
+  display:flex;align-items:flex-end;gap:2.5px;height:16px;
+  background:none;border:0;cursor:pointer;padding:4px;
+}
+.sound i{width:2px;height:4px;background:var(--ink-2);border-radius:1px;transition:height .3s var(--ease),background .5s}
+body.on-dark .sound i{background:rgba(255,255,255,.44)}
+.sound[aria-pressed="true"] i{background:var(--ember)}
+.sound[aria-pressed="true"] i:nth-child(1){animation:eq .7s ease-in-out infinite alternate}
+.sound[aria-pressed="true"] i:nth-child(2){animation:eq .5s ease-in-out infinite alternate -.2s}
+.sound[aria-pressed="true"] i:nth-child(3){animation:eq .62s ease-in-out infinite alternate -.35s}
+.sound[aria-pressed="true"] i:nth-child(4){animation:eq .46s ease-in-out infinite alternate -.1s}
+@keyframes eq{from{height:3px}to{height:15px}}
+
+/* 진입 유도 — 첫 제스처가 시퀀스와 오디오를 함께 깨운다 */
+.enter{
+  position:fixed;left:50%;bottom:clamp(30px,7vh,64px);transform:translateX(-50%);
+  z-index:21;display:flex;flex-direction:column;align-items:center;gap:14px;
+  cursor:pointer;transition:opacity .6s var(--ease);
+}
+.enter-ring{
+  width:34px;height:52px;border:1px solid var(--ink-2);border-radius:999px;
+  position:relative;
+}
+.enter-ring::after{
+  content:"";position:absolute;left:50%;top:9px;width:3px;height:8px;border-radius:2px;
+  background:var(--ember);transform:translateX(-50%);
+  animation:drop 1.9s var(--ease) infinite;
+}
+@keyframes drop{0%{opacity:0;transform:translate(-50%,0)}25%{opacity:1}
+  70%{opacity:0;transform:translate(-50%,22px)}100%{opacity:0}}
+.enter-label{
+  font-family:var(--mono);font-size:9.5px;letter-spacing:.22em;color:var(--ink-2);
+}
+.enter.gone{opacity:0;pointer-events:none}
+
+.hint{
+  position:fixed;left:var(--gut);bottom:clamp(22px,5vh,44px);z-index:20;
+  display:flex;align-items:center;gap:11px;
+  font-family:var(--mono);font-size:9.5px;letter-spacing:.24em;color:var(--ink-2);
+  transition:opacity .5s var(--ease),color .6s var(--ease);
+}
+body.on-dark .hint{color:rgba(255,255,255,.44)}
+.hint-bar{width:32px;height:1px;background:currentColor;position:relative;overflow:hidden}
+.hint-bar::after{content:"";position:absolute;inset:0;background:var(--ember);
+  animation:sweep 2.1s var(--ease) infinite}
+@keyframes sweep{0%{transform:translateX(-100%)}60%,100%{transform:translateX(100%)}}
+body.scrolled .hint{opacity:0}
+
+/* FEEDiT 마크 */
+.fmark{
+  position:fixed;z-index:6;left:0;top:0;display:block;
+  transform:translate(-50%,-50%);opacity:0;color:#3b3f46;pointer-events:none;
+}
+.fmark svg{width:100%;height:100%;overflow:visible}
+
+/* 인체 라벨 — 3D 좌표를 따라 JS 가 위치를 준다 */
+.figlabels span{
+  position:fixed;z-index:7;transform:translate(-50%,-50%);
+  font-family:var(--mono);font-size:10px;font-weight:500;letter-spacing:.2em;
+  color:var(--ink-2);background:rgba(244,245,247,.72);
+  backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
+  padding:5px 11px;border-radius:999px;white-space:nowrap;
+  opacity:0;transition:opacity .5s var(--ease);pointer-events:none;
+}
+
+/* 스와이프 제스처 잔상 */
+.swipe{
+  position:fixed;top:50%;left:50%;z-index:8;transform:translate(-50%,-50%);
+  display:flex;gap:9px;opacity:0;pointer-events:none;
+}
+.swipe i{display:block;width:2px;height:46px;border-radius:2px;background:var(--ember);opacity:.5}
+
+/* ═══════ 스크롤 구간 ═══════ */
+.sc{position:relative;z-index:5}
+.s-hold{height:100vh}
+.s-zip{height:340vh}
+.s-build{height:230vh}
+.pin{position:sticky;top:0;height:100svh;display:grid;place-items:center;padding:0 var(--gut)}
+
+/* S3 — 지퍼 카피 */
+.zipcopy{
+  width:var(--wrap);max-width:640px;margin-right:auto;color:#fff;opacity:0;
+}
+.zipcopy .no{color:rgba(255,255,255,.44)}
+.zipcopy h2{
+  font-size:clamp(28px,4.4vw,58px);font-weight:600;line-height:1.08;
+  letter-spacing:-.045em;text-wrap:balance;
+}
+.zipcopy h2 em{font-style:normal;font-family:var(--serif);font-weight:400;color:var(--ember)}
+.zipcopy p{margin-top:20px;font-size:clamp(14px,1.35vw,17px);line-height:1.66;color:rgba(255,255,255,.68)}
+.zipcopy p b{color:#fff;font-weight:600}
+
+/* ═══════ S4 · WHY ═══════ */
+.s-why{
+  background:var(--indigo);color:#fff;
+  padding:clamp(90px,14vh,170px) 0 clamp(110px,18vh,220px);
+  overflow:hidden;
+}
+.s-why .no{color:rgba(255,255,255,.36)}
+.lace{position:absolute;inset:0;width:100%;height:100%;z-index:0;pointer-events:none}
+
+.why-head{position:relative;z-index:1;width:var(--wrap);margin:0 auto clamp(60px,12vh,150px)}
+.why-title{
+  font-size:clamp(28px,5vw,68px);font-weight:600;line-height:1.06;
+  letter-spacing:-.045em;text-wrap:balance;
+}
+
+.beat{
+  position:relative;z-index:1;width:var(--wrap);margin:0 auto;
+  padding:clamp(60px,11vh,140px) 0;max-width:none;
+}
+.beat[data-side="left"]  { padding-right:0 }
+.beat[data-side="right"] { text-align:right }
+.beat > *{max-width:min(560px,86vw)}
+.beat[data-side="left"]  > *{margin-right:auto}
+.beat[data-side="right"] > *{margin-left:auto}
+.beat[data-side="full"]  > *{max-width:none}
+
+.beat-no{
+  display:block;font-family:var(--mono);font-size:44px;font-weight:500;
+  letter-spacing:-.03em;color:rgba(255,255,255,.12);margin-bottom:6px;line-height:1;
+}
+.beat h3{
+  font-size:clamp(22px,3.2vw,40px);font-weight:600;line-height:1.14;
+  letter-spacing:-.04em;margin-bottom:24px;text-wrap:balance;
+}
+.beat p{font-size:clamp(13.5px,1.25vw,16px);line-height:1.72;color:rgba(255,255,255,.62);margin-top:22px}
+.beat p b{color:#fff;font-weight:600}
+
+/* 수명주기 */
+.life{display:flex;flex-direction:column;gap:14px}
+.life-row{display:flex;align-items:center;gap:14px}
+.life-lab{
+  flex:0 0 40px;font-family:var(--mono);font-size:10px;letter-spacing:.18em;
+  color:rgba(255,255,255,.4);
+}
+.life-bar{flex:1;height:8px;border-radius:999px;background:rgba(255,255,255,.09);overflow:hidden}
+.life-bar i{display:block;height:100%;width:0;border-radius:999px;background:rgba(255,255,255,.34)}
+.life-row.now .life-bar i{background:var(--ember)}
+.life-val{
+  flex:0 0 auto;font-family:var(--mono);font-size:clamp(15px,1.6vw,21px);font-weight:700;
+  letter-spacing:-.02em;min-width:96px;text-align:right;
+}
+.life-row.now .life-val{color:var(--ember)}
+
+/* 신호 */
+.sigs{display:flex;flex-wrap:wrap;gap:9px;justify-content:flex-end}
+.sigs span{
+  display:inline-block;padding:9px 16px;border-radius:999px;
+  border:1px solid rgba(255,255,255,.18);font-size:13.5px;
+  opacity:0;transform:translateY(12px);
+}
+
+/* 이탈 통계 */
+.drop-lead{margin-top:0 !important;font-size:clamp(14px,1.4vw,18px) !important;color:rgba(255,255,255,.74) !important}
+.beat .stats{max-width:min(780px,90vw)}
+.stats{display:flex;flex-wrap:wrap;gap:clamp(22px,4vw,58px);margin-top:38px}
+.stat b{
+  display:block;font-family:var(--mono);font-weight:700;letter-spacing:-.035em;
+  font-size:clamp(34px,5.2vw,72px);line-height:1;color:var(--ember);
+}
+.stat span{
+  display:block;margin-top:10px;font-size:12.5px;line-height:1.5;
+  color:rgba(255,255,255,.5);
+}
+
+/* 도식 */
+.mapwrap{margin-top:34px;width:100%;max-width:min(620px,86vw)}
+.beat[data-side="full"] .mapwrap{margin-left:auto;margin-right:auto}
+.posmap,.venn{width:100%;height:auto;overflow:visible}
+.venn-note{max-width:min(620px,88vw) !important;margin:30px auto 0 !important;text-align:center}
+
+/* ═══════ S5 · 엔딩 ═══════ */
+.s-build{background:transparent;color:var(--ink)}
+.build-pin{align-items:end;padding-bottom:clamp(46px,9vh,96px)}
+.build-copy{text-align:center;opacity:0}
+.lets{
+  font-size:clamp(38px,8vw,116px);font-weight:600;line-height:.98;
+  letter-spacing:-.05em;
+}
+.lets span{display:inline-block}
+.lets span:last-child{font-family:var(--serif);font-weight:400;font-style:italic;color:var(--ember)}
+.build-copy p{
+  margin-top:20px;font-size:clamp(13.5px,1.3vw,16.5px);color:var(--ink-1);line-height:1.66;
+}
+.build-btn{
+  margin-top:clamp(28px,5vh,46px);
+  display:inline-flex;align-items:center;gap:12px;
+  background:var(--ink);color:var(--paper);border-radius:999px;
+  padding:16px 30px;font-size:15px;font-weight:600;letter-spacing:-.025em;
+  transition:transform .5s var(--ease),background .4s var(--ease),gap .4s var(--ease);
+}
+.build-btn u{text-decoration:none}
+.build-btn:hover{background:var(--ember);gap:18px}
+
+.foot{
+  position:relative;z-index:5;background:var(--paper);color:var(--ink-2);
+  display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;
+  padding:22px var(--gut);border-top:1px solid var(--ink-3);
+  font-family:var(--mono);font-size:9.5px;letter-spacing:.16em;
+}
+
+/* ═══════ 질감 ═══════ */
+.grain{
+  position:fixed;inset:-100px;z-index:30;pointer-events:none;opacity:.045;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  animation:grainmove 7s steps(6) infinite;
+}
+@keyframes grainmove{
+  0%{transform:translate(0,0)}20%{transform:translate(-13px,7px)}
+  40%{transform:translate(9px,-11px)}60%{transform:translate(-7px,-5px)}
+  80%{transform:translate(11px,9px)}100%{transform:translate(0,0)}
+}
+
+/* ═══════ 반응형 ═══════ */
+@media (max-width:820px){
+  .s-zip{height:280vh}
+  .beat[data-side="right"]{text-align:left}
+  .beat[data-side="right"] > *{margin-right:auto;margin-left:0}
+  .sigs{justify-content:flex-start}
+  .stats{gap:26px}
+  .stat{flex:1 1 40%}
+  .zipcopy{margin-right:0}
+  .figlabels span{font-size:9px;padding:4px 9px}
+}
+
+/* ═══════ 모션 최소화 ═══════ */
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.01ms !important;animation-iteration-count:1 !important;
+    transition-duration:.01ms !important}
+  .grain{display:none}
+  body.is-locked{overflow:auto;height:auto}
+  .enter{display:none}
+  .zipcopy,.build-copy{opacity:1}
+  .sigs span{opacity:1;transform:none}
+  .denim{opacity:1}
+  .denim-panel.L{clip-path:polygon(0 0,50% 0,50% 100%,0 100%)}
+  .denim-panel.R{clip-path:polygon(100% 0,50% 0,50% 100%,100% 100%)}
+}

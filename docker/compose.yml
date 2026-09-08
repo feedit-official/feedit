@@ -77,3 +77,38 @@ services:
       "
 
     restart: unless-stopped
+
+  # ── 챗봇 (feedit-chat) ────────────────────────────────────
+  #   프론트 dev 서버가 /api/v1/… 를 여기로 프록시한다 (frontend/vite.config.js).
+  #
+  #   ★ 크롤러 저장소가 있어야 뜬다. .env 에 이 줄이 필요하다:
+  #       FEEDIT_CRAWLER_DIR=/절대/경로/feedit-crawler
+  #     없으면 컨테이너가 "무엇이 없는지" 를 찍고 멈춘다 — 조용히 죽지 않는다.
+  #     크롤러가 없는 팀원은 이 서비스만 빼고 쓰면 된다:
+  #       docker compose up ssm-tunnel redis web
+  chatbot:
+    build:
+      context: ..
+      dockerfile: docker/chat.Dockerfile
+
+    container_name: feedit-chatbot
+
+    env_file:
+      - ../.env
+
+    environment:
+      # 컨테이너 안에서 밖으로 열되(0.0.0.0), 호스트에서는 127.0.0.1 로만 묶는다.
+      FEEDIT_CHAT_HOST: 0.0.0.0
+      FEEDIT_CHAT_PORT: 8770
+      FEEDIT_CRAWLER_DIR: /crawler
+
+    ports:
+      # ★ 127.0.0.1 을 앞에 붙인다. 이걸 빼면 인증 없는 서버가
+      #   같은 와이파이의 아무에게나 열린다.
+      - "127.0.0.1:8770:8770"
+
+    volumes:
+      - ../ChatBot:/app                                    # 코드 — 고치면 바로 반영
+      - ${FEEDIT_CRAWLER_DIR:-../../feedit-crawler}:/crawler:ro   # 지표·사전 — 읽기만
+
+    restart: unless-stopped

@@ -135,6 +135,23 @@ class TextDocument(models.Model):
 class TermMetricDaily(models.Model):
     """
     용어별 하루 단위 트렌드 지표.
+
+    ── 2026-09-07 보강 ──────────────────────────────────────
+    크롤러가 이미 계산해 둔 값을 그대로 받을 수 있게 칸을 맞췄다.
+    지표 정의의 원본은 `FEEDiT_지표계산_설계서.md` 이고, 계산은 크롤러가 한다.
+    여기서 다시 계산하지 않는다 — 두 곳에서 계산하면 화면과 챗봇이
+    서로 다른 숫자를 말하게 된다.
+
+    ★ 왜 JSON 이 아니라 컬럼인가
+      온도·모멘텀은 **정렬과 범위 조회에 쓰는 값**이다.
+        · 화면 첫 진입   ORDER BY temp DESC LIMIT 20
+        · 구간 필터      WHERE temp >= 75          (과열)
+        · 챗봇 "뜨는 것" ORDER BY momentum DESC
+      JSONB 도 표현식 인덱스로 가능하지만, 질의가 인덱스 표현식과 한 글자라도
+      다르면 조용히 전체 훑기로 떨어진다. 게다가 JSON 안 숫자는 타입이 없어서
+      "9" > "10" 같은 문자열 비교 사고가 난다 — 값이 틀려도 에러가 안 난다.
+      그래서 **자주 정렬·필터하는 여섯 개만 컬럼**으로 빼고,
+      나머지(raw_count·log_value·share_pct·실험값)는 `metrics` JSON 에 둔다.
     """
 
     term = models.ForeignKey(
@@ -144,8 +161,37 @@ class TermMetricDaily(models.Model):
         verbose_name="용어",
     )
 
+    # ★★ 플랫폼별 지표를 담으려면 이 칸이 있어야 한다 ★★
+    #   크롤러는 이미 (용어 × 플랫폼 × 날짜) 로 계산해 둔다.
+    #   2026-09-07 실측: 12,484행 중 7,275행(58%)이 플랫폼별 행이다.
+    #   이 칸이 없으면 그 58% 가 통째로 들어오지 못한다.
+    #
+    #   NULL = 전 플랫폼 합산 (크롤러의 `__all__`)
+    #   값 있음 = 그 플랫폼만 (musinsa · youtube · naver · zigzag · ably · kream …)
+    source = models.ForeignKey(
+        "core.Source",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="term_metrics",
+        verbose_name="플랫폼",
+        help_text="비우면 전 플랫폼 합산",
+    )
+
     metric_date = models.DateField(
         verbose_name="기준일",
+    )
+
+    # ★ 공식이 바뀌면 값의 뜻도 바뀐다.
+    #   이 칸이 없으면 옛 공식으로 만든 행과 새 공식 행이 한 표에 섞여
+    #   그래프가 어느 날 갑자기 튀는데 원인을 찾을 수가 없다.
+    metric_version = models.CharField(
+        max_length=64,
+        default="",
+        blank=True,
+        db_index=True,
+        verbose_name="지표 버전",
+        help_text="예: feedit-l2-v2-shadow",
     )
 
     mention_count = models.BigIntegerField(
@@ -187,10 +233,48 @@ class TermMetricDaily(models.Model):
         verbose_name="트렌드 점수",
     )
 
+    # ── 설계서 §1 의 값들 ─────────────────────────────────
+    #   전부 크롤러가 계산해서 넘겨준다. 여기서 만들지 않는다.
+
+    level = models.DecimalField(
+        max_digits=5, decimal_places=2, null=True, blank=True,
+        verbose_name="수준(0~100)",
+        help_text="같은 축 안에서 이 용어가 어느 정도 위치인가",
+    )
+
+    momentum = models.DecimalField(
+        max_digits=8, decimal_places=4, null=True, blank=True,
+        verbose_name="가속(ma7/ma28)",
+        help_text="1보다 크면 최근 7일이 28일 평균보다 뜨겁다",
+    )
+
+    temp = models.DecimalField(
+        max_digits=5, decimal_places=2, null=True, blank=True,
+        verbose_name="트렌드 온도(0~100)",
+        help_text="수준 60% + 가속 40%. 구간: ~25 차가움 ~50 미지근 ~75 따뜻함 이상 과열",
+    )
+
+    ma7 = models.DecimalField(
+        max_digits=14, decimal_places=4, null=True, blank=True,
+        verbose_name="7일 이동평균",
+    )
+
+    ma28 = models.DecimalField(
+        max_digits=14, decimal_places=4, null=True, blank=True,
+        verbose_name="28일 이동평균",
+    )
+
+    pct_rank = models.DecimalField(
+        max_digits=6, decimal_places=3, null=True, blank=True,
+        verbose_name="백분위(0~100)",
+        help_text="이름과 달리 0~1 이 아니라 0~100 이다. 크롤러 실측으로 확인했다.",
+    )
+
     metrics = models.JSONField(
         default=dict,
         blank=True,
         verbose_name="추가 지표",
+        help_text="raw_count · log_value · share_pct 등 정렬에 안 쓰는 값",
     )
 
     created_at = models.DateTimeField(auto_now_add=True)
@@ -202,20 +286,45 @@ class TermMetricDaily(models.Model):
         verbose_name_plural = "용어 일별 지표"
 
         constraints = [
+            # ★ 예전 제약은 (용어, 날짜) 뿐이었다.
+            #   그러면 플랫폼별 행이 서로 충돌한다 — 2026-09-07 실측으로
+            #   12,484행 중 7,275행(58%)이 그 이유로 못 들어간다.
+            #   플랫폼과 지표 버전까지 넣어야 한 칸씩 자리를 갖는다.
+            #
+            #   nulls_distinct=False 를 쓰는 이유: source 가 NULL(전체 합산)인
+            #   행이 여러 번 들어오면 PostgreSQL 은 기본적으로 NULL 끼리 다르다고
+            #   봐서 중복을 막지 못한다. 합산 행도 하루에 하나여야 한다.
             models.UniqueConstraint(
-                fields=["term", "metric_date"],
+                fields=["term", "source", "metric_date", "metric_version"],
                 name="uq_term_metric_day",
+                nulls_distinct=False,
             ),
         ]
 
         indexes = [
+            # 화면 첫 진입 — "오늘 온도 높은 순"
+            models.Index(
+                fields=["metric_date", "-temp"],
+                name="idx_term_metric_temp",
+            ),
+            # 챗봇 "요즘 뜨는 것" — 가속 높은 순
+            models.Index(
+                fields=["metric_date", "-momentum"],
+                name="idx_term_metric_mom",
+            ),
             models.Index(
                 fields=["metric_date", "-trend_score"],
                 name="idx_term_metric_trend",
             ),
+            # 용어 하나의 시계열
             models.Index(
                 fields=["term", "-metric_date"],
                 name="idx_term_metric_term",
+            ),
+            # 플랫폼별 온도 — "무신사에서는 뜨는데 지그재그에선 아직"
+            models.Index(
+                fields=["source", "metric_date"],
+                name="idx_term_metric_source",
             ),
         ]
 

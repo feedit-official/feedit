@@ -10,6 +10,7 @@
 
 엔드포인트
   GET  /v1/health                    떠 있나 · 기준일 · 적재 term 수
+  GET  /v1/llm                       LLM 배선 진단 (모델 · 키 유무 · 마지막 오류)
   GET  /v1/me?plan=FREE              플랜과 하루 한도 (아직 계정이 없어 질의로 받는다)
   POST /v1/chat                      SSE 스트림
        {question, mode, plan, conversation_id, history?}
@@ -38,11 +39,20 @@ from urllib.parse import urlparse, parse_qs
 from app import plans
 from app.engine import ChatEngine
 
-HOST = "127.0.0.1"
-PORT = 8770
+# ── 어디에 여나 ────────────────────────────────────────────
+#   기본은 127.0.0.1 이다. 그대로 둔다 — 인증이 없기 때문이다.
+#   도커 안에서는 컨테이너 밖에서 못 닿으므로 compose 가 0.0.0.0 을 넣어 준다.
+#   그때도 포트는 `127.0.0.1:8770:8770` 로 묶어 호스트 밖으로는 안 나간다.
+HOST = os.getenv("FEEDIT_CHAT_HOST", "127.0.0.1")
+PORT = int(os.getenv("FEEDIT_CHAT_PORT", "8770"))
+
 # vite dev 서버만 허용한다. 와일드카드를 쓰지 않는다.
-ALLOW_ORIGINS = {"http://localhost:5173", "http://127.0.0.1:5173",
-                 "http://localhost:4173", "http://127.0.0.1:4173"}
+#   팀원이 다른 포트를 쓰면 FEEDIT_CHAT_ORIGINS 에 쉼표로 이어 붙인다.
+_DEFAULT_ORIGINS = ("http://localhost:5173", "http://127.0.0.1:5173",
+                    "http://localhost:4173", "http://127.0.0.1:4173")
+ALLOW_ORIGINS = {o.strip() for o in
+                 (os.getenv("FEEDIT_CHAT_ORIGINS") or ",".join(_DEFAULT_ORIGINS)).split(",")
+                 if o.strip()}
 MAX_BODY = 64 * 1024
 
 # 어휘 등록 요청을 어디에 쌓나.
@@ -163,6 +173,15 @@ class Handler(BaseHTTPRequestHandler):
                                         "terms": len(e.gate.prefer)})
             except Exception as ex:                       # noqa: BLE001
                 return self._json(500, {"ok": False, "error": type(ex).__name__})
+        if u.path == "/v1/llm":
+            # 배선 진단. **키 값은 절대 안 나간다** — 있나 없나와 길이뿐이다.
+            from app import llm
+            from app.env import where
+            return self._json(200, {"ok": True, "model": llm.MODEL, "api": llm.API,
+                                    "effort": llm.DEFAULT_EFFORT,
+                                    "disabled": llm.DISABLED,
+                                    "key": llm.key_hint(), "key_from": llm.source_hint(),
+                                    "env_file": where(), "last_error": llm.LAST_ERROR})
         if u.path == "/v1/me":
             q = parse_qs(u.query)
             plan = plans.normalize((q.get("plan") or ["FREE"])[0])
@@ -291,11 +310,27 @@ def main():
     for a in sys.argv[1:]:
         if a.startswith("--port="):
             port = int(a.split("=", 1)[1])
+
+    # ★ 준비물이 없으면 여기서 멈춘다.
+    #   없는 채로 engine() 을 부르면 ImportError 스택트레이스가 뜨는데,
+    #   처음 켜 보는 팀원에게 그건 "고장났다" 로 읽힌다. 무엇이 없는지 말해 준다.
+    from app import config, llm
+    gaps = config.missing_inputs()
+    if gaps:
+        print("먼저 채워야 할 것이 있습니다 — 챗봇 엔진을 켤 수 없습니다.\n")
+        for g in gaps:
+            print("  · " + g)
+        print("\n크롤러 저장소를 받은 뒤 저장소 루트 .env 에 경로를 적어 주세요:")
+        print("  FEEDIT_CRAWLER_DIR=/절대/경로/feedit-crawler")
+        print("\n자세한 진단:  python3 tools_env_check.py")
+        return 2
+
     engine()                                        # 사전을 미리 읽어 첫 요청을 빠르게
     srv = ThreadingHTTPServer((HOST, port), Handler)
     e = engine()
     print(f"feedit-chat  http://{HOST}:{port}")
     print(f"  기준일 {e.store.latest_day()} · 지표 term {len(e.gate.prefer):,}개")
+    print(f"  모델 {llm.MODEL} · 키 {llm.key_hint()}")
     print(f"  허용 오리진 {sorted(ALLOW_ORIGINS)}")
     print("  개발용입니다. 인증이 없습니다.")
     try:
@@ -303,7 +338,8 @@ def main():
     except KeyboardInterrupt:
         print("\n종료")
         srv.shutdown()
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

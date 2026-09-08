@@ -1,0 +1,45 @@
+# Caddy — 앞단(HTTPS 종료 + Django 로 넘기기)
+#
+# ══════════════════════════════════════════════════════════════
+#  nginx 대신 Caddy 를 쓰는 이유
+# ══════════════════════════════════════════════════════════════
+# nginx 도 되지만, 인증서를 certbot 으로 따로 발급·갱신해야 한다.
+# 갱신이 조용히 실패하면 90일 뒤 사이트가 죽는다 — 그때 아무도 안 보고 있다.
+#
+# Caddy 는 도메인만 적으면 Let's Encrypt 인증서를 **자동으로 받고 자동으로
+# 갱신한다.** 설정이 이 파일 하나이고, 팀에 인프라 전담이 없을수록 덜 틀린다.
+#
+# ── 정적 파일은 여기서 다루지 않는다 ─────────────────────────
+# Django 쪽 whitenoise 가 이미 준다(2026-09-07 실측으로 확인).
+# 앞단이 또 만지면 두 곳에서 캐시 규칙이 갈려서 "왜 CSS 가 안 바뀌지"가 된다.
+
+feedit-official.duckdns.org {
+	# 로그 — 문제가 났을 때 볼 게 있어야 한다
+	log {
+		output file /var/log/caddy/access.log
+		format console
+	}
+
+	encode zstd gzip
+
+	# 프론트(Vercel)가 부르는 길과 관리자 화면만 연다.
+	# 나중에 다른 걸 열려면 여기 한 줄씩 더한다 — 기본은 닫는 쪽이다.
+	reverse_proxy web:8000 {
+		# ★ Django 가 "나는 https 로 불렸다"를 알게 해 준다.
+		#   이게 없으면 request.is_secure() 가 False 라 CSRF 가 엉킨다.
+		#   Django 쪽 DJANGO_BEHIND_PROXY=true 와 짝이다.
+		header_up X-Forwarded-Proto {scheme}
+		header_up X-Forwarded-Host {host}
+		header_up X-Real-IP {remote_host}
+
+		# 느린 백엔드에 매달리지 않는다.
+		transport http {
+			dial_timeout 5s
+			response_header_timeout 30s
+		}
+	}
+
+	# 흔한 스캐너 요청은 백엔드까지 안 보낸다.
+	@junk path /wp-admin* /.env /.git* /phpmyadmin*
+	respond @junk 404
+}

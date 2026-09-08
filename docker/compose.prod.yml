@@ -1,0 +1,135 @@
+# 배포용 — 개발용 `compose.yml` 은 그대로 두고 이것만 따로 쓴다.
+#
+#   docker compose -f docker/compose.prod.yml up -d
+#
+# ══════════════════════════════════════════════════════════════
+#  개발용과 무엇이 다른가
+# ══════════════════════════════════════════════════════════════
+#   runserver → gunicorn      runserver 는 개발용이다. 한 번에 한 요청씩만
+#                             처리하고, 느린 연결 하나에 매달린다.
+#   앞단 Caddy 추가            HTTPS 를 여기서 끝낸다. 인증서는 자동 갱신.
+#   web 포트를 밖에 안 연다     Caddy 만 80·443 을 갖는다. gunicorn 을 인터넷에
+#                             그대로 노출하면 느린 연결 공격에 약하다.
+#   소스 볼륨 마운트 없음       배포본은 이미지 안의 코드로 돈다.
+#
+# ── nginx 는 안 쓴다 ─────────────────────────────────────────
+#   nginx 가 하던 일 중 우리에게 필요한 건 둘뿐이고 각각 이렇게 해결했다:
+#     ① HTTPS 종료   → Caddy (인증서 자동)
+#     ② 정적 파일    → Django 쪽 whitenoise
+#                      (2026-09-07 실측: gunicorn 단독이면 admin CSS 404,
+#                       whitenoise 넣으니 200)
+
+services:
+  ssm-tunnel:
+    build:
+      context: .
+      dockerfile: ssm.Dockerfile
+    container_name: feedit-ssm-tunnel
+    env_file:
+      - ../.env
+    # ★ 포트를 밖으로 열지 않는다. 컨테이너끼리만 쓴다.
+    command: >
+      sh -c "
+      socat TCP-LISTEN:5433,fork,reuseaddr TCP:127.0.0.1:15433 &
+      aws ssm start-session
+      --target $$EC2_INSTANCE_ID
+      --document-name AWS-StartPortForwardingSessionToRemoteHost
+      --parameters host=$$RDS_HOST,portNumber=$$RDS_PORT,localPortNumber=15433
+      --region $$AWS_REGION
+      "
+    healthcheck:
+      test: ["CMD-SHELL", "socat - TCP:127.0.0.1:15433,connect-timeout=2 </dev/null >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: feedit-redis
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ..
+      dockerfile: docker/web.Dockerfile
+    container_name: feedit-web
+    env_file:
+      - ../.env
+    environment:
+      DB_HOST: ssm-tunnel
+      DB_PORT: 5433
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      DJANGO_DEBUG: "False"
+      # ★ Caddy 가 앞에 있을 때만 켠다. 앞단 없이 켜면 머리글을 위조당한다.
+      DJANGO_BEHIND_PROXY: "true"
+      DJANGO_CSRF_TRUSTED_ORIGINS: "https://feedit-official.duckdns.org"
+    # 포트를 밖에 열지 않는다 — Caddy 를 거쳐서만 들어온다.
+    expose:
+      - "8000"
+    depends_on:
+      ssm-tunnel:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    command: >
+      sh -c "
+      python manage.py migrate --noinput &&
+      python manage.py collectstatic --noinput &&
+      gunicorn config.wsgi:application
+        --bind 0.0.0.0:8000
+        --workers 3
+        --timeout 60
+        --access-logfile -
+        --error-logfile -
+      "
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: feedit-caddy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data       # 인증서가 여기 산다. 지우면 재발급을 다시 한다.
+      - caddy_config:/config
+      - caddy_logs:/var/log/caddy
+    depends_on:
+      - web
+    restart: unless-stopped
+
+  # ── 챗봇 (feedit-chat) ────────────────────────────────────
+  #   ★ 포트를 밖에 열지 않는다. Caddy 에도 아직 안 걸었다.
+  #     server.py 에 **인증이 없기 때문이다** — 지금 인터넷에 내놓으면
+  #     누구나 팀 OpenAI 키로 질문을 날릴 수 있다.
+  #
+  #   공개하려면 순서가 이렇다:
+  #     ① 플랜·사용량 인증을 붙인다 (지금 plan 은 요청에 실린 값을 그대로 믿는다)
+  #     ② Caddyfile 에 경로를 연다:
+  #          handle /v1/chat*  { reverse_proxy chatbot:8770 }
+  #     ③ Vercel 환경변수 CHAT_BACKEND_URL 을 그 주소로 맞춘다
+  chatbot:
+    build:
+      context: ..
+      dockerfile: docker/chat.Dockerfile
+    container_name: feedit-chatbot
+    env_file:
+      - ../.env
+    environment:
+      FEEDIT_CHAT_HOST: 0.0.0.0
+      FEEDIT_CHAT_PORT: 8770
+      FEEDIT_CRAWLER_DIR: /crawler
+    expose:
+      - "8770"
+    volumes:
+      - ${FEEDIT_CRAWLER_DIR:-../../feedit-crawler}:/crawler:ro
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:
+  caddy_logs:

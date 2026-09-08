@@ -23,26 +23,99 @@ AWS RDS(Django)에는 `temp` · `momentum` · `ma7` · `ma28` 컬럼이 아예 �
 
 ---
 
+## 처음 켜는 사람에게 — 5분
+
+```bash
+git clone https://github.com/feedit-official/feedit.git
+cd feedit
+
+cp .env.example .env          # ① 값을 채운다 (아래 두 줄이 핵심)
+python3 ChatBot/tools_env_check.py   # ② 무엇이 없는지 화면에 나온다
+```
+
+`.env` 에서 **반드시** 채워야 하는 두 줄:
+
+```bash
+OPENAI_API_KEY=sk-...                          # 각자 발급 (platform.openai.com)
+FEEDIT_CRAWLER_DIR=/절대/경로/feedit-crawler     # 크롤러 저장소를 받아 둔 곳
+```
+
+`tools_env_check.py` 가 ✔ 만 찍으면 그때 켠다.
+
+```bash
+python3 ChatBot/tools_llm_check.py   # 모델을 실제로 한 번 불러 본다 (네트워크 필요)
+cd ChatBot && python3 server.py      # http://127.0.0.1:8770
+```
+
+### ★ 왜 크롤러 저장소가 따로 필요한가
+
+이 저장소에는 **지표 데이터도, 어휘 사전도 없다.** 챗봇은 크롤러 쪽의
+네 가지를 그대로 쓴다 — 데이터 둘, **코드 둘**이다.
+
+| 필요한 것 | 어디에 쓰나 |
+| --- | --- |
+| `data/feedit.db` | 지표 (`store.py` 가 읽기 전용으로 연다) |
+| `config/lexicon.yaml` | 어휘 사전 |
+| `feedit_crawler/lexicon.py` | `lexicon_gate.py` 가 **import** 한다 |
+| `tools/question_extract.py` | 어휘 추출기 — 복사하지 않고 재사용한다 |
+
+없으면 `server.py` 가 무엇이 없는지 찍고 멈춘다. 조용히 죽지 않는다.
+
+> RDS 로 옮기는 길은 아직 열려 있지 않다. `docs_RDS_격차분석.md` 기준으로
+> `analysis.term_metric_daily` 는 **컬럼만 있고 적재 코드가 없어 비어 있고**,
+> `metric_term_sentiment_daily` · `text_entity_opinion` · `text_entity_mention` 은
+> 표 자체가 없다. 그 셋이 채워지기 전까지는 크롤러 SQLite 가 유일한 원본이다.
+
+### 키가 없는 팀원도 화면은 본다
+
+`.env` 에 `FEEDIT_LLM_DISABLED=1` 을 넣으면 LLM 을 아예 안 부르고 규칙으로만 돈다.
+답이 조금 딱딱해질 뿐 화면은 전부 그려진다.
+
+---
+
+## 도커로 띄우기
+
+```bash
+docker compose -f docker/compose.yml up chatbot
+```
+
+`.env` 하나로 Django·Redis·챗봇이 같은 값을 본다.
+크롤러 저장소는 `FEEDIT_CRAWLER_DIR` 을 읽기 전용으로 마운트한다.
+
+크롤러가 없으면 챗봇만 빼고 쓴다:
+
+```bash
+docker compose -f docker/compose.yml up ssm-tunnel redis web
+```
+
+> ★ 포트는 `127.0.0.1:8770` 에만 묶여 있다. **인증이 없기 때문이다.**
+> 배포용 `compose.prod.yml` 에서도 챗봇은 밖으로 열지 않았다 —
+> 공개하려면 인증을 먼저 붙여야 한다. 그 순서는 `compose.prod.yml` 주석에 있다.
+
+---
+
 ## 돌려 보기
 
 ```bash
-cd ~/Desktop/Final/feedit-chat
+cd ChatBot
 
+python3 tools_env_check.py  # 설정 점검 (네트워크 안 씀)
 python3 smoke.py            # 진짜 DB 로 10개 질문을 돌린다 (서버 없이)
 python3 server.py           # http://127.0.0.1:8770
 ```
 
-의존성은 크롤러가 이미 쓰는 것뿐이다 (`pyyaml`). 새로 설치할 게 없다.
+의존성은 두 개뿐이다 (`requests` · `PyYAML` — `ChatBot/requirements.txt`).
 서버도 표준 라이브러리로만 짰다 — FastAPI 를 안 쓴 이유는 `server.py` 맨 위에 적어 뒀다.
+`.env` 는 `app/env.py` 가 표준 라이브러리로 읽는다. python-dotenv 도 필요 없다.
 
 ### 프론트와 붙이기
 
 ```bash
 # 1) 챗봇 서버
-cd ~/Desktop/Final/feedit-chat && python3 server.py
+cd feedit/ChatBot && python3 server.py
 
 # 2) 프론트 (다른 창)
-cd ~/Desktop/Final/feedit-web && npm run dev
+cd feedit/frontend && npm run dev
 ```
 
 `vite.config.js` 에 `/api → 127.0.0.1:8770` 프록시를 넣어 뒀다.
@@ -63,6 +136,8 @@ window.FEEDIT_PLAN = 'FREE'   // 기본값은 'PRO'
 
 ```
 GET  /v1/health                 떠 있나 · 기준일 · 적재 term 수
+GET  /v1/llm                    LLM 배선 진단 — 모델 · 키 유무 · 마지막 오류
+                                (★ 키 값은 안 나간다. 길이만 나온다)
 GET  /v1/me?plan=FREE           플랜과 하루 한도
 POST /v1/chat                   SSE — status → text → report → actions → done
 POST /v1/lexicon/requests       어휘 등록 요청 → data/lexicon_requests.jsonl
@@ -97,6 +172,7 @@ node fallback_leak.test.mjs  # 목업이 진짜 답 위로 새지 않는가 (회
 
 ```
 app/
+  env.py          저장소 .env 읽기 (표준 라이브러리).  ← 키가 들어오는 유일한 문
   config.py       경로 · 임계값 한 곳.  ← 합칠 때 여기부터 본다
   store.py        크롤러 SQLite 읽기 전용 어댑터
   coverage.py     "이 term 에 대해 무엇을 말해도 되는가"  ← 정직함이 여기서 나온다
@@ -113,7 +189,9 @@ app/
   engine.py       입구.  ChatEngine().ask(질문, mode, plan)
 smoke.py          실데이터 스모크
 server.py         SSE 개발 서버
+tools_env_check.py  켜기 전 점검 — 무엇이 없는지 (네트워크 안 씀)
 tools_llm_check.py  Luna 연결·3기능 실호출 (네트워크 필요)
+requirements.txt    requests · PyYAML 둘뿐
 tests/            jsdom 검증
 ```
 
@@ -164,7 +242,26 @@ LLM 은 구조를 **만들지 않는다.** 애매할 때 `templates.CHOOSABLE` �
 ```
 
 모델은 크롤러와 같은 `gpt-5.6-luna` 다. 두 곳이 다른 모델을 쓰면 "왜 답이 다르지" 를 못 쫓는다.
-키는 환경변수 `OPENAI_API_KEY`, 없으면 크롤러 `data/keys.json` 에서 읽는다. **출력하지 않는다.**
+
+설정은 전부 `.env` 로 뺐다 — 코드를 고쳐 모델을 바꾸면 누가 언제 바꿨는지 기록에 안 남는다.
+
+| 환경변수 | 기본값 | |
+| --- | --- | --- |
+| `OPENAI_API_KEY` | — | 각자 발급. 없으면 규칙으로만 돈다 |
+| `FEEDIT_LLM_MODEL` | `gpt-5.6-luna` | 팀 표준. 바꾸면 팀에 알린다 |
+| `FEEDIT_LLM_EFFORT` | `low` | `none`·`low`·`medium`·`high`·`xhigh`·`max` |
+| `FEEDIT_LLM_DISABLED` | `0` | `1` 이면 LLM 을 아예 안 부른다 |
+| `OPENAI_BASE_URL` | OpenAI | 사내 게이트웨이를 쓸 때만 |
+
+키를 찾는 순서는 ① 환경변수 `OPENAI_API_KEY`(셸 · 도커 `env_file` · 저장소 `.env`)
+② 크롤러 `data/keys.json` 이다. **어느 경로로도 키 값을 출력하지 않는다** — 예외 문구에도.
+
+`effort` 는 목록 밖 값이 오면 `low` 로 되돌린다. 오타 하나로 챗봇 전체가
+규칙으로 떨어지고 아무도 이유를 모르는 상황을 막기 위해서다.
+
+안 붙을 때는 `GET /v1/llm` 을 열거나 `python3 tools_env_check.py` 를 돌린다.
+`last_error` 가 `HTTP_401`(키 틀림) · `HTTP_404`(모델명 틀림) · `HTTP_429`(한도) 를
+구분해서 알려 준다.
 
 ### LLM 이 하지 않는 것
 

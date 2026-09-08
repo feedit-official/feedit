@@ -1,0 +1,12 @@
+Human particle source mesh
+
+Original character: Quaternius
+Prepared GLB source: UMRAM, Bilkent University
+Source: https://github.com/UMRAM-Bilkent/supine-human-model
+
+License: Creative Commons Zero v1.0 Universal (CC0-1.0)
+https://creativecommons.org/publicdomain/zero/1.0/
+
+The source repository states that the rigged human.glb and prepared derivatives
+are released into the public domain and may be copied, modified, distributed,
+and used commercially without permission or attribution.

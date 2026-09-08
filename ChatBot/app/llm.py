@@ -16,8 +16,13 @@
 
 ★ 키를 어디서 읽나
    ① 환경변수 OPENAI_API_KEY
+      — 셸 지정, 도커 `env_file`, 그리고 저장소 루트 `feedit/.env`.
+        .env 는 `app/__init__.py` 가 import 시점에 한 번 읽어 둔다(app/env.py).
    ② 크롤러의 data/keys.json (관리자 화면이 저장하는 곳)
    둘 다 없으면 available() 이 False 다 — 챗봇은 그냥 규칙으로 돈다.
+
+   어디서 읽혔는지는 `source_hint()` 로 본다. 값은 안 나온다.
+   설정이 맞는지 한 번에 보려면: `python3 tools_env_check.py`
 """
 from __future__ import annotations
 
@@ -28,9 +33,23 @@ from typing import Any
 
 from .config import CRAWLER
 
-API = "https://api.openai.com/v1"
+# ── 어디로 · 어떤 모델로 보내나 ────────────────────────────────
+#   전부 환경변수로 뺐다. 팀원마다 다른 값을 쓸 수 있어야 하고,
+#   모델을 바꿀 때 코드를 고치면 누가 언제 바꿨는지가 기록에 안 남는다.
+#
+#   OPENAI_BASE_URL   기본 https://api.openai.com/v1
+#                     사내 게이트웨이·프록시를 쓸 때만 바꾼다.
+#   FEEDIT_LLM_MODEL  기본 gpt-5.6-luna
+#   FEEDIT_LLM_EFFORT 기본 low — 부르는 쪽이 따로 정하면 그쪽이 이긴다.
+#                     none · low · medium · high · xhigh · max
+API = (os.getenv("OPENAI_BASE_URL") or "https://api.openai.com/v1").rstrip("/")
 MODEL = os.getenv("FEEDIT_LLM_MODEL", "gpt-5.6-luna")
+DEFAULT_EFFORT = (os.getenv("FEEDIT_LLM_EFFORT") or "low").strip().lower()
+EFFORTS = ("none", "low", "medium", "high", "xhigh", "max")
 PROMPT_VERSION = "feedit-chat-v1"
+
+# 챗봇 전체를 규칙만으로 돌리고 싶을 때 (FEEDIT_LLM_DISABLED=1)
+DISABLED = (os.getenv("FEEDIT_LLM_DISABLED") or "").strip().lower() in ("1", "true", "yes")
 
 # 마지막 실패 이유. 진단용이고 키는 절대 안 들어간다.
 LAST_ERROR: str | None = None
@@ -46,8 +65,10 @@ def _read_key() -> str:
     with _key_lock:
         if _key_cache is not None:
             return _key_cache
+        # ① 환경변수 (셸 · 도커 env_file · 저장소 .env — app/__init__.py 가 읽어 둔다)
         key = (os.getenv("OPENAI_API_KEY") or "").strip()
         if not key:
+            # ② 크롤러 관리자 화면이 저장하는 곳. 크롤러를 같이 쓰는 사람만 해당된다.
             path = CRAWLER / "data" / "keys.json"
             try:
                 d = json.loads(path.read_text(encoding="utf-8"))
@@ -58,8 +79,18 @@ def _read_key() -> str:
     return _key_cache
 
 
+def source_hint() -> str:
+    """키를 어디서 읽었나. 값은 안 보여 준다 — 팀원이 설정을 못 찾을 때 이것만 보면 된다."""
+    if not _read_key():
+        return "없음"
+    if (os.getenv("OPENAI_API_KEY") or "").strip():
+        from .env import where
+        return f"환경변수 OPENAI_API_KEY (.env: {where()})"
+    return f"{CRAWLER / 'data' / 'keys.json'}"
+
+
 def available() -> bool:
-    return bool(_read_key())
+    return (not DISABLED) and bool(_read_key())
 
 
 def key_hint() -> str:
@@ -69,7 +100,7 @@ def key_hint() -> str:
 
 
 def respond(instructions: str, payload: Any, schema: dict | None = None,
-            *, effort: str = "low", timeout: int = 20,
+            *, effort: str | None = None, timeout: int = 20,
             tools: list | None = None, max_output_tokens: int | None = None) -> dict | None:
     """Responses API 를 한 번 부른다. 실패하면 None.
 
@@ -77,6 +108,9 @@ def respond(instructions: str, payload: Any, schema: dict | None = None,
     schema 가 없으면 {"text": 출력문자열} 을 돌려준다.
     """
     global LAST_ERROR
+    if DISABLED:
+        LAST_ERROR = "DISABLED"           # 일부러 끈 것이다. 오류가 아니다.
+        return None
     key = _read_key()
     if not key:
         LAST_ERROR = "NO_KEY"
@@ -90,7 +124,9 @@ def respond(instructions: str, payload: Any, schema: dict | None = None,
     body: dict[str, Any] = {
         "model": MODEL,
         "store": False,                       # 대화를 OpenAI 쪽에 남기지 않는다
-        "reasoning": {"effort": effort},
+        # 목록 밖의 값을 보내면 400 이 난다. 오타 하나로 챗봇이 통째로 규칙으로
+        # 떨어지는 걸 막으려고 여기서 한 번 거른다.
+        "reasoning": {"effort": (effort or DEFAULT_EFFORT) if (effort or DEFAULT_EFFORT) in EFFORTS else "low"},
         "instructions": instructions,
         "input": payload if isinstance(payload, str)
                  else json.dumps(payload, ensure_ascii=False),
@@ -112,7 +148,15 @@ def respond(instructions: str, payload: Any, schema: dict | None = None,
         return None
 
     if r.status_code >= 400:
-        LAST_ERROR = f"HTTP_{r.status_code}"
+        # ★ 키는 절대 안 넣는다. OpenAI 의 오류 코드만 덧붙인다 —
+        #   401(키 틀림) · 404(모델명 틀림) · 429(한도)를 구분 못 하면
+        #   팀원은 "그냥 안 돼요" 밖에 말할 수 없다.
+        code = ""
+        try:
+            code = str(((r.json() or {}).get("error") or {}).get("code") or "")[:40]
+        except ValueError:
+            code = ""
+        LAST_ERROR = f"HTTP_{r.status_code}" + (f"_{code}" if code else "")
         return None
 
     try:
