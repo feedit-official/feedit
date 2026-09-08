@@ -15,10 +15,14 @@ globalThis.SVGElement = dom.window.SVGElement;
 globalThis.getComputedStyle = dom.window.getComputedStyle;
 
 let fetchReply = null;
-globalThis.fetch = async (u) => ({
-  ok: true,
-  json: async () => (typeof fetchReply === 'function' ? fetchReply(u) : fetchReply),
-});
+/* 진짜 fetch 처럼 text() 를 준다. 코드가 text() → JSON.parse 로 읽기 때문이다
+   (그래야 HTML 이 왔을 때 "JSON 이 아니다" 라고 말할 수 있다). */
+globalThis.fetch = async (u) => {
+  const body = typeof fetchReply === 'function' ? fetchReply(u) : fetchReply;
+  return { ok: true, status: 200,
+    text: async () => JSON.stringify(body),
+    json: async () => body };
+};
 
 const live = await import('../trend/static/js/live_data.js');
 const { gChart } = await import('../trend/static/js/chart_engine.js');

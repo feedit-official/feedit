@@ -92,6 +92,68 @@ export const FIDX=(function(){
 })();
 const FLV=['스타일','종류','브랜드','아이템'];
 
+/* ══════════════════════════════════════════════════════════
+   ★ 진짜 사전을 얹는다 — RDS 의 dictionary_term + brand
+   ══════════════════════════════════════════════════════════
+   위의 FIDX 는 이 파일에 박아 둔 목록이다(146개). 그것만 보고 있어서
+   **RDS 에 있는 말도 "사전에서 찾지 못했습니다"** 가 됐다.
+   실제로 스투시·키르시·엄브로가 그랬다 — 브랜드는 dictionary_term 이 아니라
+   brand 표에 살고, 프론트는 그 표를 아예 몰랐다.
+
+   ── 왜 갈아치우지 않고 '얹나' ──
+   박아 둔 목록에는 스타일→종류→브랜드→아이템 **계층**이 들어 있다.
+   세부 검색 팝업(할인률·리세일·수명주기)이 그 계층으로 단계를 좁힌다.
+   RDS 사전에는 계층이 없다. 그래서 계층은 그대로 두고, **없던 말만 더한다.**
+   서버가 안 떠 있어도 화면은 예전처럼 돈다.
+
+   ── 축 이름 맞추기 ──
+   서버는 '아이템·소재·색·디테일·TPO·스타일·브랜드' 로 준다.
+   화면의 단계 이름은 스타일 / 종류 / 브랜드 / 아이템 이다.
+   겹치는 넷만 단계에 넣고, 나머지(색·디테일·TPO)는 검색은 되게 하되
+   단계에는 안 넣는다 — 그건 좁히는 축이 아니라 속성이다. */
+let FDICT_LOADED = false;
+
+export async function fsLoadDictionary() {
+  if (FDICT_LOADED) return { added: 0, cached: true };
+  try {
+    const r = await fetch('/api/dictionary');
+    const j = await r.json();
+    if (!j || j.status !== 'ok' || !Array.isArray(j.data)) {
+      return { added: 0, reason: (j && j.reason) || '사전을 못 받았습니다.' };
+    }
+    const seen = new Set(FIDX.map((o) => o.f + '|' + o.label));
+    let added = 0;
+    for (const row of j.data) {
+      const label = String(row.label || '').trim();
+      if (!label) continue;
+      const f = row.facet;
+      const k = f + '|' + label;
+      if (seen.has(k)) continue;        // 박아 둔 것이 우선 — 계층 정보가 있다
+      seen.add(k);
+      FIDX.push({
+        f, label,
+        path: fsPathFor(f, label),
+        key: label.replace(/\s/g, '').toLowerCase(),
+        src: 'db',                       // 어디서 왔는지 — 나중에 가릴 수 있게
+      });
+      added++;
+    }
+    FDICT_LOADED = added > 0 || j.data.length > 0;
+    return { added, total: j.data.length, counts: j.counts };
+  } catch (e) {
+    /* 서버가 없어도 화면은 돌아야 한다. 박아 둔 목록으로 계속 간다. */
+    return { added: 0, reason: '사전 서버에 닿지 못했습니다.' };
+  }
+}
+
+/* 서버 사전에는 계층이 없다. 축에 맞는 자리에만 넣는다. */
+function fsPathFor(f, label) {
+  if (f === '스타일') return [label, null, null, null];
+  if (f === '브랜드') return [null, null, label, null];
+  if (f === '아이템') return [null, null, null, label];
+  return [];                             // 소재·색·디테일·TPO 는 단계가 아니다
+}
+
 export function fsNorm(s){ return String(s||'').replace(/\s/g,'').toLowerCase() }
 /* 어휘 해석 — 별칭까지 본다. 여기서 못 걸리면 그 말은 패션어가 아니다. */
 export function fsMatch(q,limit){
@@ -126,9 +188,17 @@ export function fsMatch(q,limit){
   }
   return out;
 }
+/* 색·디테일·TPO 는 **단계가 아니다**.
+   스타일→종류→브랜드→아이템 처럼 위아래로 좁히는 축이 아니라, 어느 가지에도
+   붙는 속성이다. 사전(RDS)에는 이것들이 잔뜩 들어 있어서, 단계 칸에 억지로
+   넣으면 FS.sel 이 빈 배열이 되고 고른 게 화면에서 사라진다.
+   그래서 소재와 같은 대접을 하되, 여러 개를 겹쳐 걸 수 있게 따로 둔다. */
+const FS_ATTR=['색','디테일','TPO'];
+
 /* 항목 하나를 팝업 선택 상태로 바꾼다 (부분 검색 → 팝업 인계에 쓰인다) */
 function fsPathOf(o){
   if(o.f==='소재')return {mat:o.label,sel:[null,null,null,null]};
+  if(FS_ATTR.indexOf(o.f)>=0)return {attr:[o.f,o.label],sel:[null,null,null,null]};
   if(o.f==='스타일')return {sel:[o.label,null,null,null]};
   if(o.f==='종류'){
     const st=Object.keys(FTREE).find(s=>FTREE[s][o.label]);
@@ -139,11 +209,11 @@ function fsPathOf(o){
       if(FTREE[st][kd][o.label])return {sel:[st,kd,o.label,null]};
     return {sel:[null,null,o.label,null]};
   }
-  return {sel:o.path.slice()};
+  return {sel:(o.path||[null,null,null,null]).slice()};
 }
 
 /* ── 상태 ── */
-export var FS={sel:[null,null,null,null],mat:null,sug:[],cur:-1,open:false,id:null};
+export var FS={sel:[null,null,null,null],mat:null,attr:[],sug:[],cur:-1,open:false,id:null};
 const FS_Q=[
   ['고프코어 테크 셸','할인률 언제부터 올랐어?'],
   ['살로몬 XT-6','리세일 시세 아직 버텨?'],
@@ -211,11 +281,16 @@ export function fsHideSug(){ const b=$('#fsSug'); if(b){b.hidden=true;b.innerHTM
 /* 어휘 하나를 확정 — 완전히 짚은 것은 바로 반영, 덜 짚은 것은 팝업으로 넘긴다 */
 function fsPick(o,fromKey){
   const p=fsPathOf(o);
-  if(p.mat)FS.mat=p.mat; else FS.sel=p.sel;
+  if(p.mat)FS.mat=p.mat;
+  else if(p.attr){
+    /* 같은 걸 두 번 고르면 그대로 둔다 */
+    if(!FS.attr.some(a=>a[0]===p.attr[0]&&a[1]===p.attr[1])) FS.attr.push(p.attr);
+  }
+  else FS.sel=p.sel;
   $('#fsInput').value=''; $('#fsBar').classList.remove('typing');
   $('#fsClear').hidden=true; fsHideSug();
-  /* 아이템명까지 특정됐으면 그대로 분석, 아니면 남은 단계를 팝업에서 고르게 한다 */
-  if(o.f==='아이템'||o.f==='소재'){ fsApply(); }
+  /* 더 좁힐 단계가 없는 것(아이템·소재·색·디테일·TPO)은 바로 분석한다 */
+  if(o.f==='아이템'||o.f==='소재'||FS_ATTR.indexOf(o.f)>=0){ fsApply(); }
   else fsOpenPop();
 }
 
@@ -225,57 +300,123 @@ function fsOpenPop(){
   fsPaintPop();
 }
 function fsClosePop(){ FS.open=false; $('#fsPopBg').classList.remove('on'); $('#fsMore').classList.remove('on') }
-function fsOpts(lv){
-  const [st,kd,br]=FS.sel;
-  if(lv===0)return Object.keys(FTREE);
-  if(lv===1)return st?Object.keys(FTREE[st]||{}):[];
-  if(lv===2)return (st&&kd)?Object.keys((FTREE[st]||{})[kd]||{}):[];
-  return (st&&kd&&br)?(((FTREE[st]||{})[kd]||{})[br]||[]):[];
+/* ── 사전에서 온 말만 뽑는다 (계층 없음) ────────────────────
+   FIDX 뒤쪽에 fsLoadDictionary() 가 붙여 둔 것들이다. src==='db' 로 가린다. */
+const FS_POP_CAP = 120;                 /* 브랜드가 2,775개다 — 다 그리면 팝업이 멎는다 */
+/* 사전 값은 우리가 만든 글자가 아니다. 속성 안에 넣으니 따옴표까지 막는다. */
+const fsEsc=s=>String(s==null?'':s).replace(/[&<>"']/g,
+  c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function fsDictOf(f){
+  const out=[];
+  for(const o of FIDX){ if(o.src==='db'&&o.f===f) out.push(o.label); }
+  return out;
 }
+
+/* 한 단계에 무엇을 보여줄지 정한다.
+   list : 버튼으로 그릴 항목
+   from : 'tree'(박아 둔 계층) | 'dict'(RDS 사전) | ''(빈칸)
+   hint : 비었을 때 **사실대로** 할 말 */
+function fsOptsFor(lv){
+  const [st,kd,br]=FS.sel;
+  const tree=(a)=>({list:a,from:'tree'});
+  const dict=(a)=>({list:a,from:'dict'});
+
+  if(lv===0){
+    /* 스타일 — 박아 둔 것 먼저, 그 뒤에 사전에만 있는 것 */
+    const base=Object.keys(FTREE);
+    const seen=new Set(base);
+    const more=fsDictOf('스타일').filter(x=>!seen.has(x));
+    return more.length ? {list:base.concat(more),from:'both',treeN:base.length}
+                       : tree(base);
+  }
+  if(lv===1){
+    /* 종류 — 사전에는 이 축이 없다. 계층이 있는 스타일에서만 나온다. */
+    if(!st) return {list:[],from:'',hint:'STYLE 을 먼저 고르세요.'};
+    const a=Object.keys(FTREE[st]||{});
+    if(a.length) return tree(a);
+    return {list:[],from:'',
+      hint:'‘'+st+'’ 은 사전에서 온 스타일이라 하위 종류가 아직 없습니다.\n'+
+           '브랜드나 아이템을 바로 고르세요.'};
+  }
+  if(lv===2){
+    const a=(st&&kd)?Object.keys((FTREE[st]||{})[kd]||{}):[];
+    if(a.length) return tree(a);
+    const d=fsDictOf('브랜드');
+    if(d.length) return dict(d);
+    return {list:[],from:'',hint:'종류를 먼저 고르거나, 위 검색칸에 브랜드를 쳐 보세요.'};
+  }
+  const a=(st&&kd&&br)?(((FTREE[st]||{})[kd]||{})[br]||[]):[];
+  if(a.length) return tree(a);
+  const d=fsDictOf('아이템');
+  if(d.length) return dict(d);
+  return {list:[],from:'',hint:'브랜드를 먼저 고르거나, 위 검색칸에 아이템을 쳐 보세요.'};
+}
+
 function fsPaintPop(){
   for(let lv=0;lv<4;lv++){
     const host=$('#fsC'+lv); if(!host)continue;
-    const opts=fsOpts(lv);
-    if(!opts.length){
-      host.innerHTML='<div class="hint">'+
-        (lv===1?'STYLE 을 먼저 고르세요.':lv===2?'종류를 먼저 고르세요.':'브랜드를 먼저 고르세요.')+'</div>';
+    const {list,from,hint,treeN}=fsOptsFor(lv);
+    if(!list.length){
+      host.innerHTML='<div class="hint">'+fsEsc(hint||'').replace(/\n/g,'<br>')+'</div>';
       continue;
     }
-    host.innerHTML=opts.map(o=>{
-      const cnt = lv===0?Object.keys(FTREE[o]).length
-                : lv===1?Object.keys(FTREE[FS.sel[0]][o]).length
-                : lv===2?FTREE[FS.sel[0]][FS.sel[1]][o].length : 0;
-      return '<button type="button" data-lv="'+lv+'" data-v="'+o+'"'+
-        (FS.sel[lv]===o?' class="on"':'')+'>'+o+(cnt?'<i>'+cnt+'</i>':'')+'</button>';
-    }).join('');
+    const shown=list.slice(0,FS_POP_CAP);
+    host.innerHTML=shown.map((o,i)=>{
+      /* 개수 뱃지는 계층이 있는 것에만 붙인다 — 사전 항목은 하위가 없다 */
+      let cnt=0;
+      if(from!=='dict'&&(treeN===undefined||i<treeN)){
+        try{
+          cnt = lv===0?Object.keys(FTREE[o]||{}).length
+              : lv===1?Object.keys((FTREE[FS.sel[0]]||{})[o]||{}).length
+              : lv===2?(((FTREE[FS.sel[0]]||{})[FS.sel[1]]||{})[o]||[]).length : 0;
+        }catch(_){ cnt=0 }
+      }
+      const isDict = from==='dict' || (treeN!==undefined && i>=treeN);
+      return '<button type="button" data-lv="'+lv+'" data-v="'+fsEsc(o)+'"'+
+        ' class="'+(FS.sel[lv]===o?'on ':'')+(isDict?'fromDict':'')+'"'+
+        (isDict?' title="사전(RDS)에서 온 말입니다"':'')+'>'+
+        fsEsc(o)+(cnt?'<i>'+cnt+'</i>':'')+'</button>';
+    }).join('')
+    + (list.length>shown.length
+        ? '<div class="hint">사전이 커서 '+FS_POP_CAP+'개만 보입니다 ('+list.length+'개 중).\n'
+          .replace(/\n/g,'<br>')+'나머지는 위 검색칸에 쳐서 고르세요.</div>'
+        : '');
   }
-  const chips=[];
-  if(FS.mat)chips.push(['소재',FS.mat,'mat']);
-  FS.sel.forEach((v,i)=>{ if(v)chips.push([FLV[i],v,i]) });
+  const chips=fsChipList();
   $('#fsPicked').innerHTML=chips.length
-    ? chips.map(c=>'<span class="fsChip"><small>'+c[0]+'</small>'+c[1]+
-        '<button type="button" data-drop="'+c[2]+'">×</button></span>').join('')
+    ? chips.map(fsChipHTML).join('')
     : '<span class="ph2">아직 고른 조건이 없습니다.</span>';
 }
 function fsDrop(k){
   if(k==='mat'){ FS.mat=null; return }
+  if(String(k).charAt(0)==='a'){ FS.attr.splice(+String(k).slice(1),1); return }
   const lv=+k; for(let i=lv;i<4;i++)FS.sel[i]=null;   /* 아래 단계는 같이 풀린다 */
+}
+
+/* 지금 걸린 조건을 한 줄씩 [축, 값, 뗄 때 쓸 열쇠] 로 만든다.
+   칩을 그리는 곳이 세 군데라 여기 한 곳에서만 만든다 — 어긋나지 않게. */
+function fsChipList(){
+  const chips=[];
+  if(FS.mat)chips.push(['소재',FS.mat,'mat']);
+  FS.attr.forEach((a,i)=>chips.push([a[0],a[1],'a'+i]));
+  FS.sel.forEach((v,i)=>{ if(v)chips.push([FLV[i],v,i]) });
+  return chips;
+}
+function fsChipHTML(c){
+  return '<span class="fsChip"><small>'+fsEsc(c[0])+'</small>'+fsEsc(c[1])+
+    '<button type="button" data-drop="'+fsEsc(c[2])+'">×</button></span>';
 }
 function fsChipsPaint(){
   const box=$('#fsChips'); if(!box)return;
-  const chips=[];
-  if(FS.mat)chips.push(['소재',FS.mat,'mat']);
-  FS.sel.forEach((v,i)=>{ if(v)chips.push([FLV[i],v,i]) });
+  const chips=fsChipList();
   if(!chips.length){ box.hidden=true; box.innerHTML=''; return }
-  box.innerHTML=chips.map(c=>'<span class="fsChip"><small>'+c[0]+'</small>'+c[1]+
-    '<button type="button" data-drop="'+c[2]+'">×</button></span>').join('');
+  box.innerHTML=chips.map(fsChipHTML).join('');
   box.hidden=false;
 }
 /* 조건을 화면에 반영 — 목업이므로 헤더 문구와 칩으로 결과를 보여준다 */
 function fsApply(){
   fsClosePop(); fsChipsPaint();
-  const chips=[]; if(FS.mat)chips.push(FS.mat);
-  FS.sel.forEach(v=>{ if(v)chips.push(v) });
+  const chips=fsChipList().map(c=>c[1]);
   const d=$('#trDesc'); if(!d)return;
   if(!chips.length){ trRender(FS.id||'life'); return }
   trRender(FS.id||'life');
@@ -286,8 +427,16 @@ function fsApply(){
     duration:520,delay:aStagger(60),ease:'out(3)'});
 }
 
+/* 배선은 한 번만 한다.
+   두 번 걸면 한 번의 클릭이 핸들러를 두 번 태운다 — 첫 번째가 값을 넣고
+   두 번째가 "이미 같은 값이네" 하고 다시 빼서, **눌러도 아무 일이 안 난다.**
+   지금은 trBuild() 가 한 번만 부르지만, 그 전제가 깨져도 화면이 죽지 않게 막는다. */
+let fsWired=false;
+
 export function fsBuild(){
   const inp=$('#fsInput'), bar=$('#fsBar'); if(!inp)return;
+  if(fsWired){ fsPaintPop(); return }   /* 다시 부르면 그리기만 한다 */
+  fsWired=true;
   inp.addEventListener('input',()=>{
     bar.classList.toggle('typing',!!inp.value);
     $('#fsClear').hidden=!inp.value;
@@ -328,7 +477,7 @@ export function fsBuild(){
     const b=e.target.closest('[data-drop]'); if(!b)return;
     fsDrop(b.dataset.drop); fsPaintPop();
   });
-  $('#fsReset').addEventListener('click',()=>{ FS.sel=[null,null,null,null]; FS.mat=null; fsPaintPop() });
+  $('#fsReset').addEventListener('click',()=>{ FS.sel=[null,null,null,null]; FS.mat=null; FS.attr=[]; fsPaintPop() });
   $('#fsApply').addEventListener('click',fsApply);
   $('#fsPopX').addEventListener('click',fsClosePop);
   $('#fsPopBg').addEventListener('click',e=>{ if(e.target===$('#fsPopBg'))fsClosePop() });

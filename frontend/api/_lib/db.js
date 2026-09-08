@@ -87,3 +87,39 @@ export async function q(sql, args = []) {
     return { ok: false, code: e && e.code ? String(e.code) : 'query_failed', error: msg, rows: [] };
   }
 }
+
+/* ★ 2026-09-07 — 이제 기본 경로는 RDS 직결이 아니라 **Django API** 다.
+ *
+ *   RDS 는 사설이라 버셀이 못 들어간다. RDS 를 인터넷에 여는 대신,
+ *   이미 RDS 에 닿는 Django(backend/apps/api)가 읽기 전용 창구를 냈다.
+ *
+ *       브라우저 → 버셀 함수 → BACKEND_API_URL(Django) → RDS
+ *
+ *   `BACKEND_API_URL` 이 있으면 그쪽으로 넘긴다.
+ *   없으면 아래 pg 직결로 떨어진다(RDS 를 공개로 연 경우).
+ */
+export function backendBase() {
+  return (process.env.BACKEND_API_URL || '').replace(/\/+$/, '');
+}
+
+/** Django API 로 넘긴다. 실패해도 던지지 않는다 — 화면이 사유를 봐야 한다. */
+export async function viaBackend(path) {
+  const base = backendBase();
+  if (!base) return null;                 // 설정 안 됨 → 부르는 쪽이 pg 로 간다
+  try {
+    const c = new AbortController();
+    const t = setTimeout(() => c.abort(), 8000);
+    const r = await fetch(base + path, { signal: c.signal });
+    clearTimeout(t);
+    if (!r.ok) {
+      return { status: 'error', reason: `백엔드가 ${r.status} 를 돌려줬습니다.`, data: null };
+    }
+    return await r.json();
+  } catch (e) {
+    return {
+      status: 'error',
+      reason: `백엔드에 닿지 못했습니다: ${String(e.message || e).slice(0, 140)}`,
+      data: null,
+    };
+  }
+}

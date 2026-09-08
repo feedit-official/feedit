@@ -237,5 +237,84 @@ await t('챗봇 chat — POST 가 아니면 받지 않는다', async () => {
   assert.equal(res.statusCode, 405);
 });
 
-console.log(`\n(챗봇 포함) ${pass}개 통과 · ${fail}개 실패`);
+
+// ══════════════════════════════════════════════════════════
+//  Django API 경유 — RDS 를 열지 않는 길
+// ══════════════════════════════════════════════════════════
+await t('★ BACKEND_API_URL 이 있으면 Django 로 넘긴다 (pg 를 안 부른다)', async () => {
+  process.env.BACKEND_API_URL = 'http://feedit-official.duckdns.org/api';
+  const before = fake.CALLS.length;
+  let called = null;
+  globalThis.fetch = async (u) => { called = u; return {
+    ok: true, json: async () => ({ status: 'ok', data: { term: '발레코어', series: [] } }) }; };
+  const res = mkRes();
+  await trend(req('/api/trend?term=발레코어&days=30'), res);
+  assert.equal(called, 'http://feedit-official.duckdns.org/api/trend?term=발레코어&days=30');
+  assert.equal(fake.CALLS.length, before, 'DB 에 직접 붙으면 안 된다');
+  assert.equal(res.body.status, 'ok');
+  delete process.env.BACKEND_API_URL;
+});
+
+await t('백엔드가 죽으면 값 없음이 아니라 오류로 말한다', async () => {
+  process.env.BACKEND_API_URL = 'http://x/api';
+  globalThis.fetch = async () => { throw new Error('ECONNREFUSED'); };
+  const res = mkRes();
+  await trend(req('/api/trend?term=발레코어'), res);
+  assert.equal(res.body.status, 'error');
+  assert.ok(/닿지 못했습니다/.test(res.body.reason));
+  delete process.env.BACKEND_API_URL;
+});
+
+await t('BACKEND_API_URL 이 없으면 예전처럼 pg 로 간다', async () => {
+  delete process.env.BACKEND_API_URL;
+  const before = fake.CALLS.length;
+  fake.__setNext({ rows: [] });
+  const res = mkRes();
+  await trend(req('/api/trend?term=발레코어'), res);
+  assert.ok(fake.CALLS.length > before, 'pg 를 불러야 한다');
+});
+
+// ── 사전 — 용어 표와 브랜드 표를 합쳐서 준다 ────────────
+const dictionary = (await import('../api/dictionary.js')).default;
+
+await t('★ 사전 — 용어와 브랜드를 합쳐서 준다', async () => {
+  delete process.env.BACKEND_API_URL;
+  let call = 0;
+  fake.__setNext(() => (++call === 1
+    ? { rows: [{ label: '발레코어', facet: 'STYLE', kind: 'term', en: 'balletcore' },
+               { label: '새틴',     facet: 'MATERIAL', kind: 'term', en: 'satin' }] }
+    : { rows: [{ label: '스투시', facet: 'BRAND', kind: 'brand', en: 'Stussy' }] }));
+  const res = mkRes();
+  await dictionary(req('/api/dictionary'), res);
+  assert.equal(res.body.status, 'ok', JSON.stringify(res.body));
+  const m = Object.fromEntries(res.body.data.map((x) => [x.label, x]));
+  assert.equal(m['스투시'].kind, 'brand');
+  assert.equal(m['스투시'].facet, '브랜드', '코드가 아니라 화면 축 이름이어야 한다');
+  assert.equal(m['새틴'].facet, '소재');
+  assert.equal(res.body.counts['브랜드'], 1, JSON.stringify(res.body.counts));
+});
+
+await t('★ 사전 — 브랜드만 못 읽어도 용어는 보낸다', async () => {
+  let call = 0;
+  fake.__setNext((sql) => {
+    call++;
+    if (/FROM dictionary\.brand/.test(sql)) throw new Error('permission denied');
+    return { rows: [{ label: '발레코어', facet: 'STYLE', kind: 'term', en: '' }] };
+  });
+  const res = mkRes();
+  await dictionary(req('/api/dictionary'), res);
+  assert.equal(res.body.status, 'ok', JSON.stringify(res.body));
+  assert.equal(res.body.data.length, 1);
+  assert.ok(/브랜드는 못 읽었습니다/.test(res.body.note || ''), res.body.note);
+});
+
+await t('사전 — RDS 에 못 붙으면 빈 사전이 아니라 오류다', async () => {
+  fake.__setNext(new Error('ECONNREFUSED'));
+  const res = mkRes();
+  await dictionary(req('/api/dictionary'), res);
+  assert.equal(res.body.status, 'error', JSON.stringify(res.body));
+  assert.ok(/연결하지 못했습니다/.test(res.body.reason));
+});
+
+console.log(`\n(백엔드 경유 포함) ${pass}개 통과 · ${fail}개 실패`);
 process.exit(fail ? 1 : 0);

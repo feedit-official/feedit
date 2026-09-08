@@ -18,11 +18,33 @@ export default defineConfig({
        ★ 챗봇 서버를 따로 켜야 한다:
            cd ../Final/feedit-chat && python3 server.py
        안 켜져 있으면 여기 프록시가 ECONNREFUSED 를 내고, 역시 목업으로 떨어진다. */
+    /* ★ 배포하지 않아도 로컬에서 실데이터를 볼 수 있게 길을 둘로 나눈다.
+     *
+     *   /api/v1/…  → 챗봇 (feedit-chat, 8770)
+     *   /api/…     → Django API (backend, 8000) — RDS 를 읽는 쪽
+     *
+     *   순서가 중요하다. vite 는 **먼저 맞는 것**을 쓰므로
+     *   더 좁은 /api/v1 을 위에 둔다. 뒤집으면 챗봇 요청이 Django 로 간다.
+     *
+     *   둘 다 안 켜져 있어도 화면은 돈다 — 챗봇은 목업으로,
+     *   지표는 '측정 불가'로 떨어진다. 숫자를 지어내지 않는다.
+     *
+     *   켜는 법:
+     *     Django  cd backend && python manage.py runserver 8000
+     *             (또는 docker compose -f docker/compose.yml up)
+     *     챗봇     cd ../feedit-chat && python3 server.py
+     */
     proxy: {
-      '/api': {
+      '/api/v1': {
         target: 'http://127.0.0.1:8770',
         changeOrigin: true,
         rewrite: (p) => p.replace(/^\/api/, ''),
+      },
+      '/api': {
+        // Django 는 주소를 /api/… 그대로 받는다 (config/urls.py 에 api/ 로 걸었다).
+        // 그래서 여기서는 경로를 고치지 않는다.
+        target: 'http://127.0.0.1:8000',
+        changeOrigin: true,
       },
     },
   },

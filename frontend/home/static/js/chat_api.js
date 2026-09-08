@@ -24,7 +24,9 @@
  *   그 외에는 전부 같은 도메인의 /api (버셀 함수 또는 vite 프록시).
  *   CORS 도 안 생기고, 주소를 코드에 박아 둘 이유도 없다. */
 const DIRECT = 'http://127.0.0.1:8770';
-const LOCAL_FILE = location.protocol === 'file:';
+/* location 이 없는 자리(시험 환경 등)에서도 import 만으로 터지지 않게 감싼다.
+   모듈이 불러오는 순간 죽으면, 이걸 import 하는 화면 전체가 같이 죽는다. */
+const LOCAL_FILE = typeof location !== 'undefined' && location.protocol === 'file:';
 export const API_BASE = LOCAL_FILE ? DIRECT : '/api';
 
 let _up = null;          /* null = 아직 모름, true/false = 확인됨 */

@@ -10,10 +10,19 @@
  *   화면과 챗봇이 같은 숫자를 말하게 하려면 계산은 한 곳에만 있어야 한다.
  */
 
-import { q } from './_lib/db.js';
+import { q, viaBackend } from './_lib/db.js';
 import { ok, empty, failed } from './_lib/reply.js';
 
 export default async function handler(req, res) {
+  // Django API 가 설정돼 있으면 그쪽이 먼저다 (RDS 를 열지 않아도 된다).
+  const relayed = await viaBackend('/assoc' + (req.url.includes('?') ? '?' + req.url.split('?')[1] : ''));
+  if (relayed) {
+    res.statusCode = 200;
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.setHeader('Cache-Control', 's-maxage=300, stale-while-revalidate=600');
+    return res.end(JSON.stringify(relayed));
+  }
+
   const url = new URL(req.url, 'http://x');
   const term = (url.searchParams.get('term') || '').trim();
   const limit = Math.min(100, Math.max(5, Number(url.searchParams.get('limit') || 20)));

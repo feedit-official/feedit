@@ -1,7 +1,8 @@
 import { $, $$, HAS_A, aAnimate, aSpring, aTimeline } from '../../../core/static/js/dom.js';
+import { prime } from './live_data.js';
 import { FIDX, fsMatch, fsNorm } from '../../../style/static/js/search.js';
 import { KW, trToast } from './render_helpers.js';
-import { trRender } from './dispatch.js';
+import { markTried, trRender } from './dispatch.js';
 
 /* 예시 질문 — 스타일 룩 · 아이템 위주. 전부 사전에 실제로 있는 말이라 그대로 검색된다. */
 const KW_Q={
@@ -84,7 +85,26 @@ function kwGo(v){
   const q=inp.value.trim();
   if(!q){ kwPaintSug(); return }
   if(!fsMatch(q,1).length){ kwPaintSug(); return }   /* 사전에 없으면 검색되지 않는다 */
-  KW.q=q; kwHideSug(); trRender(KW.part);
+
+  /* ★ 지표를 받아 오는 동안 돋보기를 돌린다.
+     서버에 다녀오는 시간이 있는데 화면이 그대로면 눌린 줄을 모르고 또 누른다.
+     받아 온 뒤에는 trRender 가 다시 그리므로 여기서 끄지 않아도 되지만,
+     실패했을 때를 대비해 반드시 되돌린다(finally). */
+  kwBusy(true);
+  KW.q=q; kwHideSug();
+  Promise.resolve(prime(q,120,{force:true})).catch(()=>{}).then(()=>{
+    /* 내가 방금 물어봤다 — 이어서 도는 trRender 는 또 묻지 마라. */
+    markTried(q);
+    kwBusy(false);
+    trRender(KW.part);
+  });
+}
+
+/* 챗바를 '조회 중' 모양으로 바꾼다. CSS 가 회전을 맡는다. */
+function kwBusy(on){
+  const bar=$('#kwBar'), btn=$('#kwGoBtn');
+  if(bar)bar.classList.toggle('busy',!!on);
+  if(btn)btn.disabled=!!on;
 }
 export function kwWire(part){
   const inp=$('#kwInput'); if(!inp)return;
@@ -116,9 +136,17 @@ export function kwWire(part){
       trToast('“'+inp.value.trim()+'” 등록을 요청했습니다. 검토 후 사전에 추가됩니다.');
     }
   });
+  const go=$('#kwGoBtn');
+  if(go)go.addEventListener('click',()=>{ if(!go.disabled)kwGo() });
   clear.addEventListener('click',()=>{
     inp.value=''; bar.classList.remove('typing');
     clear.hidden=true; kwHideSug(); inp.focus();
   });
-  if(!kwQBooked){ kwQBooked=true; kwQStep(); setTimeout(kwQTick,3200) }
+  /* ★ 탭을 바꾸면 trTabsRender 가 챗바를 통째로 새로 그린다.
+     그러면 #kwQ 도 새 요소라 비어 있는데, 예전엔 kwQBooked 가 이미 true 라
+     아무것도 안 그리고 **다음 3.2초 틱까지 빈칸**이었다. 그 사이 사용자는
+     "예시 질문이 없어졌다"고 본다.
+     그래서 **그릴 때마다 한 번은 바로 찍고**, 타이머만 한 번 건다. */
+  if(!inp.value) kwQStep();
+  if(!kwQBooked){ kwQBooked=true; setTimeout(kwQTick,3200) }
 }

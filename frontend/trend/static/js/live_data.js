@@ -22,6 +22,16 @@
  */
 
 const CACHE = new Map();   // term → {status, reason, byDate:Map, unavailable}
+/* 담아 두는 시간.
+   값이 있거나 아직 없는 것(ok·empty)은 5분 — 적재가 도는 주기보다 짧게.
+
+   ★ 실패는 15초만 담는다. 두 가지를 **동시에** 지켜야 하기 때문이다:
+     · 안 담으면 stateOf() 가 'unknown' 이라 화면이 **난수로 되돌아간다.**
+       DB 가 죽었는데 그럴듯한 숫자가 뜨는, 제일 나쁜 상태다.
+     · 오래 담으면 서버를 고치고 다시 눌러도 옛 오류가 계속 뜬다.
+   그래서 짧게 담고, 사람이 직접 누르면 force 로 무시한다. */
+const TTL_MS = 5 * 60 * 1000;
+const TTL_ERR_MS = 15 * 1000;
 const INFLIGHT = new Map();
 
 /** 지표가 실제로 있는 용어 목록 (검색 후보). 없으면 빈 배열. */
@@ -31,29 +41,76 @@ export let AVAILABLE_TERMS = [];
  * 이 용어의 지표를 받아 둔다. 그리기 전에 한 번 부른다.
  * 같은 용어를 여러 번 불러도 요청은 한 번만 나간다.
  */
-export async function prime(term, days = 120) {
+export async function prime(term, days = 120, opts = {}) {
   const key = String(term || '').trim();
   if (!key) return null;
-  if (CACHE.has(key)) return CACHE.get(key);
+  const hit = CACHE.get(key);
+  const ttl = hit && hit.status === 'error' ? TTL_ERR_MS : TTL_MS;
+  /* force = 사람이 직접 조회를 눌렀다. 방금 실패했어도 시키는 대로 다시 묻는다. */
+  if (!opts.force && hit && Date.now() - (hit.at || 0) < ttl) return hit;
+  if (hit) CACHE.delete(key);          // 오래됐거나 다시 하라고 했다
   if (INFLIGHT.has(key)) return INFLIGHT.get(key);
 
   const p = (async () => {
+    const url = `/api/trend?term=${encodeURIComponent(key)}&days=${days}`;
     let out;
+    /* ★ 실패를 뭉뚱그리지 않는다.
+       예전엔 무엇이 잘못됐든 "닿지 못했습니다" 한 마디였다. 그러면
+       ① 서버가 안 떴다 ② 주소가 틀렸다(404) ③ 서버가 터졌다(500)
+       ④ 프록시가 엉뚱한 데로 보냈다 를 구별할 수가 없다.
+       고칠 방법이 각각 다른데 화면은 똑같이 말하니 헤매게 된다. */
     try {
-      const r = await fetch(`/api/trend?term=${encodeURIComponent(key)}&days=${days}`);
-      const j = await r.json();
-      out = toEntry(j);
+      const r = await fetch(url);
+      if (!r.ok) {
+        return finish({
+          status: 'error',
+          reason: `지표 API 가 ${r.status} 를 돌려줬습니다.`,
+          detail:
+            r.status === 404
+              ? `${url} 주소가 없습니다. 개발 중이면 vite 를 다시 켜 보세요 ` +
+                `(프록시 설정이 바뀌었습니다). 배포본이면 BACKEND_API_URL 을 확인하세요.`
+              : `백엔드 로그에 무슨 일이 있었는지 남아 있습니다.`,
+          byDate: null,
+          unavailable: null,
+        });
+      }
+      const text = await r.text();
+      try {
+        out = toEntry(JSON.parse(text));
+      } catch (_) {
+        /* JSON 이 아니면 대개 프록시가 엉뚱한 곳(HTML 을 주는 서버)으로 보낸 것이다. */
+        return finish({
+          status: 'error',
+          reason: '지표 API 가 JSON 이 아닌 것을 돌려줬습니다.',
+          detail: `앞 40자: ${text.slice(0, 40).replace(/\s+/g, ' ')}`,
+          byDate: null,
+          unavailable: null,
+        });
+      }
     } catch (e) {
       out = {
         status: 'error',
-        reason: '지표 서버에 닿지 못했습니다.',
+        reason: '지표 서버에 연결하지 못했습니다.',
+        detail:
+          '백엔드가 떠 있는지 확인하세요 — docker compose -f docker/compose.yml up. ' +
+          '떠 있는데도 이러면 vite 를 다시 켜 보세요(프록시 설정이 바뀌었습니다).',
         byDate: null,
         unavailable: null,
       };
     }
-    CACHE.set(key, out);
-    INFLIGHT.delete(key);
-    return out;
+    /* ★ 실패는 담아 두지 않는다.
+       예전엔 오류도 캐시해서, 서버를 고치고 같은 말을 다시 검색해도
+       **계속 옛 오류가 떴다.** 고쳤는데 화면이 안 바뀌면 뭘 더 해야 할지 모른다.
+       값이 있거나(ok) 아직 없는 것(empty)만 담고, 그것도 5분이면 잊는다 —
+       적재는 하루에도 몇 번 도니까. */
+    return finish(out);
+
+    function finish(v) {
+      v.at = Date.now();
+      CACHE.set(key, v);
+      INFLIGHT.delete(key);
+      return v;
+    }
   })();
 
   INFLIGHT.set(key, p);
@@ -164,15 +221,84 @@ export async function loadAvailableTerms() {
  * 실존 클래스만 쓴다 — `.note` (trend/static/css/weekly_report.css).
  */
 export function unavailableHTML(reason, extra) {
-  const 줄 = [
-    '<b>측정 불가</b>',
-    reason || '이 값은 아직 측정된 자료가 없습니다.',
-  ];
-  if (extra) 줄.push(extra);
-  return `<div class="note">${줄.map(esc).join('<br>')}</div>`;
+  /* ★ 제목은 태그이고 사유는 사람이 쓴 글이다.
+     예전엔 둘 다 esc() 를 먹여서 `<b>측정 불가</b>` 가 글자 그대로 떴다.
+     태그는 우리가 쓴 것이니 그대로 두고, **바깥에서 온 글만** 이스케이프한다. */
+  const 몸 = [esc(reason || '이 값은 아직 측정된 자료가 없습니다.')];
+  if (extra) 몸.push(esc(extra));
+  return '<div class="note"><i>◆</i><span><b>측정 불가</b><br>' +
+         몸.join('<br>') + '</span></div>';
 }
 
 function esc(s) {
   return String(s == null ? '' : s).replace(/[&<>"']/g, (m) =>
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
+}
+
+
+/* ── 화면이 쓰는 요약값 ────────────────────────────────────
+ * 다이얼·배지·문구가 쓰는 숫자를 시계열에서 뽑아 준다.
+ *
+ * ★ 여기서 지표를 **새로 만들지 않는다.**
+ *   temp·momentum·level 은 크롤러가 계산해 둔 값을 그대로 읽는다.
+ *   설계서(FEEDiT_지표계산_설계서.md)가 정의의 원본이고, 두 곳에서 계산하면
+ *   화면과 챗봇이 다른 숫자를 말하게 된다.
+ *
+ *   여기서 하는 건 '읽은 값끼리의 뺄셈'뿐이다 — 지난주 대비, 작년 대비.
+ *   그건 같은 표의 두 행을 비교하는 것이라 정의가 갈릴 여지가 없다.
+ *
+ * ★ 못 구하는 값은 **null** 이다. 0 도 아니고 지어낸 수도 아니다.
+ *   부르는 쪽이 그 자리를 '측정 불가'로 그린다.
+ */
+export function summaryOf(term) {
+  const e = CACHE.get(String(term || '').trim());
+  if (!e || e.status !== 'ok' || !e.byDate) return null;
+
+  const rows = [...e.byDate.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1)).map((x) => x[1]);
+  if (!rows.length) return null;
+  const last = rows[rows.length - 1];
+
+  // 며칠 전 행 — 정확히 그날이 없으면 가장 가까운 앞 날짜를 쓴다.
+  const back = (days) => {
+    const want = new Date(last.date);
+    want.setDate(want.getDate() - days);
+    const iso = want.toISOString().slice(0, 10);
+    let best = null;
+    for (const r of rows) if (r.date <= iso) best = r;
+    return best;
+  };
+
+  const diff = (days, field) => {
+    const then = back(days);
+    if (!then) return null;
+    const a = num(then[field]);
+    const b = num(last[field]);
+    return a === null || b === null ? null : b - a;
+  };
+
+  const missing = [];
+  const need = (v, name) => { if (v === null || v === undefined) missing.push(name); return v ?? null; };
+
+  return {
+    asOf: last.date,
+    points: rows.length,
+    temp: need(num(last.temp), '온도'),
+    momentum: need(num(last.momentum), '가속'),
+    level: need(num(last.level), '수준'),
+    mention: num(last.mention),
+    // 점유율은 크롤러가 metrics.share_pct 로 넣어 준다.
+    share: num(last.share_pct ?? last.share),
+    wk: diff(7, 'mention'),          // 지난주 대비 언급량
+    mo: diff(28, 'mention'),         // 4주 전 대비
+    yoy: diff(365, 'mention'),       // 작년 대비 — 자료가 1년치 있어야 나온다
+    tempWk: diff(7, 'temp'),
+    missing,
+    /* 시계열이 짧으면 비교값을 믿으면 안 된다.
+       설계서가 정한 최소 관측(28일 10건)을 그대로 쓴다. */
+    thin: rows.length < 10,
+  };
+}
+
+function num(v) {
+  return v === null || v === undefined || Number.isNaN(Number(v)) ? null : Number(v);
 }

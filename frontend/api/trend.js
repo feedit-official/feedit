@@ -18,13 +18,22 @@
  * (metrics JSON 안에 들어 있으면 그건 꺼내 쓴다 — 아래 pick() 참고.)
  */
 
-import { q } from './_lib/db.js';
+import { q, viaBackend } from './_lib/db.js';
 import { ok, empty, failed } from './_lib/reply.js';
 
 // 설계서가 쓰는 이름 ← RDS 컬럼. 없는 것은 null 로 두고 사유를 붙인다.
 const WANTED = ['temp', 'momentum', 'ma7', 'ma28', 'level', 'pct_rank'];
 
 export default async function handler(req, res) {
+  // Django API 가 설정돼 있으면 그쪽이 먼저다 (RDS 를 열지 않아도 된다).
+  const relayed = await viaBackend('/trend' + (req.url.includes('?') ? '?' + req.url.split('?')[1] : ''));
+  if (relayed) {
+    res.statusCode = 200;
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.setHeader('Cache-Control', 's-maxage=300, stale-while-revalidate=600');
+    return res.end(JSON.stringify(relayed));
+  }
+
   const url = new URL(req.url, 'http://x');
   const term = (url.searchParams.get('term') || '').trim();
   const days = Math.min(365, Math.max(7, Number(url.searchParams.get('days') || 90)));

@@ -9,10 +9,19 @@
  * 0원으로 채우면 화면이 "공짜"라고 말하게 된다.
  */
 
-import { q } from './_lib/db.js';
+import { q, viaBackend } from './_lib/db.js';
 import { ok, empty, failed } from './_lib/reply.js';
 
 export default async function handler(req, res) {
+  // Django API 가 설정돼 있으면 그쪽이 먼저다 (RDS 를 열지 않아도 된다).
+  const relayed = await viaBackend('/products' + (req.url.includes('?') ? '?' + req.url.split('?')[1] : ''));
+  if (relayed) {
+    res.statusCode = 200;
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.setHeader('Cache-Control', 's-maxage=300, stale-while-revalidate=600');
+    return res.end(JSON.stringify(relayed));
+  }
+
   const url = new URL(req.url, 'http://x');
   const kw = (url.searchParams.get('q') || '').trim();
   const brand = (url.searchParams.get('brand') || '').trim();

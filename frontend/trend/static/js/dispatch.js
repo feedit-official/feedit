@@ -1,11 +1,12 @@
 import { $, $$, HAS_A, aAnimate, aSpring, aStagger, aUtils } from '../../../core/static/js/dom.js';
 import { ASSOC_BALLET, PLATFORM_TEMP, SENT_NEG, SENT_POS, TEMP_KW } from './data.js';
 import { FEED_SM_PICKS, WK } from './my_feed.js';
-import { FS, fsBuild, fsHideSug } from '../../../style/static/js/search.js';
-import { G_CFG, KW, fsItem, fsItemFull, gMount, josa, trFillBars } from './render_helpers.js';
+import { FS, fsBuild, fsHideSug, fsLoadDictionary } from '../../../style/static/js/search.js';
+import { G_CFG, KW, fsItem, fsItemFull, gMount, josa, trEmpty, trFillBars } from './render_helpers.js';
 import { ME, bioPaint } from '../../../account/static/js/profile.js';
 import { S_EDIT, S_FEED, TR_META } from './nav_meta.js';
 import { assocClosePop, assocOpenPop } from './assoc_popover.js';
+import { prime, stateOf, summaryOf, unavailableHTML } from './live_data.js';
 import { gChart, gDraw, gSeed } from './chart_engine.js';
 import { kwWire } from './saved_keywords.js';
 import { rkChip, rkPaintAv } from '../../../account/static/js/rank.js';
@@ -32,6 +33,9 @@ function trTabsRender(id){
               'placeholder="소재 · 아이템 · 스타일 · 브랜드로 검색">'+
             '<span class="fsGhost"><span class="fsQ" id="kwQ"></span></span>'+
             '<button class="fsClear" id="kwClear" type="button"'+(KW.q?'':' hidden')+'>×</button>'+
+            /* 엔터 말고 눌러서도 조회할 수 있게. 돌 때는 이 자리가 로딩 표시가 된다. */
+            '<button class="kwGoBtn" id="kwGoBtn" type="button" aria-label="조회">'+
+              '<span class="kwGoIc">⌕</span></button>'+
           '</div>'+
         '</div>'+
         '<div class="fsSug" id="kwSug" hidden></div>'+
@@ -55,8 +59,42 @@ function trFillBarsV(){
   else fl.forEach(x=>x.style.height=x.dataset.h+'%');
 }
 
+let TR_CUR=null;
+const TR_TRIED={};   /* 용어 → 마지막으로 물어본 때 */
+
+/* 조회를 이미 한 번 보냈다고 표시한다.
+   kwGo 가 직접 prime 을 부른 뒤 이걸 찍어 두면, 이어서 도는 trRender 의
+   선반입이 **같은 것을 또 묻지 않는다.** (한 번 눌렀는데 두 번 나가던 자리) */
+export function markTried(kw){ if(kw) TR_TRIED[kw]=Date.now(); }
+
 export function trRender(id){
+  TR_CUR=id;
   if(typeof assocClosePop==='function')assocClosePop();
+
+  /* ★ 그리기 **전에** 지표를 받아 둔다.
+     gChart 는 동기 함수라 그 안에서 기다릴 수가 없다. 그래서 여기서 미리
+     받아 캐시에 넣고, 도착하면 그 탭만 다시 그린다.
+     같은 용어를 여러 번 열어도 요청은 한 번만 나간다(live_data 가 막는다).
+
+     받아 오기 전에는 stateOf() 가 'unknown' 이라 예전처럼 씨드 난수로 그린다.
+     받아 온 뒤 다시 그리면서 실값 또는 '측정 불가'로 바뀐다. */
+  if(id==='temp'||id==='assoc'||id==='sentiment'){
+    const kw=KW.q||fsItem();
+    /* ★ 한 번 시도한 말은 잠깐 다시 안 묻는다.
+       실패는 캐시하지 않기로 했는데(고친 뒤 재시도가 돼야 하니까),
+       그러면 stateOf() 가 계속 'unknown' 이라
+       prime → trRender → prime … 으로 **끝없이 돈다.**
+       그래서 '방금 물어봤나'를 따로 기억한다. 사람이 다시 누르면
+       3초는 지나므로 재시도는 그대로 된다. */
+    const now=Date.now();
+    if(kw && stateOf(kw).status==='unknown' && now-(TR_TRIED[kw]||0)>3000){
+      TR_TRIED[kw]=now;
+      prime(kw).then(()=>{
+        /* 사용자가 그새 다른 탭으로 갔으면 다시 그리지 않는다 */
+        if(TR_CUR===id) trRender(id);
+      });
+    }
+  }
   const m=TR_META[id]||TR_META.myfeed;
   $('#trTitle').textContent=m[0];
   $('#trDesc').textContent=m[1]; $('#trDesc').hidden=!m[1];
@@ -65,6 +103,14 @@ export function trRender(id){
      할인률                → 커머스 탭
      그 외                 → 비워 둔다 */
   trTabsRender(id);
+  /* ★ 검색창 배선은 **여기 한 곳에서** 붙인다.
+     trTabsRender 가 챗바를 통째로 새로 그리므로 매번 다시 붙여야 하는데,
+     예전엔 각 탭 블록 맨 끝에 있었다. 그래서 값이 없거나 못 붙어서
+     중간에 return 하면 배선이 안 붙었고, **한 번 검색한 뒤로는
+     두 번째 검색이 아예 안 먹었다.**
+     여기 두면 어느 분기로 빠져나가도 검색은 살아 있다.
+     (두 번 부르면 이벤트가 겹쳐 한 번에 두 번 조회된다 — 그래서 한 곳뿐이다.) */
+  if (id === 'temp' || id === 'assoc' || id === 'sentiment') kwWire(id);
   /* 검색은 할인률 · 리세일 · 수명주기 세 파트에서만 쓴다 */
   /* 내 피드만 타이틀/설명 대신 프로필(아바타·이름·등급·소개)을 보여준다 */
   const isMyFeed=(id==='myfeed');
@@ -77,11 +123,36 @@ export function trRender(id){
   if(sw){
     const useSearch=['stock','resale','life'].indexOf(id)>=0;
     sw.hidden=!useSearch;
-    if(!useSearch){ FS.sel=[null,null,null,null]; FS.mat=null; fsHideSug();
+    if(!useSearch){ FS.sel=[null,null,null,null]; FS.mat=null; FS.attr=[]; fsHideSug();
       const cb=$('#fsChips'); if(cb){cb.hidden=true;cb.innerHTML=''} }
     FS.id=useSearch?id:null;
   }
   const body=$('#trBody'); if(!body)return;
+
+  /* ★ 검색 전에는 아무 숫자도 그리지 않는다.
+     전에는 '발레코어' 가 기본값이라, 들어오자마자 화면이 지표로 가득 찼다.
+     묻지도 않았는데 답이 떠 있으면 그게 진짜 측정값인 줄 알기 쉽다.
+
+     키워드 탭(언급량·연관어·긍부정)  → KW.q
+     검색 탭(할인률·리세일·수명주기)  → fsItem()
+     둘 다 비어 있으면 여기서 끝낸다. */
+  const KW_TABS = ['temp', 'assoc', 'sentiment'];
+  const SEARCH_TABS = ['stock', 'resale', 'life'];
+  if (KW_TABS.indexOf(id) >= 0 && !KW.q) {
+    body.innerHTML = trEmpty(
+      '무엇의 ' + (TR_META[id] ? TR_META[id][0] : '지표') + '을(를) 볼까요?',
+      '위 검색창에 스타일·소재·아이템·브랜드를 넣어 주세요.\n' +
+      '예: 발레코어 · 새틴 · 엄브로');
+    return;
+  }
+  if (SEARCH_TABS.indexOf(id) >= 0 && !fsItem()) {
+    body.innerHTML = trEmpty(
+      '먼저 볼 대상을 고르세요',
+      '위 검색에서 카테고리나 브랜드를 좁혀 주세요.\n' +
+      '고른 것에 맞춰 지표를 불러옵니다.');
+    return;
+  }
+
   const kpi=(l,v,u,d,up)=>'<div class="kpi"><span>'+l+'</span><b>'+v+(u?'<u>'+u+'</u>':'')+
     '</b><div class="dl '+(up?'up':'dn')+'">'+d+'</div></div>';
 
@@ -353,12 +424,33 @@ export function trRender(id){
   /* ══════════════ 언급량 · 온도 ══════════════
      결론(지금 얼마나 뜨거운가)을 맨 위에 놓고 근거를 아래에 깐다 — 할인률 변화 페이지와 같은 구성. */
   else if(id==='temp'){
-    const kw=KW.q||'발레코어';
+    const kw=KW.q;
     const sd=gSeed(kw+'temp');
-    const temp=kw==='발레코어'?82:Math.round(26+sd*70);
-    const share=+(2.2+sd*6.4).toFixed(1);
-    const yoy=Math.round(40+sd*180);
-    const wk=Math.round((gSeed(kw+'twk')-.35)*20);
+
+    /* ★ 실값이 있으면 그걸 쓴다. 없으면 화면을 채우지 않고 사유를 적는다.
+       예전에는 여기서 gSeed 로 온도·점유율·전년비를 만들어 냈다.
+       그럴듯해 보이지만 전부 지어낸 수였다. */
+    const st=stateOf(kw), S=summaryOf(kw);
+    if(st.status==='empty'||st.status==='error'){
+      body.innerHTML=unavailableHTML(st.reason,
+        st.detail || (st.status==='error'?'연결이 되면 자동으로 실제 값이 뜹니다.':''));
+      return;
+    }
+    if(st.status==='ok' && (!S || S.temp===null)){
+      body.innerHTML=unavailableHTML(
+        '‘'+kw+'’ 의 트렌드 온도가 아직 계산되지 않았습니다.',
+        (S&&S.missing.length)?('비어 있는 값: '+S.missing.join('·')):'');
+      return;
+    }
+
+    /* 아직 안 받아 온 동안(status==='unknown')은 예전처럼 그린다 —
+       prime() 이 끝나면 trRender 가 다시 불려 실값으로 바뀐다. */
+    const temp=S?Math.round(S.temp):Math.round(26+sd*70);
+    const share=S&&S.share!=null?+S.share.toFixed(1):(S?null:+(2.2+sd*6.4).toFixed(1));
+    const yoy=S?(S.yoy===null?null:Math.round(S.yoy)):Math.round(40+sd*180);
+    const wk=S?(S.wk===null?null:Math.round(S.wk)):Math.round((gSeed(kw+'twk')-.35)*20);
+    const LIVE=!!S;                      /* 실값으로 그리는 중인가 */
+    const nOr=v=>v===null||v===undefined?'–':v;   /* 없는 값은 대시로 */
     const band=temp>=85?0:temp>=65?1:temp>=40?2:3;
     /* 색은 가장 낮은 구간에서 시작해 최종 구간까지 걸어 올라간다 */
     const RAMP=['#3d7fd6','#c98a1b','#1f9e6e','#b23b3b'].slice(0,4-band);
@@ -379,11 +471,17 @@ export function trRender(id){
           '<div class="vdBand">'+['차가움','미지근','따뜻함','과열'].map((s,i)=>'<div'+(i===(3-band)?' class="on"':'')+
             '><span>'+s+'</span></div>').join('')+'</div>'+
           '<div class="vdMeta">'+
-            '<div><b>'+(wk>0?'+':'')+wk+'°</b><span>이번 주 온도 변화</span></div>'+
+            '<div><b>'+(wk===null?'–':(wk>0?'+':'')+wk)+(wk===null?'':'°')+'</b>'+
+              '<span>이번 주 온도 변화'+(wk===null?' (자료 부족)':'')+'</span></div>'+
           '</div>'+
         '</div></div>'+
-      '<div class="kpis" style="grid-template-columns:repeat(3,minmax(0,1fr))">'+kpi('플랫폼 점유율',share+'','%','+0.6%p 전주 대비',1)+
-        kpi('전년 동기 대비','+'+yoy,'%','계절성 보정',1)+
+      (LIVE?'<div class="note" style="margin:0 0 12px"><i>◆</i>'+
+          S.asOf+' 기준 · 관측 '+S.points+'일'+
+          (S.thin?' — 자료가 짧아 변화값은 참고만 하세요':'')+'</div>':'')+
+      '<div class="kpis" style="grid-template-columns:repeat(3,minmax(0,1fr))">'+kpi('플랫폼 점유율',nOr(share),share===null?'':'%',
+              share===null?'아직 계산 전':'전주 대비',1)+
+        kpi('전년 동기 대비',yoy===null?'–':(yoy>0?'+':'')+yoy,yoy===null?'':'%',
+              yoy===null?'1년치가 모여야 나옵니다':'같은 기간 언급량 차이',1)+
         kpi('신규 진입 키워드',TEMP_KW[TEMP_KW.length-1].k,'','이번 주 새로 감지',1)+'</div>'+
       '<div class="trGrid">'+
         '<div class="panelC"><div class="gHead"><h3>언급량 · 온도 추이</h3></div>'+
@@ -396,16 +494,27 @@ export function trRender(id){
             '<td class="n '+(t.v>=65?'up':'dn')+'">'+t.v+'°</td></tr>').join('')+
           '</table><div class="note"><i>◆</i>플랫폼마다 온도차가 있다면 아직 확산 초반 구간입니다.</div></div>'+
       '</div>';
-    G_CFG.tempMain={key:kw+'temp',min:0,max:100,
-      sets:[{id:'m',name:'언급량 지수',shape:temp>=65?'rise':temp>=40?'peak':'late',lo:8,hi:96,unit:''},
-            {id:'t',name:'트렌드 온도 (°)',shape:temp>=65?'rise':'peak',lo:Math.max(6,temp-30),hi:Math.min(100,temp+12),unit:'°',accent:1}]};
+    /* ★ term 을 넘겨야 실데이터를 본다.
+       안 넘기면 chart_engine 이 예전처럼 씨드 난수로 그린다(el.dataset.live='seeded').
+       field 는 API 가 돌려주는 열 이름이다 — mention(언급량) · temp(온도). */
+    G_CFG.tempMain={key:kw+'temp',term:kw,min:0,max:100,
+      sets:[{id:'m',name:'언급량 지수',field:'mention',shape:temp>=65?'rise':temp>=40?'peak':'late',lo:8,hi:96,unit:''},
+            {id:'t',name:'트렌드 온도 (°)',field:'temp',shape:temp>=65?'rise':'peak',lo:Math.max(6,temp-30),hi:Math.min(100,temp+12),unit:'°',accent:1}]};
     gChart('[data-chart="tempMain"]',G_CFG.tempMain); trDial(); trFillBars();
-    kwWire('temp');
   }
   /* ══════════════ 연관어 ══════════════
      "지금 무엇과 함께 언급되나 · 얼마나 빠르게 번지고 있나"를 결론 카드로 먼저 답한다. */
   else if(id==='assoc'){
-    const kw=KW.q||'발레코어';
+    const kw=KW.q;
+    /* 값이 없거나 못 붙으면 지어내지 않고 사유를 적는다. */
+    {
+      const st=stateOf(kw);
+      if(st.status==='empty'||st.status==='error'){
+        body.innerHTML=unavailableHTML(st.reason,
+          st.detail || (st.status==='error'?'연결이 되면 자동으로 실제 값이 뜹니다.':''));
+        return;
+      }
+    }
     const ALL_TAGS=Object.keys(ASSOC_BALLET).reduce((a,cat)=>a.concat(ASSOC_BALLET[cat]),[]);
     const MAX_TAGS=50; /* 축 5개 × 축당 최대 10개 */
     const density=Math.round(ALL_TAGS.length/MAX_TAGS*100);
@@ -466,10 +575,9 @@ export function trRender(id){
               badgeHtml(a.ch)+
             '</button>'}).join('')+
           '</div></div>'}).join('')+'</div>';
-    G_CFG.assocMain={key:kw+'assoc',
-      sets:[{id:'a',name:'연관어 총량',shape:band<=1?'rise':'peak',lo:Math.max(6,ALL_TAGS.length*30-200),hi:ALL_TAGS.length*30+120,unit:'건'}]};
+    G_CFG.assocMain={key:kw+'assoc',term:kw,
+      sets:[{id:'a',name:'연관어 총량',field:'document',shape:band<=1?'rise':'peak',lo:Math.max(6,ALL_TAGS.length*30-200),hi:ALL_TAGS.length*30+120,unit:'건'}]};
     gChart('[data-chart="assocMain"]',G_CFG.assocMain); trDial();
-    kwWire('assoc');
     $$('#trBody .axList .axRow').forEach(btn=>{
       btn.addEventListener('click',e=>{
         e.stopPropagation();
@@ -482,7 +590,16 @@ export function trRender(id){
   /* ══════════════ 긍부정 ══════════════
      "사려는 사람이 많은가 · 망설이게 하는 게 뭔가"를 결론 카드로 먼저 답한다. */
   else if(id==='sentiment'){
-    const kw=KW.q||'발레코어';
+    const kw=KW.q;
+    /* 값이 없거나 못 붙으면 지어내지 않고 사유를 적는다. */
+    {
+      const st=stateOf(kw);
+      if(st.status==='empty'||st.status==='error'){
+        body.innerHTML=unavailableHTML(st.reason,
+          st.detail || (st.status==='error'?'연결이 되면 자동으로 실제 값이 뜹니다.':''));
+        return;
+      }
+    }
     const posSum=SENT_POS.reduce((s,p)=>s+p[1],0), negSum=SENT_NEG.reduce((s,p)=>s+p[1],0);
     const score=68, posPct=82, negPct=18;
     const restock=640, wow=5;
@@ -525,11 +642,10 @@ export function trRender(id){
               '<td class="n '+(isPos?'up':'dn')+'">'+p[1].toLocaleString()+'</td></tr>'}).join('')+
           '</table><div class="note"><i>◆</i>주황이 긍정, 회색이 부정 신호입니다.</div></div>'+
       '</div>';
-    G_CFG.sentMain={key:kw+'sent',min:0,max:100,
-      sets:[{id:'p',name:'긍정 신호 비중 (%)',shape:'rise',lo:Math.max(10,posPct-30),hi:posPct+8,unit:'%',accent:1},
+    G_CFG.sentMain={key:kw+'sent',term:kw,min:0,max:100,
+      sets:[{id:'p',name:'긍정 신호 비중 (%)',field:'sentiment',shape:'rise',lo:Math.max(10,posPct-30),hi:posPct+8,unit:'%',accent:1},
             {id:'n',name:'부정 신호 비중 (%)',shape:'fall',lo:Math.max(4,negPct-6),hi:negPct+22,unit:'%'}]};
     gChart('[data-chart="sentMain"]',G_CFG.sentMain); trDial(); trFillBars();
-    kwWire('sentiment');
   }
   else if(id==='stock'){
     const it=fsItem(), full=fsItemFull(), sd=gSeed(it);
@@ -807,6 +923,11 @@ function trAnimateSvg(){ gDraw($$('#trBody .lifeSvg path'),1250,320) }
 var TR_TAB='통합';
 
 export function trBuild(){
+  /* ★ 진짜 사전을 받아 둔다.
+     이게 없으면 검색이 이 파일에 박힌 146개로만 돌아서, RDS 에 있는 말도
+     "사전에서 찾지 못했습니다" 가 된다(스투시·키르시·엄브로가 그랬다).
+     못 받아도 그냥 넘어간다 — 박아 둔 목록으로 화면은 계속 돈다. */
+  fsLoadDictionary().catch(()=>{});
   const mk=(a,host)=>{ const el=$(host); if(!el)return;
     el.innerHTML=a.map(s=>'<button class="sItem" data-tr="'+s.id+'">'+
       '<span class="ic">'+s.ic+'</span><span class="tx">'+s.t+'</span></button>').join('') };
