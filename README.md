@@ -26,6 +26,7 @@
 8. [배포 정보 및 실행 방법](#8-배포-정보-및-실행-방법)
    - [8-2. 처음 받은 사람 — 공통 준비](#8-2-처음-받은-사람--공통-준비)
    - [8-4. AI 챗봇 실행법](#8-4-ai-챗봇-실행법)
+   - [8-5. Vercel 배포](#8-5-vercel-배포--이-저장소의-frontend-를-봅니다)
 
 ---
 
@@ -343,6 +344,52 @@ docker compose -f docker/compose.yml up ssm-tunnel redis web
 ```
 
 `.env` 에 `FEEDIT_LLM_DISABLED=1` 을 넣으면 OpenAI 키 없이도 규칙만으로 돌아갑니다.
+
+### 8-5. Vercel 배포 — 이 저장소의 `frontend/` 를 봅니다
+
+프론트는 원래 별도 저장소(`Jinxxxok/FEEDiT_Frontend`)에서 배포했습니다.
+지금은 이 저장소 안으로 들어왔으므로, Vercel 프로젝트가 **`feedit-official/feedit` 의
+`frontend/` 폴더**를 보도록 바꿉니다. 프로젝트를 새로 만들지 않고 옮기면
+주소(`fee-di-t-frontend.vercel.app`)·환경변수·도메인이 그대로 따라옵니다.
+
+**Vercel 대시보드에서 (프로젝트 → Settings)**
+
+| 순서 | 위치 | 할 일 |
+|---|---|---|
+| 1 | **Git** → Connected Git Repository | **Disconnect** |
+| 2 | **Git** | `feedit-official/feedit` 를 연결 |
+| 3 | **Build and Deployment** → Root Directory | `frontend` 로 지정하고 저장 |
+| 4 | **Build and Deployment** → Ignored Build Step | `Only build if there are changes in a folder` → `frontend` |
+| 5 | **Deployments** → Create Deployment | `main` 으로 한 번 배포해 확인 |
+
+3번이 핵심입니다. Root Directory 를 `frontend` 로 잡으면 그 안의
+`vercel.json` · `package.json` · `api/` 를 전부 그대로 쓰므로 **코드는 고칠 게 없습니다.**
+
+4번은 안 해도 되지만 해 두는 게 좋습니다. 모노레포라 `backend/` 나 `ChatBot/` 만
+고친 커밋에도 프론트가 매번 새로 빌드됩니다. (Vercel 이 자동으로 걸러 주는 기능은
+npm workspaces 를 쓰는 저장소에만 적용되는데, 우리는 아닙니다.)
+
+**환경변수** — Settings → Environment Variables 에 아래가 있어야 합니다.
+저장소를 옮겨도 값은 남지만, 새로 만들었다면 다시 넣어야 합니다.
+
+| 변수 | 쓰는 곳 | 없으면 |
+|---|---|---|
+| `BACKEND_API_URL` | `api/_lib/db.js` — Django 경유 (권장) | RDS 직결로 떨어짐 |
+| `DATABASE_URL` | RDS 직결 (Django 를 안 쓸 때) | 지표가 '측정 불가' |
+| `CHAT_BACKEND_URL` | `api/v1/chat.js` — 챗봇 서버 주소 | 챗봇이 목업 답변으로 떨어짐 |
+
+`PGHOST` · `PGPORT` · `PGUSER` · `PGPASSWORD` · `PGDATABASE` 로 나눠 넣어도 됩니다.
+
+> ⚠ `CHAT_BACKEND_URL` 은 **챗봇 서버에 인증이 붙은 뒤에** 넣으세요.
+> 지금 챗봇 서버는 인증이 없어 공개 주소를 주면 누구나 팀 OpenAI 키로 질문할 수 있습니다.
+> 그때까지는 비워 두면 됩니다 — 화면은 목업 답변으로 정상 동작합니다.
+
+**옮긴 뒤 확인**
+
+```
+https://<배포주소>/api/health     표별 행 수와 지표 컬럼 유무가 그대로 나옵니다
+https://<배포주소>/api/v1/health  챗봇 서버가 붙었는지
+```
 
 ---
 
