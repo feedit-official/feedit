@@ -49,6 +49,13 @@ _YEARLIKE = re.compile(r"(19|20)\d{2}")
 # 목록 번호 — "1. 발레코어" 의 1 은 주장하는 숫자가 아니다.
 _ORDINAL = re.compile(r"^\s*\(?\d{1,2}[.)]\s", re.M)
 
+# ★ 마크다운 **표**의 순번 칸. 2026-09-09 실측 —
+#   모델이 순위를 목록이 아니라 표로 쓰면
+#       | 1 | 자켓 | 아이템 | 69° |
+#   _ORDINAL 은 "1." 꼴만 보므로 1·2·3… 이 전부 "지어낸 숫자" 로 잡혔다.
+#   같은 순번인데 형식만 다르다.
+_TABLE_IDX = re.compile(r"^\s*\|\s*(\d{1,2})\s*\|", re.M)
+
 # 권유로 읽히는 말. 사실 서술("내려가는 중입니다")과 구분한다.
 _RECOMMEND = re.compile(
     r"사도\s*(?:되|괜찮|좋)|살\s*만|추천(?:합|드|해)"
@@ -60,10 +67,17 @@ _RECOMMEND = re.compile(
 #   2026 은 연도라 걸러지지만 **-9 와 -8 이 "지어낸 음수" 로 남는다.**
 #   기준일을 성실히 밝힌 답변일수록 더 많이 걸리는, 정확히 거꾸로 된 판정이었다.
 #   (2026-09-09 실측: 정상 답변 하나가 이것 때문에 통째로 재작성 대상이 됐다)
+#   ★ 2026-09-09 추가 — 반대 방향 오탐도 막는다.
+#     예전 두 번째 갈래 `\d{1,2}\s*[-./월]\s*\d{1,2}\s*일` 은 구분자에 `-` 를
+#     허용하고 공백까지 받아서, **"54.46 - 7일 평균"** 의 `46 - 7일` 을 날짜로
+#     먹었다. 남은 `54.` 가 `54` 로 잡혀 "지어낸 숫자" 판정이 났다.
+#     소수가 나오는 답변(모멘텀·이동평균)마다 걸리던 자리다.
+#     그래서 ① 하이픈 갈래를 빼고 `월` 을 필수로 두고,
+#          ② 앞뒤에 `(?<![\d.])` · `(?![\d.])` 를 걸어 소수 한복판을 못 자르게 한다.
 _DATE = re.compile(
-    r"\d{4}\s*[-./년]\s*\d{1,2}\s*[-./월]\s*\d{1,2}\s*일?"   # 2026-09-08 · 2026년 9월 8일
-    r"|\d{1,2}\s*[-./월]\s*\d{1,2}\s*일"                        # 9월 8일
-    r"|\d{1,2}:\d{2}"                                            # 14:30
+    r"(?<![\d.])\d{4}\s*[-./년]\s*\d{1,2}\s*[-./월]\s*\d{1,2}\s*일?(?![\d.])"  # 2026-09-08 · 2026년 9월 8일
+    r"|(?<![\d.])\d{1,2}\s*월\s*\d{1,2}\s*일(?![\d.])"                            # 9월 8일
+    r"|(?<![\d.])\d{1,2}:\d{2}(?![\d.])"                                          # 14:30
 )
 
 
@@ -95,6 +109,7 @@ def _numbers_in(text: str) -> set[str]:
     """답변이 주장하는 숫자들. 연도·목록번호는 뺀다."""
     body = _DATE.sub(" ", text or "")
     body = _ORDINAL.sub(" ", body)
+    body = _TABLE_IDX.sub(" | ", body)
     out: set[str] = set()
     for m in _NUM.finditer(body):
         raw = m.group(0)
@@ -108,6 +123,64 @@ def _numbers_in(text: str) -> set[str]:
     return out
 
 
+_NKEY = re.compile(r"^n(\d{1,3})$")
+
+
+def _windows(trace) -> set[str]:
+    """관측 창 크기 — `observations: {n7: 3, n14: 4, n28: 4}` 의 **7 · 14 · 28**.
+
+    ★ 2026-09-09 실측
+      답변이 "최근 7일 관측 3건, 14일 4건, 28일 4건" 이라고 성실히 적었는데
+      14 와 28 이 "지어낸 숫자" 로 잡혔다. 값(3·4·4)은 도구 결과에 있지만
+      창 크기는 **키 이름**에만 있어 numbers() 가 못 본다.
+      기준일을 밝힐수록 걸리던 _DATE 문제와 같은 종류다.
+    """
+    out: set[str] = set()
+
+    def walk(v):
+        if isinstance(v, dict):
+            for k, x in v.items():
+                m = _NKEY.match(str(k))
+                if m:
+                    out.add(m.group(1))
+                walk(x)
+        elif isinstance(v, (list, tuple)):
+            for x in v:
+                walk(x)
+
+    walk(trace.calls if trace else [])
+    return out
+
+
+def _known(trace, question: str) -> set[str]:
+    """대조 기준이 되는 숫자들 — **반올림 표기까지 함께** 인정한다.
+
+    ★ 왜 반올림을 허용하나 (2026-09-09 실측)
+      도구가 momentum=54.46 · ma7=34.55 · ma28=33.54 를 줬는데, 모델은
+      사람이 읽기 좋게 **54.5 · 34.5 · 33.5** 로 적었다. 문자열 정확 일치로
+      대조하니 셋 다 "지어낸 숫자" 로 잡혔다.
+      반올림은 지어낸 것이 아니라 **읽기 좋게 쓴 것**이고, 오히려 바람직하다.
+      여기서 막으면 모델은 소수점 두 자리를 그대로 나열하게 된다.
+    """
+    base = set(trace.numbers()) | _numbers_in(question) | _windows(trace)
+    out = set(base)
+    for s in base:
+        try:
+            v = float(s)
+        except ValueError:
+            continue
+        for k in (0, 1, 2):
+            r = round(v, k)
+            out.add(_numstr(r))
+            # ★ 부호를 뗀 표기도 인정한다 (2026-09-09 실측).
+            #   delta_1w = -31.0 을 모델은 "31° **하락**" 이라고 쓴다. 한국어에서
+            #   자연스러운 표기인데, _numstr(-31.0) 은 "-31" 이라 대조에 걸렸고
+            #   검증관이 멀쩡한 31 을 **실제로 지웠다**(removed: ['31.0']).
+            #   방향은 숫자 대조가 아니라 말할_수_있는_것 이 지키는 몫이다.
+            out.add(_numstr(abs(r)))
+    return out
+
+
 def check(answer: str, trace, question: str = "") -> Report:
     """① 기계 대조. 모델을 부르지 않는다."""
     rep = Report()
@@ -116,7 +189,7 @@ def check(answer: str, trace, question: str = "") -> Report:
 
     # 도구가 실제로 준 숫자 + 사용자가 질문에 쓴 숫자는 통과시킨다.
     #   ("10개 알려줘" 의 10 을 지어낸 값으로 볼 수는 없다)
-    known = set(trace.numbers()) | _numbers_in(question)
+    known = _known(trace, question)
 
     for n in _numbers_in(answer):
         if n not in known:
@@ -242,11 +315,26 @@ def _hedge(answer: str, rep: Report) -> str:
               "그대로 믿지 마시고 화면의 지표를 함께 봐 주세요.")
 
 
-def verify(answer: str, trace, question: str = "") -> tuple[str, Report]:
+def verify(answer: str, trace, question: str = "",
+           web_sourced: bool = False) -> tuple[str, Report]:
     """검증 한 번. 깨끗하면 모델을 안 부른다(0원).
 
     돌려주는 것: (최종 답변, 무엇을 했나)
+
+    ★ web_sourced — 우리 도구를 하나도 안 쓰고 웹 검색으로만 답한 경우.
+      이 층은 "도구 결과에 있는 숫자인가" 만 본다. 웹 검색 결과는 우리
+      TraceLog 에 없으므로, 그대로 대조하면 **맞는 숫자가 전부 지어낸 것으로
+      잡힌다.** 실측(2026-09-09) — "오늘 날씨 어때?" 답변의 14·18·19·21°C 가
+      의심으로 잡혔고 검증관이 **19°C 를 실제로 지웠다.**
+      확인할 원본이 없는 것을 지우는 것은 검증이 아니라 훼손이다.
+      대신 FEEDiT 측정값이 아니라는 사실을 답변이 밝히게 한다
+      (orchestrator.INSTRUCTIONS 의 web_search 규칙).
     """
+    if web_sourced:
+        # 대조할 도구 결과가 없다. 확인 못 한 것을 지우지 않고, 못 했다고 남긴다.
+        rep = Report()
+        rep.skipped = "no_tool_results"
+        return answer, rep
     rep = check(answer, trace, question)
     if rep.clean:
         return answer, rep
