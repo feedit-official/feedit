@@ -16,10 +16,18 @@
 """
 from __future__ import annotations
 
+import re
+
 from . import llm, mdclean
 
 INSTRUCTIONS = """당신은 한국 패션 트렌드 서비스 FEEDiT 의 지식 답변자다.
-사용자가 물은 패션 용어의 유래·정의·확산 경위를 웹에서 찾아 한국어로 답한다.
+입력의 focus 값에 따라 답하는 초점이 다르다.
+
+  focus="definition"  사용자가 물은 패션 용어의 유래·정의·확산 경위를 찾아 답한다.
+  focus="source"      용어의 뜻을 다시 설명하지 않는다 — 이미 앞서 답한 내용이다.
+                       대신 "어떤 사이트 · 매체에서 이 정보를 확인했는지" 를 중심으로
+                       2~3문장으로 짧게 답한다.
+                       (예: "OO 매거진의 트렌드 기사와 OO 블로그 설명을 참고했습니다.")
 
 지켜야 할 것
 - **웹에서 확인한 내용만** 쓴다. 기억으로 채우지 않는다.
@@ -49,14 +57,29 @@ _SCHEMA = llm.strict_schema(
 TOOLS = [{"type": "web_search"}]
 
 
-def ask(canonical: str, facet: str, question: str, *, timeout: int = 30) -> dict | None:
-    """{answer, sources[], found, injection_seen} 또는 None(실패)."""
+# 출처를 묻는 후속 질문 신호 — "출처는요?", "그거 어디서 찾았어?"
+_SOURCE_RE = re.compile(r"출처|근거|어디서\s*(찾|가져|나왔)|레퍼런스|참고\s*자료")
+
+
+def ask(canonical: str, facet: str, question: str, *, timeout: int = 30,
+       prior_discussed: bool = False) -> dict | None:
+    """{answer, sources[], found, injection_seen} 또는 None(실패).
+
+    prior_discussed  이 term 을 이전 턴에서 이미 knowledge.origin 으로 설명한 적이
+                     있나 (engine.py 가 대화 기록을 보고 넘겨준다). 이게 False 면
+                     "출처는요?" 라고 물어도 focus 를 "source" 로 보내지 않는다 —
+                     아직 아무것도 설명한 적이 없는데 "이미 답한 내용" 이라고 전제하면
+                     오히려 답이 어색해진다. 그럴 땐 정의부터 답한다(출처는 늘 같이 붙는다).
+    """
     if not canonical or not llm.available():
         return None
+    wants_source = bool(_SOURCE_RE.search(str(question or "")))
+    focus = "source" if (wants_source and prior_discussed) else "definition"
+    hint = f"{canonical} 패션 {'출처 자료' if focus == 'source' else '유래 정의'}"
     got = llm.respond(
         INSTRUCTIONS,
         {"term": canonical, "facet": facet, "question": question,
-         "search_hint": f"{canonical} 패션 유래 정의"},
+         "focus": focus, "search_hint": hint},
         _SCHEMA, effort="low", timeout=timeout, tools=TOOLS, max_output_tokens=900)
     if not got:
         return None

@@ -12,6 +12,20 @@ import re
 GENERAL = "general"
 SALMAL = "salmal"
 
+# 인사말 — 그 자체로 완결된 문장일 때만 잡는다.
+#   "안녕하세요, 카고팬츠 온도 알려줘" 처럼 뒤에 진짜 질문이 붙으면 이 규칙을 건너뛰고
+#   평소대로 사전 게이트로 넘어간다 (문장 전체가 인사말일 때만 매치되도록 앵커를 건다).
+GREETING = re.compile(
+    r"^(안녕(하세요|하십니까|하신가요)?|하이|hi|hello|헬로우?|"
+    r"반가워요?|반갑습니다|처음\s*뵙겠습니다|좋은\s*아침|굿모닝)"
+    r"[\s!~.,?]*$", re.I)
+
+
+def is_greeting(question: str) -> bool:
+    q = re.sub(r"\s+", " ", str(question or "")).strip()
+    return bool(GREETING.match(q))
+
+
 RULES_GENERAL = [
     ("metric.platform",  r"플랫폼|무신사|29ㅅ|29CM|지그재그|에이블리|크림|유튜브|인스타|어디서\s*더|온도\s*차"),
     ("metric.assoc",     r"연관|같이|함께|뭐랑|무엇과|조합|매치"),
@@ -19,7 +33,7 @@ RULES_GENERAL = [
     ("metric.lifecycle", r"수명|내년|오래|얼마나\s*갈|끝났|한물|계속\s*갈"),
     ("metric.direction", r"꺾|하락|상승|오르|내리|식|뜨고|지고|추세|방향|성장"),
     ("metric.compare",   r"vs|대\s*비|비교|어느\s*쪽|둘\s*중"),
-    ("knowledge.origin", r"어떻게\s*시작|유래|기원|뭐야|무엇|뜻이|정의|어디서\s*나왔"),
+    ("knowledge.origin", r"어떻게\s*시작|유래|기원|뭐야|무엇|뜻이|정의|어디서\s*나왔|출처"),
     ("metric.level",     r"어때|어떤가|온도|지금|요즘|인기|얼마나|핫"),
 ]
 
@@ -44,8 +58,8 @@ def is_salmal_question(question: str) -> bool:
     return bool(re.search(SALMAL_SIGNAL, str(question or ""), re.I))
 
 
-GENERAL_CODES = [c for c, _ in RULES_GENERAL] + ["meta.capability", "out_of_scope"]
-SALMAL_CODES = [c for c, _ in RULES_SALMAL] + ["meta.capability", "out_of_scope"]
+GENERAL_CODES = [c for c, _ in RULES_GENERAL] + ["meta.capability", "meta.greeting", "out_of_scope"]
+SALMAL_CODES = [c for c, _ in RULES_SALMAL] + ["meta.capability", "meta.greeting", "out_of_scope"]
 
 
 def classify_rule(question: str, mode: str = GENERAL) -> tuple[str, bool]:
@@ -55,6 +69,8 @@ def classify_rule(question: str, mode: str = GENERAL) -> tuple[str, bool]:
     확신 못 했다 = 아무것도 안 걸려 기본값으로 떨어졌다 — 여기가 LLM 이 필요한 자리다.
     """
     q = re.sub(r"\s+", " ", str(question or "")).strip()
+    if is_greeting(q):
+        return "meta.greeting", True
     if re.search(META, q):
         return "meta.capability", True
     rules = RULES_SALMAL if mode == SALMAL else RULES_GENERAL

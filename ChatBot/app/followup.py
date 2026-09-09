@@ -29,8 +29,15 @@ ANAPHORA = re.compile(r"(그건|그것|그거|이건|이것|이거|저건|저것
 # 꼬리 조사만 남은 짧은 물음 — "고프코어는?", "나일론도?", "아디다스는요"
 TAIL_ONLY = re.compile(r"^\s*(은|는|이|가|도|만|요|은요|는요|이요|말고|는\s*어|은\s*어)?\s*[?？]?\s*$")
 
-# 이어받으면 안 되는 물음 — 그 자체로 완결된 질문이다
-NEVER_INHERIT = {"meta.capability", "out_of_scope"}
+# 이어받으면 안 되는 물음 — 그 자체로 완결된 질문이다.
+#   context.py 도 이 목록을 그대로 가져다 쓴다(후속 질문의 결과로 나올 수 없는 의도들) —
+#   두 곳에 따로 적으면 한쪽만 고쳐질 수 있어서다.
+NEVER_INHERIT = {"meta.capability", "meta.greeting", "meta.smalltalk", "out_of_scope"}
+
+# 비교 신호 — "둘 중에 더 뜨거운 건요?", "뭐가 더 핫해?", "어느 쪽이 더 잘 나가?"
+#   이번 질문엔 대상이 없으니 최근 턴들에서 서로 다른 term 을 모아 온다.
+COMPARE = re.compile(r"(둘\s*(중|다)|어느\s*(게|것|쪽)|누가\s*더|뭐가\s*더|무엇이\s*더|"
+                     r"더\s*(뜨거운|핫한|인기\s*있는|잘\s*나가는))")
 
 
 def _residue(question: str, parsed: dict) -> str:
@@ -49,6 +56,28 @@ def _last(history: list[dict], mode: str) -> dict | None:
         if t.get("intent") and t["intent"] not in NEVER_INHERIT:
             return t
     return None
+
+
+def _recent_terms(history: list[dict], limit: int = 2) -> list[dict]:
+    """최근 턴들에서 사전 term 을 최신순 · 중복 없이 모은다.
+
+    "둘 중에 더 뜨거운 건요?" 처럼 비교 대상이 바로 앞 턴 하나가 아니라
+    최근 몇 턴에 걸쳐 나왔을 때 쓴다. _last() 는 한 턴만 보므로 이걸로 보강한다.
+    """
+    seen: set[str] = set()
+    out: list[dict] = []
+    for t in reversed(history or []):
+        if t.get("intent") in NEVER_INHERIT:
+            continue
+        for term in (t.get("terms") or []):
+            c = term.get("canonical")
+            if not c or c in seen:
+                continue
+            seen.add(c)
+            out.append(term)
+            if len(out) >= limit:
+                return out
+    return out
 
 
 def resolve(question: str, parsed: dict, nlu: dict, history: list[dict],
@@ -77,11 +106,21 @@ def resolve(question: str, parsed: dict, nlu: dict, history: list[dict],
 
     # ② 대상 이어받기 — 이번 질문에 사전에 걸린 말이 하나도 없을 때만
     if not parsed.get("search"):
-        if (has_lead or ANAPHORA.search(q)) and prev.get("terms"):
-            out["carried_terms"] = [t for t in prev["terms"] if t.get("canonical")]
-            out["why"] = (f"앞 질문에서 말하던 "
-                          f"'{out['carried_terms'][0]['canonical']}' 로 읽었습니다.")
-            if sure:
+        is_compare = bool(COMPARE.search(q))
+        if (has_lead or ANAPHORA.search(q) or is_compare) and prev.get("terms"):
+            terms = _recent_terms(history, limit=2) if is_compare else prev["terms"]
+            out["carried_terms"] = [t for t in terms if t.get("canonical")]
+            if not out["carried_terms"]:
+                return out
+            if is_compare:
+                names = " · ".join(t["canonical"] for t in out["carried_terms"])
+                out["why"] = f"앞에서 말하던 '{names}' 를 나란히 비교했습니다."
+            else:
+                out["why"] = (f"앞 질문에서 말하던 "
+                              f"'{out['carried_terms'][0]['canonical']}' 로 읽었습니다.")
+            if is_compare:
+                out["intent"] = "metric.compare"
+            elif sure:
                 out.pop("intent", None)      # 이번 질문이 물음을 밝혔으면 그건 그대로
             else:
                 out["intent"] = prev["intent"]

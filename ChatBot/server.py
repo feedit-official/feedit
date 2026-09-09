@@ -89,6 +89,42 @@ def rate_ok(ip: str) -> bool:
                 _hits.pop(k, None)
     return True
 
+
+# ── 하루 사용 한도 (FREE 만) ─────────────────────────────────
+#   기획대로 FREE 는 하루 plans.QUOTA[FREE]["turns"]회 — 숫자를 여기 새로 적지 않고
+#   plans.py 값을 그대로 쓴다. 한 곳에서만 정해야 화면 문구와 여기가 어긋나지 않는다.
+#   PRO·BUSINESS 는 막지 않는다 (plans.py 주석 — "300 은 사실상 무제한").
+#
+#   ★ 아직 로그인이 없어(이 파일 머리말) IP 로 센다. plan 값도 요청이 스스로 말한 값이라
+#     클라이언트가 "PRO" 라고 우기면 지금은 못 막는다 — 로그인이 붙기 전까지의 한계다.
+_daily: dict[str, tuple[str, int]] = {}
+_daily_lock = threading.Lock()
+
+
+def _today() -> str:
+    return datetime.now(KST).strftime("%Y-%m-%d")
+
+
+def daily_ok(ip: str, plan: str) -> bool:
+    """오늘 이 IP 가 FREE 하루 한도를 넘었나. FREE 가 아니면 항상 True."""
+    if plan != plans.FREE:
+        return True
+    limit = plans.QUOTA[plans.FREE]["turns"]
+    today = _today()
+    with _daily_lock:
+        day, count = _daily.get(ip, (today, 0))
+        if day != today:
+            day, count = today, 0
+        if count >= limit:
+            _daily[ip] = (day, count)
+            return False
+        _daily[ip] = (day, count + 1)
+        if len(_daily) > 5000:                # 메모리가 무한정 늘지 않게
+            for k, (d, _c) in list(_daily.items()):
+                if d != today:
+                    _daily.pop(k, None)
+    return True
+
 # 어휘 등록 요청을 어디에 쌓나.
 #   배포되면 RDS 의 dictionary.term_candidate 로 간다 (설계서 3.5).
 #   지금은 RDS 에 붙을 수 없어 파일에 줄 단위로 쌓는다.
@@ -309,6 +345,14 @@ class Handler(BaseHTTPRequestHandler):
         # 클라이언트가 최근 턴을 같이 보낼 수 있다 (세션 목록의 원본은 클라이언트다).
         # 안 보내면 서버 메모리의 같은 conversation_id 를 쓴다.
         hist = req.get("history") if isinstance(req.get("history"), list) else None
+
+        if not daily_ok(self._client_ip(), plan):
+            limit = plans.QUOTA[plans.FREE]["turns"]
+            return self._json(429, {
+                "ok": False, "reason": "DAILY_LIMIT",
+                "message": f"오늘 무료 이용 횟수({limit}회)를 다 쓰셨습니다.\n"
+                           "내일 다시 이용하시거나, 더 넉넉한 플랜으로 올려 보세요.",
+            })
 
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream; charset=utf-8")
