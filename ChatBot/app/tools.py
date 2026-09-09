@@ -83,6 +83,13 @@ def _say_rule(pct_rank, momentum, thin: bool) -> dict:
             "note": "내려가는 중인 것을 권하지 마세요. 사실만 적으세요."}
 FACETS = ["style", "material", "item", "brand"]
 
+# ★ 축을 지목하지 않은 순위("요즘 뭐가 핫해")에서 볼 축.
+#   브랜드를 뺀다 — lexicon.yaml 이 브랜드·제품명을 사전에서 뺀 것과 같은 이유다
+#   ("사전에 넣으면 트렌드 지표가 특정 브랜드 홍보판이 됩니다").
+#   색·핏·TPO 도 뺀다. '블랙' 이 늘 상위에 있는 것은 트렌드가 아니라 상수다.
+#   브랜드 순위가 필요하면 facet="brand" 로 명시해서 부르면 그대로 나온다.
+TREND_FACETS = ["style", "material", "item"]
+
 
 def _fn(name: str, desc: str, props: dict, required: list[str]) -> dict:
     return {
@@ -221,7 +228,11 @@ def progress_say(name: str, args: dict) -> str | None:
     term = str(args.get("term") or "").strip()
     head = f"{term} " if term else ""
     if name == "search_terms":
-        return "말을 사전에서 찾는 중"
+        # ★ 같은 문구가 반복되면 화면이 멈춘 것처럼 보인다. 찾는 말을 넣는다.
+        q = " ".join(str(args.get("q") or "").split())
+        if not q:
+            return "말을 사전에서 찾는 중"
+        return f"'{q[:12]}…' 찾아보는 중" if len(q) > 12 else f"'{q}' 찾아보는 중"
     if name == "rank_terms":
         f = FACET_SAY.get(args.get("facet") or "")
         return f"지금 뜨는 {f} 세는 중" if f else "지금 뜨는 것 세는 중"
@@ -230,6 +241,9 @@ def progress_say(name: str, args: dict) -> str | None:
         return f"{head}{' · '.join(axes[:3]) or '지표'} 보는 중"
     if name == "get_evidence":
         return f"{head}실제 언급 찾는 중"
+    if name == "declare_missing":
+        ax = str(args.get("axis") or "").strip()
+        return f"{ax} 은(는) 측정 자료가 없다고 기록하는 중" if ax else "없는 항목을 기록하는 중"
     if name == "get_salmal":
         return "살!말? 투표 보는 중"
     if name == "search_salmal":
@@ -355,11 +369,34 @@ class Toolbox:
         return result
 
     # ── 사전 ────────────────────────────────────────────
+    def _key(self, term: str) -> str:
+        """term_key 를 만든다. 사전에 없으면 지표 표의 축을 쓴다.
+
+        gate.term_key() 는 lex.facet_of 만 보므로 브랜드는 "None:살로몬" 이 된다.
+        """
+        f = self.gate.facet_of(term)
+        if not f:
+            f = self.store.metric_facet(term)
+        return f"{f}:{term}"
+
     def t_search_terms(self, q: str) -> dict:
         parsed = self.gate.parse(q)
         hits = [{"term": h["canonical"], "facet": h["facet"], "term_key": h["term_key"]}
                 for h in parsed.get("search", [])]
         out: dict[str, Any] = {"found": hits, "count": len(hits)}
+        if not hits:
+            # ★ 사전에 없어도 **지표에는 있을 수 있다.** (2026-09-09)
+            #   실측: "살로몬" 은 지표 표에 8행 있는데 사전에 없어 못 찾았고,
+            #   챗봇은 "측정 자료가 없습니다" 라고 답했다. 틀린 답이다.
+            direct = self.store.metric_terms_in(q, limit=3)
+            if direct:
+                hits = [{"term": r["canonical"], "facet": r["facet"],
+                         "term_key": f'{r["facet"]}:{r["canonical"]}'} for r in direct]
+                out["found"] = hits
+                out["count"] = len(hits)
+                out["source"] = "metric"      # 사전이 아니라 지표에서 직접 찾았다
+                out["note"] = ("사전에는 없지만 지표에 이름이 있는 용어입니다"
+                               "(브랜드 등). 그대로 get_metric 에 넘기면 됩니다.")
         if not hits:
             # 못 찾았다고 끝이 아니다. 가까운 말과 인기어를 같이 준다 —
             # 모델이 되묻거나 rank_terms 로 갈아탈 재료가 된다.
@@ -367,18 +404,31 @@ class Toolbox:
             out["popular"] = self.gate.popular(self.store, limit=3)
             out["hint"] = ("용어를 지목하지 않은 질문일 수 있습니다. "
                            "'요즘 뭐가 핫해' 류면 rank_terms 를 쓰세요.")
+            # ★ 표기만 바꿔 다시 부르는 것을 막는다 (2026-09-09 실측:
+            #   "살로몬 XT-6" → "XT-6" → "살로몬" 으로 3~4연속 호출).
+            out["retry"] = "금지"
+            out["retry_note"] = (
+                "같은 대상을 표기만 바꿔(띄어쓰기·모델명 분리·영문) 다시 부르지 마십시오. "
+                "사전에도 지표에도 없는 말은 표기를 바꿔도 없습니다. "
+                "declare_missing 으로 기록하고 답을 쓰십시오.")
         # 수식어(핏·색·TPO)는 검색어가 아니지만 답변 톤에 쓰인다
         out["modifiers"] = [h["canonical"] for h in parsed.get("modifier", [])]
         return out
 
     def t_rank_terms(self, facet: str | None = None, limit: int = 10) -> dict:
         n = max(1, min(int(limit or 10), 20))
-        rows = self.store.top_terms(facet=facet or None, limit=n)
+        rows = self.store.top_terms(facet=facet or None, limit=n,
+                                    facets=None if facet else TREND_FACETS)
         day = self.store.latest_day()
         return {
             "as_of": day,
             "asked": n,
             "returned": len(rows),
+            # 어떤 축을 보고 센 순위인지 밝힌다. 모델이 답에 적을 수 있어야 한다.
+            "facets_seen": [facet] if facet else TREND_FACETS,
+            "facets_note": (None if facet else
+                            "브랜드·색·핏 축은 전체 순위에서 제외했습니다. "
+                            "브랜드 순위를 원하면 facet=\"brand\" 로 다시 부르십시오."),
             # ★ 요청한 수보다 적을 수 있다. 그 사실을 명시한다 —
             #   안 그러면 모델이 나머지를 채워 넣는다.
             "short_of_asked": len(rows) < n,
@@ -389,7 +439,7 @@ class Toolbox:
 
     # ── 지표 ────────────────────────────────────────────
     def t_get_metric(self, term: str, axes: list[str]) -> dict:
-        key = self.gate.term_key(term)
+        key = self._key(term)
         latest = self.store.term_latest(key)
         if not latest:
             # ★ 키 이름을 found 로 쓰지 않는다.
@@ -427,8 +477,16 @@ class Toolbox:
                 "percentile": pct,
                 "rank_text": (None if pct is None else
                               f"같은 축에서 상위 {max(1, round((1 - float(pct)) * 100))}%"),
-                # 지난주와 견주면 방향이 보인다
-                "delta_1w": self._delta_1w(key, latest),
+                # 지난주와 견주면 방향이 보인다.
+                #   ★ 2주 관측이 모자라면 주지 않는다 — may_say["2주변화"] 와 같은 기준.
+                #     안 그러면 표본 16건짜리 용어가 "지난주보다 31° 하락" 이라고 나간다.
+                "delta_1w": (self._delta_1w(key, latest)
+                             if n14 >= MIN_OBS_14 else None),
+                # 지난주 온도 자체. 모델이 빼기를 하지 않아도 되게 한다.
+                "temp_1w_ago": ((self._week_ago(key, latest) or (None, None))[0]
+                                if n14 >= MIN_OBS_14 else None),
+                "delta_1w_note": (None if n14 >= MIN_OBS_14 else
+                                  f"14일 관측 {n14}건 — 지난주 대비 변화를 말하기엔 모자랍니다."),
                 # 표본 — 12건으로 낸 71° 와 1,240건으로 낸 71° 는 다르다
                 "sample_n": latest.get("raw_count"),
                 "as_of": day,
@@ -445,8 +503,24 @@ class Toolbox:
         if "연관어" in want:
             out["연관어"] = self.store.term_assoc(key, limit=8)
         if "긍부정" in want:
+            # ★ 2026-09-09 — 표본 문턱을 여기서 건다.
+            #   실측: material:니트 의 감성은 n_total=1, pos_pct=100.0 이었다.
+            #   그대로 내보내면 모델이 "긍정 100%" 라고 쓴다. 댓글 한 건이다.
+            #   may_say 를 만들어 두고 이 축만 문턱이 없었다.
             s = self.store.term_sentiment(key)
-            out["긍부정"] = s or {"unavailable": "감성 지표가 아직 없습니다."}
+            n_s = int((s or {}).get("n_total") or 0)
+            if not s:
+                out["긍부정"] = {"unavailable": "감성 지표가 아직 없습니다."}
+            elif n_s < MIN_OBS_7:
+                out["긍부정"] = {
+                    "unavailable": f"감성 표본 {n_s}건 — 비율을 말하기엔 모자랍니다.",
+                    "n_total": n_s}
+            else:
+                s = dict(s)
+                if n_s < THIN_SAMPLE:
+                    s["thin_sample"] = True
+                    s["note"] = f"표본 {n_s}건 — 비율을 적을 때 표본 수를 반드시 함께 적으세요."
+                out["긍부정"] = s
         if "근거" in want:
             out["근거"] = self.store.term_evidence(key, limit=3)
 
@@ -456,6 +530,21 @@ class Toolbox:
 
     def _delta_1w(self, key: str, latest: dict):
         """지난주 대비 온도 변화. 관측이 없으면 None — 0 으로 채우지 않는다."""
+        d = self._week_ago(key, latest)
+        return None if d is None else d[1]
+
+    def _week_ago(self, key: str, latest: dict):
+        """(지난주 온도, 변화량). 둘 다 **도구가 계산해서** 준다.
+
+        ★ 왜 지난주 값을 따로 주나 (2026-09-09 실측)
+          delta_1w 만 주면 모델이 "지난주 87도에서 31도 하락" 이라고 쓴다 —
+          87 은 56+31 을 스스로 계산한 값이다. 계산이 맞아도 도구가 확인해
+          준 값이 아니라 검증관이 지웠다("87도에서 " 삭제).
+          그런데 사용자에게는 "지난주 87°에서 31° 하락" 이 "31° 하락" 보다
+          훨씬 유용하다(설계도 부록 11 — 기준선).
+          검증을 푸는 대신 **도구가 그 값을 직접 준다.** 값은 도구에서만
+          나온다는 원칙을 지키면서 답변이 친절해진다.
+        """
         try:
             rows = self.store.term_series(key, days=14)
         except Exception:                                # noqa: BLE001
@@ -467,7 +556,8 @@ class Toolbox:
         past = rows[min(7, len(rows) - 1)]
         if past.get("temp") is None:
             return None
-        return round(float(now) - float(past["temp"]), 1)
+        prev = round(float(past["temp"]), 1)
+        return prev, round(float(now) - prev, 1)
 
     def t_get_evidence(self, term: str, limit: int = 3) -> dict:
         """근거 원문 조각. 링크는 **있는 것만** 붙인다.
@@ -481,7 +571,7 @@ class Toolbox:
           linkable 로 함께 알려 준다 — 모델이 "3건 중 2건은 원문 확인 가능" 이라고
           정직하게 쓸 수 있도록.
         """
-        key = self.gate.term_key(term)
+        key = self._key(term)
         rows = self.store.term_evidence(key, limit=max(1, min(int(limit or 3), 8)))
         items = []
         for r in rows:

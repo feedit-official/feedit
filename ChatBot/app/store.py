@@ -141,6 +141,32 @@ class ReadOnlyStore:
             "SELECT DISTINCT canonical FROM metric_term_daily WHERE metric_version=?",
             (self.version,))}
 
+    def metric_facet(self, canonical: str) -> str | None:
+        """지표 표에 있는 이름의 축. 사전에 없는 용어(브랜드)의 term_key 를 만든다."""
+        return self.scalar(
+            "SELECT facet FROM metric_term_daily WHERE metric_version=? AND canonical=? "
+            "LIMIT 1", (self.version, canonical))
+
+    def metric_terms_in(self, text: str, limit: int = 3) -> list[dict]:
+        """질문 안에 **지표 표의 이름**이 들어 있으면 찾아 준다.
+
+        ★ 왜 필요한가 (2026-09-09 실측)
+          lexicon.yaml 은 브랜드·제품명을 **의도적으로** 담지 않는다
+          ("사전에 넣으면 트렌드 지표가 특정 브랜드 홍보판이 됩니다").
+          그런데 지표 표에는 brand 축 용어가 303개 있다 — 전체 588개의 절반이다.
+          사전만 보고 답하면 "살로몬" 처럼 **지표에 8행이나 있는 용어**를
+          "측정 자료가 없습니다" 라고 답하게 된다. 정직한 게 아니라 틀린 답이다.
+          사전은 표기를 고르는 도구이지, 조회를 막는 관문이 아니다(설계 원칙 2).
+        """
+        q = " " + str(text or "") + " "
+        rows = self.q(
+            "SELECT DISTINCT canonical, facet FROM metric_term_daily WHERE metric_version=?",
+            (self.version,))
+        hit = [r for r in rows if r["canonical"] and r["canonical"] in q]
+        # 긴 이름을 먼저 — '살로몬 XT-6' 이 '살로몬' 보다 구체적이다
+        hit.sort(key=lambda r: -len(r["canonical"]))
+        return hit[:limit]
+
     # ── term 하나의 최신 지표 ─────────────────────────────
     def term_latest(self, term_key: str) -> dict | None:
         day = self.scalar(
@@ -299,16 +325,29 @@ class ReadOnlyStore:
                         break
         return out
 
-    def top_terms(self, facet: str | None = None, limit: int = 10) -> list[dict]:
+    def top_terms(self, facet: str | None = None, limit: int = 10,
+                  facets: list[str] | None = None) -> list[dict]:
+        """온도 상위 용어. `facet` 은 한 축, `facets` 는 여러 축으로 좁힌다.
+
+        ★ facets 를 추가한 이유 (2026-09-09)
+          '요즘 뭐가 핫해' 가 축 제한 없이 돌면 브랜드(아디다스·키르시)와
+          색(블랙)이 순위에 섞여 나온다. lexicon.yaml 은 브랜드를 **일부러**
+          뺐다 — "사전에 넣으면 트렌드 지표가 특정 브랜드 홍보판이 됩니다".
+          사전 정책과 지표 정책이 어긋나 있던 자리다.
+        """
         day = self.latest_day()
         if not day:
             return []
+        where = ["metric_version=?", "observed_on=?", "source_code='__all__'"]
+        args: list = [self.version, day]
         if facet:
-            return self.q(
-                "SELECT canonical,facet,raw_count,temp,pct_rank FROM metric_term_daily "
-                "WHERE metric_version=? AND observed_on=? AND source_code='__all__' AND facet=? "
-                "ORDER BY temp DESC, raw_count DESC LIMIT ?", (self.version, day, facet, limit))
+            where.append("facet=?")
+            args.append(facet)
+        elif facets:
+            where.append("facet IN (%s)" % ",".join("?" * len(facets)))
+            args.extend(facets)
+        args.append(limit)
         return self.q(
             "SELECT canonical,facet,raw_count,temp,pct_rank FROM metric_term_daily "
-            "WHERE metric_version=? AND observed_on=? AND source_code='__all__' "
-            "ORDER BY temp DESC, raw_count DESC LIMIT ?", (self.version, day, limit))
+            "WHERE " + " AND ".join(where) +
+            " ORDER BY temp DESC, raw_count DESC LIMIT ?", tuple(args))
