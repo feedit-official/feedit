@@ -290,14 +290,44 @@
 .fsList button.on{background:var(--pink-0);color:var(--paper)}
 .fsList button i{font-style:normal;font-size:10px;opacity:.5}
 .fsList .hint{padding:14px 12px;font-size:12px;color:var(--pink-2);line-height:1.7}
-/* 사전(RDS)에서 온 말 — 박아 둔 계층 항목과 눈으로 구분되게 점 하나를 앞에 둔다.
-   계층이 없어서 개수 뱃지가 안 붙는다. 그 빈자리를 설명해 주는 표시이기도 하다. */
-.fsList button.fromDict::before{
-  content:'';flex:0 0 auto;width:4px;height:4px;border-radius:50%;
-  background:var(--coral);opacity:.55}
-/* 사전 항목은 개수 뱃지가 없다. space-between 이면 점과 글자가 양끝으로 벌어진다. */
-.fsList button.fromDict{justify-content:flex-start;gap:7px}
-.fsList button.fromDict.on::before{background:var(--paper);opacity:.8}
+/* ── 축별 필터 칩 (2026-09-09) ─────────────────────────────
+   네 칸은 이제 단계가 아니라 서로 독립된 필터다. 그래서 항목 하나하나가
+   '눌리는 칩'처럼 보여야 한다 — 켜지면 그대로 남고, 다시 누르면 빠진다.
+   눌린 것이 목록 안에서 바로 읽히도록 배경을 채우고 왼쪽에 굵은 선을 둔다. */
+.fsList button.fsOpt{position:relative}
+.fsList button.fsOpt .fsOptTx{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fsList button.fsOpt.on{background:var(--pink-0);color:var(--paper)}
+.fsList button.fsOpt.on i{opacity:.75}
+.fsList button.fsOpt.on::after{
+  content:'';position:absolute;left:3px;top:8px;bottom:8px;width:2px;border-radius:2px;
+  background:var(--coral)}
+/* 그 조건까지 걸면 남는 상품이 0 인 것 — 지우지 않고 흐리게 둔다.
+   사라지면 "왜 없어졌지" 가 되고, 그대로 두면 "여긴 없구나" 가 된다. */
+.fsList button.fsOpt.zero{opacity:.4}
+.fsList button.fsOpt.zero.on{opacity:1}
+/* 서버에 후보를 다시 물어보는 동안 — 목록은 그대로 두고 살짝 죽인다.
+   비우면 눌린 칩까지 사라져서 방금 무엇을 눌렀는지 알 수가 없다. */
+.fsList.isLoading{opacity:.55;pointer-events:none;transition:opacity .18s}
+
+/* 칸 안에서 찾기 — 브랜드가 2,775개다. 스크롤로는 못 찾는다. */
+.fsColFind{flex:0 0 auto;padding:8px 8px 4px}
+.fsColFind input{
+  width:100%;padding:7px 10px;border:1px solid var(--pink-3);border-radius:8px;
+  background:transparent;font:inherit;font-size:12px;letter-spacing:-.02em;color:var(--pink-0)}
+.fsColFind input::placeholder{color:var(--pink-2)}
+.fsColFind input:focus{outline:none;border-color:var(--pink-1)}
+
+/* 지금 무엇을 보고 있는지 한 줄 — 진짜로 좁혀진 건지,
+   서버를 못 봐서 박아 둔 목록인지 여기서 사실대로 말한다. */
+.fsState{padding:9px 24px;font-size:11.5px;line-height:1.6;color:var(--pink-2);
+  border-bottom:1px solid var(--pink-3);background:rgba(10,10,10,.02)}
+.fsState:empty{display:none}
+.fsState.warn{color:var(--coral)}
+.fsState.load{opacity:.7}
+
+/* 검색칸 제안 — 이미 걸려 있는 말은 한눈에 보이게 */
+.fsSug .sg.picked .lb{color:var(--coral)}
+.fsSug .sg.picked .pt{color:var(--coral);opacity:.8}
 .fsPopFoot{flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;
   gap:18px;padding:16px 24px;border-top:1px solid var(--pink-3);background:#fff}
 .fsPicked{display:flex;flex-wrap:wrap;gap:7px;min-height:28px;align-items:center}

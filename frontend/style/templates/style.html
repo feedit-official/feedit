@@ -2,7 +2,7 @@
   참고용 사본 — 실제로 렌더링되는 파일이 아닙니다.
   이 프로젝트는 Vite 기반 SPA라 화면은 root의 index.html 하나로 동작하고,
   브라우저 JS 라우터(app-shell/static/js/router.js)가 화면 전환을 담당합니다.
-  아래 마크업은 style 앱(스타일 화면, 세부 검색 팝업 — index.html 356-391, 422-447행)이 사용하는 부분을 index.html에서 그대로 옮겨 온 것으로,
+  아래 마크업은 style 앱(스타일 화면, 세부 검색 팝업 — index.html 356-391, 433-482행)이 사용하는 부분을 index.html에서 그대로 옮겨 온 것으로,
   Django 스타일 폴더 구성에 맞춰 정리해 둔 참고 사본입니다.
   실제로 수정하려면 반드시 root의 index.html을 고쳐야 합니다.
 -->
@@ -45,25 +45,49 @@
     </div>
   </section>
 
-<!-- 422-447행: 세부 검색 팝업(fsPopBg) -->
-<!-- ===== 세부 검색 — Style › 종류 › 브랜드 › 아이템명 ===== -->
+<!-- 433-482행: 세부 검색 팝업(fsPopBg) -->
+<!-- ===== 세부 검색 — STYLE · 종류 · 브랜드 · 아이템명 (서로 독립된 필터) =====
+     네 칸은 단계가 아니다. 아무 칸이나 골라도 되고, 겹쳐 고르면 교집합이다.
+     고른 것은 아래 칩으로 쌓이고, 칩의 ×를 누르면 **그 조건만** 빠진다.
+     후보와 개수는 /api/facets 가 준다 (commerce.product · product_term 기준).
+
+     ★ 칸 안의 버튼은 data-fv 다. data-v 를 쓰면 안 된다 —
+       app_shell/static/js/router.js 의 전역 클릭 위임이 [data-v] 를
+       화면 전환으로 읽어, 필터를 누르는 순간 화면이 통째로 비어 버린다. -->
 <div class="fsPopBg" id="fsPopBg">
   <div class="fsPop" role="dialog" aria-label="세부 검색">
     <div class="fsPopHead">
       <div>
         <h3>세부 검색</h3>
-        <p>왼쪽부터 좁혀 갑니다. 고른 항목은 아래 칩으로 쌓이고, 지우면 그 아래 단계가 풀립니다.</p>
+        <p>네 칸은 서로 독립입니다. 아무 칸이나 눌러 조건을 칩으로 쌓고, 칩을 빼면 그 조건만 풀립니다.</p>
       </div>
       <button class="fsX" id="fsPopX" type="button">×</button>
     </div>
+    <div class="fsState" id="fsState"></div>
     <div class="fsCols">
-      <div class="fsCol" data-lv="0"><div class="fsColH">STYLE</div><div class="fsList" id="fsC0"><button type="button" data-lv="0" data-v="스트릿">스트릿<i>4</i></button><button type="button" data-lv="0" data-v="아메카지">아메카지<i>4</i></button><button type="button" data-lv="0" data-v="그런지">그런지<i>4</i></button><button type="button" data-lv="0" data-v="포멀">포멀<i>4</i></button><button type="button" data-lv="0" data-v="발레코어">발레코어<i>4</i></button><button type="button" data-lv="0" data-v="고프코어">고프코어<i>4</i></button><button type="button" data-lv="0" data-v="블록코어">블록코어<i>3</i></button><button type="button" data-lv="0" data-v="놈코어">놈코어<i>4</i></button></div></div>
-      <div class="fsCol" data-lv="1"><div class="fsColH">종류</div><div class="fsList" id="fsC1"><div class="hint">STYLE 을 먼저 고르세요.</div></div></div>
-      <div class="fsCol" data-lv="2"><div class="fsColH">브랜드</div><div class="fsList" id="fsC2"><div class="hint">종류를 먼저 고르세요.</div></div></div>
-      <div class="fsCol" data-lv="3"><div class="fsColH">아이템명</div><div class="fsList" id="fsC3"><div class="hint">브랜드를 먼저 고르세요.</div></div></div>
+      <div class="fsCol" data-lv="0">
+        <div class="fsColH">STYLE</div>
+        <div class="fsColFind"><input type="text" data-ax="스타일" autocomplete="off" spellcheck="false" placeholder="스타일 찾기" aria-label="스타일 찾기"></div>
+        <div class="fsList" id="fsC0"></div>
+      </div>
+      <div class="fsCol" data-lv="1">
+        <div class="fsColH">종류</div>
+        <div class="fsColFind"><input type="text" data-ax="종류" autocomplete="off" spellcheck="false" placeholder="종류 찾기" aria-label="종류 찾기"></div>
+        <div class="fsList" id="fsC1"></div>
+      </div>
+      <div class="fsCol" data-lv="2">
+        <div class="fsColH">브랜드</div>
+        <div class="fsColFind"><input type="text" data-ax="브랜드" autocomplete="off" spellcheck="false" placeholder="브랜드 찾기" aria-label="브랜드 찾기"></div>
+        <div class="fsList" id="fsC2"></div>
+      </div>
+      <div class="fsCol" data-lv="3">
+        <div class="fsColH">아이템명</div>
+        <div class="fsColFind"><input type="text" data-ax="아이템명" autocomplete="off" spellcheck="false" placeholder="아이템명 찾기" aria-label="아이템명 찾기"></div>
+        <div class="fsList" id="fsC3"></div>
+      </div>
     </div>
     <div class="fsPopFoot">
-      <div class="fsPicked" id="fsPicked"><span class="ph2">아직 고른 조건이 없습니다.</span></div>
+      <div class="fsPicked" id="fsPicked"><span class="ph2">아직 고른 조건이 없습니다. 아무 칸이나 눌러 보세요.</span></div>
       <div class="fsActs">
         <button class="fsReset" id="fsReset" type="button">초기화</button>
         <button class="fsApply" id="fsApply" type="button">이 조건으로 분석 <u>→</u></button>
@@ -71,4 +95,3 @@
     </div>
   </div>
 </div>
-

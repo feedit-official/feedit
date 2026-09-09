@@ -70,6 +70,17 @@ function trSideReset(){
 /* ── 뷰 라우터 ──────────────────────────────────────── */
 export function goView(v){
   if(!v)return;
+  /* ★ 없는 화면으로는 가지 않는다.
+     아래 `$$('.view').forEach(s=>s.classList.toggle('on', s.id==='v-'+v))` 는
+     맞는 게 없으면 **모든 화면을 끔다** — 그게 공백 페이지였다.
+     예전에 세부 검색 팝업의 필터 버튼이 data-v="스트릿" 을 달고 있어
+     아래 전역 클릭 위임이 goView('스트릿') 을 불렀고, 그 순간
+     화면이 통째로 비었다. 버튼 손 data-v 는 data-fv 로 바꿨지만,
+     같은 사고가 다시 나지 않게 여기서도 막는다. */
+  if(!document.getElementById('v-'+v)){
+    if(window.console&&console.warn)console.warn('[router] 없는 화면입니다:',v);
+    return;
+  }
   if(v===curView){
     /* 스타일 탭에서 상세 화면에 들어가 있을 때 스타일 탭을 다시 누르면
        그 자리에 머무르지 않고 스타일 목록 처음 화면으로 되돌아간다 —

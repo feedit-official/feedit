@@ -66,10 +66,12 @@ function kwPaintSug(){
       for(let p=0;p<o.label.length;p++){ if(!/\s/.test(o.label[p])){ if(c===i)s=p; if(c===i+n.length-1)e=p; c++ } }
       if(s>=0&&e>=s)lb=esc(o.label.slice(0,s))+'<em>'+esc(o.label.slice(s,e+1))+'</em>'+esc(o.label.slice(e+1));
     }
-    const path=o.path.filter(Boolean).slice(0,-1).join(' › ');
+    /* ★ 예전엔 o.path(스타일 › 종류 › 브랜드)를 뒤에 붙였다.
+       세부 검색이 단계식에서 축별 필터로 바뀌면서 FIDX 에서 path 를 뺐다 —
+       계층이 없는 사전 항목에는 어차피 없던 값이고, 여기서 읽으면 터진다.
+       축 이름(o.f)만으로도 무엇인지는 충분히 읽힌다. */
     return '<button class="sg'+(k===0?' on':'')+'" data-k="'+k+'" type="button">'+
-      '<span class="fc">'+o.f+'</span><span class="lb">'+lb+'</span>'+
-      (path?'<span class="pt">'+esc(path)+'</span>':'')+'</button>';
+      '<span class="fc">'+esc(o.f)+'</span><span class="lb">'+lb+'</span></button>';
   }).join('');
   box.hidden=false;
 }
