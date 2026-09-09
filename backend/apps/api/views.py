@@ -74,21 +74,42 @@ def _column_mismatch():
       "No migrations to apply" 라고 하므로 **아무도 모른 채 지나간다.**
       이런 어긋남은 쿼리를 날려 봐야 터지는데, 그때는 이미 화면이 깨진 뒤다.
       여기서 먼저 알려 준다.
+
+    ★ 2026-09-09 — 이 진단 자체가 거짓 경보를 내고 있었다.
+      우리 표 이름은 스키마까지 붙은 `"dictionary"."dictionary_term"` 이다.
+      따옴표만 지우면 `dictionary.dictionary_term` 이라는 **한 덩어리 문자열**이
+      되고, Django 는 그걸 통째로 한 이름으로 인용해 물어본다:
+          SELECT * FROM "dictionary.dictionary_term" LIMIT 1
+          → relation "dictionary.dictionary_term" does not exist
+      표는 멀쩡히 있는데(같은 응답의 tables 가 407행을 세고 있었다)
+      "★ 모델과 실제 DB 가 어긋납니다" 가 떴다. 없는 문제를 쫓게 만든다.
+      그래서 스키마와 표 이름을 갈라서 information_schema 에 직접 묻는다.
     """
     from django.db import connection
 
     out = {}
     with connection.cursor() as c:
         for model in (DictionaryTerm, TermMetricDaily, TermAssocDaily, Product):
-            table = model._meta.db_table.replace('"', "")
+            raw = model._meta.db_table.replace('"', "")
+            schema, _, tbl = raw.rpartition(".")
             try:
-                # Django 의 표준 방식 — PostgreSQL·SQLite 어디서든 돈다.
-                have = {
-                    d.name for d in connection.introspection.get_table_description(c, table)
-                }
+                if schema:
+                    c.execute(
+                        """SELECT column_name FROM information_schema.columns
+                             WHERE table_schema = %s AND table_name = %s""",
+                        [schema, tbl],
+                    )
+                    have = {r[0] for r in c.fetchall()}
+                else:
+                    # 스키마가 없는 표는 예전 방식 그대로 (SQLite 에서도 돈다)
+                    have = {
+                        d.name
+                        for d in connection.introspection.get_table_description(c, raw)
+                    }
             except Exception as exc:      # noqa: BLE001 - 진단이 실패해도 health 는 떠야 한다
-                out[table] = {"missing": ["(표를 못 읽음)"], "error": str(exc)[:120]}
+                out[raw] = {"missing": ["(표를 못 읽음)"], "error": str(exc)[:120]}
                 continue
+            table = raw
             if not have:
                 out[table] = {"missing": ["(표 자체가 없음)"]}
                 continue
@@ -482,6 +503,14 @@ def products(request):
 
 FACET_PARAMS = ("style", "kind", "brand", "item")
 
+# ★ 상품이 이만큼은 있어야 "축끼리 좁혔다" 고 말할 수 있다.
+#   2026-09-09 실측: commerce.product 에 **1행**밖에 없었다. 그 상태로 교차
+#   계산을 하면 스타일 칸에도 브랜드 칸에도 한 개씩만 남는다. 틀린 답은
+#   아니지만, 화면에서는 "고를 게 없는 고장" 으로 보인다.
+#   상품이 이 수보다 적으면 좁히기를 포기하고 사전을 그대로 준다 —
+#   그리고 narrowed:false 로 **좁히지 못했다는 사실을 밝힌다.**
+MIN_PRODUCTS_FOR_FACETS = 20
+
 
 def _list(request, name):
     """?style=A&style=B → ['A','B'] (빈 값·중복 제거)"""
@@ -606,22 +635,28 @@ def facets(request):
     sel = {k: _list(request, k) for k in FACET_PARAMS}
 
     base = Product.objects.filter(status="ACTIVE")
+    n_products = base.count()
 
-    # 상품이 한 줄도 없으면 교차 계산은 거짓말이 된다. 사전만 준다.
-    if not base.exists():
+    # 상품이 너무 적으면 교차 계산은 거짓말에 가깝다. 사전만 준다.
+    if n_products < MIN_PRODUCTS_FOR_FACETS:
         data = _dictionary_only(sel, limit)
         if not any(data.values()):
             return _empty(
                 "상품도 사전도 비어 있습니다. "
                 "commerce.product · dictionary_term · brand 적재를 확인하세요.",
                 narrowed=False,
+                products=n_products,
             )
         return _ok(
             data,
             matched=0,
             narrowed=False,
-            note="commerce.product 가 비어 있어 사전만 보냅니다 — "
-            "축을 겹쳐 골라도 후보가 줄지 않습니다.",
+            products=n_products,
+            note=(
+                f"commerce.product 가 {n_products}개뿐이라 축끼리 좁히지 못했습니다 "
+                f"— 사전 목록을 그대로 보냅니다. 상품이 {MIN_PRODUCTS_FOR_FACETS}개를 "
+                "넘으면 자동으로 좁히기 시작합니다."
+            ),
         )
 
     matched = _apply(base, sel).count()
@@ -649,4 +684,5 @@ def facets(request):
             narrowed=True,
         )
 
-    return _ok(data, matched=matched, narrowed=True, selected=sel)
+    return _ok(data, matched=matched, narrowed=True, selected=sel,
+               products=n_products)

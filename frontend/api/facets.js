@@ -32,6 +32,13 @@ import { ok, empty, failed } from './_lib/reply.js';
 const AXES = ['style', 'kind', 'brand', 'item'];
 const MAX_LIMIT = 1000;
 
+/* ★ 상품이 이만큼은 있어야 "축끼리 좁혔다" 고 말할 수 있다.
+ *   2026-09-09 실측: commerce.product 에 1행밖에 없었다. 그 상태로 교차
+ *   계산을 하면 어느 칸에도 한 개씩만 남아 "고를 게 없는 고장" 처럼 보인다.
+ *   이보다 적으면 좁히기를 포기하고 사전을 준다 — narrowed:false 로 밝힌다.
+ *   (Django 쪽 MIN_PRODUCTS_FOR_FACETS 와 같은 값이어야 한다.) */
+const MIN_PRODUCTS = 20;
+
 /** ?style=A&style=B (또는 style=A,B) → ['A','B'] */
 function pick(url, name) {
   const out = [];
@@ -110,15 +117,18 @@ export default async function handler(req, res) {
   const sel = {};
   for (const a of AXES) sel[a] = pick(url, a);
 
-  /* 상품이 한 줄이라도 있는가 — 없으면 교차 계산 자체가 의미 없다. */
-  const probe = await q(`SELECT 1 FROM commerce.product WHERE status='ACTIVE' LIMIT 1`);
+  /* 상품이 몇 개나 있는가 — 너무 적으면 교차 계산이 의미가 없다. */
+  const probe = await q(
+    `SELECT count(*) AS n FROM commerce.product WHERE status='ACTIVE'`,
+  );
   if (!probe.ok) {
     return failed(res, `AWS RDS 에 연결하지 못했습니다 (${probe.code}).`, {
       detail: probe.error,
     });
   }
+  const nProducts = Number(probe.rows[0].n);
 
-  if (!probe.rows.length) {
+  if (nProducts < MIN_PRODUCTS) {
     const t = await q(
       `SELECT canonical_name AS label, term_type AS facet
          FROM dictionary.dictionary_term
@@ -145,15 +155,17 @@ export default async function handler(req, res) {
       return empty(
         res,
         '상품도 사전도 비어 있습니다. commerce.product · dictionary_term · brand 적재를 확인하세요.',
-        { narrowed: false },
+        { narrowed: false, products: nProducts },
       );
     }
     return ok(res, data, {
       matched: 0,
       narrowed: false,
+      products: nProducts,
       note:
-        'commerce.product 가 비어 있어 사전만 보냅니다 — ' +
-        '축을 겹쳐 골라도 후보가 줄지 않습니다.',
+        `commerce.product 가 ${nProducts}개뿐이라 축끼리 좁히지 못했습니다 ` +
+        `— 사전 목록을 그대로 보냅니다. 상품이 ${MIN_PRODUCTS}개를 넘으면 ` +
+        '자동으로 좁히기 시작합니다.',
     });
   }
 
@@ -247,6 +259,7 @@ export default async function handler(req, res) {
     matched: cnt.ok ? Number(cnt.rows[0].n) : null,
     narrowed: true,
     selected: sel,
+    products: nProducts,
   };
   if (broke.length) extra.note = `일부 축을 못 읽었습니다: ${broke.join(' · ')}`;
   return ok(res, data, extra);
