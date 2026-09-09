@@ -133,7 +133,7 @@ function acctMenu(on){
 function authLogin(){
   AUTH.in = true;
   authPaint();
-  goView('mypage');
+  goView('home');
 }
 function authLogout(){
   AUTH.in = false;
