@@ -33,6 +33,7 @@ from apps.core.models import (
     Brand,
     DictionaryTerm,
     Product,
+    ProductTerm,
     TermAssocDaily,
     TermMetricDaily,
 )
@@ -449,3 +450,203 @@ def products(request):
 
     extra = {"note": f"{no_price}건은 가격 기록이 아직 없습니다."} if no_price else {}
     return _ok({"count": len(items), "items": items}, **extra)
+
+
+# ══════════════════════════════════════════════════════════════
+#  세부 검색 — 축별 필터 후보 (2026-09-09)
+# ══════════════════════════════════════════════════════════════
+#  ★ 왜 새로 만들었나
+#    화면의 세부 검색은 스타일 › 종류 › 브랜드 › 아이템명 을 **위에서부터
+#    차례로 좁히는** 방식이었다. 그래서 브랜드만 알고 있어도 스타일부터
+#    골라야 했고, 그 계층은 프론트 파일에 손으로 박아 둔 것이라 RDS 와
+#    아무 상관이 없었다.
+#
+#    이제는 네 칸이 **서로 독립된 필터**다. 하나만 골라도 되고, 겹쳐 골라도
+#    된다. 겹쳐 고르면 교집합이다 — 스타일만 고르면 그 스타일 전부,
+#    브랜드까지 고르면 그 스타일의 그 브랜드만.
+#
+#  ★ 무엇을 세는가
+#    계층의 근거는 `commerce.product` 다. 상품 한 줄이 브랜드·종류(item_term)를
+#    들고 있고, `commerce.product_term` 이 그 상품에 붙은 스타일을 들고 있다.
+#    그래서 "이 스타일에 실제로 있는 브랜드" 를 지어내지 않고 셀 수 있다.
+#
+#  ★ 자기 축은 자기를 좁히지 않는다
+#    브랜드 후보를 셀 때 브랜드 선택은 빼고 센다. 그러지 않으면 브랜드를
+#    하나 고르는 순간 브랜드 칸에 그것 하나만 남아, 칩을 바꿔 낄 수가 없다.
+#    (패싯 검색의 기본 규칙이다.)
+#
+#  ★ 상품이 아직 없으면
+#    `commerce.product` 가 비어 있으면 교차 계산은 의미가 없다. 그때는
+#    사전(dictionary_term · brand)만 그대로 내려보내고 `narrowed:false` 로
+#    **좁히지 못했다는 사실을 밝힌다.** 화면은 그걸 그대로 적는다.
+
+FACET_PARAMS = ("style", "kind", "brand", "item")
+
+
+def _list(request, name):
+    """?style=A&style=B → ['A','B'] (빈 값·중복 제거)"""
+    out, seen = [], set()
+    for v in request.GET.getlist(name):
+        v = (v or "").strip()
+        if not v or v in seen:
+            continue
+        seen.add(v)
+        out.append(v)
+    return out
+
+
+def _apply(qs, sel, skip=None):
+    """고른 조건을 상품 목록에 건다. `skip` 축 하나는 뺀다(자기 축 제외)."""
+    if skip != "style" and sel["style"]:
+        qs = qs.filter(
+            id__in=ProductTerm.objects.filter(
+                term__term_type="STYLE",
+                term__canonical_name__in=sel["style"],
+            ).values("product_id")
+        )
+    if skip != "kind" and sel["kind"]:
+        qs = qs.filter(item_term__term__canonical_name__in=sel["kind"])
+    if skip != "brand" and sel["brand"]:
+        qs = qs.filter(brand__name__in=sel["brand"])
+    if skip != "item" and sel["item"]:
+        qs = qs.filter(canonical_name__in=sel["item"])
+    return qs
+
+
+def _rows(qs, field, keep, limit):
+    """축 하나의 후보 — 값과 상품 수. 많이 걸리는 것부터."""
+    agg = (
+        qs.exclude(**{field + "__isnull": True})
+        .exclude(**{field: ""})
+        .values(field)
+        .annotate(n=Count("id"))
+        .order_by("-n", field)
+    )
+    out = []
+    for r in agg:
+        label = r[field]
+        if not label:
+            continue
+        out.append({"label": label, "count": r["n"]})
+        if len(out) >= limit:
+            break
+    # 이미 고른 것은 후보에서 밀려나도 남긴다 — 그래야 칩을 다시 뺄 수 있다.
+    have = {o["label"] for o in out}
+    for k in keep:
+        if k not in have:
+            out.append({"label": k, "count": 0, "picked_only": True})
+    return out
+
+
+def _style_rows(qs, keep, limit):
+    """스타일은 상품에 직접 안 붙어 있다 — product_term 을 거쳐 센다."""
+    agg = (
+        ProductTerm.objects.filter(
+            term__term_type="STYLE",
+            product_id__in=qs.values("id"),
+        )
+        .values("term__canonical_name")
+        .annotate(n=Count("product_id", distinct=True))
+        .order_by("-n", "term__canonical_name")
+    )
+    out = []
+    for r in agg:
+        label = r["term__canonical_name"]
+        if not label:
+            continue
+        out.append({"label": label, "count": r["n"]})
+        if len(out) >= limit:
+            break
+    have = {o["label"] for o in out}
+    for k in keep:
+        if k not in have:
+            out.append({"label": k, "count": 0, "picked_only": True})
+    return out
+
+
+def _dictionary_only(sel, limit):
+    """상품이 없을 때 — 사전만 내려보낸다. 교차로 좁히지는 못한다."""
+
+    def terms(kind):
+        return [
+            {"label": r["canonical_name"], "count": None}
+            for r in DictionaryTerm.objects.filter(
+                status="ACTIVE", term_type=kind
+            ).values("canonical_name")[:limit]
+            if r["canonical_name"]
+        ]
+
+    return {
+        "style": terms("STYLE"),
+        "kind": terms("ITEM"),
+        "brand": [
+            {"label": r["name"], "count": None}
+            for r in Brand.objects.filter(status="ACTIVE").values("name")[:limit]
+            if r["name"]
+        ],
+        # 아이템명(상품명)은 상품이 있어야 나온다.
+        "item": [],
+    }
+
+
+@require_GET
+def facets(request):
+    """GET /api/facets?style=스트릿&brand=스투시&limit=200
+
+    세부 검색 네 칸(STYLE · 종류 · 브랜드 · 아이템명)의 후보를 한 번에 준다.
+    네 칸은 서로 독립이고, 겹쳐 고르면 교집합이다.
+
+    돌려주는 것
+        data.style / data.kind / data.brand / data.item
+            [{label, count}] — count 는 그 조건에서 걸리는 상품 수
+        matched   지금 조건에 걸리는 상품 수
+        narrowed  교차로 좁혔는가 (상품이 없으면 false)
+    """
+    limit = _int(request, "limit", 200, 1, 1000)
+    sel = {k: _list(request, k) for k in FACET_PARAMS}
+
+    base = Product.objects.filter(status="ACTIVE")
+
+    # 상품이 한 줄도 없으면 교차 계산은 거짓말이 된다. 사전만 준다.
+    if not base.exists():
+        data = _dictionary_only(sel, limit)
+        if not any(data.values()):
+            return _empty(
+                "상품도 사전도 비어 있습니다. "
+                "commerce.product · dictionary_term · brand 적재를 확인하세요.",
+                narrowed=False,
+            )
+        return _ok(
+            data,
+            matched=0,
+            narrowed=False,
+            note="commerce.product 가 비어 있어 사전만 보냅니다 — "
+            "축을 겹쳐 골라도 후보가 줄지 않습니다.",
+        )
+
+    matched = _apply(base, sel).count()
+
+    data = {
+        "style": _style_rows(_apply(base, sel, skip="style"), sel["style"], limit),
+        "kind": _rows(
+            _apply(base, sel, skip="kind"),
+            "item_term__term__canonical_name",
+            sel["kind"],
+            limit,
+        ),
+        "brand": _rows(
+            _apply(base, sel, skip="brand"), "brand__name", sel["brand"], limit
+        ),
+        "item": _rows(
+            _apply(base, sel, skip="item"), "canonical_name", sel["item"], limit
+        ),
+    }
+
+    if not any(len(v) for v in data.values()):
+        return _empty(
+            "고른 조건에 맞는 상품이 없습니다. 조건을 하나 빼고 다시 보세요.",
+            matched=0,
+            narrowed=True,
+        )
+
+    return _ok(data, matched=matched, narrowed=True, selected=sel)

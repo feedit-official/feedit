@@ -45,6 +45,11 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    # ★ /api/ 공유 토큰 검사. RDS 를 SSM 굴 없이 쓰려고 이 Django 를 EC2 에
+    #   올려 /api/ 를 열면, 주소를 아는 사람은 누구나 사전과 상품을 긁어 갈 수
+    #   있다. 챗봇(/v1/)이 쓰는 것과 같은 방식으로 막는다.
+    #   FEEDIT_API_TOKEN 이 비어 있으면 검사하지 않는다(로컬 개발 그대로).
+    'apps.api.middleware.ApiTokenMiddleware',
 ]
 
 ROOT_URLCONF = 'config.urls'

@@ -102,16 +102,45 @@ export function backendBase() {
   return (process.env.BACKEND_API_URL || '').replace(/\/+$/, '');
 }
 
-/** Django API 로 넘긴다. 실패해도 던지지 않는다 — 화면이 사유를 봐야 한다. */
+/** Django API 로 넘긴다. 실패해도 던지지 않는다 — 화면이 사유를 봐야 한다.
+ *
+ * ★ 토큰을 붙인다 (2026-09-09)
+ *   SSM 굴을 걷어내고 Django 를 EC2 에 올려 `/api/` 를 인터넷에 열면,
+ *   주소만 알면 사전(2,775개 브랜드)과 상품을 통째로 긁을 수 있다.
+ *   그래서 챗봇(`api/v1/chat.js`)이 쓰는 것과 **같은 방식**으로 막는다:
+ *   버셀 함수만 아는 공유 토큰을 머리글에 붙인다. 브라우저는 이 값을 모른다.
+ *
+ *     버셀 BACKEND_API_TOKEN  ==  서버 .env FEEDIT_API_TOKEN
+ *
+ *   비어 있으면 안 붙인다 — 로컬 개발은 그대로 돈다.
+ */
+export function backendToken() {
+  return (process.env.BACKEND_API_TOKEN || '').trim();
+}
+
 export async function viaBackend(path) {
   const base = backendBase();
   if (!base) return null;                 // 설정 안 됨 → 부르는 쪽이 pg 로 간다
   try {
     const c = new AbortController();
     const t = setTimeout(() => c.abort(), 8000);
-    const r = await fetch(base + path, { signal: c.signal });
+    const headers = {};
+    const tok = backendToken();
+    if (tok) headers['X-FEEDiT-Token'] = tok;
+    const r = await fetch(base + path, { signal: c.signal, headers });
     clearTimeout(t);
     if (!r.ok) {
+      /* 401 은 거의 항상 "두 토큰이 다르다" 이다. 상태 숫자만 보고
+         원인을 짐작하게 두지 않고, 어디를 보라고 적어 준다. */
+      if (r.status === 401) {
+        return {
+          status: 'error',
+          reason:
+            '백엔드가 토큰을 거부했습니다 (401). 버셀의 BACKEND_API_TOKEN 과 ' +
+            '서버 .env 의 FEEDIT_API_TOKEN 이 같은 값인지 확인하세요.',
+          data: null,
+        };
+      }
       return { status: 'error', reason: `백엔드가 ${r.status} 를 돌려줬습니다.`, data: null };
     }
     return await r.json();

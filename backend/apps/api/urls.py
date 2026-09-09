@@ -15,6 +15,8 @@ urlpatterns = [
     path("terms", views.terms, name="terms"),
     # 화면 검색이 쓰는 사전 전체 (용어 + 브랜드)
     path("dictionary", views.dictionary, name="dictionary"),
+    # 세부 검색 네 칸(STYLE·종류·브랜드·아이템명)의 후보 — 축끼리 교집합
+    path("facets", views.facets, name="facets"),
     path("trend", views.trend, name="trend"),
     path("assoc", views.assoc, name="assoc"),
     path("products", views.products, name="products"),
