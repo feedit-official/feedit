@@ -1,0 +1,67 @@
+# 읽기 전용 API 만 돌릴 때 필요한 것 — 2026-09-09
+#
+# ══════════════════════════════════════════════════════════════
+#  왜 requirements.txt 를 그대로 안 쓰나
+# ══════════════════════════════════════════════════════════════
+# 루트 requirements.txt 는 128개다. 크롤러·OCR·비전까지 다 들어 있어서
+# torch(2.5GB급) · torchvision · easyocr · playwright chromium 을 받는다.
+# EC2 에서 그걸 빌드하면 30분이 넘거나 디스크·메모리가 먼저 터진다.
+#
+# API 는 그중 아무것도 안 쓴다. Django 로 RDS 를 읽어 JSON 을 줄 뿐이다.
+# 그래서 API 컨테이너용 목록을 따로 둔다 (docker/api.Dockerfile 이 쓴다).
+#
+# ★ 버전은 루트 requirements.txt 와 **같은 값**으로 박는다.
+#   여기만 슬쩍 올라가면 로컬과 서버가 다른 Django 로 도는 일이 생긴다.
+#   루트를 올릴 때 이 파일도 같이 올릴 것.
+#
+# ── 왜 celery 가 들어 있나 ────────────────────────────────────
+#   config/__init__.py 가 `from .celery import app` 을 한다. 즉 Django 가
+#   뜨는 순간 celery 를 import 한다. 워커를 안 돌려도 패키지는 있어야 한다.
+#   (redis 도 celery 브로커 설정을 읽을 때 필요하다.)
+
+# ── 뼈대 ──
+Django==6.1
+gunicorn==26.2.0
+whitenoise==6.8.2
+python-dotenv==1.2.3
+
+# ── RDS(PostgreSQL) ──
+#   psycopg-binary 를 같이 넣으면 서버에서 컴파일을 안 한다(gcc·libpq 불필요).
+psycopg==3.3.4
+psycopg-binary==3.3.4
+
+# ── Django 가 끌고 오는 것 (값을 고정해 둔다) ──
+asgiref==3.12.1
+sqlparse==0.6.0
+tzdata==2026.3
+typing_extensions==4.16.0
+
+# ── boto3 (import 만 해도 필요하다) ──
+#   config/urls.py → apps.core.views.normalization → services.normalization 이
+#   맨 위에서 boto3 를 import 한다. 관리자 화면 하나 때문인데, URLconf 에
+#   걸려 있어서 **API 요청 하나를 받으려 해도 이게 없으면 터진다.**
+#   (2026-09-09 실측: 빼고 띄웠더니 reverse('api:facets') 에서
+#    ModuleNotFoundError: No module named 'boto3')
+boto3==1.43.83
+botocore==1.43.83
+jmespath==1.1.0
+s3transfer==0.19.2
+urllib3==2.7.0
+
+# ── celery (import 만 해도 필요하다) ──
+#   config/__init__.py 가 `from .celery import app` 을 한다.
+#   (2026-09-09 실측: 빼고 띄웠더니 ModuleNotFoundError: No module named 'celery')
+celery==5.6.3
+redis==8.1.0
+amqp==5.3.1
+billiard==4.2.4
+kombu==5.6.2
+vine==5.1.0
+click==8.5.0
+click-didyoumean==0.3.1
+click-plugins==1.1.1.2
+click-repl==0.3.0
+prompt_toolkit==3.0.53
+wcwidth==0.8.3
+python-dateutil==2.9.0.post0
+six==1.17.0

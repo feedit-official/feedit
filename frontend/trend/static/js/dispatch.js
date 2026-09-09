@@ -3,7 +3,7 @@ import { ASSOC_BALLET, PLATFORM_TEMP, SENT_NEG, SENT_POS, TEMP_KW } from './data
 import { FEED_SM_PICKS, WK } from './my_feed.js';
 import { STYLES } from '../../../home/static/js/chat.js';
 import { SIMG } from '../../../style/static/js/style_page.js';
-import { FS, fsBuild, fsHideSug, fsLoadDictionary } from '../../../style/static/js/search.js';
+import { FS, fsBuild, fsHideSug, fsLoadDictionary, fsReset } from '../../../style/static/js/search.js';
 import { G_CFG, KW, fsItem, fsItemFull, gMount, josa, trEmpty, trFillBars } from './render_helpers.js';
 import { ME, bioPaint } from '../../../account/static/js/profile.js';
 import { S_EDIT, S_FEED, TR_META } from './nav_meta.js';
@@ -125,7 +125,9 @@ export function trRender(id){
   if(sw){
     const useSearch=['stock','resale','life'].indexOf(id)>=0;
     sw.hidden=!useSearch;
-    if(!useSearch){ FS.sel=[null,null,null,null]; FS.mat=null; FS.attr=[]; fsHideSug();
+    /* 검색을 안 쓰는 탭으로 나가면 걸린 조건도 함께 푼다 —
+       돌아왔을 때 안 보이는 조건이 결과에 남아 있으면 안 된다. */
+    if(!useSearch){ fsReset(); fsHideSug();
       const cb=$('#fsChips'); if(cb){cb.hidden=true;cb.innerHTML=''} }
     FS.id=useSearch?id:null;
   }

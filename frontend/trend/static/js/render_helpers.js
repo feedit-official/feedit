@@ -1,5 +1,5 @@
 import { $, $$, HAS_A, aAnimate, aSpring, aStagger, aUtils } from '../../../core/static/js/dom.js';
-import { FS } from '../../../style/static/js/search.js';
+import { FS, FS_ORDER } from '../../../style/static/js/search.js';
 import { gChart } from './chart_engine.js';
 
 /* 화면 안의 모든 차트를 한 번에 세운다 */
@@ -8,16 +8,26 @@ export function gMount(){ $$('#trBody [data-chart]').forEach(el=>{
   gChart(el,typeof cfg==='function'?cfg(fsItem()):cfg) }) }
 export var G_CFG={};
 
-/* 조회 대상 — 검색으로 좁힌 것 중 가장 구체적인 것.
-   아무것도 안 고르면 **빈 문자열**을 준다. 예전처럼 '발레코어' 로 떨어지지 않는다. */
+/* 조회 대상 — 걸린 조건 중 가장 구체적인 것 하나.
+   아무것도 안 고르면 **빈 문자열**을 준다. 예전처럼 '발레코어' 로 떨어지지 않는다.
+
+   ★ 2026-09-09 — 세부 검색이 단계식에서 축별 필터로 바뀌었다.
+     FS.sel[4] 은 없어졌고, FS.pick 이 축 → 고른 값들을 들고 있다.
+     FS_ORDER 가 구체적인 것부터의 순서다(아이템명 › 브랜드 › 종류 › 스타일 › 속성).
+     한 축에 여러 개를 걸었으면 그중 처음 것을 대표로 삼는다 —
+     지표는 말 하나에만 붙기 때문이다. */
 export function fsItem(){
-  /* 색·디테일·TPO(FS.attr) 는 맨 뒤다 — 그것만 골랐을 때만 대상이 된다.
-     사전에는 이런 말이 잔뜩 있어서, 빼 두면 골라도 화면이 빈 채로 남는다. */
-  const at = FS.attr && FS.attr.length ? FS.attr[0][1] : '';
-  return FS.sel[3]||FS.sel[2]||FS.sel[1]||FS.mat||FS.sel[0]||at||'';
+  const p=FS.pick||{};
+  for(const ax of FS_ORDER){
+    const a=p[ax];
+    if(a&&a.length)return a[0];
+  }
+  return '';
 }
+/* 브랜드와 아이템명이 같이 걸려 있으면 "스투시 8볼 후디" 처럼 붙여 부른다 */
 export function fsItemFull(){
-  const b=FS.sel[2], i=FS.sel[3];
+  const p=FS.pick||{};
+  const b=(p['브랜드']||[])[0], i=(p['아이템명']||[])[0];
   return (b&&i)?(b+' '+i):fsItem();
 }
 /* 받침 유무로 조사를 고른다 */
