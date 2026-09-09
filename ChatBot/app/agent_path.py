@@ -93,6 +93,10 @@ def _notes(trace, rep: verify.Report, res: orchestrator.Result) -> list[dict]:
     if rep.skipped:
         notes.append({"code": "VERIFY_FAILED", "term": None,
                       "message": f"사실 확인을 끝내지 못했습니다 ({rep.skipped})."})
+    if rep.skipped == "web_sourced":
+        notes.append({"code": "WEB_SOURCED", "term": None,
+                      "message": "FEEDiT 지표를 조회하지 않고 답했습니다. "
+                                 "측정값이 아니니 함께 확인해 주세요."})
     if res.stopped in ("max_rounds", "max_calls", "time_budget"):
         notes.append({"code": "PARTIAL", "term": None,
                       "message": "조회를 끝까지 하지 못하고 지금까지 모은 것으로 답했습니다."})
@@ -123,7 +127,16 @@ def ask(question: str, *, store, gate, mode: str = "general",
             "trace": {"rounds": res.rounds, "calls": res.calls, "stopped": res.stopped},
         }
 
-    answer, rep = verify.verify(res.answer, res.trace, question)
+    # ★ 우리 도구를 **하나도** 안 불렀으면 대조할 원본이 없다.
+    #   known 이 빈 집합이라 답변의 모든 숫자가 "지어낸 것" 으로 잡히고,
+    #   fix() 가 그걸 전부 지운다. 검증이 아니라 자동 삭제다.
+    #   실측(2026-09-09) — "오늘 날씨 어때?" 가 호스티드 web_search 로 답했는데
+    #   16·18·21 이 모두 삭제되어 "약 °C · ~°C · 낮 °C" 가 되어 나갔다.
+    #   (처음엔 res.sources 로 판정했는데, 호스티드 검색은 annotation 을
+    #    안 남길 때가 있어 sources 가 비어 이 가드가 통째로 무력해졌다.)
+    web_only = not (res.trace.calls if res.trace else [])
+    answer, rep = verify.verify(res.answer, res.trace, question,
+                                web_sourced=web_only)
 
     terms = _terms_from(res.trace)
     as_of = _as_of(res.trace)
@@ -150,7 +163,11 @@ def ask(question: str, *, store, gate, mode: str = "general",
         "notes": _notes(res.trace, rep, res),
         "sources": res.sources or [],
         # 예산이 다 돼 되묻는 것으로 끝났나. 화면이 "더 볼까요" 버튼을 붙일 수 있다.
-        "partial": res.stopped in ("time_budget", "max_rounds", "max_calls"),
+        #   ★ llm_* (모델 호출 실패·타임아웃) 도 부분 답변이다. 예전에는 빠져
+        #     있어서, 중간에 끊긴 답이 완전한 답인 척 화면에 떴다.
+        #     (2026-09-09 실측: stopped=llm_NET_ReadTimeout 인데 partial=False)
+        "partial": (res.stopped in ("time_budget", "max_rounds", "max_calls")
+                    or str(res.stopped or "").startswith("llm_")),
         # 진단 — 어느 도구를 몇 바퀴에 불렀나. 화면엔 안 뜨지만 로그에 남는다.
         "trace": {
             "rounds": res.rounds, "calls": res.calls, "stopped": res.stopped,

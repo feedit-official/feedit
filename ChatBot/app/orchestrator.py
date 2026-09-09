@@ -35,6 +35,7 @@
 from __future__ import annotations
 
 import json
+import os
 import time
 from typing import Any
 
@@ -44,7 +45,23 @@ from .tools import Toolbox, progress_say, specs_for
 # ── 안전장치 값 ────────────────────────────────────────────
 MAX_ROUNDS = 4          # 한 질문에 도구를 부를 수 있는 바퀴 수
 MAX_CALLS = 10          # 바퀴를 합쳐 도구 호출 총량
-TIME_BUDGET = 8.0       # 초. 넘으면 지금까지 모은 것으로 답한다
+# ★ 2026-09-09 추가 — 같은 도구를 인자만 바꿔 계속 부르는 것을 막는다.
+#   _sig() 는 **동일 인자**만 걸러서, search_terms("살로몬 XT-6") →
+#   ("XT-6") → ("살로몬") 처럼 조금씩 바꾸면 그대로 통과했다.
+#   실측(2026-09-09 "살로몬 XT-6 지금 사도 돼?"): search_terms 4연속, 8.9초.
+#   결론은 옳았지만 네 바퀴를 다 쓰고 도달했다.
+MAX_PER_TOOL = 3        # 한 질문에 같은 도구를 부를 수 있는 횟수
+# ★ ask_user 만 예외다. 부르는 순간 루프가 끝나므로 셀 이유가 없다.
+#   declare_missing 은 예외가 아니다 — 처음엔 "종결 도구" 로 보고 뺐는데,
+#   스펙이 axis 를 **하나씩** 받는 기록 도구라 없는 축마다 한 번씩 불린다.
+#   실측(2026-09-09 "살로몬 XT-6 …"): search_terms 1 + get_metric 1 +
+#   declare_missing 3 = 5호출 · 4바퀴 · 25초. 상한이 없어 막을 것이 없었다.
+NO_CAP = ("ask_user",)
+# ★ 예산은 환경변수로 뺀다 (FEEDIT_CHAT_TIME_BUDGET).
+#   실측(2026-09-09, 전 역할 luna): 8초로는 "살로몬 XT-6 …" 과 "오버핏 니트 …"
+#   가 마지막 답변 작성 중에 끊겼다(llm_NET_ReadTimeout). 모델을 바꾸거나
+#   예산을 올리는 판단이 필요한데, 그때마다 코드를 고치게 하지 않는다.
+TIME_BUDGET = float(os.getenv("FEEDIT_CHAT_TIME_BUDGET") or 8.0)
 CALL_TIMEOUT = 20       # 한 번의 모델 호출 상한
 
 
@@ -72,15 +89,25 @@ FEEDiT 는 SNS·커머스를 수집해 용어별 트렌드 지표를 계산하�
    그대로만 쓴다. url 이 비어 있으면 플랫폼과 시점만 밝히고 끝에 "(원문 링크 없음)"
    이라고 적어라. 검색 결과 주소나 그럴듯한 주소를 만들어 붙이면, 누른 사람은
    우리가 인용하지 않은 글에 도착한다. 지어낸 숫자와 같은 종류의 거짓말이다.
-6. **말할_수_있는_것을 지킨다.** get_metric 이 그 조건에서 허용되는 표현을
+7. **말할_수_있는_것을 지킨다.** get_metric 이 그 조건에서 허용되는 표현을
    함께 준다. `recommend` 가 "금지" 면 **사도 된다/괜찮다 같은 권유를 하지 마라.**
    사실만 적는다. "조건부" 면 note 에 적힌 단서를 반드시 함께 쓴다.
    숫자가 전부 맞아도 결론이 틀릴 수 있고, 구매를 권하는 문장에는 책임이 따른다.
-7. **숫자에는 기준선을 붙인다.** "온도 71°" 만 쓰면 높은 건지 낮은 건지 모른다.
+8. **숫자에는 기준선을 붙인다.** "온도 71°" 만 쓰면 높은 건지 낮은 건지 모른다.
    rank_text · delta_1w · sample_n 이 있으면 함께 적어라 —
    "온도 71°(같은 축에서 상위 12%, 지난주 78°에서 내려오는 중)".
-8. **가격·재고·세일은 우리 데이터에 없다.** "살까 말까" 를 묻는 질문에는
+9. **가격·재고·세일은 우리 데이터에 없다.** "살까 말까" 를 묻는 질문에는
    이것이 **유행 관점의 판단**이라는 것을 한 번은 밝혀라.
+10. **한국 서비스다.** 사용자는 한국에 있고, 값도 한국 기준으로 읽는다.
+   지역이 필요한 질문에 [사용자 지역] 이 주어지면 그대로 쓰고, 없으면
+   **서울**을 기본으로 잡아 답한 뒤 "다른 지역이면 말씀해 주세요" 를 덧붙여라.
+   되묻더라도 선택지는 **한국 도시**로 낸다.
+   ★ 직전 대화에서 사용자가 지역을 말했으면(`[직전 질문]`·`[직전 답변 요약]`)
+     **그 지역을 이어서 쓴다.** 매번 다시 묻지 마라. 한 번 말한 것을 또 묻는
+     챗봇은 기억이 없는 것처럼 보인다.
+   ★ 미국 도시를 기본 선택지로 내지 마라.
+     (2026-09-09 실측: "오늘 날씨 어때?" 에 뉴욕·로스앤젤레스·시카고가 나왔다.
+      한국 패션 서비스에서 이 선택지는 사용자를 당황하게 한다.)
 
 ## 도구 고르는 법
 - 질문이 용어를 지목했으면 → search_terms 로 정확한 표기를 얻고 get_metric
@@ -89,6 +116,9 @@ FEEDiT 는 SNS·커머스를 수집해 용어별 트렌드 지표를 계산하�
   온도 하나로는 답이 안 된다.
 - 우리 지표로 답할 수 없는 질문이면 → web_search. 다만 그 내용이 FEEDiT
   측정값이 아니라는 것을 답변에 밝혀라.
+- **날씨처럼 우리 지표 밖이지만 옷차림과 이어지는 질문은 되묻지 마라.**
+  지역 기본값(서울)으로 web_search 해서 답하고, 옷차림 제안으로 자연스럽게 잇는다.
+  이 서비스에서 날씨는 목적이 아니라 **패션 조언의 재료**다.
 
 ## 답변 문체
 한국어. 결론을 먼저, 근거를 뒤에. 숫자에는 기준일을 붙인다.
@@ -119,6 +149,11 @@ def _ctx_block(question: str, ctx: dict, history: list[dict] | None) -> str:
         lines.append(f"[사용자가 보던 용어] {ctx['screen_term']}")
     if ctx.get("salmal_card_id"):
         lines.append(f"[살!말? 카드에서 넘어옴] card_id={ctx['salmal_card_id']}")
+    # ★ 지역 — 없으면 한국을 기본으로 잡게 한다. 모델은 놔두면 미국을 가정한다.
+    if ctx.get("region"):
+        lines.append(f"[사용자 지역] {ctx['region']}")
+    else:
+        lines.append("[지역 미상] 한국 사용자다. 지역이 필요하면 서울을 기본으로 잡아라")
     if ctx.get("user_id"):
         lines.append("[로그인함] 취향을 근거로 쓸 수 있다")
     else:
@@ -151,18 +186,24 @@ def run(question: str, *, store, gate, ctx: dict | None = None,
     tools = specs_for(ctx)
     items: list[Any] = [{"role": "user", "content": _ctx_block(question, ctx, history)}]
     seen: set[str] = set()
+    per_tool: dict[str, int] = {}      # 도구 이름 → 부른 횟수 (MAX_PER_TOOL)
     started = time.monotonic()
 
     for rnd in range(MAX_ROUNDS):
         out.rounds = rnd + 1
         left = TIME_BUDGET - (time.monotonic() - started)
-        if left <= 0.5:
+        # ★ 1초 미만이면 새 바퀴를 시작하지 않는다. 시작하면 아래 timeout 의
+        #   하한(2초) 때문에 예산을 반드시 넘긴다.
+        if left <= 1.0:
             out.stopped = "time_budget"
             break
 
         res = llm.respond(
             INSTRUCTIONS, items, tools=tools, raw_flag=True,
-            timeout=min(CALL_TIMEOUT, max(3, int(left))),
+            # ★ 남은 시간을 **실수 그대로** 상한으로 쓴다.
+            #   int(left) 는 내림이라 2.9 초 남았을 때 2 초만 주고 끊었다.
+            #   하한 2 초는 연결 자체가 안 되는 시간을 피하기 위한 것이다.
+            timeout=max(2.0, min(float(CALL_TIMEOUT), left)),
             **llm.role("orchestrator"),
         )
         if res is None:
@@ -197,7 +238,21 @@ def run(question: str, *, store, gate, ctx: dict | None = None,
                     c["call_id"],
                     {"skipped": "같은 인자로 이미 불렀습니다. 결과가 위에 있습니다."}))
                 continue
+            used = per_tool.get(c["name"], 0)
+            if c["name"] not in NO_CAP and used >= MAX_PER_TOOL:
+                # 인자를 바꿔 가며 같은 도구를 계속 부르는 자리.
+                # 막기만 하면 또 부르므로, **무엇을 하라고** 같이 적어 준다.
+                items.append(llm.tool_result_item(
+                    c["call_id"],
+                    {"skipped": f"{c['name']} 는 이미 {used}번 불렀습니다. "
+                                "인자를 바꿔 다시 부르지 마십시오. "
+                                "없는 축이 더 있으면 도구를 또 부르지 말고, "
+                                "답변에서 한 문장으로 묶어 밝히십시오 "
+                                "(\"…와 …는 아직 측정 자료가 없습니다\"). "
+                                "그 밖에는 다른 도구를 쓰거나 답을 쓰십시오."}))
+                continue
             seen.add(sig)
+            per_tool[c["name"]] = used + 1
             out.calls += 1
             # ★ 부르기 **전에** 알린다. 조회가 끝난 뒤 알리면 이미 늦다.
             #   콜백이 터져도 대화는 계속돼야 한다 — 화면 장식이지 본체가 아니다.
