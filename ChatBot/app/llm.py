@@ -46,6 +46,54 @@ API = (os.getenv("OPENAI_BASE_URL") or "https://api.openai.com/v1").rstrip("/")
 MODEL = os.getenv("FEEDIT_LLM_MODEL", "gpt-5.6-luna")
 DEFAULT_EFFORT = (os.getenv("FEEDIT_LLM_EFFORT") or "low").strip().lower()
 EFFORTS = ("none", "low", "medium", "high", "xhigh", "max")
+
+# ── 역할별 크기 (2026-09-09) ───────────────────────────────
+#   설계도 05 — "작은 모델 = 성능 저하" 가 아니다. 출력이 닫혀 있고 온도가
+#   0에 가까운 작업(대조·발췌·형식변환)은 작은 쪽이 오히려 덜 흔들린다.
+#   판단을 **만들어야** 하는 자리(도구 선택·해석·조언)에만 큰 것을 둔다.
+#
+#   ── 2026-09-09 실측 단가 (developers.openai.com/api/docs/models) ──
+#     gpt-6-astra    $10 / $50   컨텍스트 —      가장 센 것. 우리 일엔 과하다
+#     gpt-5.6-sol    $4  / $20   1.05M          복잡한 전문 작업
+#     gpt-5.6-terra  $2  / $12   1.05M · 출력 128K   지능과 비용의 균형
+#     gpt-5.6-luna   $0.20/$1.20 1.05M · 출력 128K   캐시 입력 $0.02
+#
+#   ★ Luna 가 기능을 안 깎는다.
+#     function calling · structured outputs · web search · MCP · file search ·
+#     code interpreter · skills · tool search 를 **전부** 지원한다.
+#     Terra 와 다른 것은 값과 추론 깊이지 할 수 있는 일이 아니다.
+#     그래서 "작은 모델을 쓰면 기능이 줄어든다"는 걱정은 여기 해당 없다.
+#
+#   왜 이렇게 갈랐나 — 대조·발췌·형식변환은 출력이 닫혀 있고 effort 가 none 이라
+#   Terra 로 올려도 얻는 게 거의 없다. 반대로 도구를 고르고 다시 고르는 판단은
+#   한 번 틀리면 아래가 전부 틀리므로 Terra 를 쓴다. 10배 차이는 거기에만 낸다.
+MODEL_LARGE = os.getenv("FEEDIT_LLM_MODEL_LARGE") or "gpt-5.6-sol"
+MODEL_MID = os.getenv("FEEDIT_LLM_MODEL_MID") or "gpt-5.6-terra"
+MODEL_SMALL = os.getenv("FEEDIT_LLM_MODEL_SMALL") or "gpt-5.6-luna"
+
+ROLES: dict[str, tuple[str, str]] = {
+    # 역할              (모델,        추론 강도)
+    "orchestrator":   (MODEL_MID,   "medium"),   # 도구를 고르고 다시 고른다
+    "interpreter":    (MODEL_MID,   "medium"),   # 숫자 → 판단 (창작에 가깝다)
+    "advisor":        (MODEL_MID,   "medium"),   # 살!말? 결론
+    "general":        (MODEL_MID,   "low"),      # 사전 밖 상담 (웹검색 동반)
+    "quote":          (MODEL_SMALL, "none"),     # 원문 발췌 — 새로 쓰지 않는다
+    "verify":         (MODEL_SMALL, "none"),     # 숫자 대조 — 일치 확인
+    "polish":         (MODEL_SMALL, "none"),     # 형식 변환
+    "ask":            (MODEL_SMALL, "none"),     # 되묻는 한 문장
+}
+
+
+def role(name: str) -> dict:
+    """역할 이름 → respond() 에 그대로 펼쳐 넣을 인자.
+
+        llm.respond(instr, payload, schema, **llm.role("verify"))
+
+    모르는 이름이면 지금까지의 기본값으로 떨어진다 — 오타 하나로
+    챗봇이 통째로 멈추지 않게 한다.
+    """
+    model, effort = ROLES.get(name, (MODEL, DEFAULT_EFFORT))
+    return {"model": model, "effort": effort}
 PROMPT_VERSION = "feedit-chat-v1"
 
 # 챗봇 전체를 규칙만으로 돌리고 싶을 때 (FEEDIT_LLM_DISABLED=1)
@@ -101,7 +149,8 @@ def key_hint() -> str:
 
 def respond(instructions: str, payload: Any, schema: dict | None = None,
             *, effort: str | None = None, timeout: int = 20,
-            tools: list | None = None, max_output_tokens: int | None = None) -> dict | None:
+            tools: list | None = None, max_output_tokens: int | None = None,
+            model: str | None = None, raw_flag: bool = False) -> dict | None:
     """Responses API 를 한 번 부른다. 실패하면 None.
 
     schema 를 주면 JSON 을 강제하고 파싱해서 돌려준다.
@@ -122,13 +171,17 @@ def respond(instructions: str, payload: Any, schema: dict | None = None,
         return None
 
     body: dict[str, Any] = {
-        "model": MODEL,
+        "model": model or MODEL,
         "store": False,                       # 대화를 OpenAI 쪽에 남기지 않는다
         # 목록 밖의 값을 보내면 400 이 난다. 오타 하나로 챗봇이 통째로 규칙으로
         # 떨어지는 걸 막으려고 여기서 한 번 거른다.
         "reasoning": {"effort": (effort or DEFAULT_EFFORT) if (effort or DEFAULT_EFFORT) in EFFORTS else "low"},
         "instructions": instructions,
-        "input": payload if isinstance(payload, str)
+        # ★ 리스트는 그대로 보낸다.
+        #   도구 루프는 이전 턴의 function_call 과 그 결과를 **항목 목록**으로
+        #   되돌려줘야 모델이 무엇을 이미 불렀는지 안다. json.dumps 로 감싸면
+        #   그게 그냥 문자열이 되어, 같은 도구를 무한히 다시 부른다.
+        "input": payload if isinstance(payload, (str, list))
                  else json.dumps(payload, ensure_ascii=False),
     }
     if schema:
@@ -164,6 +217,14 @@ def respond(instructions: str, payload: Any, schema: dict | None = None,
     except ValueError:
         LAST_ERROR = "BAD_JSON_ENVELOPE"
         return None
+
+    # ★ 도구 루프는 output_text 가 **비어 있는 것이 정상**이다.
+    #   모델이 글 대신 function_call 을 냈기 때문이다. 그걸 EMPTY_OUTPUT 으로
+    #   처리하면 루프가 첫 바퀴에서 죽는다. raw=True 면 봉투를 그대로 준다.
+    if raw_flag:
+        LAST_ERROR = None
+        return {"_raw": raw, "text": raw.get("output_text") or _output_text(raw),
+                "_raw_sources": _sources(raw)}
 
     out = raw.get("output_text") or _output_text(raw)
     if not out:
@@ -205,6 +266,39 @@ def _sources(raw: dict) -> list[dict]:
                     seen.add(url)
                     out.append({"url": url, "title": a.get("title") or url})
     return out
+
+
+def tool_calls(result: dict | None) -> list[dict]:
+    """raw_flag=True 로 받은 응답에서 모델이 부르려는 도구를 꺼낸다.
+
+    Responses API 는 도구 호출을 output 배열 안에 `function_call` 항목으로 준다:
+        {"type":"function_call", "call_id":"...", "name":"get_metric",
+         "arguments":"{\"term\":\"발레코어\"}"}
+
+    arguments 는 **문자열**이다. 여기서 한 번만 파싱해 둔다 —
+    부르는 쪽마다 json.loads 를 하면 깨진 JSON 처리가 곳곳에 흩어진다.
+    """
+    if not result:
+        return []
+    out = []
+    for item in ((result.get("_raw") or {}).get("output") or []):
+        if item.get("type") != "function_call":
+            continue
+        try:
+            args = json.loads(item.get("arguments") or "{}")
+        except (TypeError, ValueError):
+            args = {}                       # 인자가 깨져도 루프는 계속 돈다
+        if not isinstance(args, dict):
+            args = {}
+        out.append({"call_id": item.get("call_id") or item.get("id") or "",
+                    "name": item.get("name") or "", "args": args})
+    return out
+
+
+def tool_result_item(call_id: str, payload: Any) -> dict:
+    """도구 결과를 모델에게 되돌려줄 항목. 다음 바퀴의 input 에 넣는다."""
+    return {"type": "function_call_output", "call_id": call_id,
+            "output": json.dumps(payload, ensure_ascii=False, default=str)}
 
 
 def strict_schema(name: str, properties: dict, required: list[str]) -> dict:

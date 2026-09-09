@@ -16,7 +16,8 @@ LLM 이 하지 않는 것
 """
 from __future__ import annotations
 
-from . import context, followup, history, llm, mdclean, plans, polish, report, websearch
+from . import (agent_path, context, followup, history, llm, mdclean, plans,
+               polish, report, websearch)
 from .lexicon_gate import LexiconGate
 from .nlu import classify
 from .intents import is_salmal_question, is_greeting, GENERAL_CODES, SALMAL_CODES
@@ -33,18 +34,45 @@ class ChatEngine:
     # ── 진단 ──────────────────────────────────────────
     def llm_state(self) -> dict:
         return {"enabled": self.use_llm, "key": llm.key_hint(),
-                "model": llm.MODEL, "last_error": llm.LAST_ERROR}
+                "model": llm.MODEL, "last_error": llm.LAST_ERROR,
+                "orchestrator": agent_path.enabled(),
+                "roles": {r: llm.role(r) for r in llm.ROLES}}
 
     # ── 본체 ──────────────────────────────────────────
     def ask(self, question: str, mode: str = "general", plan: str = plans.FREE,
             *, conversation_id: str | None = None,
-            history_in: list | None = None) -> dict:
+            history_in: list | None = None,
+            extra: dict | None = None,
+            on_progress=None) -> dict:
         q = " ".join(str(question or "").split())
         if not q:
             return {"ok": False, "reason": "EMPTY", "message": "질문을 입력해 주세요."}
         if len(q) > 500:
             return {"ok": False, "reason": "TOO_LONG",
                     "message": "질문은 500자 이하로 입력해 주세요."}
+
+        # ── 새 경로 (2026-09-09) ────────────────────────────
+        #   FEEDIT_CHAT_ORCHESTRATOR=1 이면 도구 루프로 간다.
+        #   의도를 정규식으로 확정하지 않고, 도구를 고르고 결과를 보고 다시 고른다.
+        #
+        #   ★ 아래 기존 경로를 **지우지 않았다.**
+        #     지금 돌고 있는 챗봇을 세우지 않고 갈아 끼우기 위해서다.
+        #     두 경로를 같은 질문으로 돌려 비교한 뒤 기본값을 바꾸면 된다.
+        #     끄면(변수 없음) 예전과 완전히 같은 길로 간다.
+        if agent_path.enabled() and self.use_llm:
+            past_a = (history.sanitize(history_in) if history_in
+                      else self.memory.recent(conversation_id))
+            ctx = {"mode": mode}
+            # 화면에서 넘어온 것들. 없으면 없는 대로 — 도구 목록만 줄어든다.
+            for k in ("screen_term", "salmal_card_id", "user_id"):
+                v = extra.get(k) if extra else None
+                if v:
+                    ctx[k] = v
+            out = agent_path.ask(q, store=self.store, gate=self.gate, mode=mode,
+                                 history=past_a, ctx=ctx, on_progress=on_progress)
+            self._remember(conversation_id, q, out.get("intent") or "agent", mode,
+                           out.get("terms") or [])
+            return out
 
         # 앞 턴. 클라이언트가 보낸 것이 있으면 그쪽을 믿는다 —
         # 사용자의 세션 목록이 원본이고, 서버 메모리는 프로세스가 죽으면 사라진다.

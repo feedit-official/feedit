@@ -9,34 +9,48 @@
   <link rel="icon" href="./assets/logo.png">
   <link rel="preconnect" href="https://static.wanted.co.kr">
   <link rel="preconnect" href="https://cdn.jsdelivr.net">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto+Flex:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://static.wanted.co.kr/fonts/pretendard/pretendard/pretendardvariable-dynamic-subset.min.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/wanteddev/wanted-sans@v1.0.3/packages/wanted-sans/fonts/webfonts/variable/split/WantedSansVariable.min.css">
-  <link rel="stylesheet" href="./css/landing.css">
+  <link rel="stylesheet" href="./css/landing.css?v=20260909-wanted-exact18">
 </head>
-<body>
+<body class="experience-locked">
+  <div class="experience-gate" id="experienceGate">
+    <button class="experience-enter" id="experienceEnter" type="button" aria-label="FEEDiT 경험 시작">
+      <span>START THE EXPERIENCE</span><i aria-hidden="true"></i>
+    </button>
+  </div>
   <div class="progress" aria-hidden="true"><i></i></div>
   <header class="wanted-nav" aria-label="대회 페이지 헤더">
-    <div class="wanted-logo" aria-label="wanted"><svg class="wanted-mark color" viewBox="0 0 34 28" aria-hidden="true"><path class="wm-blue" d="M2.5 11.5h11v11.2L2.5 11.5Z"/><path class="wm-cyan" d="M13.5 11.5V3.2h9.2v8.3"/><path class="wm-pink" d="M13.5 11.5h9.2v11.2"/><path class="wm-orange" d="M22.7 11.5a9.2 9.2 0 1 1-9.2 11.2"/></svg><strong>wanted</strong></div>
-    <nav aria-label="대회 메뉴"><span>홈</span><span>전체 과제</span></nav><span class="login">로그인</span>
+    <div class="wanted-nav-inner">
+      <div class="wanted-nav-left">
+        <div class="wanted-logo" aria-label="wanted"><img src="./assets/wanted-combined.svg" width="112" height="32" alt="wanted"></div>
+        <nav aria-label="대회 메뉴"><span>홈</span><span>전체 과제</span></nav>
+      </div>
+      <span class="login">로그인</span>
+    </div>
   </header>
+  <div class="entry-caption" id="entryCaption" aria-hidden="true">Wanted x KRAFTON Cofa AI Championship 2026 출품작 <i></i> FEEDiT</div>
   <main>
     <section class="hero-scroll" id="start"><div class="hero sticky-panel">
       <canvas id="impactCanvas" class="particle-canvas" aria-hidden="true"></canvas>
       <div class="role-tags" aria-hidden="true"><span data-fig="0">BUILD</span><span data-fig="2" class="impact-tag">IMPACT</span><span data-fig="3">THINK</span><span data-fig="1">THINK</span><span data-fig="4">BUILD</span></div>
       <div class="hero-copy" aria-live="polite">
-        <div class="title-window"><h1 id="heroTitle">AI Championship 2026</h1></div>
+        <div class="title-window"><div class="hero-title" id="heroTitle" role="heading" aria-level="1"><img src="./assets/ai-championship-2026.svg" alt="AI Championship 2026"></div></div>
         <div class="brand-switch" id="brandSwitch">
-          <div class="sponsor-original"><span class="mini-wanted"><svg class="wanted-mark mono" viewBox="0 0 34 28" aria-hidden="true"><path d="M2.5 11.5h11v11.2L2.5 11.5Z"/><path d="M13.5 11.5V3.2h9.2v8.3"/><path d="M13.5 11.5h9.2v11.2"/><path d="M22.7 11.5a9.2 9.2 0 1 1-9.2 11.2"/></svg><strong>wanted</strong></span><b></b><span class="krafton">KRAFTON<small>Cofa<sup>✦</sup></small></span></div>
-          <div class="feedit-brand" aria-label="FEEDiT"><svg viewBox="0 0 64 64" aria-hidden="true"><path d="M47 10v38a6 6 0 0 1-6 6H10V10h37Z"/><path d="M22 43V21h17M22 32h15"/><rect x="45" y="7" width="10" height="10"/></svg><strong>FEED<span>i</span>T</strong></div>
+          <div class="sponsor-original"><img class="sponsor-lockup" src="./assets/wanted-krafton-cofa.svg" alt="wanted | KRAFTON Cofa"></div>
+          <div class="feedit-brand" aria-label="FEEDiT"><img src="./assets/feedit-logo.svg" alt=""><strong>FEED<span class="dotI">ı<span class="tit"></span></span>T</strong></div>
         </div>
       </div>
       <div class="intro-bar"><p><strong>원티드 AI Championship 2026</strong><span>FEEDiT · Fashion Trend Intelligence</span></p><span class="fake-apply">참가 신청하기</span><span class="fake-share" aria-hidden="true">⌁</span></div>
       <div class="scroll-cue" aria-hidden="true"><span>SCROLL TO UNZIP</span><i></i></div>
-      <button class="sound-toggle" id="soundToggle" type="button" aria-label="배경 음악 켜기"><i></i><span>SOUND OFF</span></button>
     </div></section>
 
     <section class="zip-scroll" id="reveal"><div class="zip-stage sticky-panel">
       <div class="zip-open" aria-hidden="true"></div><div class="zip-photo" aria-hidden="true"></div><div class="zip-seam" aria-hidden="true"><i id="zipPull"><b></b></i></div>
+      <div class="single-particle-light think-backlight" aria-hidden="true"></div>
       <div class="zip-copy"><span>01 / THINK</span><h2>SCROLL<br>INTO THE<br><em>THREAD.</em></h2></div>
       <canvas id="thinkCanvas" class="particle-canvas" aria-hidden="true"></canvas><div class="think-label">THINK</div>
     </div></section>
@@ -53,13 +67,16 @@
     </section>
 
     <section class="build-scroll" id="build"><div class="build-stage sticky-panel">
+      <div class="single-particle-light build-backlight" aria-hidden="true"></div>
       <canvas id="buildCanvas" class="particle-canvas" aria-hidden="true"></canvas>
+      <div class="build-label" aria-hidden="true">BUILD</div>
       <div class="build-copy"><span class="kicker">04 / BUILD</span><h2>LET’S<br><em>BUILD.</em></h2><p>트렌드를 찾는 순간부터 구매를 결정하는 순간까지.<br>이제 하나의 흐름으로 경험하세요.</p><a class="build-button" href="https://fee-di-t-frontend.vercel.app/" data-platform><span>BUILD FEEDiT</span><i>↗</i></a></div>
       <div class="final-meta"><span>FEEDiT © 2026</span><span>FASHION TREND INTELLIGENCE</span></div>
     </div></section>
   </main>
-  <audio id="themeAudio" src="./assets/feedit-theme.wav" preload="metadata" loop></audio>
+  <button class="sound-toggle pending" id="soundToggle" type="button" aria-label="배경 음악 준비 중" aria-pressed="false"><span class="sound-wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span><span class="sound-slash" aria-hidden="true"></span></button>
+  <audio id="themeAudio" src="./assets/feedit-theme.wav" preload="auto" autoplay muted playsinline loop></audio>
   <div class="transition-curtain" id="curtain" aria-hidden="true"><div class="curtain-mark">F</div><span>ENTERING FEEDiT</span></div>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script><script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script><script src="./js/wanted-reference-data.js?v=20260908-wanted-exact3"></script><script src="./js/particles-webgl.js?v=20260908-wanted-exact3"></script><script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/gsap.min.js"></script><script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/ScrollTrigger.min.js"></script><script src="https://cdn.jsdelivr.net/npm/lenis@1.3.26/dist/lenis.min.js"></script><script src="./js/landing.js?v=20260908-wanted-exact3"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script><script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script><script src="./js/wanted-reference-data.js?v=20260909-wanted-exact18"></script><script src="./js/particles-webgl.js?v=20260909-wanted-exact18"></script><script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/gsap.min.js"></script><script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/ScrollTrigger.min.js"></script><script src="https://cdn.jsdelivr.net/npm/lenis@1.3.26/dist/lenis.min.js"></script><script src="./js/landing.js?v=20260909-wanted-exact18"></script>
 </body>
 </html>

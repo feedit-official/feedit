@@ -17,6 +17,87 @@ from typing import Any
 from .config import DB_PATH, METRIC_VERSION
 
 
+# ══════════════════════════════════════════════════════════
+#  근거 한 줄을 원문으로 되돌리는 링크
+# ══════════════════════════════════════════════════════════
+#  ★ 왜 필요한가 (설계도 부록 12)
+#    "커뮤니티 반응 82% 긍정" 은 **확인할 수 있을 때만** 주장이 된다.
+#    원문으로 갈 수 없으면 인용은 장식으로 남는다.
+#
+#  ★ 2026-09-09 실측 — 전부는 안 된다
+#    근거 831건 기준으로 링크를 만들 수 있는 것은 61% 다.
+#      youtube  419건  product_uid 가 'yt:<video_id>' — 접두사만 떼면 100% 일치
+#      musinsa   89건  product_uid 가 상품번호 — 상품 페이지로 간다
+#      naver    323건  product_uid 가 'kw:나일론' — **검색 키워드다.**
+#                      글 URL 이 아니라서 원문으로 되돌아갈 방법이 없다.
+#    text_document.raw_id 는 14,240건 전부 NULL 이라 raw_document.url 에도 못 닿는다.
+#    (크롤러가 글 URL 을 안 남긴 탓이고, 챗봇에서 고칠 수 있는 문제가 아니다)
+#
+#    그래서 **링크는 있으면 붙이고 없으면 없다고 적는다.** 링크를 필수로 걸면
+#    네이버 39% 를 통째로 버리게 되는데, 언급량이 많은 축이라 그게 더 손해다.
+#    "없으면 없다고 한다" 는 이 서비스의 원칙과도 같다.
+#
+#  ★ 여기가 교체 지점이다
+#    지금은 크롤러 SQLite 를 본다. RDS 로 옮기면 analysis.text_document 에는
+#    content_item FK 가 있고 content.content_item.content_url 이 URL 을 직접 준다 —
+#    그때는 아래 조립을 지우고 그 칸을 그대로 쓰면 된다.
+#    README 가 말한 "store.py 의 SQL 만 갈아 끼운다" 가 이 자리다.
+#
+#  URL 형식은 크롤러 코드에서 확인한 것이다(추측이 아니다):
+#    feedit_crawler — https://www.youtube.com/watch?v={video_id}
+#                     https://www.musinsa.com/products/{uid}
+_PLATFORM_KO = {
+    "youtube": "유튜브", "naver": "네이버", "musinsa": "무신사",
+    "zigzag": "지그재그", "ably": "에이블리", "kream": "크림",
+}
+_KIND_KO = {
+    "yt_comment": "유튜브 댓글", "yt_comment_reply": "유튜브 대댓글",
+    "yt_video_context": "유튜브 영상", "yt_transcript": "유튜브 자막",
+    "naver_blog": "네이버 블로그", "naver_cafearticle": "네이버 카페",
+    "product_review": "무신사 리뷰",
+}
+
+
+def evidence_link(source_code: str, product_uid: str | None) -> str | None:
+    """원문 주소. 만들 수 없으면 None — 지어내지 않는다."""
+    uid = (product_uid or "").strip()
+    if not uid:
+        return None
+    if source_code == "youtube" and uid.startswith("yt:"):
+        vid = uid[3:]
+        return f"https://www.youtube.com/watch?v={vid}" if vid else None
+    if source_code == "musinsa" and uid.isdigit():
+        return f"https://www.musinsa.com/products/{uid}"
+    if source_code == "kream" and uid.isdigit():
+        return f"https://kream.co.kr/products/{uid}"
+    # naver 는 uid 가 'kw:<검색어>' 라 글로 되돌아갈 수 없다.
+    return None
+
+
+def at_iso(at) -> str | None:
+    """시점 표기를 하나로 맞춘다.
+
+    ★ 왜 필요한가 (2026-09-09 실측)
+      같은 근거 목록 안에서 유튜브·무신사는 '2026-09-08', 네이버 블로그는
+      '20260902' 로 나왔다. 모델은 받은 대로 적으므로 답변에 두 모양이 섞이고,
+      읽는 사람은 뒤엣것을 숫자로 읽는다. 여기서 한 번만 맞춰 둔다.
+      (RDS 로 바꾸면 timestamp 로 와서 이 함수는 그대로 통과만 시킨다)
+    """
+    t = str(at or "").strip()
+    if not t:
+        return None
+    if len(t) == 8 and t.isdigit():
+        return f"{t[:4]}-{t[4:6]}-{t[6:]}"
+    return t[:10] if len(t) > 10 and t[4:5] == "-" else t
+
+
+def platform_label(source_code: str, doc_kind: str | None) -> str:
+    """사용자에게 보일 출처 이름. '어디서' 가 성립해야 한다."""
+    return (_KIND_KO.get(doc_kind or "")
+            or _PLATFORM_KO.get(source_code or "")
+            or (source_code or "출처 미상"))
+
+
 class ReadOnlyStore:
     def __init__(self, path=None, version: str = METRIC_VERSION):
         self.path = str(path or DB_PATH)
@@ -147,7 +228,8 @@ class ReadOnlyStore:
 
         rows = self.q(
             "SELECT o.evidence, o.sentiment, o.confidence, o.canonical, "
-            "  d.source_code, d.doc_kind, COALESCE(d.published_at, d.collected_at) at "
+            "  d.source_code, d.doc_kind, d.product_uid, "
+            "  COALESCE(d.published_at, d.collected_at) at "
             "FROM text_entity_opinion o JOIN text_document d ON d.id=o.text_document_id "
             "WHERE o.term_key=? AND COALESCE(d.quality_status,'active')='active' "
             "  AND o.evidence IS NOT NULL AND o.evidence NOT IN ('', '[]') "
@@ -168,8 +250,10 @@ class ReadOnlyStore:
                     continue
                 seen.add(body)
                 out.append({"source_code": r["source_code"], "doc_kind": r["doc_kind"],
-                            "body": body, "at": r["at"], "sentiment": r["sentiment"],
-                            "origin": "opinion"})
+                            "body": body, "at": at_iso(r["at"]), "sentiment": r["sentiment"],
+                            "origin": "opinion",
+                            "platform": platform_label(r["source_code"], r["doc_kind"]),
+                            "url": evidence_link(r["source_code"], r["product_uid"])})
                 break            # 문서 하나당 한 마디만 — 같은 글이 화면을 채우지 않게
         if out:
             return self._spread(out, limit)
@@ -179,7 +263,7 @@ class ReadOnlyStore:
         #   'material:다운' 이 '아름다운' 에 걸린 것 같은 사전 오탐을 근거랍시고
         #   올리면, 틀린 숫자보다 더 나쁘다.
         raw = self.q(
-            "SELECT t.source_code, t.doc_kind, t.body, m.surface, "
+            "SELECT t.source_code, t.doc_kind, t.body, m.surface, t.product_uid, "
             "  COALESCE(t.published_at, t.collected_at) at "
             "FROM text_entity_mention m JOIN text_document t ON t.id=m.text_document_id "
             "WHERE m.term_key=? AND m.status='confirmed' "
@@ -194,8 +278,10 @@ class ReadOnlyStore:
                 continue
             seen.add(body)
             out.append({"source_code": r["source_code"], "doc_kind": r["doc_kind"],
-                        "body": body, "at": r["at"], "sentiment": None,
-                        "origin": "body"})
+                        "body": body, "at": at_iso(r["at"]), "sentiment": None,
+                        "origin": "body",
+                        "platform": platform_label(r["source_code"], r["doc_kind"]),
+                        "url": evidence_link(r["source_code"], r["product_uid"])})
         return self._spread(out, limit)
 
     @staticmethod

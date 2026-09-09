@@ -176,7 +176,12 @@ export function reportHTML(rep){
     esc('feedit.ai / ' + (rep.intent || 'chat') + ' / ' + asOf) + '</span></div>';
 
   const blocks = rep.blocks || [];
-  if(!blocks.length) return '<div class="ansCard">' + bar + '</div>';
+  /* 그릴 게 없으면 아무것도 그리지 않는다.
+     예전엔 제목줄만 있는 빈 카드를 돌려줬다 — 답은 말풍선에 멀쩡히 있는데
+     그 아래 빈 상자가 붙어 "뭔가 실패했나" 로 읽혔다. (새 경로는 블록 없이
+     문장만 내는 답이 흔하다.) report 이벤트 자체는 계속 받는다 —
+     chat_popup.js 가 거기서 aiMsg.turn(후속 질문 맥락)을 챙기기 때문이다. */
+  if(!blocks.length) return '';
 
   const draw = b => {
     const fn = BLOCK[b.type];

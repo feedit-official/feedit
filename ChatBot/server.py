@@ -370,8 +370,19 @@ class Handler(BaseHTTPRequestHandler):
             push("status", {"stage": "lexicon"})
             e = engine()
             push("status", {"stage": "metric"})
+            # 화면 컨텍스트 — 새 경로가 "이거 어때?" 를 푸는 재료.
+            #   없으면 없는 대로 돈다(도구 목록만 줄어든다).
+            extra = {k: req.get(k) for k in
+                     ("screen_term", "salmal_card_id", "user_id") if req.get(k)}
+            # ★ 도구를 부를 때마다 사용자의 말로 흘려보낸다 (설계도 부록 10).
+            #   답이 완성될 때까지 화면이 비어 있으면 3초만 지나도 고장난 것처럼
+            #   보인다. 같은 시간이라도 무엇을 보고 있는지 알면 기다림이 된다.
+            def say(msg):
+                push("status", {"stage": "tool", "message": msg})
+
             rep = e.ask(question, mode=mode, plan=plan,
-                        conversation_id=conv, history_in=hist)
+                        conversation_id=conv, history_in=hist, extra=extra,
+                        on_progress=say)
 
             if not rep.get("ok"):
                 # 실패도 대화다. 에러 코드로 끝내지 않고 할 말을 준다.
@@ -394,7 +405,8 @@ class Handler(BaseHTTPRequestHandler):
             if acts:
                 push("actions", acts)
             push("done", {"ok": True, "intent": rep.get("intent"),
-                          "as_of": rep.get("as_of")})
+                          "as_of": rep.get("as_of"),
+                          "partial": bool(rep.get("partial"))})
         except BrokenPipeError:
             pass                                   # 사용자가 창을 닫았다. 정상이다.
         except Exception as ex:                    # noqa: BLE001

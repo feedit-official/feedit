@@ -21,8 +21,12 @@ SOURCE_KO = {"musinsa": "무신사", "naver": "네이버", "youtube": "유튜브
              "fruitsfamily": "후르츠패밀리", "musinsa_used": "무신사 유즈드"}
 FACET_KO = {"style": "스타일", "item": "아이템", "material": "소재", "brand": "브랜드",
             "fit": "핏", "color": "컬러", "detail": "디테일", "tpo": "TPO"}
+# ★ 빠진 doc_kind 는 영어 코드 그대로 화면에 나간다.
+#   'product_review' 가 인용 밑에 그대로 찍히던 것을 2026-09-09 에 발견했다.
+#   새 doc_kind 가 생기면 여기에 한 줄 추가한다.
 DOC_KO = {"naver_blog": "블로그", "naver_cafearticle": "카페 글", "yt_comment": "댓글",
-          "yt_comment_reply": "답글", "yt_video_context": "영상 설명", "yt_transcript": "자막"}
+          "yt_comment_reply": "답글", "yt_video_context": "영상 설명", "yt_transcript": "자막",
+          "product_review": "리뷰"}
 
 
 def _has_batchim(word: str) -> bool:
@@ -102,10 +106,13 @@ def build_term(store, gate, hit: dict, as_of: str) -> dict:
                              "top_neg_count": sentiment.get("top_neg_count")}
 
     # 근거는 '원문 통짜'가 아니라 판정에 실제로 쓰인 짧은 대목이다 (store.term_evidence 주석)
+    # url 은 원문으로 돌아갈 수 있을 때만 채워진다(store.evidence_link).
+    # 없는 것을 None 인 채로 들고 온다 — 여기서 지어 채우면 화면의 링크가 거짓이 된다.
     node["evidence"] = [{"source": SOURCE_KO.get(e["source_code"], e["source_code"]),
                          "kind": DOC_KO.get(e["doc_kind"], e["doc_kind"]),
                          "body": e["body"], "at": e["at"],
-                         "tone": e.get("sentiment"), "origin": e.get("origin")}
+                         "tone": e.get("sentiment"), "origin": e.get("origin"),
+                         "url": e.get("url")}
                         for e in store.term_evidence(key)]
     return node
 

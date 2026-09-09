@@ -282,19 +282,13 @@
 
   async function buildCatalog(){
     const wanted=decodeWantedReference(),order=[4,2,0,3,1],outer=order.map(index=>wanted.clouds[index]);
-    try{
-      const gltf=await loadGLTF();
-      return{
-        source:'Wanted reference point clouds · all five original figures',
-        hero:[outer[0].points,outer[1].points,outer[2].points,outer[3].points,outer[4].points],
-        heroMeta:outer.map(item=>item.meta),
-        thinkSingle:sampleAnimatedSurface(gltf,POSE_SPECS.thinkSingle,48000),
-        buildSingle:sampleAnimatedSurface(gltf,POSE_SPECS.buildSingle,48000)
-      };
-    }catch(error){
-      console.warn('Human GLB unavailable; using volumetric mannequin fallback.',error);
-      return{source:'Wanted reference point clouds · all five original figures',hero:[outer[0].points,outer[1].points,outer[2].points,outer[3].points,outer[4].points],heroMeta:outer.map(item=>item.meta),thinkSingle:ellipsoidCloud(48000),buildSingle:ellipsoidCloud(48000)};
-    }
+    return{
+      source:'Wanted reference point clouds · hero, THINK and BUILD',
+      hero:[outer[0].points,outer[1].points,outer[2].points,outer[3].points,outer[4].points],
+      heroMeta:outer.map(item=>item.meta),
+      thinkSingle:wanted.clouds[3],
+      buildSingle:wanted.clouds[1]
+    };
   }
   const CATALOG_PROMISE=buildCatalog();
 
@@ -415,12 +409,13 @@
       float vortexAngle=(1.0-assemble)*(7.0+aSeed*12.0)+uTime*(.25+aSeed*.18);
       vec3 vortex=aScatter;vortex.xy=rot(vortexAngle)*vortex.xy;
       vortex.z+=sin(vortexAngle*1.7+aSeed*16.0)*(1.0-assemble)*2.0;
-      vec3 looseLocal=local;looseLocal.xy=local.xy*.62+aLoose.xy;
+      vec3 looseLocal=local*.78;looseLocal.xy+=aLoose.xy*.58;
       vec3 looseTarget=looseLocal*scale+center;
       vec3 world=mix(vortex,looseTarget,assemble);
       float distanceToSurface=length(target.xy-uMouse);
       float edge=clamp(1.0-distanceToSurface/max(.001,uCursorRadius),0.0,1.0);
-      float focus=edge*edge*(3.0-2.0*edge)*uPointerActive*assemble;
+      float mouseFocus=edge*edge*(3.0-2.0*edge)*uPointerActive*assemble;
+      float focus=mix(.32,1.0,mouseFocus);
       float micro=sin(uTime*.72+aSeed*31.0+position.y*12.0)*.0045*scale;
       vec3 living=target+vec3(cos(aSeed*31.0),sin(aSeed*47.0),sin(aSeed*23.0))*micro;
       world=mix(world,living,focus);
@@ -453,12 +448,13 @@
       float mask=1.0-smoothstep(-feather,feather,d);
       float alpha=mask*vAlpha;
       if(alpha<.012)discard;
-      gl_FragColor=vec4(vColor*(1.0+vFocus*.035),alpha);
+      vec3 sourceGlow=mix(vColor,vec3(1.0),.08+.10*pow(vFocus,.8));
+      gl_FragColor=vec4(sourceGlow,alpha*.90);
     }`;
 
   const WANTED_GLOW_VERTEX_SHADER=WANTED_VERTEX_SHADER.replace(
     'gl_PointSize=figurePointSize(aFigure)*uPixelRatio*mix(.40,1.0,focus);',
-    'gl_PointSize=figurePointSize(aFigure)*uPixelRatio*4.2*mix(.58,1.15,focus);'
+    'gl_PointSize=figurePointSize(aFigure)*uPixelRatio*6.5*mix(.78,1.02,focus);'
   );
   const WANTED_GLOW_FRAGMENT_SHADER=`
     precision highp float;
@@ -467,9 +463,25 @@
     void main(){
       float radius=length(gl_PointCoord-.5)*2.0;
       float halo=(1.0-smoothstep(.08,1.0,radius));
-      halo*=halo*(.022+.055*pow(vFocus,.8))*vAlpha;
-      if(halo<.002)discard;
-      gl_FragColor=vec4(mix(vColor,vec3(1.0),.72),halo);
+      halo*=halo*(.0015+.0040*pow(vFocus,.8))*vAlpha;
+      if(halo<.00018)discard;
+      gl_FragColor=vec4(vec3(1.0),halo);
+    }`;
+
+  const WANTED_AURA_VERTEX_SHADER=WANTED_VERTEX_SHADER.replace(
+    'gl_PointSize=figurePointSize(aFigure)*uPixelRatio*mix(.40,1.0,focus);',
+    'gl_PointSize=figurePointSize(aFigure)*uPixelRatio*18.0*mix(.84,1.0,focus);'
+  );
+  const WANTED_AURA_FRAGMENT_SHADER=`
+    precision highp float;
+    varying vec3 vColor;
+    varying float vAlpha,vFocus;
+    void main(){
+      float radius=length(gl_PointCoord-.5)*2.0;
+      float aura=1.0-smoothstep(.02,1.0,radius);
+      aura=aura*aura*aura*(.0010+.0024*pow(vFocus,.72))*vAlpha;
+      if(aura<.00012)discard;
+      gl_FragColor=vec4(vec3(1.0),aura);
     }`;
 
   class WantedParticleBody{
@@ -481,22 +493,25 @@
       this.renderer.setPixelRatio(Math.min(devicePixelRatio||1,1.8));
       this.raycaster=new T.Raycaster();this.mousePlane=new T.Plane(new T.Vector3(0,0,1),0);this.mouseNdc=new T.Vector2();this.mouseWorld=new T.Vector3();
       this.centers=Array.from({length:5},()=>new T.Vector3());this.scales=new Float32Array(5);this.spins=new Float32Array(5);this.pointSizes=new Float32Array(5);
-      this.spinSpeed=this.group?[TAU/-40,TAU/24,TAU/20,TAU/-18,TAU/46]:[0,0,0,0,0];
+      const singlePeriod=options.pose==='think'?-18:46;
+      this.spinSpeed=this.group?[TAU/-40,TAU/24,TAU/20,TAU/-18,TAU/46]:[TAU/singlePeriod,0,0,0,0];
       this.labelAnchors=[];this.labelSamples=[];this.tmpPoint=new T.Vector3();this.tmpNdc=new T.Vector3();
+      this.lightNodes=[];
       this.ready=CATALOG_PROMISE.then(catalog=>{this.catalogSource=catalog.source;this.makeGeometry(catalog);this.startTime=performance.now();this.loaded=true;return this});
       this.resize();new ResizeObserver(()=>this.resize()).observe(canvas);
       new IntersectionObserver(entries=>{this.visible=entries[0].isIntersecting},{rootMargin:'140px'}).observe(canvas);
       this.loop=this.loop.bind(this);requestAnimationFrame(this.loop);
     }
     makeGeometry(catalog){
-      const entries=this.group?catalog.hero:[this.options.pose==='think'?catalog.thinkSingle:catalog.buildSingle];
-      this.entries=entries;this.figureMeta=this.group?catalog.heroMeta:null;
+      const single=this.options.pose==='think'?catalog.thinkSingle:catalog.buildSingle;
+      const entries=this.group?catalog.hero:[single.points];
+      this.entries=entries;this.figureMeta=this.group?catalog.heroMeta:[single.meta];
       const count=entries.reduce((sum,array)=>sum+array.length/3,0);
       const positions=new Float32Array(count*3),scatter=new Float32Array(count*3),loose=new Float32Array(count*3),colors=new Float32Array(count*3),colors2=new Float32Array(count*3),gradients=new Float32Array(count*2),figures=new Float32Array(count),seeds=new Float32Array(count),features=new Float32Array(count);
       let cursor=0;
       entries.forEach((array,figure)=>{
-        const meta=this.group?this.figureMeta[figure]:null,palette=this.group?[meta.fill,meta.fill2]:SINGLE_PALETTES[this.options.pose==='think'?'think':'build'].map(hexRgb);
-        const bottom=this.group?byteRgb(palette[0]):palette[1],top=this.group?byteRgb(palette[1]):palette[0],gradient=this.group?meta.grad:[0,.8];
+        const meta=this.figureMeta[figure],palette=[meta.fill,meta.fill2];
+        const bottom=byteRgb(palette[0]),top=byteRgb(palette[1]),gradient=meta.grad;
         const entryCount=array.length/3,featureStart=entryCount+1;
         let maxY=-Infinity,topX=0,topZ=0,topN=0;
         const stride=Math.max(1,Math.floor(entryCount/360)),samples=[];
@@ -513,7 +528,7 @@
           if(i%stride===0)samples.push(new T.Vector3(x,y,z));
           if(y>maxY){maxY=y;topX=x;topZ=z;topN=1}else if(y>maxY-.018){topX+=x;topZ+=z;topN++}
         }
-        if(this.group&&meta.crown){
+        if(meta.crown){
           const crown=meta.crown,M=meta.M,k=1.12/(meta.RR*2),x=crown[0],y=crown[1],z=crown[2];
           this.labelAnchors.push(new T.Vector3((M[0]*x+M[1]*y+M[2]*z)*k,-(M[3]*x+M[4]*y+M[5]*z)*k,(M[6]*x+M[7]*y+M[8]*z)*k));
         }else this.labelAnchors.push(new T.Vector3(topX/Math.max(1,topN),maxY,topZ/Math.max(1,topN)));
@@ -522,25 +537,33 @@
       const geometry=new T.BufferGeometry();
       geometry.setAttribute('position',new T.BufferAttribute(positions,3));geometry.setAttribute('aScatter',new T.BufferAttribute(scatter,3));geometry.setAttribute('aLoose',new T.BufferAttribute(loose,3));geometry.setAttribute('aColor',new T.BufferAttribute(colors,3));geometry.setAttribute('aColor2',new T.BufferAttribute(colors2,3));geometry.setAttribute('aGrad',new T.BufferAttribute(gradients,2));geometry.setAttribute('aFigure',new T.BufferAttribute(figures,1));geometry.setAttribute('aSeed',new T.BufferAttribute(seeds,1));geometry.setAttribute('aFeature',new T.BufferAttribute(features,1));
       this.uniforms={uTime:{value:0},uAssemble:{value:REDUCED?1:0},uDisperse:{value:0},uAlpha:{value:1},uPixelRatio:{value:Math.min(devicePixelRatio||1,2)},uPointSize:{value:this.group?2.8:2.85},uPointerActive:{value:this.group?1:0},uCursorRadius:{value:1},uMouse:{value:new T.Vector2()},uCenters:{value:this.centers},uScales:{value:this.scales},uSpins:{value:this.spins},uPointSizes:{value:this.pointSizes}};
+      const auraMaterial=new T.ShaderMaterial({uniforms:this.uniforms,vertexShader:WANTED_AURA_VERTEX_SHADER,fragmentShader:WANTED_AURA_FRAGMENT_SHADER,transparent:true,depthTest:false,depthWrite:false,blending:T.NormalBlending});
+      this.auraPoints=new T.Points(geometry,auraMaterial);this.auraPoints.frustumCulled=false;this.auraPoints.renderOrder=0;this.scene.add(this.auraPoints);
       const glowMaterial=new T.ShaderMaterial({uniforms:this.uniforms,vertexShader:WANTED_GLOW_VERTEX_SHADER,fragmentShader:WANTED_GLOW_FRAGMENT_SHADER,transparent:true,depthTest:false,depthWrite:false,blending:T.AdditiveBlending});
-      this.glowPoints=new T.Points(geometry,glowMaterial);this.glowPoints.frustumCulled=false;this.scene.add(this.glowPoints);
+      this.glowPoints=new T.Points(geometry,glowMaterial);this.glowPoints.frustumCulled=false;this.glowPoints.renderOrder=2;this.scene.add(this.glowPoints);
       const material=new T.ShaderMaterial({uniforms:this.uniforms,vertexShader:WANTED_VERTEX_SHADER,fragmentShader:WANTED_FRAGMENT_SHADER,transparent:true,depthTest:false,depthWrite:false,blending:T.NormalBlending});
-      this.points=new T.Points(geometry,material);this.points.frustumCulled=false;this.scene.add(this.points);this.particleCount=count;this.resize();
+      this.points=new T.Points(geometry,material);this.points.frustumCulled=false;this.points.renderOrder=1;this.scene.add(this.points);this.particleCount=count;this.resize();
     }
     resize(){
       const width=Math.max(1,this.canvas.clientWidth),height=Math.max(1,this.canvas.clientHeight);this.width=width;this.height=height;
       this.camera.aspect=width/height;this.camera.updateProjectionMatrix();this.renderer.setPixelRatio(Math.min(devicePixelRatio||1,2));this.renderer.setSize(width,height,false);
-      const viewHeight=2*Math.tan(T.MathUtils.degToRad(this.camera.fov*.5))*this.camera.position.z,viewWidth=viewHeight*this.camera.aspect;this.viewHeight=viewHeight;this.viewWidth=viewWidth;this.sceneScale=width/1600;
+      const viewHeight=2*Math.tan(T.MathUtils.degToRad(this.camera.fov*.5))*this.camera.position.z,viewWidth=viewHeight*this.camera.aspect;this.viewHeight=viewHeight;this.viewWidth=viewWidth;this.sceneScale=Math.max(width/1600,height/900);
       if(this.group&&this.figureMeta){
         this.figureMeta.forEach((meta,i)=>{
           const pxX=width*.5+(meta.cx-800)*this.sceneScale,pxY=height*.5+(meta.cy-450)*this.sceneScale;
           this.centers[i].set((pxX/width-.5)*viewWidth,(.5-pxY/height)*viewHeight,(meta.z-2.2)*.035);
-          const fullDesignHeight=meta.hPx*this.sceneScale;
+          const fullDesignHeight=meta.hPx*this.sceneScale*.96;
           this.scales[i]=fullDesignHeight/height*viewHeight/1.12;
           this.pointSizes[i]=Math.max(1.5,.227*(meta.hPx/(2*meta.RR))*this.sceneScale);
         });
       }else{
-        this.centers[0].set(((this.options.cxRatio||.72)-.5)*viewWidth,-.22,0);this.scales[0]=(this.options.scale||.72)*9.65;this.pointSizes[0]=2.85;
+        this.centers[0].set(((this.options.cxRatio||.72)-.5)*viewWidth,((.5-(this.options.cyRatio||.52))*viewHeight),0);
+        const meta=this.figureMeta&&this.figureMeta[0];
+        if(meta){
+          const targetHeightRatio=this.options.heightRatio||.86,actualNormalizedHeight=1.12*Math.max(.01,meta.coverage||1);
+          this.scales[0]=targetHeightRatio*viewHeight/actualNormalizedHeight;
+          this.pointSizes[0]=Math.max(1.5,.227*(meta.hPx/(2*meta.RR))*this.sceneScale);
+        }
         for(let i=1;i<5;i++){this.centers[i].set(0,0,0);this.scales[i]=0}
       }
       if(this.uniforms){this.uniforms.uPixelRatio.value=Math.min(devicePixelRatio||1,2);this.uniforms.uCursorRadius.value=2400/height*viewHeight}
@@ -566,8 +589,8 @@
         const x=(projected.x*.5+.5)*this.width+offsets[i][0]*this.sceneScale,y=(-projected.y*.5+.5)*this.height-20*this.sceneScale+offsets[i][1]*this.sceneScale;
         label.style.left=`${x}px`;label.style.top=`${y}px`;
         const fade=i===2?1:1-clamp((this.progress-.52)/.18,0,1);label.style.opacity=String(fade);
-        let active=false;
-        if(fade>.02&&POINTER.inside){
+        let active=i===2&&document.body.classList.contains('intro-complete');
+        if(!active&&fade>.02&&POINTER.inside){
           const maxD=28*28;
           for(const sample of this.labelSamples[i]){
             const p=this.rotatedWorld(sample,i,this.tmpPoint).project(this.camera),sx=rect.left+(p.x*.5+.5)*rect.width,sy=rect.top+(-p.y*.5+.5)*rect.height,dx=sx-POINTER.x,dy=sy-POINTER.y;
@@ -575,6 +598,13 @@
           }
         }
         label.classList.toggle('active',active);
+      });
+      this.lightNodes.forEach((light,i)=>{
+        const p=this.tmpNdc.copy(this.centers[i]).project(this.camera),x=(p.x*.5+.5)*this.width,y=(-p.y*.5+.5)*this.height;
+        const fullHeight=this.figureMeta[i].hPx*this.sceneScale,dx=rect.left+x-POINTER.x,dy=rect.top+y-POINTER.y;
+        const proximity=1-clamp(Math.hypot(dx,dy)/(this.width*.62),0,1),fade=i===2?1:1-clamp((this.progress-.52)/.18,0,1);
+        light.style.left=`${x}px`;light.style.top=`${y}px`;light.style.width=`${Math.max(280,fullHeight*.48)}px`;light.style.height=`${Math.max(380,fullHeight*.68)}px`;
+        light.style.opacity=String(fade*(.46+proximity*.28));
       });
     }
     loop(now){
