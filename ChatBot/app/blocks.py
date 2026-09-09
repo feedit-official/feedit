@@ -53,6 +53,14 @@ def b_metric_rank(t: dict, as_of: str) -> dict | None:
             "meta": (t.get("facet_name") or "") + " · " + as_of, "rows": rows}
 
 
+# 비율 칸의 설명. coverage.direction() 의 구간과 같은 말을 쓴다.
+_RATIO_NOTE = {
+    "up": "1.1 이상이면 오르는 중",
+    "flat": "0.9~1.1 은 변화 없음",
+    "down": "0.9 미만이면 내리는 중",
+}
+
+
 def b_direction(t: dict) -> dict | None:
     """방향만 크게. '꺾였어?' 에는 온도보다 이게 답이다."""
     d = t.get("direction")
@@ -63,8 +71,15 @@ def b_direction(t: dict) -> dict | None:
                         f"오르는지 내리는지 말할 수 없습니다."}
     return {"type": "kpis", "slot": "full", "items": [
         {"k": "방향", "v": d["label"], "unit": "", "note": "최근 7일 대 4주", "up": d["tone"] == "up"},
-        {"k": "7일 / 4주", "v": f"{d['ratio']}", "unit": "배", "note": "1보다 크면 오르는 중",
-         "up": d["ratio"] >= 1},
+        # ★ 문턱을 여기서 따로 정하지 않는다 (2026-09-09).
+        #   note 가 늘 "1보다 크면 오르는 중" 이고 up 이 ratio>=1 이라,
+        #   coverage 가 **평평함**(0.9~1.1)이라고 판정한 1.03 이 바로 옆 칸에서
+        #   상승색으로 "오르는 중" 이라고 강조됐다. 같은 카드 줄 안에서
+        #   '평평함' 과 '오르는 중' 이 나란히 있고, 본문은 "식은 상태" 라고 썼다.
+        #   판정 근거는 coverage.direction 의 tone 하나뿐이어야 한다.
+        {"k": "7일 / 4주", "v": f"{d['ratio']}", "unit": "배",
+         "note": _RATIO_NOTE.get(d.get("tone"), ""),
+         "up": d.get("tone") == "up"},
         {"k": "7일 평균", "v": f"{d['ma7']}", "unit": "", "note": "", "up": True},
         {"k": "4주 평균", "v": f"{d['ma28']}", "unit": "", "note": "", "up": True},
     ]}
