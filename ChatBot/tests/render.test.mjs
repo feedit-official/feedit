@@ -74,7 +74,10 @@ let threw=false; try{ await api.askStream({question:'x'},{}) }catch(e){ threw=tr
 ok(threw, 'askStream 은 던진다 (부르는 쪽이 폴백)');
 
 console.log('\n=== 7. API_BASE ===');
-ok(api.API_BASE==='http://127.0.0.1:8770', `기본 ${api.API_BASE} (포트 없는 환경)`);
+/* 버셀 릴레이를 붙이면서 같은 출처의 /api 로 바꿨다(chat_api.js 머리말).
+   주소를 직접 쓰는 건 file:// 로 열었을 때뿐이다 — jsdom 은 about:blank 라
+   여기서는 '/api' 가 맞다. 8770 을 기대하던 옛 단언이 계속 실패하고 있었다. */
+ok(api.API_BASE==='/api', `기본 ${api.API_BASE} (file:// 가 아니면 같은 출처)`);
 
 console.log(fail? `\n실패 ${fail}건` : '\n전부 통과');
 process.exit(fail?1:0);

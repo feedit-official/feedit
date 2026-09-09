@@ -255,16 +255,54 @@ def _output_text(raw: dict) -> str:
     return "".join(parts).strip()
 
 
+_TRACK = ("utm_", "fbclid", "gclid", "igshid", "ref_")
+
+
+def _clean_url(u: str) -> tuple[str, str]:
+    """(보여 줄 주소, 중복 판정용 열쇠).
+
+    ★ 2026-09-09 실측 — 같은 보그 기사가 출처에 두 번 떴다.
+      하나는 퍼센트 인코딩이 중간에 끊겨 있었고(%EA%B3%A0프코어에-…),
+      다른 하나는 ?utm_source=openai 가 붙어 제목이 도메인 그대로였다.
+      사용자에게는 같은 글이 두 줄로 보인다. 신뢰가 깎이는 자리다.
+    """
+    from urllib.parse import (parse_qsl, unquote, urlencode, urlsplit,
+                              urlunsplit)
+    try:
+        s = urlsplit(u)
+        q = [(k, v) for k, v in parse_qsl(s.query)
+             if not any(k.lower().startswith(p) for p in _TRACK)]
+        shown = urlunsplit((s.scheme, s.netloc, s.path, urlencode(q), s.fragment))
+        # 열쇠는 인코딩 차이를 없앤 뒤 비교한다
+        key = urlunsplit(("", s.netloc.lower(), unquote(s.path).rstrip("/"),
+                          urlencode(sorted(q)), ""))
+        return shown, key
+    except Exception:                                    # noqa: BLE001
+        return u, u
+
+
 def _sources(raw: dict) -> list[dict]:
     """web_search 도구가 쓴 출처를 긁어낸다. 출처 없는 문장은 화면에 못 올린다."""
-    out, seen = [], set()
+    out: list[dict] = []
+    seen: dict[str, int] = {}
     for item in raw.get("output") or []:
         for c in item.get("content") or []:
             for a in (c.get("annotations") or []) if isinstance(c, dict) else []:
                 url = a.get("url")
-                if url and url not in seen:
-                    seen.add(url)
-                    out.append({"url": url, "title": a.get("title") or url})
+                if not url:
+                    continue
+                shown, key = _clean_url(url)
+                title = (a.get("title") or "").strip()
+                if key in seen:
+                    # 같은 글이다. 제목이 도메인뿐인 쪽을 제대로 된 제목으로 올린다.
+                    i = seen[key]
+                    cur = out[i]["title"]
+                    if title and (cur == out[i]["url"] or cur.count(".") >= 1
+                                  and " " not in cur):
+                        out[i]["title"] = title
+                    continue
+                seen[key] = len(out)
+                out.append({"url": shown, "title": title or shown})
     return out
 
 

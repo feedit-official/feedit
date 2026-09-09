@@ -43,6 +43,23 @@ def _facet_of(term_key: str, fallback: str | None = None) -> str | None:
     return None
 
 
+def _key_for(term: str, gate, store, hint: str | None) -> str:
+    """term_key. 사전 밖 용어(브랜드)까지 만든다 — tools.Toolbox._key 와 같은 규칙.
+
+    ★ gate.term_key() 만 쓰면 브랜드가 "None:살로몬" 이 된다(lex.facet_of 에
+      없으므로). 그러면 report.build_term 이 못 찾아 available=False 가 되고,
+      블록이 통째로 안 그려진다. 지표 조회는 되는데 카드만 비는 상태가 된다.
+      2026-09-09 실측: "살로몬 XT-6 …" 답변에 블록이 note 하나뿐이었다.
+    """
+    f = hint or gate.facet_of(term)
+    if not f:
+        try:
+            f = store.metric_facet(term)
+        except Exception:                       # noqa: BLE001
+            f = None
+    return f"{f}:{term}"
+
+
 def _scan(trace) -> dict[str, Any]:
     """궤적에서 '무엇을 조회했나' 만 뽑는다. 값은 여기서 쓰지 않는다."""
     got: dict[str, Any] = {"metric": {}, "facets": {}, "evidence": set(),
@@ -137,9 +154,11 @@ def build(trace, store, gate) -> list[dict]:
         if blk:
             out.append(blk)
 
+    # ★ 먼저 node 를 다 만든다. 둘 이상이면 나란히 보기를 앞에 세우기 위해서다.
+    built: list[tuple[str, set, dict]] = []
     for term, axes in list(got["metric"].items())[:MAX_TERMS]:
         try:
-            key = gate.term_key(term)
+            key = _key_for(term, gate, store, got["facets"].get(term))
             node = report.build_term(
                 store, gate,
                 {"term_key": key, "canonical": term,
@@ -150,6 +169,18 @@ def build(trace, store, gate) -> list[dict]:
             continue
         if not node.get("available"):
             continue
+        built.append((term, axes, node))
+
+    # ★ 비교 질문("A랑 B 중에 뭐?")의 답은 나란히 놓는 것이다.
+    #   b_compare 는 blocks.py 에 이미 있었는데 templates.py(구 경로)에서만
+    #   불렸다. 새 경로에서도 쓴다 — 새 에이전트를 만들 일이 아니라는 것이
+    #   인수인계 문서 6장 16번의 입장이다.
+    if len(built) >= 2:
+        cmp_blk = B.b_compare([n for _, _, n in built], as_of or "")
+        if cmp_blk:
+            out.append(cmp_blk)
+
+    for term, axes, node in built:
 
         out.append(B.b_metric_rank(node, as_of or node.get("observed_on") or ""))
         if "모멘텀" in axes:
