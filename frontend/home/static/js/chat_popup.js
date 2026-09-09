@@ -119,7 +119,12 @@ export function cpEditTitle(id){
 }
 /* AI 말풍선 한 줄 — 별 아이콘 + FEEDiT. 답을 기다리는 동안(pending)엔
    말풍선 대신 이 헤더만 돌고 옅어졌다 밝아지며 "생각 중"을 표현한다 */
-function cpWhoHTML(){ return '<div class="who"><i class="cpStar">✧</i>FEEDiT</div>'; }
+function cpWhoHTML(stage){
+  /* ★ stage — 서버가 도구를 부를 때마다 보내는 한 줄("온도 보는 중").
+     기다리는 동안 무엇을 보고 있는지 알면 같은 시간도 기다림이 된다. */
+  return '<div class="who"><i class="cpStar">✧</i>FEEDiT' +
+         '<span class="cpStage">' + (stage ? cpEsc(stage) : '') + '</span></div>';
+}
 export function cpRenderThread(opts){
   const wrap=$('#cpThreadWrap'), th=$('#cpThread'); if(!wrap||!th)return;
   const c=cpActiveConvo();
@@ -129,7 +134,7 @@ export function cpRenderThread(opts){
   const typeIdx=(opts&&opts.typeLast)?c.messages.length-1:-1;
   th.innerHTML=c.messages.map((m,idx)=>{
     if(m.role==='me') return '<div class="msg me"><div class="bub">'+cpEsc(m.text)+'</div></div>';
-    if(m.pending) return '<div class="msg ai thinking">'+cpWhoHTML()+'</div>';
+    if(m.pending) return '<div class="msg ai thinking">'+cpWhoHTML(m.stage)+'</div>';
     if(idx===typeIdx) return '<div class="msg ai" data-type-target="1">'+cpWhoHTML()+'<div class="say"></div></div>';
     { const card=(m.cardHtml!=null)?m.cardHtml:(m.key?ansCardHTML(m.key):'');
       return '<div class="msg ai">'+cpWhoHTML()+'<div class="say">'+(m.html||'')+'</div>'+
@@ -237,6 +242,20 @@ async function cpAskLive(c,aiMsg,text){
   let acc='';
   await askStream({question:text, mode:cpMode(), plan:'FREE',
                     conversation_id:conv, history},{
+    /* ★ 진행 상황 (server.py 의 push("status", {stage:"tool", message})).
+       예전에는 이 핸들러가 아예 없어서 서버가 보낸 이벤트가 **조용히
+       버려졌다** — askStream 은 on[ev] 가 없으면 그냥 넘어간다.
+       그래서 답이 올 때까지 헤더만 돌았다. 예산이 14초라 그 침묵이 길다. */
+    status:(d)=>{
+      if(!d || d.stage!=='tool' || !d.message) return;
+      aiMsg.stage=d.message;
+      if(!aiMsg.pending) return;                 /* 이미 말풍선이 떴으면 끝 */
+      const th=$('#cpThread');
+      const node=th&&th.querySelector('.msg.ai.thinking .cpStage');
+      /* 한 글자만 바꾼다 — 전체를 다시 그리면 회전 애니메이션이 끊긴다 */
+      if(node) node.textContent=d.message;
+      else if(cpActiveConvo()===c) cpRenderThread();
+    },
     text:(d)=>{
       settle();
       acc+=d.delta||''; aiMsg.html=acc;
