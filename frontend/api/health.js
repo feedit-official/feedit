@@ -14,7 +14,7 @@
  *   analysis.term_metric_daily **0** · term_assoc_daily **0** · text_document **0**
  */
 
-import { q, isConfigured } from './_lib/db.js';
+import { q, isConfigured, backendBase, backendToken, viaBackend } from './_lib/db.js';
 
 // 화면이 쓰는 표만 본다. 47개를 다 세면 느리고, 볼 이유도 없다.
 const TABLES = [
@@ -33,8 +33,39 @@ const TABLES = [
 ];
 
 export default async function handler(req, res) {
+  /* ★ 2026-09-09 — 길이 둘이 됐다.
+   *
+   *   이 파일은 **pg 직결만** 보고 있었다. 그래서 SSM 굴을 걷어내고
+   *   EC2 의 Django 를 거치도록 바꾼 뒤에는, 다른 엔드포인트가 전부 멀쩡히
+   *   도는데도 여기만 "AWS RDS 접속 정보가 없습니다" 라고 답했다.
+   *   **잘 돌고 있는 것을 고장났다고 말하는 진단**이라 제일 나쁜 종류다.
+   *
+   *   그래서 다른 엔드포인트와 같은 순서로 본다:
+   *     BACKEND_API_URL 이 있으면 → Django 로 넘긴다 (지금 쓰는 길)
+   *     없으면                    → pg 직결 (RDS 를 공개로 연 경우)
+   */
+  const base = backendBase();
+  if (base) {
+    const relayed = await viaBackend('/health');
+    return json(res, {
+      checked_at: new Date().toISOString(),
+      route: 'backend',
+      backend_url: base,
+      token_sent: Boolean(backendToken()),
+      backend: relayed,
+      verdict:
+        relayed && relayed.ok
+          ? 'Django API 를 거쳐 RDS 를 읽고 있습니다. 아래 backend 를 보세요.'
+          : 'Django API 에 닿지 못했거나 오류를 돌려줬습니다. backend.reason 을 보세요.' +
+            (relayed && relayed.reason && String(relayed.reason).includes('401')
+              ? ' (401 이면 버셀 BACKEND_API_TOKEN 과 서버 FEEDIT_API_TOKEN 이 다릅니다.)'
+              : ''),
+    });
+  }
+
   const out = {
     checked_at: new Date().toISOString(),
+    route: 'pg',
     configured: isConfigured(),
     connected: false,
     server: null,
@@ -45,8 +76,9 @@ export default async function handler(req, res) {
 
   if (!out.configured) {
     out.verdict =
-      'AWS RDS 접속 정보가 없습니다. 버셀 Settings → Environment Variables 에 ' +
-      'DATABASE_URL 을 넣고 다시 배포하세요.';
+      'BACKEND_API_URL 도 DATABASE_URL 도 없습니다. 버셀 Settings → ' +
+      'Environment Variables 에 둘 중 하나를 넣고 다시 배포하세요. ' +
+      '(지금 쓰는 방식은 BACKEND_API_URL = http://feedit-official.duckdns.org/api 입니다.)';
     return json(res, out);
   }
 
