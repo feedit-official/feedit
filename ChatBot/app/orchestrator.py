@@ -30,6 +30,9 @@
   · 최대 바퀴 수          빈 결과를 주면 같은 것을 계속 다시 부른다
   · 같은 인자 재호출 금지  같은 인자로 두 번 부르는 건 언제나 버그다
   · 전체 시간 예산        SSE 가 시작을 못 하면 멈춘 줄 안다
+                          ★ 이 예산은 **이 루프만의 것이 아니다**(18번).
+                            agent_path 가 마감시각을 정해 넘기고, 루프와
+                            _finish · verify 가 그 하나를 나눠 쓴다.
   · 도구 결과 원본 보관   verify.py 가 대조할 것이 없으면 검증이 도장이 된다
 """
 from __future__ import annotations
@@ -53,16 +56,86 @@ MAX_CALLS = 10          # 바퀴를 합쳐 도구 호출 총량
 MAX_PER_TOOL = 3        # 한 질문에 같은 도구를 부를 수 있는 횟수
 # ★ ask_user 만 예외다. 부르는 순간 루프가 끝나므로 셀 이유가 없다.
 #   declare_missing 은 예외가 아니다 — 처음엔 "종결 도구" 로 보고 뺐는데,
-#   스펙이 axis 를 **하나씩** 받는 기록 도구라 없는 축마다 한 번씩 불린다.
+#   스펙이 axis 를 **하나씩** 받는 기록 도구라 없는 축마다 한 번씩 불렸다.
 #   실측(2026-09-09 "살로몬 XT-6 …"): search_terms 1 + get_metric 1 +
 #   declare_missing 3 = 5호출 · 4바퀴 · 25초. 상한이 없어 막을 것이 없었다.
+#   ★ 2026-09-10 — 스펙을 axes(배열)로 바꿔 **원인 쪽**을 고쳤다(17번).
+#     이제 없는 축이 몇 개든 한 번이면 된다. 상한은 그대로 둔다 —
+#     고친 것은 스펙이고, 상한은 모델이 그래도 반복할 때의 뒷문이다.
 NO_CAP = ("ask_user",)
+# ── 되묻기 예산 (2026-09-10, 인수인계 15번) ────────────────
+# ★ 되묻기는 실패가 아니다. 다만 **대화마다** 되물으면 답을 못 하는 챗봇이 된다.
+#   지금까지 상한은 프롬프트 규칙 3(직전 턴에 되물었으면 또 묻지 마라)뿐이었다 —
+#   지키는지는 모델에 달려 있었고, 코드에는 막을 것이 없었다.
+#   이제 예산을 다 쓰면 **도구 목록에서 ask_user 를 뺀다.** 부를 수 없으면 못 부른다.
+#   설계도 03 의 "모드는 라우팅 대상이 아니라 도구 목록" 과 같은 방식이다.
+#   대신 빈손으로 두지 않는다 — 기본값으로 답하고 무엇을 가정했는지 밝히게 한다
+#   (_ctx_block 의 [되묻기 예산 소진] 줄).
+ASK_BUDGET = 1          # 한 대화에서 되물을 수 있는 횟수
 # ★ 예산은 환경변수로 뺀다 (FEEDIT_CHAT_TIME_BUDGET).
 #   실측(2026-09-09, 전 역할 luna): 8초로는 "살로몬 XT-6 …" 과 "오버핏 니트 …"
 #   가 마지막 답변 작성 중에 끊겼다(llm_NET_ReadTimeout). 모델을 바꾸거나
 #   예산을 올리는 판단이 필요한데, 그때마다 코드를 고치게 하지 않는다.
-TIME_BUDGET = float(os.getenv("FEEDIT_CHAT_TIME_BUDGET") or 8.0)
+# ★ 2026-09-10 (인수인계 18번) — 예산의 **뜻**이 바뀌었다.
+#   예전에는 이 루프만 덮었다. 루프가 예산을 다 쓰고 나면 _finish 가 도구 없이
+#   한 번 더 부르고(CALL_TIMEOUT 20초), 그 뒤 verify.fix 가 또 부른다(15초).
+#   둘 다 예산 밖이라 "예산 14초인데 25초" 가 나왔다. 예산이 예산이 아니었다.
+#   이제 TIME_BUDGET 은 **답변 하나의 전체 벽시계**다.
+#   기본값을 8 → 17 로 올린 것은 뜻이 바뀌었기 때문이지 느슨해진 것이 아니다:
+#   루프 8 + _finish 5 + verify 4 = 예전에 **실제로 쓰던** 시간에 상한을 씌운 것.
+TIME_BUDGET = float(os.getenv("FEEDIT_CHAT_TIME_BUDGET") or 17.0)
+# 뒷단계 몫. 루프가 예산을 다 써 버리면 답을 쓸 시간이 남지 않는다.
+# ★ 2026-09-10 실측으로 값을 낮췄다. 처음엔 _finish 5 + verify 4 = 9초를 뗐는데,
+#   예산 14초에서 루프가 7초밖에 못 써서 "살로몬 XT-6 …"(10.1초)와
+#   "오버핏 니트 …"(10.6초)가 루프 안에서 답을 못 만들고 안내문으로 끝났다.
+#   예산은 지켰지만 답이 나빠졌다 — 뒷정리 자리를 비워 두느라 본 작업을 굶긴 것이다.
+#   · verify.fix 는 **의심이 잡혔을 때만** 모델을 부른다. 실측 4문항 모두 의심 0 이라
+#     매번 4초를 떼 두는 것은 거의 항상 버리는 시간이었다.
+#   · _finish 는 루프가 실패했을 때만 부른다. 그 자리를 넉넉히 비워 둘수록
+#     루프가 실패할 확률이 올라간다 — 비워 둔 만큼 실패를 부르는 셈이다.
+#   그래서 뒷몫은 바닥값 하나로 줄이고, 두 단계는 남은 시간 안에서 쓸 수 있는
+#   만큼만 쓴다. 못 쓰면 STOP_SAY · _hedge 가 받는다(모델을 안 부른다).
+#   ★ 2026-09-10 오후 — 3.5 로는 이번엔 **반대편**이 굶었다.
+#     예산 17초에서 루프가 13.5초를 쓰고 나면 뒷정리에 3.5초가 남는데, 거기서
+#     verify 몫을 떼면 _finish 에 1.75초뿐이라 MIN_CALL(2.5)에 못 미쳐 **아예
+#     안 불린다.** 실측: "아디다스 트랙탑" 링크 질문에서 도구 조회는 전부
+#     성공해 카드가 다 그려졌는데 본문만 안내문이었다. 문장 쓸 시간이 구조적으로
+#     없었던 것이다.
+#     그래서 6.0 으로 올린다 — 예산 17이면 루프 11 · 마무리 4 · 검증 2 다.
+#     루프 11초는 9월 9일 실측에서 루프가 실제로 쓴 최대(11.0초)와 같다.
+#   ★ 이 값을 만질 때는 **양쪽 실패를 같이 본다.** 너무 크면 루프가 답을 못
+#     만들고(9→7초 사건), 너무 작으면 답을 못 쓴다(3.5초 사건). 둘 다 겪었다.
+#   ★ 2026-09-10 저녁 — 실측으로 **답 쓰는 데 드는 시간**을 처음 쟀다.
+#     `바퀴=3(4751+3657+5563ms) 웹검색=1 호출=3`
+#     1바퀴 4.8초(웹검색 포함) + 2바퀴 3.7초로 조회를 끝냈고, 3바퀴째가 답을
+#     쓰는 호출이었는데 5.6초에 잘렸다. 그 뒤 _finish 도 4.0초를 받아 또 잘렸다.
+#     **한 번도 충분히 못 받고 두 번 실패한 것이다.**
+#     그래서 뒷몫을 8초로 올린다 — 예산 20이면 루프 12 · 마무리 6 · 검증 2.
+TAIL_RESERVE = 8.0      # 루프는 마감시각보다 이만큼 먼저 멈춘다
+VERIFY_RESERVE = 2.0    # 그 8초 안에서 verify.fix 몫 (나머지 6초가 _finish)
+# ★ 새 바퀴를 시작할 최소 시간. 이보다 적게 남았으면 **시작하지 않는다.**
+#   예전 문턱은 1초였다. 그러면 5.6초 남았을 때 새 바퀴를 시작하고, 그 바퀴가
+#   답을 쓰는 호출이면 5.6초 안에 못 끝내 통째로 버려진다. 버린 뒤 _finish 로
+#   내려가는데 거기도 시간이 줄어 있다. 못 끝낼 호출을 시작하는 대신,
+#   그 시간을 마무리에 몰아 준다.
+#   ★ 2026-09-10 밤 실측으로 4.0 → 6.5. 답 쓰는 호출이 5.8초에 잘리고 그 뒤
+#     _finish 도 6초에 잘렸다(바퀴=3(4173+2085+5756ms) · 총 18.1초).
+#     **답 쓰기는 6초로도 모자란다.** 5.7초 남았을 때 시작하면 잘리는 쪽에 가깝고,
+#     잘리면 그 시간이 통째로 버려진 뒤 마무리 몫까지 줄어든다. 차라리 시작하지
+#     않고 그 시간을 마무리에 얹는다 — 같은 예산에서 한 번을 제대로 쓴다.
+WRITE_MIN = 6.5
 CALL_TIMEOUT = 20       # 한 번의 모델 호출 상한
+MIN_CALL = 2.5          # 이보다 적게 남으면 부르지 않는다 — 못 끝낼 호출은 기다림만 늘린다
+FINISH_MAX_TOKENS = 700 # 마무리 답변 길이 상한. 안 묶으면 쓰다가 끊긴다
+
+
+def reserve(left: float, want: float) -> float:
+    """남은 시간에서 뒷단계 몫을 뗀다.
+
+    ★ 예산이 작으면 몫도 줄인다. 8초 예산에서 9초를 떼면 루프가 시작도 못 하고
+      끝난다. 절반까지만 뗀다 — 앞뒤 중 한쪽이 굶는 일이 없어야 한다.
+    """
+    return max(0.0, min(want, left * 0.5))
 
 
 INSTRUCTIONS = """너는 FEEDiT 의 패션 트렌드 분석 상담원이다.
@@ -79,11 +152,14 @@ FEEDiT 는 SNS·커머스를 수집해 용어별 트렌드 지표를 계산하�
    신뢰를 무너뜨린다.
 2. **없으면 없다고 한다.** 그 축의 자료가 없으면 declare_missing 을 부르고,
    답변에서 "아직 측정 자료가 없습니다" 라고 밝혀라. 대충 메우지 마라.
+   ★ 없는 축이 여럿이면 axes 에 **한 번에 모두** 넣어 한 번만 불러라.
+     축마다 따로 부르면 도구 상한에 걸려 뒤쪽 축이 기록되지 않는다.
 3. **모르면 되묻는다.** "이거 어때?" 처럼 무엇을 묻는지 알 수 없으면
    추측하지 말고 ask_user 를 불러라. 그건 실패가 아니다.
-   다만 **직전 턴에서 이미 되물었으면 또 되묻지 마라.** 두 번 연속 되묻는
-   챗봇은 답을 못 하는 챗봇이다. 그때는 가장 그럴듯한 것으로 잡아 답하고,
-   무엇을 가정했는지 한 줄로 밝힌 뒤 "아니면 말씀해 주세요" 를 붙여라.
+   다만 **되묻기는 한 대화에 한 번뿐이다.** 두 번 되묻는 챗봇은 답을 못 하는
+   챗봇이다. 예산을 다 쓰면 ask_user 가 도구 목록에서 아예 빠진다 —
+   그때는 가장 그럴듯한 것으로 잡아 답하고, 무엇을 가정했는지 한 줄로 밝힌 뒤
+   "아니면 말씀해 주세요" 를 붙여라. [최근 본 용어] 가 주어지면 거기서 골라라.
 4. **요청보다 적게 나오면 그대로 말한다.** rank_terms 가 short_of_asked=true 를
    주면 나머지를 채우지 말고 몇 개뿐인지 밝혀라.
 5. **may_say 를 지킨다.** get_metric 의 may_say 에서 false 인 축은 관측이
@@ -112,23 +188,81 @@ FEEDiT 는 SNS·커머스를 수집해 용어별 트렌드 지표를 계산하�
      (2026-09-09 실측: "오늘 날씨 어때?" 에 뉴욕·로스앤젤레스·시카고가 나왔다.
       한국 패션 서비스에서 이 선택지는 사용자를 당황하게 한다.)
 
+11. **이어 갈 질문은 맨 마지막 줄에 `[다음]` 으로 쓴다.** 본문 안에서 다음 질문을
+   던지지 마라. 화면이 그 줄을 리포트 **아래**로 옮겨 붙인다. 본문에 섞여 있으면
+   사용자는 근거를 보기 전에 질문부터 받는다.
+   형식: `[다음] 아디다스와 트랙탑 중 어느 쪽을 더 볼까요?` — 한 줄, 한 질문.
+   물을 것이 없으면 안 써도 된다.
+
 ## 도구 고르는 법
 - 질문이 용어를 지목했으면 → search_terms 로 정확한 표기를 얻고 get_metric
 - 용어를 지목하지 않았는데 "요즘 뭐가 핫해" 류면 → rank_terms
 - 판단을 묻는 질문("사도 돼?", "괜찮아?")이면 → 축을 **여러 개** 넣어라.
   온도 하나로는 답이 안 된다.
+- **용어가 여럿이면 get_metric 을 같은 바퀴에 나란히 불러라.** 한 바퀴에 여러 도구를
+  부를 수 있다. 용어마다 바퀴를 새로 쓰면 조회만 하다 답 쓸 시간이 없어진다.
+  (2026-09-10 실측: get_metric 세 번이 세 바퀴에 흩어져 17.6초를 썼다.)
 - 우리 지표로 답할 수 없는 질문이면 → web_search. 다만 그 내용이 FEEDiT
   측정값이 아니라는 것을 답변에 밝혀라.
 - **"A랑 B 중에 뭐?" 같은 비교 질문이면 두 용어의 get_metric 을 다 불러라.**
   하나만 보고 답하면 비교가 아니다. 축은 같은 것으로 맞춰야 나란히 읽힌다.
   둘 다 조회되면 화면에 '나란히 보기' 가 붙는다.
+- **상품 링크나 정확한 상품명이 오면 그대로 찾지 말고 나눠서 찾아라.**
+  우리 지표에는 **상품 단위가 없다.** 브랜드 · 아이템 · 소재 단위로만 있다.
+  ① 링크뿐이라 무엇인지 모르면 web_search 로 무슨 브랜드의 무슨 옷인지 먼저 확인한다.
+  ② search_terms 는 **한 번만** 부른다. 구성 요소는 alts 에 함께 넣어라 —
+     `q="아디다스 트랙탑", alts=["아디다스","트랙탑"]`. 나눠서 두 번 세 번 부르면
+     부를 때마다 바퀴를 하나씩 쓰고, 조회만 하다 답 쓸 시간이 없어진다.
+     (2026-09-10 실측: 링크 질문에서 search_terms 3연속으로 15초를 다 썼다.)
+  ③ **대신 본 것은 반드시 밝힌다** — "아디다스 트랙탑 자체 지표는 없어
+     '트랙탑' 기준으로 봤습니다". 밝히지 않으면 사용자는 그 상품의 지표로 읽는다.
+     지어낸 숫자와 같은 종류의 오해다.
+  ④ 그러고도 없는 축만 declare_missing 으로 기록한다.
+  ⑤ 마지막 줄 `[다음]` 으로 나눠서 찾은 용어를 걸어 대화를 잇는다 —
+     "아디다스 트랙탑은 찾지 못했지만, 아디다스나 트랙탑을 더 볼까요?"
+- **"지금 입을 만해?" 처럼 계절·기온을 묻는 질문이면 → season_fit.**
+  ① 먼저 web_search 로 오늘 기온을 확인해 temp_c 에 넣는다(지역 기본값은 서울).
+  ② 볼 이름은 terms 에 **한 번에** 넣는다 — 아이템과 소재를 같이 (예: ["트랙탑","폴리에스터"]).
+  ③ 이 결과는 **우리 측정값이 아니라 일반적인 착용 기준**이다. 답변에 그렇게 밝혀라.
+     트렌드 지표(온도·모멘텀)와 섞어 한 문장에 담지 마라 — 둘은 출처가 다르다.
+  ④ 표에 없어 unknown 으로 온 말은 판단하지 마라.
+- **"비슷한 거 추천해줘" 면 → similar_terms.**
+  ★ 아는 후보를 `terms` 에 **모두** 넣어라. 도구가 그중 기준을 고른다(아이템 축 우선).
+    **상품 추천이면 아이템 축 용어를 반드시 함께 넣어라** — "레이어드 와이드팬츠"
+    라면 `["팬츠","와이드팬츠","레이어드"]` 처럼. 스타일 용어만 주면
+    "레이어드와 비슷한 것: 스트릿웨어 · 캐주얼" 이 나온다. 팬츠를 물었는데
+    스타일 목록을 주는 셈이다(2026-09-10 실측).
+  ★ 응답의 `base_note` 대로 **무엇을 기준으로 봤는지 답변에 밝혀라.**
+    `caution` 이 있으면 그것도 그대로 전해라.
+  ★ 응답의 `items` 만 "비슷한 것" 이다. `paired_with` 는 **함께 언급된 말**이라
+    같이 입는 것에 가깝다 — 이것을 비슷한 것으로 말하지 마라.
+    (실측: 반팔 티셔츠에 "비슷한 것" 으로 팬츠·자켓을 늘어놨다. 말이 안 된다.)
+    코디를 곁들이고 싶으면 "같이 많이 언급되는 건 …" 이라고 **따로** 말해라.
+  ★ `method` 를 답변에 옮겨라 — 무엇을 근거로 골랐는지가 답의 신뢰를 정한다.
+    "연관어 프로필 겹침"(함께 쓰이는 말이 겹친다)과 "이름 계열"(…팬츠 처럼 이름이
+    같은 갈래)은 다른 근거다. 이름 계열은 표기가 갈리면 놓친다는 것도 알고 있어라.
+  ★ `items` 가 비어 있으면 **비슷한 것을 못 찾은 것이다.** 먼저 그렇게 말해라.
+    그때 오는 `alternatives` 는 다른 질문의 답이다 — "대신 지금 이 축에서 높은
+    것은 …" 처럼 **따로** 소개해라. 비슷한 것으로 소개하면 팬츠 옆에 자켓·백팩이
+    서게 된다(2026-09-10 실측). 우리 연관어 자료가 아직 얇아서 생기는 일이다.
+  ★ 우리 데이터는 **용어** 단위라 상품 목록도 사진도 없다. "사진을 보여 드릴게요"
+    라고 말하지 마라. 용어를 짚어 주고 `[다음]` 으로 무엇을 더 볼지 물어라.
 - **날씨처럼 우리 지표 밖이지만 옷차림과 이어지는 질문은 되묻지 마라.**
   지역 기본값(서울)으로 web_search 해서 답하고, 옷차림 제안으로 자연스럽게 잇는다.
   이 서비스에서 날씨는 목적이 아니라 **패션 조언의 재료**다.
 
 ## 답변 문체
-한국어. 결론을 먼저, 근거를 뒤에. 숫자에는 기준일을 붙인다.
-과장하지 않고, 확실하지 않은 것은 확실하지 않다고 쓴다."""
+한국어. **사람과 대화하듯 쓴다.**
+
+- **"결론적으로" · "결론:" · "요약하면" 같은 머리말을 붙이지 마라.** 보고서가 아니다.
+  숫자와 근거는 화면 카드가 이미 보여 주고 있고, 본문은 그 옆에서 말을 건네는 자리다.
+  첫 문장에서 바로 답한다.
+- **문단을 나눈다.** 한 문단은 2~3문장까지. 문단 사이는 빈 줄로 띄운다.
+  항목이 둘 이상이면 `- ` 글머리표로 줄을 나눠라. 한 덩어리로 쏟으면 읽는 사람이
+  어디서 끊어야 할지 모른다.
+- **길어도 6문장.** 지표 숫자는 카드에 이미 그려지므로 본문에서 전부 되풀이하지
+  마라 — 결론과 그 근거가 되는 값만 고른다.
+- 숫자에는 기준일을 붙이고, 확실하지 않은 것은 확실하지 않다고 쓴다. 과장하지 않는다."""
 
 
 class Result:
@@ -146,6 +280,32 @@ class Result:
         self.stopped: str = ""       # 왜 멈췄나 (진단용)
         self.ask: dict | None = None  # ask_user 가 걸렸으면 여기
         self.sources: list[dict] = []
+        self.deadline: float = 0.0   # 이 답변 전체의 마감시각 (time.monotonic 기준)
+        # ★ 바퀴마다 몇 초가 걸렸나. 이게 없으면 "18초가 어디로 갔나" 를 추측하게 된다.
+        self.round_ms: list[int] = []
+        # ★ 호스티드 도구(web_search · mcp)가 몇 번 돌았나.
+        #   우리 TraceLog 에는 **안 남는다** — 모델 쪽에서 도는 것이라 도구 목록에도
+        #   안 보인다. 그래서 링크 질문이 왜 느린지가 로그에서 통째로 빠져 있었다.
+        self.hosted: int = 0
+
+
+def _recent_terms(history: list[dict] | None, limit: int = 5) -> list[str]:
+    """이 대화에서 최근에 본 용어들 — 최신 순 (15번, 세션 기억).
+
+    ★ 새로 저장하지 않는다. history 의 각 턴이 이미 terms 를 들고 있다.
+      "이거 어때?" 를 풀 때 화면에 보던 용어(screen_term) 하나만으로는
+      모자란 자리가 있다 — 방금 두세 개를 물어본 대화에서는 '이거' 가
+      직전 용어일 확률이 높다.
+    """
+    out: list[str] = []
+    for t in reversed(history or []):
+        for x in (t.get("terms") or []):
+            c = (x or {}).get("canonical")
+            if c and c not in out:
+                out.append(str(c))
+                if len(out) >= limit:
+                    return out
+    return out
 
 
 def _ctx_block(question: str, ctx: dict, history: list[dict] | None) -> str:
@@ -164,6 +324,16 @@ def _ctx_block(question: str, ctx: dict, history: list[dict] | None) -> str:
         lines.append("[로그인함] 취향을 근거로 쓸 수 있다")
     else:
         lines.append("[비로그인] 취향 얘기를 하지 마라")
+    # ★ 되묻기 예산이 없으면 그 사실과 **대신 할 일**을 같이 준다.
+    #   막기만 하면 모델은 되물을 자리에서 멈추거나 엉뚱하게 지어낸다.
+    if ctx.get("no_ask"):
+        lines.append("[되묻기 예산 소진] 이 대화에서 이미 되물었다. 또 되묻지 마라. "
+                     "가장 그럴듯한 것으로 잡아 답하고, 무엇을 가정했는지 한 줄로 "
+                     "밝힌 뒤 '아니면 말씀해 주세요' 를 붙여라.")
+    seen = _recent_terms(history)
+    if seen:
+        lines.append("[최근 본 용어] " + " · ".join(seen)
+                     + "  ← '이거 · 아까 그거' 는 이 중 하나일 가능성이 높다")
     for t in (history or [])[-3:]:
         q, a = t.get("q"), t.get("a")
         if q:
@@ -171,6 +341,27 @@ def _ctx_block(question: str, ctx: dict, history: list[dict] | None) -> str:
         if a:
             lines.append(f"[직전 답변 요약] {str(a)[:160]}")
     return "\n".join(lines)
+
+
+def _hosted_calls(raw: dict) -> int:
+    """모델이 서버 쪽에서 직접 돌린 도구 수 (web_search_call · mcp_call 등).
+
+    ★ 이것들은 Toolbox 를 거치지 않으므로 TraceLog 에 안 남는다. 그런데 링크
+      질문에서는 이게 제일 느린 항목일 수 있다 — 무슨 상품인지 알려면 모델이
+      웹을 뒤져야 하기 때문이다. 안 세면 그 시간이 어디로 갔는지 알 수 없다.
+    """
+    n = 0
+    for item in (raw.get("output") or []):
+        t = str((item or {}).get("type") or "")
+        if t.endswith("_call") and t != "function_call":
+            n += 1
+    return n
+
+
+def _history_asks(history: list[dict] | None) -> int:
+    """history 안의 되묻기 턴 수. 세는 규칙은 history.py 한 곳에 있다."""
+    from .history import count_asks
+    return count_asks(history)
 
 
 def _sig(name: str, args: dict) -> str:
@@ -183,27 +374,42 @@ def _sig(name: str, args: dict) -> str:
 
 def run(question: str, *, store, gate, ctx: dict | None = None,
         history: list[dict] | None = None, salmal=None, taste=None,
-        websearch=None, on_progress=None) -> Result:
+        websearch=None, on_progress=None, deadline: float | None = None) -> Result:
     ctx = ctx or {}
     out = Result()
     box = Toolbox(store, gate, ctx=ctx, salmal=salmal, taste=taste, websearch=websearch)
     out.trace = box.trace
 
+    # ★ 되묻기 예산 (15번). 다 썼으면 ask_user 를 목록에서 뺀다.
+    #   engine 이 세어 준 값(서버 기억 기준)과 여기서 본 history 중 큰 쪽을 쓴다 —
+    #   orchestrator 를 직접 부르는 자리(스모크·테스트)에서도 상한이 걸리게.
+    asked = max(int(ctx.get("asked_before") or 0), _history_asks(history))
+    if asked >= ASK_BUDGET:
+        ctx = dict(ctx)
+        ctx["no_ask"] = True
     tools = specs_for(ctx)
     items: list[Any] = [{"role": "user", "content": _ctx_block(question, ctx, history)}]
     seen: set[str] = set()
     per_tool: dict[str, int] = {}      # 도구 이름 → 부른 횟수 (MAX_PER_TOOL)
     started = time.monotonic()
+    # ★ 마감시각은 밖에서 온다(agent_path). 혼자 돌 때만 여기서 만든다 —
+    #   그래야 _finish · verify 까지 같은 하나를 나눠 쓴다(18번).
+    if deadline is None:
+        deadline = started + TIME_BUDGET
+    out.deadline = deadline
+    # 루프는 예산을 다 쓰지 않는다. 뒷단계 몫을 먼저 떼고 시작한다.
+    loop_end = deadline - reserve(deadline - started, TAIL_RESERVE)
 
     for rnd in range(MAX_ROUNDS):
         out.rounds = rnd + 1
-        left = TIME_BUDGET - (time.monotonic() - started)
-        # ★ 1초 미만이면 새 바퀴를 시작하지 않는다. 시작하면 아래 timeout 의
-        #   하한(2초) 때문에 예산을 반드시 넘긴다.
-        if left <= 1.0:
+        left = loop_end - time.monotonic()
+        # ★ 남은 시간이 한 호출을 끝낼 만큼이 아니면 시작하지 않는다(WRITE_MIN).
+        #   시작해서 잘리면 그 시간은 통째로 버려지고, 마무리에 쓸 몫까지 줄어든다.
+        if left < WRITE_MIN:
             out.stopped = "time_budget"
             break
 
+        t_round = time.monotonic()
         res = llm.respond(
             INSTRUCTIONS, items, tools=tools, raw_flag=True,
             # ★ 남은 시간을 **실수 그대로** 상한으로 쓴다.
@@ -214,11 +420,14 @@ def run(question: str, *, store, gate, ctx: dict | None = None,
         )
         if res is None:
             # 모델에 못 닿았다. 지금까지 모은 것이 있으면 그걸로라도 답한다.
+            out.round_ms.append(int((time.monotonic() - t_round) * 1000))
             out.stopped = f"llm_{llm.LAST_ERROR or 'unknown'}"
             break
 
         raw = res.get("_raw") or {}
         out.sources = res.get("_raw_sources") or out.sources
+        out.round_ms.append(int((time.monotonic() - t_round) * 1000))
+        out.hosted += _hosted_calls(raw)
         calls = llm.tool_calls(res)
 
         if not calls:
@@ -285,7 +494,7 @@ def run(question: str, *, store, gate, ctx: dict | None = None,
     # 바퀴를 다 썼거나 시간이 다 됐는데 답이 없다 —
     # 모은 것으로 한 번만 더, 도구 없이 쓰게 한다.
     if not out.answer and not out.ask:
-        out.answer = _finish(items, out)
+        out.answer = _finish(items, out, deadline)
 
     return out
 
@@ -300,7 +509,47 @@ STOP_SAY = {
 }
 
 
-def _finish(items: list[Any], out: Result) -> str:
+# ★ 마무리 전용 지시문 (2026-09-10).
+#   예전에는 _finish 도 INSTRUCTIONS(규칙 11개 + 도구 고르는 법 전체)를 통째로
+#   보냈다. 그런데 이 자리에서는 **도구를 고르지 않는다** — 이미 모은 것을 문장으로
+#   옮길 뿐이다. 안 쓰는 규칙을 매번 같이 보내면 그만큼 읽고 생각하는 시간이 든다.
+#   남은 시간이 4~6초뿐인 자리에서 그 차이는 답이 나오느냐 마느냐를 가른다.
+_FINISH_INSTRUCTIONS = """너는 FEEDiT 의 패션 트렌드 분석 상담원이다.
+앞에서 조회한 도구 결과가 함께 온다. 그것만으로 답을 쓴다.
+
+1. **도구 결과에 있는 값만 쓴다.** 없는 숫자를 채우지 마라.
+2. 없는 축은 "아직 측정 자료가 없습니다" 라고 밝힌다.
+3. 요청한 대상이 없어 다른 용어로 대신 봤다면 **그 사실을 반드시 밝힌다.**
+4. 주소는 도구가 준 것만 쓴다. 없으면 "(원문 링크 없음)".
+5. 한국어. **사람과 대화하듯** 쓴다. "결론적으로" · "결론:" 같은 머리말을 붙이지 마라.
+   첫 문장에서 바로 답한다. 숫자에는 기준일을 붙인다.
+6. **길어도 6문장.** 한 문단은 2~3문장까지, 문단 사이는 빈 줄. 항목이 둘 이상이면
+   `- ` 글머리표로 줄을 나눈다. 숫자는 카드에 이미 그려지니 전부 되풀이하지 마라.
+7. 이어 갈 질문이 있으면 맨 마지막 줄에 `[다음] …` 한 줄로."""
+
+
+def _stop_say(out: Result) -> str:
+    """지어내지 않는다. 왜 못 했는지만 말한다."""
+    # ★ 도구 결과가 있으면 화면에는 **카드가 다 그려진다.** 그 옆에 "아무것도
+    #   못 했다" 는 문구가 붙으면 둘이 서로 어긋난다 — 사용자는 데이터가
+    #   가득한 화면을 보면서 실패했다는 말을 읽는다. (2026-09-10 실측)
+    #   조회는 됐고 **요약 문장만** 못 쓴 것이니, 그렇게 적는다.
+    got = bool(out.trace and out.trace.calls)
+    if out.stopped in STOP_SAY:
+        return STOP_SAY[out.stopped]
+    if str(out.stopped).startswith("llm_"):
+        # ★ 이건 데이터 문제가 아니라 **모델 응답이 끊긴 것**이다 (2026-09-10).
+        #   "지표를 불러오지 못했습니다" 라고 적으면 사용자는 그 용어의 자료가
+        #   없다고 읽는다. 실제로 그렇게 읽혔다.
+        if got:
+            return ("지표는 아래에 담았지만, 요약 문장을 만들다 응답이 끊겼습니다. "
+                    "다시 시도할까요?")
+        return "답을 만드는 중에 응답이 끊겼습니다. 다시 시도할까요?"
+    return ("지금은 답을 만들지 못했습니다 "
+            f"({out.stopped or 'unknown'}). 잠시 뒤 다시 물어봐 주세요.")
+
+
+def _finish(items: list[Any], out: Result, deadline: float | None = None) -> str:
     """도구 없이 마무리 한 번. 여기서도 실패하면 사유를 그대로 돌려준다."""
     # ★ 예산이 다 됐을 때는 **빈손으로 끝내지 않는다**(설계도 부록 10).
     #   세 갈래 중 ②를 고른다 — 확인한 항목을 나열하고 되묻는다.
@@ -315,14 +564,23 @@ def _finish(items: list[Any], out: Result) -> str:
         "content": "더 조회하지 말고, 지금까지 받은 도구 결과만으로 답하라. "
                    "부족한 축은 '아직 측정 자료가 없습니다' 라고 밝혀라." + ask,
     }]
-    res = llm.respond(INSTRUCTIONS, items, timeout=CALL_TIMEOUT,
-                      **llm.role("orchestrator"))
+    # ★ 이 호출도 예산 안이다(18번). 남은 시간에서 verify 몫을 뗀 만큼만 쓴다.
+    #   예전에는 CALL_TIMEOUT(20초)을 통째로 썼다 — 예산이 끝난 자리에서
+    #   20초를 더 쓰니, 예산은 루프의 것일 뿐 답변의 것이 아니었다.
+    left = (deadline - time.monotonic()) if deadline else float(CALL_TIMEOUT)
+    budget = left - reserve(left, VERIFY_RESERVE)
+    if budget < MIN_CALL:
+        # 부를 시간이 없다. 빈손으로 끝내지 않고 지금까지 확인한 것으로 닫는다.
+        out.stopped = out.stopped or "time_budget"
+        return _stop_say(out)
+    # budget 은 이미 MIN_CALL 이상이다. 여기서 하한을 또 걸면 마감시각을 넘는다.
+    # ★ 역할은 orchestrator 가 아니라 finish 다 (2026-09-10). 여기는 판단이 아니라
+    #   정리다 — 생각을 오래 하라고 시키면 정리도 못 하고 끝난다(llm.ROLES 주석).
+    # ★ 출력 길이도 묶는다. 안 묶으면 예산은 지켜도 **쓰다가** 끊긴다.
+    res = llm.respond(_FINISH_INSTRUCTIONS, items,
+                      timeout=min(float(CALL_TIMEOUT), budget),
+                      max_output_tokens=FINISH_MAX_TOKENS,
+                      **llm.role("finish"))
     if res and res.get("text"):
         return res["text"].strip()
-    # 지어내지 않는다. 왜 못 했는지만 말한다.
-    if out.stopped in STOP_SAY:
-        return STOP_SAY[out.stopped]
-    if str(out.stopped).startswith("llm_"):
-        return "지표를 불러오지 못했습니다. 다시 시도할까요?"
-    return ("지금은 답을 만들지 못했습니다 "
-            f"({out.stopped or 'unknown'}). 잠시 뒤 다시 물어봐 주세요.")
+    return _stop_say(out)

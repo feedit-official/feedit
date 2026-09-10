@@ -81,6 +81,13 @@ ROLES: dict[str, tuple[str, str]] = {
     "verify":         (MODEL_SMALL, "none"),     # 숫자 대조 — 일치 확인
     "polish":         (MODEL_SMALL, "none"),     # 형식 변환
     "ask":            (MODEL_SMALL, "none"),     # 되묻는 한 문장
+    # ★ 2026-09-10 — 마무리(_finish)는 **판단이 아니라 정리**다.
+    #   무엇을 볼지는 루프에서 이미 정했고, 값도 이미 손에 있다. 남은 일은
+    #   그것을 문장으로 옮기는 것뿐인데 orchestrator 역할(medium)로 부르니
+    #   생각하는 데 시간을 쓰다 끝났다. 실측(무신사 링크, 예산 20초):
+    #   루프가 14초를 쓰고 마무리에 4초가 갔는데 그 4초 안에 못 끝냈다.
+    #   effort 를 낮추면 같은 4초 안에 쓴다. 여기서 판단이 나빠질 일은 없다.
+    "finish":         (MODEL_SMALL, "low"),      # 모은 결과를 문장으로만 옮긴다
 }
 
 

@@ -35,16 +35,38 @@ TraceLog 가 도구 결과를 **요약해서** 들고 있으면 대조할 것이
 from __future__ import annotations
 
 import re
+import time
 from typing import Any
 
 from . import llm
 from .tools import _numstr
+
+# ★ 이 층도 전체 시간 예산 안이다 (2026-09-10, 인수인계 18번).
+#   fix() 는 모델을 한 번 부른다. 예전에는 timeout=15 가 고정이라, 오케스트레이터가
+#   예산을 다 쓴 뒤에도 15초를 더 썼다. 이제 agent_path 가 준 마감시각을 보고
+#   남은 만큼만 쓰고, 남은 게 없으면 **부르지 않고** 그 사실을 남긴다.
+FIX_TIMEOUT = 15        # 대조 한 번의 상한
+MIN_CALL = 2.0          # 이보다 적게 남았으면 부르지 않는다
+
+# ★ 이 사유 문자열은 agent_path 가 화면 안내를 고르는 데 쓴다.
+#   문자열을 양쪽에서 따로 적었다가 어긋났던 자리다(2026-09-10) —
+#   verify 는 "no_tool_results" 를 남기는데 agent_path 는 "web_sourced" 를
+#   보고 있어서, 웹으로 답했다는 안내 대신 "사실 확인을 끝내지 못했습니다"
+#   라는 경고가 나갔다. 한 곳에서만 적는다.
+NO_TOOL_RESULTS = "no_tool_results"
 
 # 답변에서 숫자를 뽑는다. 1,240 · 3.5 · -6 · +82 를 모두 잡는다.
 _NUM = re.compile(r"[+-]?\d[\d,]*(?:\.\d+)?")
 
 # 연도는 지표가 아니다. 2026-09-08 같은 날짜도 여기서 걸러진다.
 _YEARLIKE = re.compile(r"(19|20)\d{2}")
+
+# ★ 모델명·품번 안의 숫자 (2026-09-10 실측)
+#   답변에 "피지컬가먼츠 P5069" 가 들어가자 5069 를 지어낸 숫자로 잡아 지웠고,
+#   화면에는 "P5069에서 도구 결과에 없는 숫자 5069를 제거했습니다" 가 떴다.
+#   "Y2K" 의 2, "XT-6" 의 6, "KD7983" 도 같은 자리다. 이것들은 **주장이 아니라
+#   이름**이다. 날짜·목록 번호와 같은 계열의 오탐이라 같은 방식으로 먼저 걷어낸다.
+_MODELCODE = re.compile(r"[A-Za-z][A-Za-z0-9]*-?\d[A-Za-z0-9-]*")
 
 # 목록 번호 — "1. 발레코어" 의 1 은 주장하는 숫자가 아니다.
 _ORDINAL = re.compile(r"^\s*\(?\d{1,2}[.)]\s", re.M)
@@ -108,6 +130,7 @@ class Report:
 def _numbers_in(text: str) -> set[str]:
     """답변이 주장하는 숫자들. 연도·목록번호는 뺀다."""
     body = _DATE.sub(" ", text or "")
+    body = _MODELCODE.sub(" ", body)
     body = _ORDINAL.sub(" ", body)
     body = _TABLE_IDX.sub(" | ", body)
     out: set[str] = set()
@@ -270,7 +293,8 @@ _FIX_INSTRUCTIONS = """너는 FEEDiT 답변의 사실 검증관이다.
 원문 그대로 두어도 되면 ok=true 로 하고 answer 에 원문을 그대로 넣어라."""
 
 
-def fix(answer: str, trace, rep: Report, question: str = "") -> str:
+def fix(answer: str, trace, rep: Report, question: str = "",
+        deadline: float | None = None) -> str:
     """② 의심되는 게 있을 때만 부른다. 소형 모델."""
     payload = {
         "question": question,
@@ -282,8 +306,15 @@ def fix(answer: str, trace, rep: Report, question: str = "") -> str:
         "suspect_axes": rep.missing_axes,
         "bad_recommend": rep.bad_recommend,
     }
+    # ★ 남은 시간 안에서만 부른다(18번). 없으면 부르지 않는다 —
+    #   예산을 넘겨 가며 대조하면, 그 초과분만큼 사용자는 빈 화면을 본다.
+    left = (deadline - time.monotonic()) if deadline else float(FIX_TIMEOUT)
+    if left < MIN_CALL:
+        rep.skipped = "time_budget"
+        return _hedge(answer, rep)
     res = llm.respond(_FIX_INSTRUCTIONS, payload, _SCHEMA,
-                      timeout=15, **llm.role("verify"))
+                      timeout=min(float(FIX_TIMEOUT), left),
+                      **llm.role("verify"))
     if not res:
         # ★ 검증을 못 했으면 통과시키지 않는다.
         #   모델에 못 닿았다고 지어낸 숫자를 그대로 내보내면
@@ -316,7 +347,8 @@ def _hedge(answer: str, rep: Report) -> str:
 
 
 def verify(answer: str, trace, question: str = "",
-           web_sourced: bool = False) -> tuple[str, Report]:
+           web_sourced: bool = False,
+           deadline: float | None = None) -> tuple[str, Report]:
     """검증 한 번. 깨끗하면 모델을 안 부른다(0원).
 
     돌려주는 것: (최종 답변, 무엇을 했나)
@@ -333,9 +365,9 @@ def verify(answer: str, trace, question: str = "",
     if web_sourced:
         # 대조할 도구 결과가 없다. 확인 못 한 것을 지우지 않고, 못 했다고 남긴다.
         rep = Report()
-        rep.skipped = "no_tool_results"
+        rep.skipped = NO_TOOL_RESULTS
         return answer, rep
     rep = check(answer, trace, question)
     if rep.clean:
         return answer, rep
-    return fix(answer, trace, rep, question), rep
+    return fix(answer, trace, rep, question, deadline), rep
