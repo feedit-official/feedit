@@ -202,9 +202,14 @@ def ask(question: str, *, store, gate, mode: str = "general",
     as_of = _as_of(res.trace)
     # 블록 만들기가 실패해도 답변은 나가야 한다. 블록은 덤이다.
     try:
-        blks = agent_blocks.build(res.trace, store, gate)
+        blks = agent_blocks.build(res.trace, store, gate, question=question)
     except Exception:                            # noqa: BLE001
         blks = []
+    report_design = (None if not blks or blks[0].get("type") != "generative_report" else {
+        "source": blks[0].get("source"),
+        "fingerprint": blks[0].get("fingerprint"),
+        "modules": len(blks[0].get("modules") or []),
+    })
     ms = int((time.monotonic() - t0) * 1000)
     out = {
         "ok": True,
@@ -245,6 +250,10 @@ def ask(question: str, *, store, gate, mode: str = "general",
             # 바퀴별 소요와 호스티드 도구 횟수 — 시간이 어디로 갔는지 (11장)
             "round_ms": res.round_ms,
             "hosted": res.hosted,
+            # compose_report 스킬이 만든 조합의 출처·지문·모듈 수다.
+            # 이름 붙은 variant 는 더 이상 없다. fingerprint 로 같은 조합에
+            # 계속 쏠리는 회귀를 관찰한다.
+            "report_design": report_design,
             # ★ 예산을 지켰나. 넘었으면 그 자체가 버그다(18번) —
             #   어느 층이 예산 밖에서 모델을 부르고 있다는 뜻이다.
             "budget_ms": int(orchestrator.TIME_BUDGET * 1000),

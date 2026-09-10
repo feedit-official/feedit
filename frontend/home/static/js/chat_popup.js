@@ -1,6 +1,6 @@
 import { $, $$, HAS_A, aAnimate } from '../../../core/static/js/dom.js';
 import { SAY, SM_ON, SM_SAY, STYLES, ansCardHTML, smSwitch } from './chat.js';
-import { isUp, askStream, reportHTML, notesHTML, followupHTML, actionsHTML, refusalHTML, requestLexicon, fillBars } from './chat_api.js';
+import { isUp, askStream, reportHTML, notesHTML, followupHTML, actionsHTML, refusalHTML, requestLexicon, fillBars, MAX_IMAGES, imageFileToDataURL, bindImageDrop } from './chat_api.js';
 import { requireAuth } from '../../../account/static/js/profile.js';
 
 /* ══════════════════════════════════════════════════════
@@ -28,6 +28,42 @@ function cpEsc(s){
   return String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 }
 const cpMode =()=>SM_ON?'salmal':'general';
+
+/* ── 팝업 챗바 이미지 첨부 ─────────────────────────────
+   홈 챗바(chat.js의 mImages)와 별개로 팝업 자체에서도 사진을 올릴 수 있다 —
+   팝업이 떠 있는 동안 이어 묻는 질문에도 새 사진을 붙일 수 있어야 하므로. */
+let cpImages=[];
+function cpImgPaint(){
+  const box=$('#cpImgAttach'); if(!box)return;
+  box.hidden = cpImages.length===0;
+  box.innerHTML = cpImages.map((im,i)=>
+    '<span class="imgChip"><img src="'+im.url+'" alt=""><button type="button" data-rm="'+i+'" aria-label="사진 삭제">×</button></span>').join('');
+}
+async function cpImgPick(files){
+  for(const f of files){
+    if(cpImages.length>=MAX_IMAGES)break;
+    try{ const url=await imageFileToDataURL(f); cpImages.push({url}); }catch(e){ /* 이미지가 아니면 조용히 건너뛴다 */ }
+  }
+  cpImgPaint();
+}
+/* 보낼 때만 비운다 — 그 전까지는 대화창을 닫았다 열어도 그대로 남아 있는다 */
+function cpImgTake(){ const out=cpImages.map(im=>im.url); cpImages=[]; cpImgPaint(); return out; }
+export function cpImgInit(){
+  const add=$('#cpImgAdd'), input=$('#cpImgFile'), box=$('#cpImgAttach');
+  if(add&&input){
+    add.addEventListener('click', ()=>input.click());
+    input.addEventListener('change', ()=>{
+      if(input.files&&input.files.length)cpImgPick([...input.files]);
+      input.value='';
+    });
+  }
+  if(box)box.addEventListener('click', e=>{
+    const rm=e.target.closest('[data-rm]'); if(!rm)return;
+    cpImages.splice(+rm.dataset.rm,1); cpImgPaint();
+  });
+  /* 팝업 입력줄에 사진을 끌어다 놓아도 + 버튼과 같은 경로로 들어간다 */
+  bindImageDrop($('.cpInputWrap'), files=>cpImgPick(files));
+}
 export const cpStore=()=>CP_STORE[cpMode()];
 function cpActiveConvo(){
   const s=cpStore();
@@ -133,7 +169,12 @@ export function cpRenderThread(opts){
   wrap.classList.add('hasMsg');
   const typeIdx=(opts&&opts.typeLast)?c.messages.length-1:-1;
   th.innerHTML=c.messages.map((m,idx)=>{
-    if(m.role==='me') return '<div class="msg me"><div class="bub">'+cpEsc(m.text)+'</div></div>';
+    if(m.role==='me'){
+      const imgs=(m.images&&m.images.length)
+        ?'<div class="bubImgs">'+m.images.map(u=>'<img src="'+u+'" alt="">').join('')+'</div>':'';
+      const bub=m.text?('<div class="bub">'+cpEsc(m.text)+'</div>'):'';
+      return '<div class="msg me">'+imgs+bub+'</div>';
+    }
     if(m.pending) return '<div class="msg ai thinking">'+cpWhoHTML(m.stage)+'</div>';
     if(idx===typeIdx) return '<div class="msg ai" data-type-target="1">'+cpWhoHTML()+'<div class="say"></div></div>';
     { const card=(m.cardHtml!=null)?m.cardHtml:(m.key?ansCardHTML(m.key):'');
@@ -218,7 +259,7 @@ function cpAskMock(c,aiMsg,key){
    도중에 끊기면 cpAskMock 의 데모 답으로 조용히 떨어진다 — 서버가 없어도
    데모가 깨지면 안 된다(AGENTS.md). 대화 id 에 모드를 붙여 보낸다 —
    두 모드가 따로 1,2,3… 으로 세므로 안 붙이면 섞인다. */
-async function cpAskLive(c,aiMsg,text){
+async function cpAskLive(c,aiMsg,text,images){
   const conv='cp-'+cpMode()+'-'+c.id;
   const history=cpHistoryFor(c);
   /* pending 은 아직 true 로 남겨둔다 — 첫 실제 응답(text/report/error)이
@@ -241,7 +282,8 @@ async function cpAskLive(c,aiMsg,text){
   };
   let acc='';
   await askStream({question:text, mode:cpMode(), plan:'FREE',
-                    conversation_id:conv, history},{
+                    conversation_id:conv, history,
+                    images:(images&&images.length)?images:undefined},{
     /* ★ 진행 상황 (server.py 의 push("status", {stage:"tool", message})).
        예전에는 이 핸들러가 아예 없어서 서버가 보낸 이벤트가 **조용히
        버려졌다** — askStream 은 on[ev] 가 없으면 그냥 넘어간다.
@@ -303,10 +345,11 @@ async function cpAskLive(c,aiMsg,text){
 /* 질문 하나를 대화에 밀어 넣는다. 서버가 떠 있으면 실제 답(마크다운·근거가
    전부 정리된 리포트 카드)을, 아니면 데모용 캔 답을 "생각 중" 뒤에 채운다. */
 function cpAsk(text,key,opts){
-  if(!text)return;
+  const images=(opts&&opts.images)||[];
+  if(!text && !images.length)return;
   let c=(opts&&opts.forceNew)?cpNewConvo():cpActiveConvo(); if(!c)c=cpNewConvo();
-  c.messages.push({role:'me', text});
-  if(!c.title)c.title=cpTitleFrom(text);
+  c.messages.push({role:'me', text, images});
+  if(!c.title)c.title=cpTitleFrom(text||'사진 문의');
   const aiMsg={role:'ai', html:'', key, pending:true};
   c.messages.push(aiMsg);
   cpRenderList();
@@ -315,7 +358,7 @@ function cpAsk(text,key,opts){
     let live=false;
     try{ live=await isUp() }catch(e){ live=false }
     if(!live) return cpAskMock(c,aiMsg,key);
-    try{ await cpAskLive(c,aiMsg,text) }
+    try{ await cpAskLive(c,aiMsg,text,images) }
     catch(e){
       const last=c.messages[c.messages.length-1];
       if(last===aiMsg) cpAskMock(c,aiMsg,key);
@@ -325,8 +368,8 @@ function cpAsk(text,key,opts){
 export function cpSend(){
   if(!requireAuth())return;
   const ta=$('#cpInput'); const v=(ta&&ta.value.trim())||'';
-  if(!v)return;
-  cpAsk(v,cpKeyFor(v));
+  if(!v && !cpImages.length)return;
+  cpAsk(v,cpKeyFor(v),{images:cpImgTake()});
   if(ta){ ta.value=''; ta.style.height=''; }
 }
 export function openChatPopup(){
@@ -376,6 +419,15 @@ document.addEventListener('click', e=>{
   if(hr){ window.open(hr.dataset.href, '_blank', 'noopener'); return; }
   const rq=e.target.closest('#cpThread [data-lexreq]');
   if(rq){ cpSendLexiconRequest(rq); return; }
+  /* 탭 리포트(구조안 02) — 서버 왕복 없이 그 카드 안에서만 전환한다. */
+  const tb=e.target.closest('#cpThread [data-tab]');
+  if(tb){
+    const box=tb.closest('.tabreport'); if(!box)return;
+    const key=tb.dataset.tab;
+    box.querySelectorAll('.rpTabBtn').forEach(x=>x.classList.toggle('on', x===tb));
+    box.querySelectorAll('.rpTabPanel').forEach(x=>x.classList.toggle('on', x.dataset.panel===key));
+    return;
+  }
 });
 /* 등록 요청 버튼 — 누른 즉시 잠그고(중복 전송 방지), 서버가 답하면 결과를 말한다.
    "누르면 되는 척" 을 하지 않는다(server.py 주석) — 실패해도 실패라고 말한다. */

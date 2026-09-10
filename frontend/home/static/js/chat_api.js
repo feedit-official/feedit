@@ -4,6 +4,9 @@
    ★ 없는 클래스를 쓰지 않는다.
      여기서 쓰는 것은 전부 이미 CSS 에 있는 것들이다 —
        .ansCard .ansBar .ansBody .ansH .rank .bars   (home/static/css/chat.css)
+       .skillReport .skillCanvas .skillModule             (home/static/css/chat_report.css)
+       .rpReport .rpReportGrid .rpReportSection            (이전 응답 호환용)
+       .tabreport .rpTabs .rpTabBtn .rpTabPanel          (이전 응답 호환용)
        .kwReq .kwReq .near .kwReq .ask               (trend/static/css/dispatch.css)
        .note                                          (trend/static/css/weekly_report.css)
        .pill .pill.ghost                              (app_shell/static/css/layout.css)
@@ -35,6 +38,61 @@ let _upAt = 0;
 export function esc(s){
   return String(s==null?'':s).replace(/[&<>"']/g,m=>(
     {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+}
+
+/* ── 이미지 첨부 ──────────────────────────────────────
+   서버로는 JSON 본문에 data URL(base64) 문자열로 실어 보낸다.
+   원본 그대로 올리면 사진 한 장에도 챗바 요청이 몇 MB씩 나오므로,
+   캔버스로 긴 변을 줄이고 JPEG로 다시 압축한 뒤에 보낸다. */
+export const MAX_IMAGES = 3;
+const IMG_MAX_DIM = 1280;
+const IMG_QUALITY = 0.82;
+
+function loadImage(file){
+  return new Promise((resolve, reject) => {
+    if(!file || !/^image\//.test(file.type)){ reject(new Error('not_image')); return; }
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('load_failed')); };
+    img.src = url;
+  });
+}
+
+export async function imageFileToDataURL(file){
+  const img = await loadImage(file);
+  const scale = Math.min(1, IMG_MAX_DIM / Math.max(img.naturalWidth || img.width, img.naturalHeight || img.height));
+  const w = Math.max(1, Math.round((img.naturalWidth || img.width) * scale));
+  const h = Math.max(1, Math.round((img.naturalHeight || img.height) * scale));
+  const cv = document.createElement('canvas');
+  cv.width = w; cv.height = h;
+  const ctx = cv.getContext('2d');
+  ctx.drawImage(img, 0, 0, w, h);
+  return cv.toDataURL('image/jpeg', IMG_QUALITY);
+}
+
+/* 드래그 앤 드롭 — 챗바 위에 사진을 끌어다 놓아도 + 버튼과 같은 자리로 들어간다.
+   홈 챗바(.chatbar)와 팝업 입력줄(.cpInputWrap) 양쪽에서 그대로 재사용한다. */
+export function bindImageDrop(el, onFiles){
+  if(!el)return;
+  const hasFiles = e => e.dataTransfer && Array.from(e.dataTransfer.types||[]).includes('Files');
+  ['dragenter','dragover'].forEach(ev=>el.addEventListener(ev, e=>{
+    if(!hasFiles(e))return;
+    e.preventDefault(); e.dataTransfer.dropEffect='copy';
+    el.classList.add('dragOver');
+  }));
+  ['dragleave','dragend'].forEach(ev=>el.addEventListener(ev, e=>{
+    if(e.relatedTarget && el.contains(e.relatedTarget))return;   /* 안쪽 자식 사이 이동은 무시 */
+    el.classList.remove('dragOver');
+  }));
+  el.addEventListener('drop', e=>{
+    el.classList.remove('dragOver');
+    if(!e.dataTransfer)return;
+    const files=[...(e.dataTransfer.files||[])].filter(f=>/^image\//.test(f.type));
+    if(!files.length)return;
+    e.preventDefault();
+    onFiles(files);
+  });
 }
 
 /* 서버가 떠 있나. 30초 동안은 결과를 재사용한다 — 매 질문마다 물으면 느려진다. */
@@ -86,7 +144,8 @@ export async function askStream(payload, on){
 
 /* ── 리포트 → 카드 ────────────────────────────────────
    서버가 질문 유형에 맞는 **블록 배열**을 준다. 여기서는 그걸 그리기만 한다.
-   구조를 여기서 정하지 않는다 — 정하는 곳은 서버의 templates.py 하나다.
+   구조를 여기서 정하지 않는다 — 기존 경로는 templates.py, 새 도구 경로는
+   compose_report 도구와 report_skill.py 가 만든 UI 스펙을 그린다.
 
    슬롯
      full   카드 위 전체 폭
@@ -168,6 +227,93 @@ const BLOCK = {
     '<div class="ask"><span>프로 플랜에서 ' + esc((b.unlocks || []).join(' · ')) +
     ' 을 볼 수 있습니다.</span>' +
     '<button type="button" data-v="price">요금제 보기</button></div></div>',
+
+  /* 생성형 리포트 스킬 — 완성 양식 이름이 없다.
+     모델이 실제 결과 모듈을 12열 캔버스에 배치한 스펙을 받아 조립한다.
+     HTML 자체는 모델에게 받지 않고 허용된 디자인 토큰과 기존 BLOCK 만 써서,
+     질문마다 다른 구조를 만들면서도 스크립트·가짜 값이 들어올 길을 막는다. */
+  generative_report: b => {
+    const accents = new Set(['coral','ink','violet','blue','lime']);
+    const surfaces = new Set(['paper','soft','contrast','glass']);
+    const densities = new Set(['airy','balanced','compact']);
+    const kinds = new Set(['ranking','comparison','metric','direction','sources','associations',
+      'sentiment','recommendations','taste','context','evidence','links','missing']);
+    const presentations = new Set(['hero','card','chart','list','editorial','compact']);
+    const emphasis = new Set(['strong','normal','quiet']);
+    const accent = accents.has(b.accent) ? b.accent : 'coral';
+    const surface = surfaces.has(b.surface) ? b.surface : 'paper';
+    const density = densities.has(b.density) ? b.density : 'balanced';
+    const modules = (b.modules || []).map(m => {
+      const block = m && m.block;
+      const fn = block && BLOCK[block.type];
+      if(!fn || block.type === 'generative_report' || block.type === 'reportset' || block.type === 'tabreport') return '';
+      const kind = kinds.has(m.kind) ? m.kind : 'metric';
+      const presentation = presentations.has(m.presentation) ? m.presentation : 'card';
+      const weight = emphasis.has(m.emphasis) ? m.emphasis : 'normal';
+      const span = Math.max(4, Math.min(12, Number.parseInt(m.span, 10) || 6));
+      return '<section class="skillModule skillModule--' + kind +
+        ' skillModule--' + presentation + ' skillModule--' + weight +
+        '" style="grid-column:span ' + span + '">' + fn(block) + '</section>';
+    }).filter(Boolean).join('');
+    if(!modules) return '';
+    return '<div class="skillReport skillReport--' + surface + ' skillReport--' + accent +
+      ' skillReport--' + density + '" data-layout="' + esc(b.fingerprint || '') + '">' +
+      '<div class="skillReportHead"><span>FEEDiT / GENERATED VIEW</span><em>' +
+      String((b.modules || []).length).padStart(2,'0') + ' MODULES</em></div>' +
+      '<div class="skillReportTitle">' + esc(b.title || 'FEEDiT SIGNAL') + '</div>' +
+      '<div class="skillCanvas">' + modules + '</div></div>';
+  },
+
+  /* 이전 적응형 응답 호환용. 새 응답은 generative_report 를 쓴다. */
+  reportset: b => {
+    const allowed = new Set(['ranking','pulse','compare','recommend','personal','evidence','context','mixed']);
+    const variant = allowed.has(b.variant) ? b.variant : 'mixed';
+    const sections = b.sections || [];
+    if(!sections.length) return '';
+    const nested = sb => {
+      const fn = sb && BLOCK[sb.type];
+      if(!fn || sb.type === 'reportset' || sb.type === 'tabreport') return '';
+      const slot = ['full','left','right'].includes(sb.slot) ? sb.slot : 'full';
+      return '<div class="rpNested rpNested--' + slot + ' rpNested--' + esc(sb.type) + '">' + fn(sb) + '</div>';
+    };
+    const section = s => {
+      const key = ['trend','taste','recommendation','evidence','context'].includes(s.key) ? s.key : 'evidence';
+      const body = s.state === 'ready'
+        ? (s.blocks || []).map(nested).filter(Boolean).join('')
+        : '<div class="rpTabEmpty">' + esc(s.message || '아직 연결되어 있지 않습니다.') + '</div>';
+      if(!body) return '';
+      return '<section class="rpReportSection rpReportSection--' + key + '">' +
+        '<div class="rpReportSectionHead"><span>' + esc(s.label || '') + '</span>' +
+        '<em>' + (s.state === 'ready' ? 'READY' : 'NOT CONNECTED') + '</em></div>' +
+        '<div class="rpReportSectionBody">' + body + '</div></section>';
+    };
+    const body = sections.map(section).filter(Boolean).join('');
+    if(!body) return '';
+    return '<div class="rpReport rpReport--' + variant + '">' +
+      '<div class="rpReportHead"><span>' + esc(b.label || 'FEEDIT BRIEF') + '</span>' +
+      '<em>' + String(sections.length).padStart(2,'0') + ' SIGNALS</em></div>' +
+      '<div class="rpReportGrid">' + body + '</div></div>';
+  },
+
+  /* 탭 리포트 (구조안 02) — 취향분석·트렌드지표·상품추천을 탭 3개로 묶는다.
+     ★ 트렌드 탭 안의 blocks 는 위에 이미 있는 렌더러(rank/kpis/bars/quotes…)를
+       그대로 재사용한다 — 탭은 그릇일 뿐, 값을 그리는 규칙을 새로 만들지 않는다.
+     ★ state !== 'ready' 인 탭(취향분석·상품추천, 서버가 아직 데이터가 없다고
+       한 것)은 빈 칸을 숨기지 않고 message 를 그대로 보여준다(rpTabEmpty) —
+       서버 쪽 "값은 도구에서만 나온다" 원칙과 같은 자세다. */
+  tabreport: b => {
+    const tabs = b.tabs || [];
+    if(!tabs.length) return '';
+    const body = t => (t.state === 'ready')
+      ? (t.blocks || []).map(sb => { const fn = BLOCK[sb.type]; return fn ? fn(sb) : ''; }).filter(Boolean).join('')
+      : '<div class="rpTabEmpty">' + esc(t.message || '아직 연결되어 있지 않습니다.') + '</div>';
+    const nav = tabs.map((t, i) =>
+      '<button type="button" class="rpTabBtn' + (i === 0 ? ' on' : '') + '" data-tab="' + esc(t.key) + '">' +
+      esc(t.label) + '</button>').join('');
+    const panels = tabs.map((t, i) =>
+      '<div class="rpTabPanel' + (i === 0 ? ' on' : '') + '" data-panel="' + esc(t.key) + '">' + body(t) + '</div>').join('');
+    return '<div class="tabreport"><div class="rpTabs">' + nav + '</div>' + panels + '</div>';
+  },
 };
 
 export function reportHTML(rep){

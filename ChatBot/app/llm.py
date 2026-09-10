@@ -88,6 +88,10 @@ ROLES: dict[str, tuple[str, str]] = {
     #   루프가 14초를 쓰고 마무리에 4초가 갔는데 그 4초 안에 못 끝냈다.
     #   effort 를 낮추면 같은 4초 안에 쓴다. 여기서 판단이 나빠질 일은 없다.
     "finish":         (MODEL_SMALL, "low"),      # 모은 결과를 문장으로만 옮긴다
+    # ★ 2026-09-10 — 이미지 첨부. 사진 속 옷을 보고 설명·판단하는 자리라
+    #   판단이 필요하지만(advisor 급), 도구 루프처럼 여러 바퀴를 돌지는 않는
+    #   한 번짜리 호출이라 medium 대신 low로 둔다.
+    "vision":         (MODEL_MID,   "low"),      # 사진을 보고 답한다
 }
 
 
@@ -344,6 +348,41 @@ def tool_result_item(call_id: str, payload: Any) -> dict:
     """도구 결과를 모델에게 되돌려줄 항목. 다음 바퀴의 input 에 넣는다."""
     return {"type": "function_call_output", "call_id": call_id,
             "output": json.dumps(payload, ensure_ascii=False, default=str)}
+
+
+# ── 이미지 첨부 (2026-09-10) ────────────────────────────────
+#   사진 한두 장을 보고 짧게 답한다. 지표 게이트·도구 루프를 거치지 않는다 —
+#   사진 속 옷이 어떤 스타일인지는 우리 DB에 없는 값이라, 애초에 도구가
+#   값을 내줄 수 있는 질문이 아니다(engine.py._vision_ask 주석 참고).
+_VISION_GENERAL = (
+    "당신은 FEEDiT 패션 트렌드 챗봇입니다. 사용자가 올린 사진을 보고 한국어로 "
+    "답하세요. 사진에 보이는 의류·아이템·색상·소재·실루엣을 구체적으로 짚고, "
+    "어울리는 스타일(코어)이 있으면 함께 언급하세요. 확실하지 않은 것은 "
+    "확실하지 않다고 말하고, 사진에 없는 브랜드명·가격·수치를 지어내지 "
+    "마세요. 2~4문장으로 간결하게 답하세요."
+)
+_VISION_SALMAL = (
+    "당신은 FEEDiT 살!말? 챗봇입니다. 사용자가 구매를 고민 중인 옷·아이템 "
+    "사진을 보고 한국어로 답하세요. 사진에서 보이는 것만 근거로 설명하고, "
+    "가격·재고·트렌드 수명주기처럼 사진만으로 알 수 없는 값은 모른다고 "
+    "분명히 밝히세요(지어내지 마세요). 사도 되는지 묻는 말투에는 판단을 "
+    "돕되, 최종 결정은 사용자 몫이라는 것을 은근히 남기세요. 2~4문장으로 "
+    "간결하게 답하세요."
+)
+
+
+def vision(question: str, images: list[str], *, mode: str = "general") -> str | None:
+    """사진(들)을 보고 짧게 답한다. 실패하면 None — 부르는 쪽(engine.py)이
+    사용자에게 실패라고 말한다. 여러 장이면 한 메시지의 content 배열에 같이
+    싣는다 — Responses API 멀티모달 입력 형식 (input_text + input_image)."""
+    r = role("vision")
+    instr = _VISION_SALMAL if mode == "salmal" else _VISION_GENERAL
+    content: list[dict] = [{"type": "input_text", "text": question or "이 사진을 봐 주세요."}]
+    for u in images[:4]:
+        content.append({"type": "input_image", "image_url": u})
+    payload = [{"role": "user", "content": content}]
+    out = respond(instr, payload, effort=r["effort"], model=r["model"], timeout=30)
+    return out["text"] if out else None
 
 
 def strict_schema(name: str, properties: dict, required: list[str]) -> dict:

@@ -17,9 +17,12 @@
   GET  /v1/llm                       LLM 배선 진단 (모델 · 키 유무 · 마지막 오류)
   GET  /v1/me?plan=FREE              플랜과 하루 한도 (아직 계정이 없어 질의로 받는다)
   POST /v1/chat                      SSE 스트림
-       {question, mode, plan, conversation_id, history?}
+       {question, mode, plan, conversation_id, history?, images?}
        history 는 [{q, intent, terms:[{canonical,facet,term_key}]}] — 최근 8턴까지.
        보내면 그쪽을 쓰고, 안 보내면 서버가 conversation_id 로 기억한 것을 쓴다.
+       images 는 data URL 문자열 배열(최대 MAX_IMAGES장, data:image/... 로 시작)이다.
+       사진이 오면 지표 게이트·도구 루프를 타지 않고 곧장 비전 모델로 간다
+       (ChatEngine._vision_ask, 2026-09-10 — 아래 이미지 첨부 절 참고).
   POST /v1/lexicon/requests          어휘 등록 요청
        {surface, facet_guess, question}
 
@@ -57,7 +60,12 @@ _DEFAULT_ORIGINS = ("http://localhost:5173", "http://127.0.0.1:5173",
 ALLOW_ORIGINS = {o.strip() for o in
                  (os.getenv("FEEDIT_CHAT_ORIGINS") or ",".join(_DEFAULT_ORIGINS)).split(",")
                  if o.strip()}
-MAX_BODY = 64 * 1024
+# ★ 이미지 첨부(2026-09-10) 전에는 64KB였다. 사진은 base64로 실려 오면
+#   원본보다 33% 정도 불어나므로, 프론트가 축소·압축해 보내는 걸 전제로 하고도
+#   여유를 넉넉히 둔다. MAX_IMAGES · MAX_IMAGE_DATAURL 이 실제 상한을 잡는다.
+MAX_BODY = 8 * 1024 * 1024
+MAX_IMAGES = 3
+MAX_IMAGE_DATAURL = 6 * 1024 * 1024   # data URL 문자열 길이 기준 — 대략 디코딩 4.5MB
 
 # ── 밖에 열 때의 최소 방어 ──────────────────────────────────
 #   ★ 이건 로그인이 아니다. "주소를 아무도 모른다" 는 방어가 아니라서 둔다 —
@@ -371,6 +379,23 @@ class Handler(BaseHTTPRequestHandler):
         # 안 보내면 서버 메모리의 같은 conversation_id 를 쓴다.
         hist = req.get("history") if isinstance(req.get("history"), list) else None
 
+        # ── 이미지 첨부 (2026-09-10) ─────────────────────────
+        #   data URL 문자열만 받는다 — 형식이 아니면(잘못된 값·주소만 온 것 등)
+        #   조용히 버린다. 개수·장당 용량은 여기서 미리 자른다 —
+        #   ChatEngine 안까지 큰 문자열을 들고 가지 않게.
+        images_in = req.get("images") if isinstance(req.get("images"), list) else []
+        images: list[str] = []
+        for u in images_in[:MAX_IMAGES]:
+            if not isinstance(u, str):
+                continue
+            u = u.strip()
+            if not u.startswith("data:image/"):
+                continue
+            if len(u) > MAX_IMAGE_DATAURL:
+                return self._json(400, {"ok": False, "error": "IMAGE_TOO_LARGE",
+                                        "message": "이미지 용량이 너무 큽니다. 더 작은 이미지로 다시 시도해 주세요."})
+            images.append(u)
+
         if not daily_ok(self._client_ip(), plan):
             limit = plans.QUOTA[plans.FREE]["turns"]
             return self._json(429, {
@@ -408,7 +433,7 @@ class Handler(BaseHTTPRequestHandler):
 
             rep = e.ask(question, mode=mode, plan=plan,
                         conversation_id=conv, history_in=hist, extra=extra,
-                        on_progress=say)
+                        on_progress=say, images=images or None)
 
             if not rep.get("ok"):
                 # 실패도 대화다. 에러 코드로 끝내지 않고 할 말을 준다.

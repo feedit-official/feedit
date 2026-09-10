@@ -194,6 +194,17 @@ FEEDiT 는 SNS·커머스를 수집해 용어별 트렌드 지표를 계산하�
    형식: `[다음] 아디다스와 트랙탑 중 어느 쪽을 더 볼까요?` — 한 줄, 한 질문.
    물을 것이 없으면 안 써도 된다.
 
+12. **조회 결과가 생기면 compose_report 로 화면을 직접 구성한다.** 데이터 조회를
+   모두 마친 뒤, 최종 문장을 쓰기 직전에 정확히 한 번 부른다. 이것은 완성 양식을
+   고르는 도구가 아니다. 이번 질문에 필요한 모듈만 고르고, 각 모듈의 표현 역할·
+   12열 폭·강조도와 전체 색·표면·밀도를 조합하는 UI 스킬이다.
+   - 이미 받은 도구 결과에 있는 kind 와 term 만 쓴다. 없는 지표를 화면에 만들지 마라.
+   - 가장 중요한 결과는 hero/strong/넓은 span, 보조 근거는 editorial 또는 compact 로
+     두되 매 질문의 정보 관계에 맞춰 직접 배치한다.
+   - HTML·CSS·수치·상품명은 만들지 않는다. 데이터는 서버가 실제 결과와 결합한다.
+   - compose_report 를 부른 뒤에는 다른 도구를 부르지 말고 바로 답을 쓴다.
+   - 조회 결과가 전혀 없거나 ask_user 로 되묻는 경우에는 부르지 않는다.
+
 ## 도구 고르는 법
 - 질문이 용어를 지목했으면 → search_terms 로 정확한 표기를 얻고 get_metric
 - 용어를 지목하지 않았는데 "요즘 뭐가 핫해" 류면 → rank_terms
@@ -372,6 +383,23 @@ def _sig(name: str, args: dict) -> str:
         return name + "|?"
 
 
+_REPORT_MATERIAL = {
+    "rank_terms", "get_metric", "get_evidence", "get_user_taste",
+    "season_fit", "similar_terms", "declare_missing",
+}
+
+
+def _has_report_material(trace) -> bool:
+    """문장뿐 아니라 구조화 화면으로 보여 줄 도구 결과가 있는가."""
+    return any(c.get("tool") in _REPORT_MATERIAL for c in (trace.calls if trace else []))
+
+
+def _has_report_design(trace) -> bool:
+    return any(c.get("tool") == "compose_report" and
+               isinstance(c.get("result"), dict) and c["result"].get("ok")
+               for c in (trace.calls if trace else []))
+
+
 def run(question: str, *, store, gate, ctx: dict | None = None,
         history: list[dict] | None = None, salmal=None, taste=None,
         websearch=None, on_progress=None, deadline: float | None = None) -> Result:
@@ -391,6 +419,7 @@ def run(question: str, *, store, gate, ctx: dict | None = None,
     items: list[Any] = [{"role": "user", "content": _ctx_block(question, ctx, history)}]
     seen: set[str] = set()
     per_tool: dict[str, int] = {}      # 도구 이름 → 부른 횟수 (MAX_PER_TOOL)
+    pending_answer = ""               # 디자인 호출을 빼먹은 답은 잠시 보류한다.
     started = time.monotonic()
     # ★ 마감시각은 밖에서 온다(agent_path). 혼자 돌 때만 여기서 만든다 —
     #   그래야 _finish · verify 까지 같은 하나를 나눠 쓴다(18번).
@@ -432,7 +461,23 @@ def run(question: str, *, store, gate, ctx: dict | None = None,
 
         if not calls:
             # 도구를 더 안 부른다 = 답할 준비가 됐다.
-            out.answer = (res.get("text") or "").strip()
+            candidate = (res.get("text") or "").strip()
+            # compose_report 는 프롬프트 권고가 아니라 출력 파이프라인이다.
+            # 모델이 조회 뒤 바로 문장을 써도 한 바퀴가 남아 있으면 답을 보류하고
+            # 디자인 도구 호출을 요구한다. 호출이 끝나면 보류한 문장을 그대로 써서
+            # 같은 답을 다시 생성하는 왕복은 만들지 않는다.
+            if (candidate and _has_report_material(box.trace)
+                    and not _has_report_design(box.trace) and rnd < MAX_ROUNDS - 1):
+                pending_answer = candidate
+                items.extend(raw.get("output") or [])
+                items.append({
+                    "role": "user",
+                    "content": ("답변 본문은 준비됐습니다. 출력하기 전에 방금 조회한 실제 "
+                                "결과만 사용해 compose_report 를 정확히 한 번 부르세요. "
+                                "새 데이터 도구는 부르지 마세요."),
+                })
+                continue
+            out.answer = candidate
             out.stopped = "done"
             break
 
@@ -454,6 +499,11 @@ def run(question: str, *, store, gate, ctx: dict | None = None,
                     {"skipped": "같은 인자로 이미 불렀습니다. 결과가 위에 있습니다."}))
                 continue
             used = per_tool.get(c["name"], 0)
+            if c["name"] == "compose_report" and used >= 1:
+                items.append(llm.tool_result_item(
+                    c["call_id"],
+                    {"skipped": "compose_report 는 이미 구성했습니다. 다시 부르지 말고 답을 쓰십시오."}))
+                continue
             if c["name"] not in NO_CAP and used >= MAX_PER_TOOL:
                 # 인자를 바꿔 가며 같은 도구를 계속 부르는 자리.
                 # 막기만 하면 또 부르므로, **무엇을 하라고** 같이 적어 준다.
@@ -480,6 +530,13 @@ def run(question: str, *, store, gate, ctx: dict | None = None,
                         pass
             result = box.run(c["name"], c["args"])
             items.append(llm.tool_result_item(c["call_id"], result))
+
+        # 보류된 답이 있고 디자인 스킬 호출이 끝났으면 같은 문장을 다시 쓰게
+        # 하지 않는다. 여기서 바로 닫아 지연과 비용을 한 바퀴 줄인다.
+        if pending_answer and _has_report_design(box.trace):
+            out.answer = pending_answer
+            out.stopped = "done"
+            break
 
         if box.trace.asked:
             # 되묻기가 걸렸다. 더 부를 이유가 없다.

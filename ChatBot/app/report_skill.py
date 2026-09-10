@@ -1,0 +1,151 @@
+"""도구 결과를 매 요청마다 새로운 리포트 캔버스로 조립한다.
+
+이 모듈은 ``ranking``/``pulse`` 같은 완성 양식을 고르지 않는다. 오케스트레이터가
+데이터를 조회한 뒤 ``compose_report`` 도구로 남긴 UI 스펙을 읽고, 실제 데이터
+블록을 그 스펙에 결합한다.
+
+모델이 정하는 것
+  · 어떤 결과를 보여 줄지
+  · 각 결과의 표현 역할(hero/card/chart/list/editorial/compact)
+  · 12열 캔버스에서 차지할 폭과 강조도
+  · 전체 색·표면·밀도
+
+모델이 정하지 못하는 것
+  · 수치·상품·출처 자체
+  · HTML·CSS·스크립트
+
+모든 내용은 ``catalog`` 에 이미 있는 블록 id 로만 결합된다. 존재하지 않는
+kind/term 을 요청하면 조용히 제외한다. 모델 호출이 끊겨 스펙이 없을 때는 콘텐츠를
+순서대로 흘리는 안전한 폴백을 쓰지만, 이 역시 이름 붙은 완성 양식은 아니다.
+"""
+from __future__ import annotations
+
+import hashlib
+import json
+from typing import Any
+
+
+KINDS = {
+    "ranking", "comparison", "metric", "direction", "sources",
+    "associations", "sentiment", "recommendations", "taste", "context",
+    "evidence", "links", "missing",
+}
+PRESENTATIONS = {"hero", "card", "chart", "list", "editorial", "compact"}
+EMPHASIS = {"strong", "normal", "quiet"}
+ACCENTS = {"coral", "ink", "violet", "blue", "lime"}
+SURFACES = {"paper", "soft", "contrast", "glass"}
+DENSITIES = {"airy", "balanced", "compact"}
+MAX_MODULES = 9
+
+
+def _pick(value: Any, allowed: set[str], fallback: str) -> str:
+    value = str(value or "")
+    return value if value in allowed else fallback
+
+
+def _span(value: Any, fallback: int = 6) -> int:
+    try:
+        return max(4, min(12, int(value)))
+    except (TypeError, ValueError):
+        return fallback
+
+
+def design_from(trace) -> dict | None:
+    """가장 마지막 ``compose_report`` 결과만 읽는다."""
+    for call in reversed(trace.calls if trace else []):
+        if call.get("tool") != "compose_report":
+            continue
+        result = call.get("result")
+        if isinstance(result, dict) and result.get("ok") and isinstance(result.get("spec"), dict):
+            return result["spec"]
+    return None
+
+
+def _match(catalog: list[dict], used: set[str], kind: str,
+           term: str | None) -> dict | None:
+    candidates = [c for c in catalog if c.get("id") not in used and c.get("kind") == kind]
+    if term:
+        exact = [c for c in candidates if str(c.get("term") or "") == term]
+        if exact:
+            return exact[0]
+        return None
+    return candidates[0] if candidates else None
+
+
+def _fallback_modules(catalog: list[dict]) -> list[dict]:
+    """디자인 호출 실패 시 데이터 순서를 보존하는 유동형 캔버스."""
+    out = []
+    for i, content in enumerate(catalog[:MAX_MODULES]):
+        kind = content.get("kind")
+        strong = i == 0 and kind not in ("links", "missing")
+        out.append({
+            "content": content,
+            "presentation": "hero" if strong else ("editorial" if kind in ("evidence", "links") else "card"),
+            "span": 12 if strong or kind in ("ranking", "comparison", "missing") else 6,
+            "emphasis": "strong" if strong else ("quiet" if kind in ("links", "missing") else "normal"),
+        })
+    return out
+
+
+def build(catalog: list[dict], trace) -> dict | None:
+    """검증된 콘텐츠 카탈로그와 모델의 UI 스펙을 하나의 캔버스로 결합한다."""
+    catalog = [c for c in catalog if isinstance(c, dict) and c.get("id") and c.get("block")]
+    if not catalog:
+        return None
+
+    spec = design_from(trace)
+    modules: list[dict] = []
+    used: set[str] = set()
+    if spec:
+        for request in (spec.get("modules") or [])[:MAX_MODULES]:
+            if not isinstance(request, dict):
+                continue
+            kind = _pick(request.get("kind"), KINDS, "")
+            term = request.get("term")
+            term = str(term).strip() if term is not None else None
+            content = _match(catalog, used, kind, term)
+            if not content:
+                continue
+            used.add(content["id"])
+            modules.append({
+                "content": content,
+                "presentation": _pick(request.get("presentation"), PRESENTATIONS, "card"),
+                "span": _span(request.get("span")),
+                "emphasis": _pick(request.get("emphasis"), EMPHASIS, "normal"),
+            })
+
+    # 없는 자료를 숨기는 디자인은 허용하지 않는다. missing 은 모델이 빼도 끝에 붙인다.
+    for content in catalog:
+        if content.get("kind") == "missing" and content["id"] not in used:
+            used.add(content["id"])
+            modules.append({"content": content, "presentation": "compact",
+                            "span": 12, "emphasis": "quiet"})
+
+    if not modules:
+        modules = _fallback_modules(catalog)
+        source = "fallback"
+        title, accent, surface, density = "FEEDiT SIGNAL", "coral", "paper", "balanced"
+    else:
+        source = "model"
+        title = str(spec.get("title") or "FEEDiT SIGNAL").strip()[:48]
+        accent = _pick(spec.get("accent"), ACCENTS, "coral")
+        surface = _pick(spec.get("surface"), SURFACES, "paper")
+        density = _pick(spec.get("density"), DENSITIES, "balanced")
+
+    serial = json.dumps({
+        "source": source, "accent": accent, "surface": surface, "density": density,
+        "modules": [(m["content"]["id"], m["presentation"], m["span"], m["emphasis"])
+                    for m in modules],
+    }, ensure_ascii=False, sort_keys=True)
+    fingerprint = hashlib.sha1(serial.encode("utf-8")).hexdigest()[:10]
+
+    return {
+        "type": "generative_report", "slot": "full", "title": title,
+        "accent": accent, "surface": surface, "density": density,
+        "source": source, "fingerprint": fingerprint,
+        "modules": [{
+            "id": m["content"]["id"], "kind": m["content"]["kind"],
+            "presentation": m["presentation"], "span": m["span"],
+            "emphasis": m["emphasis"], "block": m["content"]["block"],
+        } for m in modules],
+    }

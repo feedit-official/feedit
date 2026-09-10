@@ -250,6 +250,45 @@ SPECS: list[dict] = [
         ["terms", "limit"],
     ),
     _fn(
+        "compose_report",
+        "조회가 끝난 뒤 이번 답에 필요한 결과만 골라 화면을 직접 구성하는 UI 스킬이다. "
+        "완성 템플릿을 고르는 도구가 아니다. 데이터 모듈의 표현 방식과 12열 폭, "
+        "강조도를 조합해 매 요청마다 새 캔버스를 만든다. 데이터가 있는 답에서는 최종 "
+        "문장을 쓰기 직전에 정확히 한 번 부른다. kind 는 이미 호출한 도구 결과에 있는 "
+        "것만 쓴다: rank_terms=ranking, 둘 이상 get_metric=comparison, get_metric=metric, "
+        "모멘텀=direction, 출처별=sources, 연관어=associations, 긍부정=sentiment, "
+        "similar_terms=recommendations, get_user_taste=taste, season_fit=context, "
+        "get_evidence=evidence/links, declare_missing=missing. term 은 특정 용어 모듈이면 "
+        "그 정확한 표기를 쓰고 공통 모듈이면 null. HTML·CSS나 수치·상품을 인자에 쓰지 마라.",
+        {
+            "title": {"type": "string", "description": "짧은 리포트 제목. 수치를 넣지 않는다"},
+            "accent": {"type": "string", "enum": ["coral", "ink", "violet", "blue", "lime"]},
+            "surface": {"type": "string", "enum": ["paper", "soft", "contrast", "glass"]},
+            "density": {"type": "string", "enum": ["airy", "balanced", "compact"]},
+            "modules": {
+                "type": "array", "maxItems": 9,
+                "items": {
+                    "type": "object", "additionalProperties": False,
+                    "properties": {
+                        "kind": {"type": "string", "enum": [
+                            "ranking", "comparison", "metric", "direction", "sources",
+                            "associations", "sentiment", "recommendations", "taste",
+                            "context", "evidence", "links", "missing"]},
+                        "term": {"type": ["string", "null"],
+                                 "description": "특정 용어 모듈이면 정확한 용어, 공통이면 null"},
+                        "presentation": {"type": "string", "enum": [
+                            "hero", "card", "chart", "list", "editorial", "compact"]},
+                        "span": {"type": "integer", "minimum": 4, "maximum": 12,
+                                 "description": "12열 캔버스에서 차지할 열 수"},
+                        "emphasis": {"type": "string", "enum": ["strong", "normal", "quiet"]},
+                    },
+                    "required": ["kind", "term", "presentation", "span", "emphasis"],
+                },
+            },
+        },
+        ["title", "accent", "surface", "density", "modules"],
+    ),
+    _fn(
         "ask_user",
         "무엇을 볼지 되묻는다. 실패가 아니라 정상 행동이다. "
         "'이거 어때?' 처럼 정보가 질문에 없어 어떤 모델도 풀 수 없을 때 쓴다. "
@@ -364,6 +403,8 @@ def progress_say(name: str, args: dict) -> str | None:
         return f"{head}비슷한 고민 찾는 중"
     if name == "get_user_taste":
         return "취향에 맞춰 보는 중"
+    if name == "compose_report":
+        return "결과에 맞는 화면을 구성하는 중"
     if name == "web_search":
         return "밖에서 찾아보는 중"
     # ask_user · declare_missing 은 조회가 아니다. 진행 표시를 낼 것이 없다.
@@ -408,13 +449,17 @@ class TraceLog:
             elif isinstance(v, str) and v.replace(".", "", 1).lstrip("-").isdigit():
                 seen.add(_numstr(float(v) if "." in v else int(v)))
 
-        walk(self.calls)
+        # compose_report 의 span·제목은 화면 배치값이지 조회 사실이 아니다.
+        # 검증 숫자에 섞이면 모델이 만든 숫자가 도구 근거인 것처럼 통과한다.
+        walk([c for c in self.calls if c.get("tool") != "compose_report"])
         return seen
 
     def terms(self) -> set[str]:
         """도구 결과에 등장한 용어·라벨. 없는 말을 지어냈는지 볼 때 쓴다."""
         out: set[str] = set()
         for c in self.calls:
+            if c.get("tool") == "compose_report":
+                continue
             for k in ("term", "q"):
                 if isinstance(c["args"].get(k), str):
                     out.add(c["args"][k])
@@ -771,6 +816,51 @@ class Toolbox:
             return {"logged_in": True,
                     "unavailable": "취향 데이터 연결이 아직 없습니다."}
         return self.taste.of(uid)
+
+    # ── 출력 디자인 스킬 ─────────────────────────────────
+    def t_compose_report(self, title: str, accent: str, surface: str,
+                         density: str, modules: Any) -> dict:
+        """모델의 UI 결정을 기록한다. 데이터는 여기서 만들지 않는다.
+
+        실제 모듈 존재 여부는 agent_blocks → report_skill 이 궤적과 다시 맞춘다.
+        이 도구는 안전한 디자인 어휘만 남기므로 HTML/CSS 주입 경로가 없다.
+        """
+        allowed = {
+            "kinds": {"ranking", "comparison", "metric", "direction", "sources",
+                      "associations", "sentiment", "recommendations", "taste", "context",
+                      "evidence", "links", "missing"},
+            "presentations": {"hero", "card", "chart", "list", "editorial", "compact"},
+            "emphasis": {"strong", "normal", "quiet"},
+            "accents": {"coral", "ink", "violet", "blue", "lime"},
+            "surfaces": {"paper", "soft", "contrast", "glass"},
+            "densities": {"airy", "balanced", "compact"},
+        }
+        clean = []
+        for raw in (modules if isinstance(modules, list) else [])[:9]:
+            if not isinstance(raw, dict) or raw.get("kind") not in allowed["kinds"]:
+                continue
+            try:
+                span = max(4, min(12, int(raw.get("span") or 6)))
+            except (TypeError, ValueError):
+                span = 6
+            clean.append({
+                "kind": raw["kind"],
+                "term": (str(raw["term"]).strip() if raw.get("term") is not None else None),
+                "presentation": (raw.get("presentation") if raw.get("presentation") in
+                                 allowed["presentations"] else "card"),
+                "span": span,
+                "emphasis": (raw.get("emphasis") if raw.get("emphasis") in
+                             allowed["emphasis"] else "normal"),
+            })
+        spec = {
+            "title": str(title or "FEEDiT SIGNAL").strip()[:48],
+            "accent": accent if accent in allowed["accents"] else "coral",
+            "surface": surface if surface in allowed["surfaces"] else "paper",
+            "density": density if density in allowed["densities"] else "balanced",
+            "modules": clean,
+        }
+        return {"ok": True, "skill": "generative-report-v1", "spec": spec,
+                "note": "실제 조회 결과와 일치하는 모듈만 화면에 결합됩니다."}
 
     # ── 밖 ──────────────────────────────────────────────
     def t_web_search(self, q: str) -> dict:

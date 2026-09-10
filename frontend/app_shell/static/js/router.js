@@ -1,7 +1,7 @@
 import { $, $$, HAS_A, aAnimate, aSpring, aStagger, aTimeline, aUtils } from '../../../core/static/js/dom.js';
 import { AUTH, acctBoot, likeClick, myRender, requireAuth, resetSignupForm } from '../../../account/static/js/profile.js';
-import { M_CHIPS, SM_ON, hotBuild, newChat, qRoll, sendChat, smSwitch } from '../../../home/static/js/chat.js';
-import { closeChatPopup, cpEditTitle, cpNewConvo, cpRenderList, cpRenderThread, cpSend, cpStore, cpToggleMode, openChatWith } from '../../../home/static/js/chat_popup.js';
+import { SM_ON, hotBuild, mImgInit, newChat, qRoll, sendChat, smSwitch } from '../../../home/static/js/chat.js';
+import { closeChatPopup, cpEditTitle, cpImgInit, cpNewConvo, cpRenderList, cpRenderThread, cpSend, cpStore, cpToggleMode, openChatWith } from '../../../home/static/js/chat_popup.js';
 import { mPaintVote, mVote, smBuild } from '../../../salmal/static/js/nav_widget.js';
 import { prBuild } from '../../../pricing/static/js/pricing.js';
 import { renderDeck } from '../../../intro/static/js/deck.js';
@@ -167,9 +167,6 @@ function goStyle(id){
 
 /* ── 조립 ───────────────────────────────────────────── */
 (function buildMain(){
-  const ch=$('#mChips');
-  if(ch) ch.innerHTML=M_CHIPS.map((c,i)=>
-    '<button class="chip'+(i?'':' on')+'" data-ans="'+c[1]+'">'+c[0]+'</button>').join('');
   $$('#mState .ln').forEach(ln=>{
     const parts=[...ln.childNodes]; ln.innerHTML='';
     parts.forEach(node=>{
@@ -182,7 +179,7 @@ function goStyle(id){
       }else{ const s=document.createElement('span'); s.className='wd'; s.appendChild(node); ln.appendChild(s) }
     });
   });
-  hotBuild(); trBuild(); smBuild(); stBuild(); prBuild(); mPaintVote(); acctBoot();
+  hotBuild(); trBuild(); smBuild(); stBuild(); prBuild(); mPaintVote(); acctBoot(); mImgInit(); cpImgInit();
 })();
 
 /* ── 상호작용 ───────────────────────────────────────── */
@@ -202,11 +199,6 @@ document.addEventListener('click',e=>{
   if(tr){ $$('.sItem').forEach(x=>x.classList.remove('on')); tr.classList.add('on');
           curTr=tr.dataset.tr; pushNav();
           return trRender(tr.dataset.tr) }
-  const chip=e.target.closest('.chip[data-ans]');
-  if(chip){
-    $$('#mChips .chip').forEach(c=>c.classList.remove('on')); chip.classList.add('on');
-    return openChatWith(chip.textContent,chip.dataset.ans);
-  }
   const vt=e.target.closest('[data-vote]'); if(vt)return mVote(vt.dataset.vote);
 });
 $('#mHome')&&$('#mHome').addEventListener('click',()=>goView('home'));

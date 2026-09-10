@@ -15,25 +15,21 @@
 그래서 여기서는 **도구를 실제로 부른 기록(TraceLog)** 만 읽고, 값은 store 에서
 다시 가져온다(report.build_term). 문장과 그림의 출처가 같아진다.
 
-── 구조는 서버가 정한다 (blocks.py 머리말) ──────────────────
-블록의 종류와 모양은 blocks.py 가 이미 정해 두었고 프론트(chat_api.js BLOCK)에
-그대로 있다. 여기서 새 블록 타입을 만들지 않는다 — 프론트가 모르는 type 은
-말없이 안 그려지므로, 지어내면 조용한 빈 칸이 된다.
-
-무엇을 그릴지는 **어떤 도구를 불렀는지**가 정한다. 의도 코드로 고르지 않는다.
-get_metric 이 '출처별' 을 달라고 했으면 플랫폼 막대를 그린다 — 모델이 그걸
-필요하다고 판단했다는 뜻이기 때문이다.
+── 구조도 도구 결과가 된다 (2026-09-10) ───────────────────
+오케스트레이터는 조회를 마친 뒤 compose_report 를 부른다. 이 도구는 완성 양식의
+이름을 고르지 않고, 실제 결과 모듈의 표현 역할·폭·강조도·색을 매번 조합한다.
+여기서는 그 스펙을 실제 블록 카탈로그와 결합한다. 모델이 없는 모듈을 요청해도
+카탈로그에 없으면 붙지 않으므로, 디자인 경로로 값이 새어 나오지 않는다.
 """
 from __future__ import annotations
 
 from typing import Any
 
 from . import blocks as B
-from . import report
+from . import report, report_skill
 from .tools import FACET_SAY          # 축 한글 이름 — 화면 문구를 도구와 맞춘다
 
-MAX_TERMS = 2       # 카드 하나에 term 둘까지. 셋이면 2단 그리드가 흘러넘친다.
-MAX_BLOCKS = 7
+MAX_TERMS = 4       # 생성형 12열 캔버스라 비교 대상을 둘에 고정하지 않는다.
 
 
 def _facet_of(term_key: str, fallback: str | None = None) -> str | None:
@@ -64,7 +60,8 @@ def _key_for(term: str, gate, store, hint: str | None) -> str:
 def _scan(trace) -> dict[str, Any]:
     """궤적에서 '무엇을 조회했나' 만 뽑는다. 값은 여기서 쓰지 않는다."""
     got: dict[str, Any] = {"metric": {}, "facets": {}, "evidence": set(),
-                           "rank": None, "web": None, "as_of": None, "similar": None}
+                           "rank": None, "web": None, "as_of": None, "similar": None,
+                           "taste": None, "season": None}
     for c in (trace.calls if trace else []):
         name, args = c.get("tool"), (c.get("args") or {})
         res = c.get("result")
@@ -94,6 +91,12 @@ def _scan(trace) -> dict[str, Any]:
             got["similar"] = res
         elif name == "web_search" and (res.get("items") or []):
             got["web"] = res
+        elif name == "get_user_taste":
+            # unavailable 도 질문의 의미를 드러내는 결과다. 사용자가 취향을
+            # 요청했는데 데이터가 없었다면 그 사실을 해당 섹션에서 말한다.
+            got["taste"] = res
+        elif name == "season_fit" and (res.get("items") or res.get("unknown")):
+            got["season"] = res
     return got
 
 
@@ -188,7 +191,79 @@ def _evidence_links(node: dict) -> dict | None:
     return {"type": "links", "slot": "right", "items": items}
 
 
-def build(trace, store, gate) -> list[dict]:
+def _taste_section(res: dict | None) -> dict | None:
+    """취향 도구가 실제로 불렸을 때만 섹션을 만든다.
+
+    현재 어댑터는 대부분 unavailable 이다. 미래 어댑터가 ``items`` 또는
+    ``tags`` 로 이름·점수를 주면 기존 rank 블록으로 바로 그릴 수 있게 하되,
+    알 수 없는 모양을 짐작해 채우지는 않는다.
+    """
+    if not isinstance(res, dict):
+        return None
+    if res.get("unavailable"):
+        return {"key": "taste", "label": "취향분석", "state": "unavailable",
+                "message": str(res["unavailable"])}
+    if res.get("logged_in") is False:
+        return {"key": "taste", "label": "취향분석", "state": "unavailable",
+                "message": str(res.get("note") or "로그인하면 취향분석을 볼 수 있습니다.")}
+
+    raw = res.get("items") or res.get("tags") or []
+    rows = []
+    for item in raw[:6] if isinstance(raw, list) else []:
+        if isinstance(item, str):
+            rows.append({"k": item, "small": "", "v": "", "up": True})
+            continue
+        if not isinstance(item, dict):
+            continue
+        name = item.get("canonical") or item.get("name") or item.get("tag")
+        if not name:
+            continue
+        value = item.get("score", item.get("match", item.get("value")))
+        rows.append({"k": str(name), "small": str(item.get("why") or ""),
+                     "v": (str(value) if value is not None else ""), "up": True})
+    if rows:
+        return {"key": "taste", "label": "취향분석", "state": "ready",
+                "blocks": [{"type": "rank", "slot": "full", "title": "나의 취향",
+                            "meta": "", "rows": rows}]}
+    return {"key": "taste", "label": "취향분석", "state": "unavailable",
+            "message": "취향 데이터 형식을 확인하지 못해 화면에 표시하지 않았습니다."}
+
+
+def _season_blocks(res: dict | None) -> list[dict]:
+    """season_fit 결과를 일반 착용 기준 섹션으로 만든다."""
+    if not isinstance(res, dict):
+        return []
+    rows = []
+    for item in (res.get("items") or [])[:6]:
+        if not isinstance(item, dict) or not item.get("term"):
+            continue
+        verdict = str(item.get("verdict") or "—")
+        rows.append({"k": str(item["term"]), "small": str(item.get("say") or ""),
+                     "v": verdict, "up": verdict in ("적합", "무관")})
+    for term in (res.get("unknown") or [])[:3]:
+        rows.append({"k": str(term), "small": "착용 기준표에 없는 항목입니다.",
+                     "v": "판단 안 함", "up": False})
+    if not rows:
+        return []
+    basis = str(res.get("basis") or "")
+    return [
+        {"type": "rank", "slot": "full", "title": "상황에 맞는지",
+         "meta": basis, "rows": rows},
+        {"type": "note", "slot": "full",
+         "text": "일반적인 착용 기준이며 FEEDiT 트렌드 측정값이 아닙니다."},
+    ]
+
+
+def _content(kind: str, block: dict | None, *, term: str | None = None,
+             suffix: str = "") -> dict | None:
+    """실제 블록에 안정적인 참조 id 를 붙여 디자인 스킬용 카탈로그로 만든다."""
+    if not block:
+        return None
+    ident = f"{kind}:{term or 'all'}" + (f":{suffix}" if suffix else "")
+    return {"id": ident, "kind": kind, "term": term, "block": block}
+
+
+def build(trace, store, gate, question: str = "") -> list[dict]:
     """궤적 → 블록 목록. 조회한 것이 없으면 빈 목록을 돌려준다.
 
     빈 목록이면 agent_path 가 report 이벤트를 보내지 않는다 — 빈 카드를
@@ -198,17 +273,7 @@ def build(trace, store, gate) -> list[dict]:
         return []
     got = _scan(trace)
     as_of = got["as_of"] or ""
-    out: list[dict] = []
-
-    if got["rank"]:
-        blk = _rank_block(got["rank"], as_of)
-        if blk:
-            out.append(blk)
-
-    if got["similar"]:
-        blk = _similar_block(got["similar"], as_of)
-        if blk:
-            out.append(blk)
+    catalog: list[dict] = []
 
     # ★ 먼저 node 를 다 만든다. 둘 이상이면 나란히 보기를 앞에 세우기 위해서다.
     built: list[tuple[str, set, dict]] = []
@@ -227,41 +292,79 @@ def build(trace, store, gate) -> list[dict]:
             continue
         built.append((term, axes, node))
 
-    # ★ 비교 질문("A랑 B 중에 뭐?")의 답은 나란히 놓는 것이다.
-    #   b_compare 는 blocks.py 에 이미 있었는데 templates.py(구 경로)에서만
-    #   불렸다. 새 경로에서도 쓴다 — 새 에이전트를 만들 일이 아니라는 것이
-    #   인수인계 문서 6장 16번의 입장이다.
-    if len(built) >= 2:
-        cmp_blk = B.b_compare([n for _, _, n in built], as_of or "")
-        if cmp_blk:
-            out.append(cmp_blk)
-
+    if got["rank"]:
+        entry = _content("ranking", _rank_block(got["rank"], as_of))
+        if entry:
+            catalog.append(entry)
+    # 비교 블록은 온도/순위를 실제로 요청했을 때만 만든다. 감성만 물었는데
+    # 온도 비교가 따라 나오면 디자인 모델이 지표를 고른다는 계약이 깨진다.
+    if len(built) >= 2 and any(axes & {"온도", "순위"} for _, axes, _ in built):
+        entry = _content("comparison", B.b_compare([n for _, _, n in built], as_of or ""))
+        if entry:
+            catalog.append(entry)
     for term, axes, node in built:
-
-        out.append(B.b_metric_rank(node, as_of or node.get("observed_on") or ""))
-        if "모멘텀" in axes:
-            got_dir = B.b_direction(node)
-            if got_dir:
-                out.append(got_dir)
-        if "출처별" in axes:
-            out.append(B.b_sources(node, as_of or ""))
-        if "연관어" in axes:
-            out.append(B.b_assoc(node))
+        entries = [
+            (_content("metric", B.b_metric_rank(node, as_of or node.get("observed_on") or ""), term=term)
+             if not axes or axes & {"온도", "순위"} else None),
+            _content("direction", B.b_direction(node), term=term) if "모멘텀" in axes else None,
+            _content("sources", B.b_sources(node, as_of or ""), term=term) if "출처별" in axes else None,
+            _content("associations", B.b_assoc(node), term=term) if "연관어" in axes else None,
+            _content("sentiment", B.b_sentiment(node), term=term, suffix="summary") if "긍부정" in axes else None,
+            _content("sentiment", B.b_sentiment_signal(node), term=term, suffix="signals") if "긍부정" in axes else None,
+        ]
+        catalog.extend(e for e in entries if e)
         if term in got["evidence"]:
-            out.append(B.b_evidence(node))
-            out.append(_evidence_links(node))
+            for entry in (
+                _content("evidence", B.b_evidence(node), term=term),
+                _content("links", _evidence_links(node), term=term),
+            ):
+                if entry:
+                    catalog.append(entry)
+
+    if got["similar"]:
+        entry = _content("recommendations", _similar_block(got["similar"], as_of),
+                         term=str(got["similar"].get("term") or "") or None)
+        if entry:
+            catalog.append(entry)
+
+    taste = _taste_section(got["taste"])
+    if taste:
+        if taste.get("state") == "ready":
+            for i, block in enumerate(taste.get("blocks") or []):
+                entry = _content("taste", block, suffix=str(i))
+                if entry:
+                    catalog.append(entry)
+        else:
+            catalog.append(_content("taste", {"type": "note", "slot": "full",
+                                               "text": taste.get("message")}))
+
+    context_blocks = _season_blocks(got["season"])
+    for i, block in enumerate(context_blocks):
+        entry = _content("context", block, suffix=str(i))
+        if entry:
+            catalog.append(entry)
 
     if got["web"]:
         src = [{"url": h.get("url"), "title": h.get("title")}
                for h in (got["web"].get("items") or [])[:4] if h.get("url")]
         if src:
-            # ★ 우리 측정값이 아니라는 것을 블록 자체에 적는다.
-            out.append({"type": "note", "slot": "left",
-                        "text": "아래 출처는 웹에서 찾은 것으로, FEEDiT 측정값이 아닙니다."})
-            out.append({"type": "links", "slot": "left", "items": src})
+            catalog.extend(filter(None, [
+                _content("evidence", {"type": "note", "slot": "full",
+                                      "text": "아래 출처는 웹에서 찾은 것으로, FEEDiT 측정값이 아닙니다."},
+                         suffix="web-note"),
+                _content("links", {"type": "links", "slot": "full", "items": src},
+                         suffix="web-links"),
+            ]))
 
-    for m in (trace.missing or [])[:2]:
-        out.append({"type": "note", "slot": "left",
-                    "text": f"{m.get('term')} — {m.get('axis')}: 아직 측정 자료가 없습니다."})
+    for i, m in enumerate((trace.missing or [])[:3]):
+        catalog.append(_content(
+            "missing",
+            {"type": "note", "slot": "full",
+             "text": f"{m.get('term')} — {m.get('axis')}: 아직 측정 자료가 없습니다."},
+            term=str(m.get("term") or "") or None, suffix=str(i)))
 
-    return [b for b in out if b][:MAX_BLOCKS]
+    catalog = [c for c in catalog if c]
+    if not catalog:
+        return []
+    canvas = report_skill.build(catalog, trace)
+    return [canvas] if canvas else []

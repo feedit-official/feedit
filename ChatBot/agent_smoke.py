@@ -9,6 +9,7 @@
     python3 agent_smoke.py                                  # 지금 .env 설정 그대로
     FEEDIT_LLM_MODEL_MID=gpt-5.6-terra python3 agent_smoke.py   # L1 만 terra 로
     FEEDIT_CHAT_TIME_BUDGET=14 python3 agent_smoke.py           # 예산만 올려서
+                                                                # (예산 = 답변 하나의 전체 시간)
     python3 agent_smoke.py "니트 요즘 어때?"                     # 질문을 직접 주기
 
 보는 곳
@@ -16,6 +17,7 @@
     stopped   done 이 아니면 무엇에 걸렸나. llm_* 는 모델 호출 실패다
     부분      끊긴 답변에 표시가 붙는가
     의심      verify 가 잡은 숫자. 비어 있어야 정상이다
+    ms        예산(전체)을 넘지 않아야 한다. 넘으면 예산 밖에서 부르는 층이 있다
 """
 from __future__ import annotations
 
@@ -45,8 +47,10 @@ def main() -> int:
         print(f"   {r:14s} {d.get('model'):18s} effort={d.get('effort')}")
     try:
         from app import orchestrator as O
-        print(f"   {'시간 예산':14s} {O.TIME_BUDGET}초 · 최대 {O.MAX_ROUNDS}바퀴 "
-              f"· 도구당 {O.MAX_PER_TOOL}회")
+        loop = O.TIME_BUDGET - O.reserve(O.TIME_BUDGET, O.TAIL_RESERVE)
+        print(f"   {'시간 예산(전체)':14s} {O.TIME_BUDGET}초 "
+              f"(루프 {loop:.1f} + 뒷정리 {O.TIME_BUDGET - loop:.1f}) "
+              f"· 최대 {O.MAX_ROUNDS}바퀴 · 도구당 {O.MAX_PER_TOOL}회")
     except Exception:                                    # noqa: BLE001
         pass
     print("=" * 70)

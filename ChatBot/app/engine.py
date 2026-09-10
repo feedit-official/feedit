@@ -43,13 +43,23 @@ class ChatEngine:
             *, conversation_id: str | None = None,
             history_in: list | None = None,
             extra: dict | None = None,
-            on_progress=None) -> dict:
+            on_progress=None,
+            images: list[str] | None = None) -> dict:
         q = " ".join(str(question or "").split())
-        if not q:
+        imgs = [u for u in (images or []) if isinstance(u, str) and u.strip()][:4]
+        if not q and not imgs:
             return {"ok": False, "reason": "EMPTY", "message": "질문을 입력해 주세요."}
         if len(q) > 500:
             return {"ok": False, "reason": "TOO_LONG",
                     "message": "질문은 500자 이하로 입력해 주세요."}
+
+        # ── 이미지 첨부 (2026-09-10) ─────────────────────────
+        #   사진이 오면 지표 게이트·도구 루프(아래 두 경로 전부)를 타지 않는다.
+        #   사진 속 옷이 어떤 스타일인지는 우리 DB 값이 아니라 모델이 보고
+        #   설명하는 것이라, 애초에 도구가 값을 내줄 수 있는 질문이 아니다.
+        #   ②어투 다듬기 · ③웹검색처럼 "LLM이 거들 뿐인 자리" 하나를 새로 둔다.
+        if imgs:
+            return self._vision_ask(q, mode, imgs, conversation_id, on_progress)
 
         # ── 새 경로 (2026-09-09) ────────────────────────────
         #   FEEDIT_CHAT_ORCHESTRATOR=1 이면 도구 루프로 간다.
@@ -176,6 +186,25 @@ class ChatEngine:
     def _remember(self, conv_id, q, intent, mode, terms):
         if conv_id:
             self.memory.add(conv_id, history.make_turn(q, intent, mode, terms))
+
+    # ── 이미지 첨부 ───────────────────────────────────
+    def _vision_ask(self, q: str, mode: str, images: list[str],
+                     conversation_id: str | None, on_progress=None) -> dict:
+        """사진을 보고 답한다. 값은 도구에서만 나온다는 원칙(AGENTS.md §2)이
+        지표·가격 같은 우리 DB 값 얘기라, 사진 속 옷을 설명하는 이 자리에는
+        해당하지 않는다 — greeting·smalltalk처럼 LLM이 그대로 답을 만드는
+        자리로 취급한다. LLM이 없거나 실패하면 실패라고 말한다(꾸미지 않는다)."""
+        if not self.use_llm or not llm.available():
+            return {"ok": False, "reason": "IMAGE_UNAVAILABLE",
+                    "message": "지금은 사진을 분석할 수 없습니다. 잠시 후 다시 시도해 주세요."}
+        if on_progress:
+            on_progress("사진을 보는 중")
+        answer = llm.vision(q, images, mode=mode)
+        if not answer:
+            return {"ok": False, "reason": "IMAGE_FAILED",
+                    "message": "사진을 분석하지 못했습니다. 다시 시도해 주세요."}
+        self._remember(conversation_id, q or "[사진]", "vision.image", mode, [])
+        return {"ok": True, "kind": "meta", "intent": "vision.image", "message": answer}
 
     # ── ③ ────────────────────────────────────────────
     def _attach_web(self, rep: dict, parsed: dict, q: str, plan: str, past: list[dict]):

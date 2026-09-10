@@ -6,6 +6,7 @@
 @import './intro/static/css/visuals.css';
 @import './app_shell/static/css/layout.css';
 @import './home/static/css/chat.css';
+@import './home/static/css/chat_report.css';
 @import './trend/static/css/dispatch.css';
 @import './account/static/css/rank.css';
 @import './trend/static/css/my_feed.css';

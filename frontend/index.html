@@ -213,8 +213,14 @@
           </div>
 
           <div class="chatWrap">
+            <div class="imgAttach" id="mImgAttach" hidden></div>
             <div class="chatbar">
-              <button class="salmalBtn" id="smToggle" type="button" aria-pressed="false"><span class="lbl"><i class="ic">◑</i><span class="tx">살!말?</span></span></button>
+              <button class="salmalBtn" id="smToggle" type="button" aria-pressed="false">
+                <i class="thumb"></i><span class="tx">일반</span>
+              </button>
+              <i class="barSep"></i>
+              <button class="imgAddBtn" id="mImgAdd" type="button" aria-label="이미지 첨부"><i>+</i></button>
+              <input type="file" id="mImgFile" accept="image/*" multiple hidden>
               <div class="cfield">
                 <div class="ghostQ" id="ghostQ">
                   <span class="spark">✧</span>
@@ -225,7 +231,6 @@
               <button class="sendBtn" id="mSend" aria-label="보내기">→</button>
             </div>
           </div>
-          <div class="chips" id="mChips"></div>
         </div>
       </div>
     </div>
@@ -639,9 +644,14 @@
           <div class="cpEmpty"><p id="cpEmptyText">궁금한 걸 물어보세요.</p></div>
           <div class="thread cpThread" id="cpThread"></div>
         </div>
-        <div class="cpInputRow">
-          <textarea id="cpInput" rows="1" placeholder="궁금한 점을 질문해 주세요." autocomplete="off"></textarea>
-          <button class="cpSend" id="cpSend" aria-label="보내기">→</button>
+        <div class="cpInputWrap">
+          <div class="imgAttach cpImgAttach" id="cpImgAttach" hidden></div>
+          <div class="cpInputRow">
+            <button type="button" class="imgAddBtn cpImgAddBtn" id="cpImgAdd" aria-label="이미지 첨부"><i>+</i></button>
+            <input type="file" id="cpImgFile" accept="image/*" multiple hidden>
+            <textarea id="cpInput" rows="1" placeholder="궁금한 점을 질문해 주세요." autocomplete="off"></textarea>
+            <button class="cpSend" id="cpSend" aria-label="보내기">→</button>
+          </div>
         </div>
       </div>
     </div>

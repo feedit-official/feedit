@@ -1,5 +1,6 @@
 import { $, $$, HAS_A, aAnimate, aSpring, aStagger, aTimeline, aUtils } from '../../../core/static/js/dom.js';
 import { cpKeyFor, openChatWith } from './chat_popup.js';
+import { MAX_IMAGES, imageFileToDataURL, bindImageDrop } from './chat_api.js';
 
 /* ============================================================
    메인 — 홈(챗봇) / 트렌드 분석 / 살!말? / Style / 요금제
@@ -33,8 +34,6 @@ const M_ANSWERS={
           ['오버핏 트렌치','주의',-22,0],['박스 더블','주의',-35,0],['크롭 코트','비추천',-58,0]] }
 };
 const M_PLATFORMS=[['인스타그램',92],['무신사',78],['틱톡',64],['지그재그',51],['29CM',37],['W컨셉',22]];
-export const M_CHIPS=[['이번 주 급상승','rise'],['고프코어 꺾였어?','gorp'],['발레코어 유효해?','ballet'],
-               ['무신사 vs 29CM','plat'],['체형 맞는 코트','body']];
 
 /* ── 스타일(코어) 데이터 ─────────────────────────────── */
 /* ══════════════════════════════════════════════════════════════
@@ -287,9 +286,6 @@ const SM_QUESTIONS=[
   ['스투시 후디','정가 주고 살 값어치 있어?'],['카고 팬츠','내년에도 입을까?'],
   ['이 가격','기다리면 더 내려가?']
 ];
-const SM_CHIPS=[['이거 사도 될까?','smBuy'],['지금이 최저가야?','smPrice'],
-                ['내년에도 입어?','smLife'],['비슷한 거 더 싼 거','smAlt'],
-                ['다들 뭐라고 해?','smVote']];
 /* 살!말? 전용 응답 — 판단을 대신 내려주는 어조 */
 export const SM_SAY={
   smBuy :'지금 <b>사도 됩니다</b>. 취향이 겹치는 사람 <b>1,284명</b> 중 <b>73%</b>가 "산다"에 투표했고, 수명주기도 확산 구간입니다.',
@@ -365,59 +361,23 @@ function smStatement(on){
   }else paint();
 }
 
-/* ── 예시 질문 · 칩 교체 ── */
-function smChips(on){
-  const ch=$('#mChips'); if(!ch)return;
-  const list=on?SM_CHIPS:M_CHIPS;
-  const build=()=>{
-    ch.innerHTML=list.map((c,i)=>
-      '<button class="chip'+(i?'':' on')+'" data-ans="'+c[1]+'">'+c[0]+'</button>').join('');
-    if(HAS_A)aAnimate($$('#mChips .chip'),{opacity:[0,1],translateY:[10,0],scale:[.94,1],
-      duration:560,delay:aStagger(48),ease:aSpring({stiffness:96,damping:15})});
-  };
-  const cur=$$('#mChips .chip');
-  if(HAS_A&&cur.length){
-    aAnimate(cur,{opacity:[1,0],translateY:[0,-10],scale:[1,.94],
-      duration:280,delay:aStagger(34),ease:'in(2)'});
-    setTimeout(build,280+cur.length*34);
-  }else build();
-}
-
 /* ── 모드 전환 본체 ── */
 export function smSwitch(on,ev){
   if(smBusy||on===SM_ON)return; smBusy=true;
   const btn=$('#smToggle'), home=$('#v-home');
-  /* 눌린 자리에서 링 하나가 먼저 튀고, 버튼이 제자리에서 한 바퀴 휘리릭 돈다 */
-  if(btn&&HAS_A){
-    const r=document.createElement('span'); r.className='rip'; btn.appendChild(r);
-    aAnimate(r,{scale:[1,26],opacity:[.9,0],duration:760,ease:'out(3)',
-      onComplete:()=>r.remove()});
-    aAnimate(btn,{
-      rotateY:[0,360],
-      scale:[{to:.93,duration:130,ease:'out(2)'},
-             {to:1,duration:690,ease:aSpring({stiffness:150,damping:11})}],
-      duration:820,ease:'out(3)'
-    });
-  }
-  const b=btn?btn.getBoundingClientRect():{left:innerWidth/2,top:innerHeight/2,width:0,height:0};
-  const cx=b.left+b.width/2, cy=b.top+b.height/2;
 
   const commit=()=>{
     SM_ON=on;
     home.classList.toggle('smMode',on);
     document.body.classList.toggle('smOn',on);
     if(btn){
+      /* 켜고 끄는 동작은 이 한 줄이 전부다 — 썸 슬라이드·트랙 색·문구 자리·
+         문구 색까지 전부 [aria-pressed] 기준으로 CSS가 한다(chat.css).
+         회전·링 같은 곁다리 모션은 두지 않는다(2026-09-10). */
       btn.setAttribute('aria-pressed',String(on));
-      const tx=btn.querySelector('.tx'), ic=btn.querySelector('.ic'), lb=btn.querySelector('.lbl');
-      const swapLabel=()=>{ if(tx)tx.textContent=on?'일반 모드':'살!말?';
-                            if(ic)ic.textContent=on?'←':'◑' };
-      /* 버튼이 옆면을 보이는 구간(≈75~300ms)에 맞춰 문구를 숨겼다가 바꿔 단다.
-         그래야 뒤집힌 글자가 보이지 않는다. */
-      if(HAS_A&&lb){
-        aAnimate(lb,{opacity:[1,0],duration:110,ease:'in(2)',
-          onComplete:()=>{ swapLabel();
-            aAnimate(lb,{opacity:[0,1],duration:380,delay:190,ease:'out(3)'}) }});
-      }else swapLabel();
+      /* 문구는 상태 이름 그대로 — ON(주황)이면 살!말?, OFF(회색)면 일반 */
+      const tx=btn.querySelector('.tx');
+      if(tx)tx.textContent=on?'살!말?':'일반';
     }
     /* 챗바·버튼 테두리를 빛이 세 바퀴 돌며 감속해 상주 회전으로 이어진다.
        연속으로 눌렸을 때 클래스가 이미 붙어 있으면 애니메이션이 다시 시작되지 않아
@@ -433,7 +393,7 @@ export function smSwitch(on,ev){
       home.classList.add('smOut');
       smSwT=setTimeout(()=>{ home.classList.remove('smOut'); smSwT=0 },900);
     }
-    smStatement(on); smChips(on);
+    smStatement(on);
     /* 예시 질문 세트 교체 — 별이 한 박자 빠르게 돌며 넘어간다 */
     qI=0; qStep();
     const lbl=$('.hotTop .lbl');
@@ -446,10 +406,47 @@ export function smSwitch(on,ev){
   setTimeout(()=>{smBusy=false},900);
 }
 
+/* ── 홈 챗바 이미지 첨부 ──────────────────────────────
+   + 버튼 → 숨긴 file input을 대신 눌러 준다. 고른 사진은 곧장 서버로
+   가지 않고 여기서 들고 있다가, sendChat()이 질문과 함께 팝업으로 넘긴다. */
+export let mImages=[];
+function mImgPaint(){
+  const box=$('#mImgAttach'); if(!box)return;
+  box.hidden = mImages.length===0;
+  box.innerHTML = mImages.map((im,i)=>
+    '<span class="imgChip"><img src="'+im.url+'" alt=""><button type="button" data-rm="'+i+'" aria-label="사진 삭제">×</button></span>').join('');
+}
+export function mImgClear(){ mImages=[]; mImgPaint(); }
+async function mImgPick(files){
+  for(const f of files){
+    if(mImages.length>=MAX_IMAGES)break;
+    try{ const url=await imageFileToDataURL(f); mImages.push({url}); }catch(e){ /* 이미지가 아니면 조용히 건너뛴다 */ }
+  }
+  mImgPaint();
+}
+export function mImgInit(){
+  const add=$('#mImgAdd'), input=$('#mImgFile'), box=$('#mImgAttach');
+  if(add&&input){
+    add.addEventListener('click', ()=>input.click());
+    input.addEventListener('change', ()=>{
+      if(input.files&&input.files.length)mImgPick([...input.files]);
+      input.value='';
+    });
+  }
+  if(box)box.addEventListener('click', e=>{
+    const rm=e.target.closest('[data-rm]'); if(!rm)return;
+    mImages.splice(+rm.dataset.rm,1); mImgPaint();
+  });
+  /* 챗바 위에 사진을 그대로 끌어다 놓아도 + 버튼과 같은 경로로 들어간다 */
+  bindImageDrop($('.chatbar'), files=>mImgPick(files));
+}
+
 export function sendChat(){
   const inp=$('#mInput'); const v=(inp&&inp.value.trim())||'';
-  if(!v)return;
+  if(!v && !mImages.length)return;
+  const images=mImages.map(im=>im.url);
   /* 홈 챗바에서 치는 질문은 이전에 닫아 둔 세션과 이어지면 안 된다 — 매번 새 대화로 연다 */
-  openChatWith(v, cpKeyFor(v), {forceNew:true});
+  openChatWith(v, cpKeyFor(v), {forceNew:true, images});
   if(inp){ inp.value=''; $('#ghostQ').classList.remove('hide') }
+  mImgClear();
 }

@@ -9,6 +9,148 @@
      .kpis 를 직접 손대면 그쪽이 깨진다. 말풍선 안에서만 덮어쓴다.
    ══════════════════════════════════════════════════════ */
 
+/* ── 생성형 리포트 스킬 ────────────────────────────────
+   완성 양식을 고르지 않는다. compose_report 가 고른 디자인 토큰과 모듈별 12열
+   폭을 매 요청마다 조합한다. 내부 값은 기존 rank·kpis·bars·quotes 가 그린다. */
+.skillReport{
+  --skill-accent:var(--coral);--skill-ink:#171717;--skill-wash:#f7f4ef;
+  overflow:hidden;position:relative;background:#fff;border:1px solid var(--pink-3);
+  border-radius:14px;box-shadow:0 42px 100px -70px rgba(10,10,10,.72)
+}
+.skillReport::before{content:'';position:absolute;inset:0 0 auto;height:3px;background:var(--skill-accent)}
+.skillReportHead{
+  min-height:39px;padding:3px 17px 0;display:flex;align-items:center;justify-content:space-between;
+  border-bottom:1px solid var(--pink-3);font-family:var(--num);font-size:9px;
+  letter-spacing:.14em;color:var(--pink-2)
+}
+.skillReportHead em{font-style:normal}.skillReportTitle{
+  padding:clamp(20px,3vw,32px) clamp(18px,3vw,28px) 10px;
+  font-size:clamp(22px,3.2vw,34px);line-height:1.08;font-weight:650;letter-spacing:-.055em;
+  color:var(--skill-ink);word-break:keep-all
+}
+.skillCanvas{
+  padding:clamp(15px,2.5vw,24px);display:grid;grid-template-columns:repeat(12,minmax(0,1fr));
+  gap:clamp(10px,1.7vw,16px);align-items:stretch
+}
+.skillModule{
+  min-width:0;position:relative;padding:clamp(14px,2vw,20px);overflow:hidden;
+  border:1px solid color-mix(in srgb,var(--skill-accent) 15%,var(--pink-3));
+  border-radius:11px;background:rgba(255,255,255,.78)
+}
+.skillModule::after{content:'';position:absolute;inset:0;pointer-events:none;
+  box-shadow:inset 0 1px rgba(255,255,255,.64)}
+.skillModule>.ansH:first-child{margin-top:0}
+.skillModule--strong{border-color:color-mix(in srgb,var(--skill-accent) 42%,var(--pink-3));
+  box-shadow:0 24px 55px -42px var(--skill-accent)}
+.skillModule--quiet{background:transparent;border-style:dashed;color:var(--pink-2)}
+.skillModule--hero{padding:clamp(20px,3vw,30px);background:
+  radial-gradient(circle at 95% 0,color-mix(in srgb,var(--skill-accent) 19%,transparent),transparent 42%),#fff}
+.skillModule--hero .ansH h3{font-size:clamp(18px,2.4vw,26px);letter-spacing:-.035em}
+.skillModule--hero .kpi b{font-size:clamp(22px,3vw,34px)}
+.skillModule--chart{background:color-mix(in srgb,var(--skill-accent) 6%,#fff)}
+.skillModule--list .rank .row:first-child{border-top:2px solid var(--skill-accent)}
+.skillModule--editorial{background:var(--skill-wash);border:0;border-radius:2px}
+.skillModule--editorial .note{background:#fff}
+.skillModule--compact{padding:11px 14px}.skillModule--compact .note{padding:0;background:transparent}
+
+/* 색·표면·밀도는 양식이 아니라 조합 가능한 디자인 토큰이다. */
+.skillReport--ink{--skill-accent:#171717}.skillReport--violet{--skill-accent:#6958ff}
+.skillReport--blue{--skill-accent:#2777ff}.skillReport--lime{--skill-accent:#92c83e}
+.skillReport--soft{background:#fbfaf8}.skillReport--soft .skillCanvas{background:#fbfaf8}
+.skillReport--contrast{--skill-ink:#fff;--skill-wash:#232323;background:#171717;border-color:#323232}
+.skillReport--contrast .skillReportHead{border-color:#353535;color:#aaa}
+.skillReport--contrast .skillReportTitle{color:#fff}
+.skillReport--contrast .skillCanvas{background:#171717}
+.skillReport--glass{background:rgba(255,255,255,.74);backdrop-filter:blur(18px)}
+.skillReport--airy .skillCanvas{gap:20px;padding:28px}.skillReport--airy .skillModule{padding:24px}
+.skillReport--compact .skillCanvas{gap:8px;padding:12px}.skillReport--compact .skillModule{padding:12px}
+
+/* 아래 rpReport 는 이전 reportset 응답을 다시 열었을 때만 쓰는 호환 레이어다. */
+.rpReport{
+  --rp-accent:var(--coral);
+  overflow:hidden;background:#fff;border:1px solid var(--pink-3);border-radius:12px;
+  box-shadow:0 40px 90px -62px rgba(10,10,10,.5)
+}
+.rpReportHead{
+  min-height:40px;padding:0 15px;display:flex;align-items:center;justify-content:space-between;
+  border-bottom:1px solid var(--pink-3);background:#faf9f7;
+  font-family:var(--num);font-size:9.5px;letter-spacing:.14em
+}
+.rpReportHead span{font-weight:600;color:var(--pink-0)}
+.rpReportHead em{font-style:normal;color:var(--pink-2)}
+.rpReportGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}
+.rpReportSection{min-width:0;padding:clamp(16px,2vw,22px);border-top:1px solid var(--pink-3)}
+.rpReportSection:nth-child(-n+2){border-top:0}
+.rpReportSection:nth-child(even){border-left:1px solid var(--pink-3)}
+.rpReportSectionHead{
+  margin-bottom:15px;display:flex;align-items:center;justify-content:space-between;gap:12px;
+  font-family:var(--num);font-size:10px;letter-spacing:.1em
+}
+.rpReportSectionHead span{font-weight:600;color:var(--pink-0)}
+.rpReportSectionHead em{font-style:normal;font-size:8px;color:var(--pink-2)}
+.rpReportSectionHead span::before{content:'';display:inline-block;width:14px;height:2px;
+  margin:0 7px 3px 0;background:var(--rp-accent)}
+.rpReportSectionBody{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.rpNested{min-width:0}.rpNested--full{grid-column:1/-1}
+.rpNested--left{grid-column:1}.rpNested--right{grid-column:2}
+.rpNested .ansH:first-child{margin-top:0}
+
+/* 질문 목적에 따라 같은 블록의 우선순위와 실루엣이 달라진다. */
+.rpReport--ranking .rpReportSection--trend,
+.rpReport--compare .rpReportSection--trend,
+.rpReport--evidence .rpReportSection--evidence,
+.rpReport--context .rpReportSection--context{grid-column:1/-1;border-left:0}
+.rpReport--pulse .rpReportSection--trend{grid-column:1/-1;border-left:0}
+.rpReport--pulse .rpReportSection--trend .rpNested--kpis{
+  padding:12px;border-radius:9px;background:rgba(255,107,74,.08)
+}
+.rpReport--pulse .rpReportHead{border-top:3px solid var(--coral)}
+.rpReport--ranking{--rp-accent:#111}
+.rpReport--ranking .rpReportHead{background:#111;color:#fff}
+.rpReport--ranking .rpReportHead span{color:#fff}.rpReport--ranking .rpReportHead em{color:#9b9b9b}
+.rpReport--compare{--rp-accent:#5b5bf7}
+.rpReport--compare .rpReportSection--trend>.rpReportSectionHead{font-size:11px}
+.rpReport--recommend{--rp-accent:#111}
+.rpReport--recommend .rpReportSection--recommendation{
+  grid-column:1/-1;border-left:0;background:linear-gradient(135deg,rgba(255,107,74,.11),rgba(255,255,255,0) 62%)
+}
+.rpReport--recommend .rpReportSection--recommendation .rank .row:first-child{border-top:2px solid var(--coral)}
+.rpReport--personal .rpReportSection--taste{background:var(--coral);color:#111}
+.rpReport--personal .rpReportSection--taste .rpReportSectionHead span,
+.rpReport--personal .rpReportSection--taste .rank .k{color:#111}
+.rpReport--personal .rpReportSection--taste .rpReportSectionHead span::before{background:#111}
+.rpReport--evidence{--rp-accent:#111}
+.rpReport--evidence .rpReportSection--evidence{background:#f4f1eb}
+.rpReport--evidence .rpReportSection--evidence .note{background:#fff}
+.rpReport--context{--rp-accent:#3765ff}
+.rpReport--context .rpReportSection--context{background:linear-gradient(180deg,rgba(55,101,255,.07),transparent)}
+
+/* 탭 리포트 (구조안 02) — 취향분석·트렌드지표·상품추천을 탭 3개로 묶는다.
+   다른 full 블록(.rank 등)과 달리 탭이 있는 컨테이너라 자체 카드 테두리를
+   둔다 — .ansCard 와 같은 톤(테두리·그림자)을 새 클래스로 낸다(그쪽 규칙을
+   고치지 않는다는 이 파일의 원칙과 같다).
+   탭 밑줄은 .mNav button.on::after(app_shell/static/css/layout.css)와 같은
+   scaleX 스윕 방식을 그대로 따른다 — 앱 안에 이미 있는 탭/네브 문법이다. */
+.tabreport{background:#fff;border:1px solid var(--pink-3);border-radius:10px;
+  overflow:hidden;box-shadow:0 40px 90px -62px rgba(10,10,10,.5)}
+.rpTabs{display:flex;border-bottom:1px solid var(--pink-3);background:#faf9f7}
+.rpTabBtn{
+  flex:1;padding:12px 8px;text-align:center;background:none;border:none;
+  font:inherit;font-family:var(--num);font-size:11px;letter-spacing:.06em;
+  color:var(--pink-1);cursor:pointer;position:relative;transition:color .25s var(--ease)
+}
+.rpTabBtn::after{content:'';position:absolute;left:10%;right:10%;bottom:-1px;height:2px;
+  background:var(--coral);transform:scaleX(0);transform-origin:50% 50%;
+  transition:transform .3s var(--ease)}
+.rpTabBtn:hover{color:var(--pink-0)}
+.rpTabBtn.on{color:var(--pink-0);font-weight:600}
+.rpTabBtn.on::after{transform:scaleX(1)}
+.rpTabPanel{display:none;padding:clamp(16px,2.2vw,24px)}
+.rpTabPanel.on{display:block}
+.rpTabEmpty{font-size:13px;line-height:1.7;color:var(--pink-2);padding:4px 0}
+/* 탭 안 블록은 이미 .tabreport 가 테두리를 두르고 있으므로 줄 간격만 살짝 좁힌다 */
+.rpTabPanel .rank .row{padding:9px 0}
+
 /* .kpis 는 4열 고정이다. 팝업은 사이드바(296px)를 뺀 폭이라 4열이면 글자가 눌린다.
    말풍선 안에서만 2열로 접는다. */
 .msg.ai .kpis{grid-template-columns:repeat(2,minmax(0,1fr));margin-bottom:10px}
@@ -47,4 +189,13 @@
   .msg.ai .ansBody{grid-template-columns:minmax(0,1fr)}
   .msg.ai .ansBody > div + div{border-left:0;border-top:1px solid var(--pink-3)}
   .msg.ai .kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .rpReportGrid,.rpReportSectionBody{grid-template-columns:minmax(0,1fr)}
+  .rpReportSection,.rpReportSection:nth-child(-n+2){border-top:1px solid var(--pink-3)}
+  .rpReportSection:first-child{border-top:0}
+  .rpReportSection:nth-child(even){border-left:0}
+  .rpNested--left,.rpNested--right,.rpNested--full{grid-column:1}
+  .skillCanvas{grid-template-columns:minmax(0,1fr)}
+  .skillModule{grid-column:1!important}
+  .skillReport--airy .skillCanvas{gap:12px;padding:16px}
+  .skillReport--airy .skillModule{padding:17px}
 }

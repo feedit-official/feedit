@@ -126,14 +126,17 @@
 .hotList .d.dn{color:var(--pink-2)}
 
 /* 챗바 — 예시 질문이 안에서 굴러간다 */
-.chatWrap{width:100%;position:relative}
+/* 챗바 위: 이미지 미리보기 자리. 비어 있으면 [hidden]이라 간격도 같이 사라진다 */
+.chatWrap{width:100%;position:relative;display:flex;flex-direction:column;gap:12px}
 .chatbar{
-  display:flex;align-items:center;gap:8px;position:relative;
+  display:flex;align-items:center;gap:8px;position:relative;width:100%;min-width:0;
   background:#fff;border:1px solid var(--pink-3);border-radius:999px;
   padding:7px 7px 7px 8px;
   box-shadow:0 1px 0 rgba(10,10,10,.03),0 20px 46px -30px rgba(10,10,10,.4);
-  transition:box-shadow .4s var(--ease),border-color .3s;
+  transition:box-shadow .4s var(--ease),border-color .3s,outline-color .2s;
 }
+/* 사진을 끌어다 놓는 동안 */
+.chatbar.dragOver{outline:2px dashed var(--coral);outline-offset:2px}
 .chatbar:focus-within{border-color:var(--pink-2);box-shadow:0 26px 62px -32px rgba(10,10,10,.55)}
 /* 입력칸만의 영역. 예시 질문은 이 안에서만 움직여서
    왼쪽 살!말? 버튼 뒤로 숨는 일이 없다. */
@@ -166,29 +169,72 @@
   overflow:hidden;text-overflow:ellipsis;
 }
 .ghostQ .qline i b{color:var(--coral);font-weight:400}
+/* 일반/살!말? 전환 — 작은 on/off 슬라이드 스위치. 챗바 안, 맨 왼쪽에 둔다.
+   켜고 끄는 동작은 이 스위치 하나(썸 슬라이드 + 트랙 색)가 전부다 — 그 밖의
+   모션(회전·링 등)은 두지 않는다(chat.js smSwitch 참고). */
 .salmalBtn{
-  display:inline-flex;align-items:center;gap:7px;flex:0 0 auto;z-index:2;
-  border-radius:999px;padding:10px 14px;font-size:12.5px;white-space:nowrap;
-  box-shadow:inset 0 0 0 1px var(--pink-3);color:var(--pink-1);background:#fff;
-  transition:color .3s,box-shadow .3s;
+  position:relative;flex:0 0 auto;width:72px;height:34px;border-radius:999px;
+  overflow:hidden;background:var(--pink-3);
+  box-shadow:inset 0 0 0 1px rgba(10,10,10,.05);
+  transition:background-color .28s var(--ease),box-shadow .28s var(--ease);
 }
-.salmalBtn:hover{color:var(--coral);box-shadow:inset 0 0 0 1px var(--coral)}
+.salmalBtn:hover{box-shadow:inset 0 0 0 1px var(--pink-1)}
+.salmalBtn[aria-pressed="true"]{background:var(--coral);box-shadow:none}
+.salmalBtn[aria-pressed="true"]:hover{background:#ff8464}
+/* 흰 원 — OFF일 땐 왼쪽, ON일 땐 오른쪽 끝까지 슬라이드. 이 transform 전이 하나가
+   "켜고 끄는 모션"의 전부다. */
+.salmalBtn .thumb{
+  position:absolute;top:2px;left:2px;width:30px;height:30px;border-radius:50%;
+  background:#fff;box-shadow:0 1px 2px rgba(10,10,10,.28),0 1px 0 rgba(10,10,10,.06);
+  transition:transform .28s cubic-bezier(.19,1,.22,1);
+}
+.salmalBtn[aria-pressed="true"] .thumb{transform:translateX(38px)}
+/* 문구 — 원(thumb)이 없는 쪽 빈 공간 한가운데에 앉힌다(가장자리에 붙이지 않는다).
+   thumb과 같은 2px 인셋을 기준으로 빈 공간의 실제 폭(38px)만큼만 박스를 잡고
+   그 안에서 justify-content:center로 정렬한다 — OFF는 오른쪽 빈 공간("일반"),
+   ON은 왼쪽 빈 공간("살!말?"). 위치·색 둘 다 aria-pressed 하나로 CSS가 정하고,
+   smSwitch(chat.js)는 글자만 바꿔 단다. */
+.salmalBtn .tx{
+  position:absolute;top:0;bottom:0;width:38px;right:2px;
+  display:flex;align-items:center;justify-content:center;
+  font-size:10.5px;font-weight:600;letter-spacing:-.02em;white-space:nowrap;
+  color:var(--pink-1);transition:color .28s var(--ease);
+}
+.salmalBtn[aria-pressed="true"] .tx{left:2px;right:auto;color:#fff}
+/* 전환 버튼과 + 버튼 사이 구분선 */
+.barSep{flex:0 0 auto;width:1px;height:20px;background:var(--pink-3);border-radius:1px}
+/* + 버튼 — 이미지 첨부. 테두리는 두지 않는다 — 평소엔 투명하다가
+   마우스를 올렸을 때만 첨부 이미지 칩(.imgChip)과 같은 둥근 사각형 톤의
+   배경이 생긴다. */
+.imgAddBtn{
+  width:40px;height:40px;border-radius:12px;flex:0 0 auto;z-index:2;
+  display:grid;place-items:center;font-size:19px;line-height:1;color:var(--pink-1);
+  background:transparent;
+  transition:color .2s,background-color .2s;
+}
+.imgAddBtn i{font-style:normal}
+.imgAddBtn:hover{background:var(--pink-3);color:var(--pink-0)}
+/* 첨부한 사진 — 챗바 바로 위에 작은 칩으로 뜬다. 비어 있으면 [hidden] */
+.imgAttach{display:flex;gap:8px;flex-wrap:wrap;padding:0 4px}
+#mImgAttach{width:100%;justify-content:flex-end}
+.imgChip{
+  position:relative;width:52px;height:52px;border-radius:12px;overflow:hidden;
+  box-shadow:0 1px 0 rgba(10,10,10,.03),0 10px 22px -14px rgba(10,10,10,.4);
+}
+.imgChip img{width:100%;height:100%;object-fit:cover;display:block}
+.imgChip button{
+  position:absolute;top:2px;right:2px;width:17px;height:17px;border-radius:50%;
+  background:rgba(20,18,17,.62);color:#fff;font-size:11px;line-height:1;
+  display:grid;place-items:center;transition:background .2s;
+}
+.imgChip button:hover{background:rgba(20,18,17,.86)}
+
 .sendBtn{
   width:40px;height:40px;border-radius:50%;background:var(--pink-0);color:var(--paper);
   display:grid;place-items:center;font-size:15px;flex:0 0 auto;z-index:2;
   transition:transform .35s var(--ease);
 }
 .sendBtn:hover{transform:scale(1.08)}
-/* 예시 질문 — 여유 있게 키우고 챗바와 같은 오른쪽 기준으로 맞춘다 */
-.chips{display:flex;gap:8px;flex-wrap:wrap;width:100%;justify-content:flex-end}
-.chip{
-  border-radius:999px;padding:10px 15px;font-size:12.5px;white-space:nowrap;
-  color:var(--pink-1);box-shadow:inset 0 0 0 1px var(--pink-3);
-  transition:color .3s,box-shadow .3s,transform .3s var(--ease);
-}
-.chip:hover{color:var(--pink-0);box-shadow:inset 0 0 0 1px var(--pink-2);transform:translateY(-2px)}
-.chip.on{background:var(--pink-0);color:var(--paper);box-shadow:none}
-
 /* 답변 패널 */
 .mAns{padding-bottom:clamp(60px,9vh,110px)}
 .ansCard{background:#fff;border:1px solid var(--pink-3);border-radius:10px;overflow:hidden;

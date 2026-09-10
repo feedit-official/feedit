@@ -179,7 +179,9 @@ app/
   lexicon_gate.py 어휘 게이트 (tools/question_extract.py 재사용)
   intents.py      의도 분류 (규칙)
   blocks.py       응답 블록 만들기 — 프론트에 실제로 있는 것만
-  templates.py    의도 → 어떤 블록을 쓸 것인가.  ★ 구조의 원본은 여기 하나
+  templates.py    기존 경로: 의도 → 블록 목록
+  agent_blocks.py 새 경로: 도구 궤적 → 검증된 블록
+  report_skill.py 새 경로: 실제 결과 + compose_report 스펙 → 생성형 UI 캔버스
   nlu.py          ① 의도 분류에 Luna 를 얹는다 — 규칙이 못 잡을 때만
   polish.py       ② 어투 다듬기 — 숫자를 자리표시자로 봉인
   websearch.py    ③ 웹 검색 요약 — 출처 없으면 안 올린다
@@ -197,7 +199,7 @@ tests/            jsdom 검증
 
 ---
 
-## 질문 유형마다 응답 구조가 다르다
+## 질문과 조회 결과마다 응답 구조가 다르다
 
 같은 카드에 다른 내용을 담는 게 아니라, **구조 자체가 달라진다.**
 
@@ -210,25 +212,31 @@ metric.platform    rank[왼] · mTable[오: 플랫폼별 온도] · bars
 metric.compare     bars[전체폭: 나란히] · rank · bars
 knowledge.origin   prose[왼: 웹 요약] · links[왼: 출처] · rank[오: 우리 지표]
 FREE 플랜          잠긴 블록이 통째로 빠지고 upsell 이 그 자리에 온다
+새 경로             고정 양식 없음. 모델이 실제 결과 모듈을 12열 캔버스에 직접 조합
 ```
 
-### 이걸 프롬프트로 하지 않는 이유 세 가지
+### 생성형이어도 모델에게 HTML을 맡기지 않는 이유
 
 1. **화면이 깨진다.** LLM 이 없는 CSS 클래스를 지어내면 버튼이 맨 글자로 나온다.
    AGENTS.md §4.2 가 적어 둔 실제 사고다.
-2. **매번 다르다.** 같은 질문에 어제와 오늘 구조가 다르면 그건 제품이 아니다.
-3. **숫자가 샌다.** 구조를 LLM 이 만들면 그 안의 값도 LLM 이 쓰게 된다.
+2. **숫자가 샌다.** HTML 안의 값을 LLM 이 쓰면 도구 검증을 우회한다.
+3. **제품 문법이 무너진다.** 자유 CSS 는 FEEDiT 디자인 토큰과 반응형 규칙을 벗어난다.
 
 ### 그래서 어떻게 하나
 
 ```
 app/blocks.py      블록을 만든다.   프론트에 실제로 있는 것만 만든다
-app/templates.py   의도 → 블록 목록.  ★ 구조의 원본은 이 파일 하나
+app/templates.py   기존 경로에서 의도 → 블록 목록
+app/tools.py       compose_report 스킬의 안전한 UI 문법
+app/agent_blocks.py  새 경로에서 실제 도구 결과 → 콘텐츠 카탈로그
+app/report_skill.py  모델 UI 스펙과 실제 콘텐츠를 결합
 chat_api.js        블록 타입별로 그린다. 모르는 타입은 조용히 건너뛴다
 ```
 
-LLM 은 구조를 **만들지 않는다.** 애매할 때 `templates.CHOOSABLE` 목록에서 고르는 것만 할 수 있다.
-목록 밖은 나올 수가 없다.
+새 경로의 LLM은 구조를 **조합한다.** 조회가 끝나면 `compose_report`를 한 번 불러
+모듈별 `hero/card/chart/list/editorial/compact`, 12열 폭, 강조도와 색·표면·밀도를
+고른다. 서버는 실제 도구 결과와 연결되는 모듈만 결합하고 HTML은 프론트가 만든다.
+따라서 완성 양식 목록은 없지만, 값과 CSS는 목록 밖에서 만들어질 수 없다.
 
 블록을 새로 만들 때는 **CSS 에 그 클래스가 있는지 먼저 확인한다.**
 `blocks.test.mjs` 가 쓰는 클래스를 전부 CSS 와 대조하므로, 없는 걸 쓰면 시험이 잡는다.
