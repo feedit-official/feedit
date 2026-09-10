@@ -33,6 +33,7 @@ import json
 import os
 from typing import Any, Callable
 
+from . import season as season_ref     # 인자 이름(season)과 겹치지 않게
 from .config import MIN_OBS_7, MIN_OBS_14, MIN_OBS_28, THIN_SAMPLE, temp_band
 
 # ══════════════════════════════════════════════════════════
@@ -82,6 +83,43 @@ def _say_rule(pct_rank, momentum, thin: bool) -> dict:
     return {"allowed": "내려가는 중입니다", "recommend": "금지",
             "note": "내려가는 중인 것을 권하지 마세요. 사실만 적으세요."}
 FACETS = ["style", "material", "item", "brand"]
+# similar_terms 가 훑어볼 후보 수. 후보마다 연관어를 한 번씩 읽으므로
+# 이 값이 곧 SQLite 조회 횟수다. 로컬이라 40이면 수십 ms 다.
+CAND_MAX = 40
+# similar_terms 가 기준(base)을 고르는 순서. 낮을수록 먼저다.
+#   ★ 왜 아이템이 먼저인가 (2026-09-10 실측)
+#     "…레이어드 와이드팬츠" 링크에 모델이 **레이어드**(스타일)를 기준으로 넘겼고,
+#     "레이어드와 비슷한 것: 스트릿웨어 · 캐주얼 · Y2K" 가 나왔다. 팬츠를 물었는데
+#     스타일 목록이 나온 것이다. 어느 축을 기준으로 삼느냐가 답의 종류를 바꾼다.
+BASE_ORDER = {"item": 0, "material": 1, "style": 2, "tpo": 3, "fit": 4, "color": 5, "brand": 6}
+# 이름 계열을 볼 때 훑는 같은 축 용어 수. item 축이 111개라 200이면 전부 덮는다.
+FAMILY_POOL = 200
+MIN_SUFFIX = 2          # 공통 꼬리가 이만큼이면 같은 계열로 본다
+
+
+def _family(base: str, other: str) -> int:
+    """이름이 같은 계열인가. 0 이면 아니고, 클수록 강하다.
+
+    ★ 왜 이름을 보나 (2026-09-10)
+      "비슷한 것" 의 근거는 연관어 프로필 겹침(2차 연관)이 제일 좋은데,
+      실측에서 연관어 표가 얇았다 — 1054행, 'item:팬츠' 는 0개.
+      지표에도 사전에도 상의/하의 같은 하위 분류가 **없다**
+      (사전이 들고 있는 것: version · surfaces · facet_of · trendable · 차단어).
+      그래서 남은 근거가 이름이다. 한국어 패션 용어는 복합어의 **뒤쪽이 범주**인
+      경우가 많다 — 와이드팬츠 · 조거팬츠 · 카고팬츠 는 전부 '팬츠' 로 끝난다.
+    ★ 완벽하지 않다. '자켓/재킷' 처럼 표기가 갈리면 못 잡고, '블레이저' 는 놓친다.
+      **놓치는 것은 괜찮고 틀리게 묶는 것이 문제**라, 기준을 느슨하게 잡지 않는다.
+    """
+    a = "".join(str(base or "").split())
+    b = "".join(str(other or "").split())
+    if not a or not b or a == b:
+        return 0
+    if a in b or b in a:                      # 팬츠 ⊂ 와이드팬츠
+        return max(len(a), len(b))
+    n = 0
+    while n < min(len(a), len(b)) and a[-1 - n] == b[-1 - n]:
+        n += 1
+    return n if n >= MIN_SUFFIX else 0
 
 # ★ 축을 지목하지 않은 순위("요즘 뭐가 핫해")에서 볼 축.
 #   브랜드를 뺀다 — lexicon.yaml 이 브랜드·제품명을 사전에서 뺀 것과 같은 이유다
@@ -111,9 +149,14 @@ SPECS: list[dict] = [
         "search_terms",
         "질문에 나온 말을 사전에서 찾아 정확한 표기와 축을 돌려준다. "
         "지표를 조회하려면 이 표기가 있어야 한다. 별칭·오타도 잡는다. "
-        "결과가 비어도 실패가 아니다 — 용어를 지목하지 않는 질문일 수 있다.",
-        {"q": {"type": "string", "description": "사용자 질문 원문 또는 그 일부"}},
-        ["q"],
+        "결과가 비어도 실패가 아니다 — 용어를 지목하지 않는 질문일 수 있다. "
+        "★ 후보가 여럿이면 alts 에 **한 번에 모두** 넣어라. 한 번에 다 찾아 준다. "
+        "나눠서 여러 번 부르면 그만큼 바퀴를 쓰고 답 쓸 시간이 없어진다.",
+        {"q": {"type": "string", "description": "사용자 질문 원문 또는 그 일부"},
+         "alts": {"type": "array", "items": {"type": "string"},
+                  "description": "함께 찾아 볼 후보들. 상품명이면 브랜드·아이템·소재로 "
+                                 "나눈 말 (예: [\"아디다스\", \"트랙탑\"]). 없으면 빈 배열"}},
+        ["q", "alts"],
     ),
     _fn(
         "rank_terms",
@@ -180,6 +223,33 @@ SPECS: list[dict] = [
         ["q"],
     ),
     _fn(
+        "season_fit",
+        "이 옷을 지금 기온·계절에 입을 만한지 본다. "
+        "'지금 가을인데 입을 만해?' '이거 지금 입어도 돼?' 같은 질문에 쓴다. "
+        "★ 우리 측정값이 아니라 **일반적인 착용 기준**이다 — 답변에서 그렇게 밝혀야 한다. "
+        "temp_c 는 web_search 로 알아낸 현재 기온을 넣는다. 모르면 null 로 두면 "
+        "계절 평균으로 대신 잡고, 무엇으로 잡았는지 함께 돌려준다.",
+        {"terms": {"type": "array", "items": {"type": "string"},
+                   "description": "볼 아이템·소재 이름들. 한 번에 여러 개 (예: [\"트랙탑\", \"폴리에스터\"])"},
+         "temp_c": {"type": ["number", "null"], "description": "지금 기온(°C). 모르면 null"},
+         "season": {"type": ["string", "null"], "description": "봄·여름·가을·겨울. 모르면 null"}},
+        ["terms", "temp_c", "season"],
+    ),
+    _fn(
+        "similar_terms",
+        "비슷한 것을 우리 지표에서 찾는다. '비슷한 거 추천해줘' 에 쓴다. "
+        "★ 후보를 아는 대로 terms 에 **모두** 넣어라 — 도구가 그중 기준을 고른다. "
+        "상품 추천이면 **아이템 축 용어(팬츠·티셔츠 …)를 반드시 함께** 넣어라. "
+        "스타일 용어(레이어드·스트릿웨어)만 주면 '성격이 비슷한 스타일' 을 찾게 되어 "
+        "상품 추천과 다른 답이 나온다. "
+        "★ 상품이 아니라 **용어** 단위다. 우리 데이터에 상품 사진은 없다.",
+        {"terms": {"type": "array", "items": {"type": "string"},
+                   "description": "기준 후보들 (예: [\"팬츠\", \"조거팬츠\", \"레이어드\"]). "
+                                  "아이템 축을 우선 고른다"},
+         "limit": {"type": "integer", "description": "몇 개까지. 기본 6"}},
+        ["terms", "limit"],
+    ),
+    _fn(
         "ask_user",
         "무엇을 볼지 되묻는다. 실패가 아니라 정상 행동이다. "
         "'이거 어때?' 처럼 정보가 질문에 없어 어떤 모델도 풀 수 없을 때 쓴다. "
@@ -193,12 +263,16 @@ SPECS: list[dict] = [
     ),
     _fn(
         "declare_missing",
-        "그 축은 우리 데이터에 없다고 기록한다. 지어내는 대신 이것을 부른다. "
-        "기록해 두면 답변에서 '아직 측정 자료가 없습니다' 로 정직하게 말할 수 있다.",
+        "그 축들은 우리 데이터에 없다고 기록한다. 지어내는 대신 이것을 부른다. "
+        "기록해 두면 답변에서 '아직 측정 자료가 없습니다' 로 정직하게 말할 수 있다. "
+        "★ 없는 축이 여럿이면 axes 에 한 번에 모두 넣어라. 축마다 따로 부르지 않는다.",
         {"term": {"type": "string"},
-         "axis": {"type": "string", "description": "없는 축 이름 (예: 리세일, 체형, 사이즈)"},
-         "reason": {"type": "string", "description": "왜 없는지 한 줄"}},
-        ["term", "axis", "reason"],
+         "axes": {"type": "array", "items": {"type": "string"},
+                  "description": "없는 축 이름들 (예: [\"리세일\", \"체형\", \"사이즈\"]). "
+                                 "하나뿐이어도 배열로 넣는다"},
+         "reason": {"type": "string",
+                    "description": "왜 없는지 한 줄. 축들에 공통으로 붙는다"}},
+        ["term", "axes", "reason"],
     ),
 ]
 
@@ -222,6 +296,32 @@ AXIS_SAY = {"온도": "온도", "모멘텀": "추세", "순위": "순위", "연�
             "긍부정": "반응", "출처별": "플랫폼별", "근거": "실제 언급"}
 
 
+def _axis_list(axes: Any, axis: Any = None) -> list[str]:
+    """declare_missing 의 축 인자를 목록으로 고른다.
+
+    ★ 표준은 axes(배열)다 (2026-09-10, 인수인계 17번).
+      예전 스펙은 axis 를 **하나씩** 받아서, 없는 축마다 한 번씩 불렸다.
+      그 반복이 orchestrator.MAX_PER_TOOL 에 걸리면 뒤쪽 축은 기록되지
+      않은 채 조용히 사라진다 — 상한은 그 증상을 막은 것이지 원인을
+      고친 것이 아니었다.
+    ★ 그래도 axis(문자열)를 받는다. strict 스키마를 켜도 모델이 옛 모양으로
+      부르는 일이 있고, 그때 죽는 것보다 받아 주는 편이 낫다.
+    """
+    raw: list[Any] = []
+    if isinstance(axes, str):
+        raw.append(axes)
+    elif isinstance(axes, (list, tuple)):
+        raw.extend(axes)
+    if axis:
+        raw.append(axis)
+    out: list[str] = []
+    for a in raw:
+        s = str(a or "").strip()
+        if s and s not in out:          # 같은 축을 두 번 적어도 한 줄로 남는다
+            out.append(s)
+    return out
+
+
 def progress_say(name: str, args: dict) -> str | None:
     """도구 호출 하나를 사람이 읽는 한 줄로. 보여 줄 게 없으면 None."""
     args = args or {}
@@ -230,6 +330,10 @@ def progress_say(name: str, args: dict) -> str | None:
     if name == "search_terms":
         # ★ 같은 문구가 반복되면 화면이 멈춘 것처럼 보인다. 찾는 말을 넣는다.
         q = " ".join(str(args.get("q") or "").split())
+        if q.startswith("http"):
+            # 주소를 그대로 보여 주면 화면이 한 줄을 다 먹는다. 후보 쪽을 보여 준다.
+            alt = [str(a).strip() for a in (args.get("alts") or []) if str(a).strip()]
+            return f"'{alt[0]}' 찾아보는 중" if alt else "보내신 링크를 살펴보는 중"
         if not q:
             return "말을 사전에서 찾는 중"
         return f"'{q[:12]}…' 찾아보는 중" if len(q) > 12 else f"'{q}' 찾아보는 중"
@@ -242,8 +346,18 @@ def progress_say(name: str, args: dict) -> str | None:
     if name == "get_evidence":
         return f"{head}실제 언급 찾는 중"
     if name == "declare_missing":
-        ax = str(args.get("axis") or "").strip()
-        return f"{ax} 은(는) 측정 자료가 없다고 기록하는 중" if ax else "없는 항목을 기록하는 중"
+        ax = _axis_list(args.get("axes"), args.get("axis"))
+        if not ax:
+            return "없는 항목을 기록하는 중"
+        head = " · ".join(ax[:3]) + ("…" if len(ax) > 3 else "")
+        return f"{head} 은(는) 측정 자료가 없다고 기록하는 중"
+    if name == "season_fit":
+        ts = [str(t).strip() for t in (args.get("terms") or []) if str(t).strip()]
+        return f"{ts[0]} 지금 입기 좋은지 보는 중" if ts else "지금 입기 좋은지 보는 중"
+    if name == "similar_terms":
+        cand = [str(t).strip() for t in (args.get("terms") or []) if str(t).strip()]
+        first = cand[0] if cand else term
+        return f"{first} 비슷한 것 찾는 중" if first else "비슷한 것 찾는 중"
     if name == "get_salmal":
         return "살!말? 투표 보는 중"
     if name == "search_salmal":
@@ -379,24 +493,67 @@ class Toolbox:
             f = self.store.metric_facet(term)
         return f"{f}:{term}"
 
-    def t_search_terms(self, q: str) -> dict:
-        parsed = self.gate.parse(q)
+    def _look_up(self, text: str) -> tuple[list[dict], str]:
+        """말 하나를 사전 → 지표 순으로 찾는다. (hits, 어디서 찾았나)"""
+        parsed = self.gate.parse(text)
         hits = [{"term": h["canonical"], "facet": h["facet"], "term_key": h["term_key"]}
                 for h in parsed.get("search", [])]
-        out: dict[str, Any] = {"found": hits, "count": len(hits)}
-        if not hits:
-            # ★ 사전에 없어도 **지표에는 있을 수 있다.** (2026-09-09)
-            #   실측: "살로몬" 은 지표 표에 8행 있는데 사전에 없어 못 찾았고,
-            #   챗봇은 "측정 자료가 없습니다" 라고 답했다. 틀린 답이다.
-            direct = self.store.metric_terms_in(q, limit=3)
-            if direct:
-                hits = [{"term": r["canonical"], "facet": r["facet"],
-                         "term_key": f'{r["facet"]}:{r["canonical"]}'} for r in direct]
-                out["found"] = hits
-                out["count"] = len(hits)
-                out["source"] = "metric"      # 사전이 아니라 지표에서 직접 찾았다
-                out["note"] = ("사전에는 없지만 지표에 이름이 있는 용어입니다"
-                               "(브랜드 등). 그대로 get_metric 에 넘기면 됩니다.")
+        if hits:
+            return hits, "lexicon"
+        # ★ 사전에 없어도 **지표에는 있을 수 있다.** (2026-09-09)
+        #   실측: "살로몬" 은 지표 표에 8행 있는데 사전에 없어 못 찾았고,
+        #   챗봇은 "측정 자료가 없습니다" 라고 답했다. 틀린 답이다.
+        direct = self.store.metric_terms_in(text, limit=3)
+        if direct:
+            return ([{"term": r["canonical"], "facet": r["facet"],
+                      "term_key": f'{r["facet"]}:{r["canonical"]}'} for r in direct],
+                    "metric")
+        return [], ""
+
+    def t_search_terms(self, q: str, alts: Any = None) -> dict:
+        """q 와 alts 를 **한 번에** 찾는다 (2026-09-10).
+
+        ★ 왜 alts 인가 — 실측(무신사 상품 링크): 모델이 링크 → "아디다스 트랙탑"
+          → "트랙탑" 순으로 search_terms 를 **세 번** 불렀다. 한 번 부를 때마다
+          모델 왕복이 한 바퀴라, 세 바퀴(15초)를 조회에만 쓰고 답을 못 썼다.
+          17번의 declare_missing 과 같은 낭비다 — **스펙이 하나씩만 받으면
+          모델은 하나씩 부른다.** 그래서 여기도 한 번에 받는다.
+        ★ 후보를 순회하되 **첫 성공에서 멈추지 않는다.** 브랜드와 아이템이 둘 다
+          잡혀야 '나란히 보기' 가 붙는다.
+        """
+        tried = [str(q or "").strip()]
+        for a in (alts if isinstance(alts, (list, tuple)) else []):
+            t = str(a or "").strip()
+            if t and t not in tried:
+                tried.append(t)
+
+        hits: list[dict] = []
+        seen: set[str] = set()
+        sources: set[str] = set()
+        for cand in tried:
+            if not cand:
+                continue
+            got, where = self._look_up(cand)
+            if where:
+                sources.add(where)
+            for h in got:
+                if h["term"] in seen:
+                    continue
+                seen.add(h["term"])
+                hits.append(dict(h, **({"from": cand} if cand != tried[0] else {})))
+
+        parsed = self.gate.parse(tried[0] if tried else "")
+        out: dict[str, Any] = {"found": hits, "count": len(hits), "tried": tried}
+        if hits and "metric" in sources:
+            out["source"] = "metric"          # 사전이 아니라 지표에서 직접 찾았다
+            out["note"] = ("사전에는 없지만 지표에 이름이 있는 용어가 있습니다"
+                           "(브랜드 등). 그대로 get_metric 에 넘기면 됩니다.")
+        if hits and len(tried) > 1:
+            out["substituted"] = True
+            첫말 = tried[0] if len(tried[0]) <= 40 else tried[0][:39] + "…"
+            out["substituted_note"] = (
+                f"'{첫말}' 로는 못 찾아 다른 후보로 찾았습니다. "
+                "답변에 **무엇 대신 무엇을 봤는지 반드시 밝히십시오.**")
         if not hits:
             # 못 찾았다고 끝이 아니다. 가까운 말과 인기어를 같이 준다 —
             # 모델이 되묻거나 rank_terms 로 갈아탈 재료가 된다.
@@ -410,7 +567,10 @@ class Toolbox:
             out["retry_note"] = (
                 "같은 대상을 표기만 바꿔(띄어쓰기·모델명 분리·영문) 다시 부르지 마십시오. "
                 "사전에도 지표에도 없는 말은 표기를 바꿔도 없습니다. "
-                "declare_missing 으로 기록하고 답을 쓰십시오.")
+                "구성 요소로 나눠 볼 생각이면 **이 도구를 다시 부르지 말고 alts 에 "
+                "한 번에 넣으십시오** (예: alts=[\"아디다스\", \"트랙탑\"]). "
+                "한 번 더 부를 때마다 바퀴를 하나 쓰고, 그만큼 답 쓸 시간이 줄어듭니다. "
+                "그래도 없으면 declare_missing 으로 기록하고 답을 쓰십시오.")
         # 수식어(핏·색·TPO)는 검색어가 아니지만 답변 톤에 쓰인다
         out["modifiers"] = [h["canonical"] for h in parsed.get("modifier", [])]
         return out
@@ -619,15 +779,220 @@ class Toolbox:
         hits = self.websearch(q)
         return {"q": q, "from": "web", "not_feedit_data": True, "items": hits}
 
+    # ── 계절·비슷한 것 ──────────────────────────────────
+    def t_season_fit(self, terms: Any = None, temp_c: Any = None,
+                     season: Any = None) -> dict:
+        """지금 기온에 입을 만한가. **일반 기준**이지 우리 측정값이 아니다.
+
+        ★ 판단을 모델에게 맡기지 않고 표에서 읽는다(app/season.py 머리말).
+          모델이 그때그때 판단하면 대조할 원본이 없어 지어낸 숫자와 같은 자리에 선다.
+        ★ 표에 없는 말은 unknown 으로 돌려준다. 비슷해 보인다고 끼워 맞추지 않는다.
+        """
+        names = _axis_list(terms)
+        if not names:
+            return {"error": "terms 가 비어 있습니다. 볼 아이템·소재 이름을 배열로 넣으십시오."}
+        try:
+            t = float(temp_c) if temp_c is not None else None
+        except (TypeError, ValueError):
+            t = None
+        basis = f"{t:g}°C 기준" if t is not None else ""
+        if t is None:
+            t, basis = season_ref.temp_for_season(season)
+        if t is None:
+            return {"unavailable": "기온도 계절도 받지 못했습니다.",
+                    "hint": "web_search 로 현재 기온을 확인해 temp_c 에 넣거나, "
+                            "season 에 '가을' 처럼 계절을 넣어 다시 부르십시오."}
+        fits, unknown = [], []
+        for n in names:
+            r = season_ref.fit(n, t)
+            (fits.append(r) if r else unknown.append(n))
+        return {
+            "temp_c": t, "basis": basis, "items": fits, "unknown": unknown,
+            # ★ 이 두 줄이 이 도구의 핵심이다. 빼지 마라.
+            "not_feedit_data": True,
+            "note": ("일반적인 착용 기준이며 FEEDiT 측정값이 아닙니다. "
+                     "답변에서 그렇게 밝히십시오. "
+                     + ("표에 없는 말(" + ", ".join(unknown) + ")은 판단하지 마십시오."
+                        if unknown else "")),
+        }
+
+    def _pick_base(self, names: list[str]) -> tuple[str, str | None, list[dict]]:
+        """후보 중 기준을 고른다. 아이템 축이 먼저다(BASE_ORDER).
+
+        고른 이유와 함께 돌려준다 — 모델이 답변에 "무엇을 기준으로 봤는지" 를
+        적을 수 있어야 한다.
+        """
+        seen: list[dict] = []
+        for nm in names:
+            key = self._key(nm)
+            f = key.split(":", 1)[0] if ":" in key else None
+            if f in ("", "None"):
+                f = None
+            seen.append({"term": nm, "facet": f})
+        ranked = sorted(seen, key=lambda x: BASE_ORDER.get(x["facet"] or "", 9))
+        best = ranked[0] if ranked else {"term": "", "facet": None}
+        return best["term"], best["facet"], seen
+
+    def t_similar_terms(self, terms: Any = None, term: str = "",
+                        limit: int = 6) -> dict:
+        """비슷한 것 = **연관어 프로필이 겹치는 것** (2026-09-10 다시 씀).
+
+        ★ 처음에는 연관어를 그대로 "비슷한 것" 으로 내보냈다. 틀렸다.
+          연관어는 **함께 언급된** 말이라 대부분 코디(보완재)다.
+          실측: 반팔 티셔츠 링크에 "비슷한 것" 으로 팬츠·자켓이 나왔다.
+          같이 입는 것이지 대신 입는 것이 아니다.
+
+        ★ 대체재는 지표로 구할 수 있다. **같은 자리에 놓이는 말은 같은 것들과
+          함께 언급된다.** 티셔츠와 맨투맨은 둘 다 팬츠·데님과 함께 나오고,
+          팬츠는 그 둘과 함께 나오지만 팬츠의 연관어는 상의들이다.
+          그래서 base 의 연관어 집합과 후보의 연관어 집합이 얼마나 겹치는지
+          (자카드)로 고른다 — 1차 연관이 아니라 **2차 연관**이다.
+          분류표를 새로 만들지 않고 우리 지표만으로 푸는 방법이다.
+
+        ★ 두 목록을 **나눠서** 돌려준다.
+            items — 비슷한 것 (대신 입을 만한 것)
+            pairs — 함께 언급된 것 (같이 입는 것). 섞으면 이번 같은 답이 나온다.
+
+        ★ 연관어 자료가 얇으면 같은 축 상위로 대신하되 **그렇게 밝힌다**(method).
+        """
+        names = _axis_list(terms, term)
+        if not names:
+            return {"error": "terms 가 비어 있습니다. 기준 후보를 배열로 넣으십시오."}
+        n = max(1, min(int(limit or 6), 10))
+        term, facet, considered = self._pick_base(names)
+        key = self._key(term)
+
+        base_rows = self.store.term_assoc(key, limit=30)
+        base_set = {r.get("assoc_canonical") for r in base_rows if r.get("assoc_canonical")}
+        pairs = [{"term": r.get("assoc_canonical"), "facet": r.get("assoc_facet"),
+                  "co_count": r.get("co_count")}
+                 for r in base_rows[:6] if r.get("assoc_canonical")]
+
+        cands = self.store.top_terms(facet=facet, limit=CAND_MAX) if facet else []
+        scored: list[dict] = []
+        for r in cands:
+            name = r.get("canonical")
+            if not name or name == term:
+                continue
+            if not base_set:
+                break                       # 겹칠 원본이 없다. 아래 폴백으로 간다.
+            other = self.store.term_assoc(f'{r.get("facet")}:{name}', limit=30)
+            other_set = {x.get("assoc_canonical") for x in other if x.get("assoc_canonical")}
+            if not other_set:
+                continue
+            shared = base_set & other_set
+            if not shared:
+                continue
+            score = len(shared) / len(base_set | other_set)
+            scored.append({
+                "term": name, "facet": r.get("facet"), "temp": r.get("temp"),
+                "band": temp_band(r.get("temp")), "score": round(score, 3),
+                "shared": sorted(shared)[:3],
+                "why": "같은 말들과 함께 언급됨",
+            })
+
+        scored.sort(key=lambda x: (x["score"], x.get("temp") or 0), reverse=True)
+        items = scored[:n]
+        method = "연관어 프로필이 겹치는 정도(2차 연관)로 골랐습니다"
+
+        # ★ 연관어가 얇으면 **이름 계열**로 채운다. 지표에도 사전에도 하위 분류가
+        #   없으니 남은 근거가 이름이다(_family 머리말). 근거가 다르므로 why 도 다르다.
+        if len(items) < n and facet:
+            있음 = {i["term"] for i in items}
+            가족 = []
+            for r in self.store.top_terms(facet=facet, limit=FAMILY_POOL):
+                nm = r.get("canonical")
+                if not nm or nm == term or nm in 있음:
+                    continue
+                w = _family(term, nm)
+                if w:
+                    가족.append({"term": nm, "facet": r.get("facet"), "temp": r.get("temp"),
+                                 "band": temp_band(r.get("temp")), "kin": w,
+                                 "why": "이름이 같은 계열"})
+            가족.sort(key=lambda x: (x["kin"], x.get("temp") or 0), reverse=True)
+            items = items + 가족[: n - len(items)]
+            if 가족:
+                method = ("연관어 프로필 겹침과 **이름 계열**로 골랐습니다"
+                          if scored else "**이름 계열**로 골랐습니다 (연관어 자료가 없습니다)")
+
+        axis = FACET_SAY.get(facet or "", facet or "같은")
+        alts: list[dict] = []
+        if not items:
+            # ★ 연관어가 없으면 **비슷한 것을 못 찾은 것이다.** (2026-09-10 실측:
+            #   연관어 표 1054행 중 'item:팬츠' 는 0개, 'item:티셔츠' 는 3개다.)
+            #   예전에는 축 상위를 items 에 담아 돌려줬는데, 이름이 같으니 모델이
+            #   그대로 "비슷한 것" 으로 소개했다 — 팬츠 옆에 자켓·백팩이 섰다.
+            #   말로 "이건 비슷한 게 아니다" 라고 덧붙이는 대신 **자리를 나눈다.**
+            #   items 는 비우고 alternatives 에 담는다. 섞일 수 없는 모양으로 준다.
+            for r in cands:
+                name = r.get("canonical")
+                if not name or name == term:
+                    continue
+                alts.append({"term": name, "facet": r.get("facet"), "temp": r.get("temp"),
+                             "band": temp_band(r.get("temp")),
+                             "why": f"{axis} 축에서 지금 높은 것"})
+                if len(alts) >= n:
+                    break
+            # ★ 축 이름을 분명히 적는다. "같은 축" 이라고만 주면 모델이 "팬츠 축에서"
+            #   로 옮겨 적는다 — 실제로 그렇게 나갔다. 우리 지표의 축은
+            #   style · material · item · brand 넷뿐이고, item 안에 상의·하의·가방이
+            #   전부 들어 있다. 그래서 팬츠의 '같은 축' 에 자켓·백팩이 함께 나온다.
+            method = (f"'{term}' 의 연관어 자료가 없어 **비슷한 것을 찾지 못했습니다.** "
+                      f"먼저 그렇게 말하십시오. alternatives 는 다른 질문의 답입니다 — "
+                      f"{axis} 축에서 지금 온도가 높은 용어이고 이 축에는 다른 종류도 "
+                      "섞여 있습니다. '비슷한 것' 으로 소개하지 마십시오.")
+
+        out: dict[str, Any] = {
+            "term": term, "facet": facet, "as_of": self.store.latest_day(),
+            "base_note": f"'{term}' 기준. 무엇을 기준으로 봤는지 답변에 밝히십시오.",
+            "method": method, "count": len(items), "items": items,
+            # 비슷한 것을 못 찾았을 때만 채워진다. items 와 **다른 것**이다.
+            "alternatives": alts,
+            # ★ 이건 비슷한 것이 아니다. 이름과 설명을 분명히 해서 넘긴다.
+            # 함께 언급된 말 = 같이 입는 것. 비슷한 것이 아니다.
+            "paired_with": pairs[:4],
+            "note": ("용어 단위입니다. 상품 목록·사진 없음. paired_with 를 '비슷한 것' 으로 "
+                     "말하지 마십시오." if items else
+                     "비슷한 것을 찾지 못했습니다. 그 사실을 먼저 말하십시오."),
+        }
+        if facet not in ("item", "material"):
+            # ★ 스타일·브랜드 축을 기준으로 삼으면 '비슷한 상품' 이 아니라
+            #   '성격이 비슷한 스타일' 이 나온다. 다른 질문의 답이다.
+            out["caution"] = (
+                f"'{term}' 은 아이템·소재 축이 아닙니다. 비슷한 상품이 아니라 "
+                "성격이 비슷한 스타일입니다. 그렇게 밝히십시오.")
+        return out
+
     # ── 대화 행동 ───────────────────────────────────────
     def t_ask_user(self, question: str, options: list[str]) -> dict:
         self.trace.asked = {"question": question, "options": options or []}
         return {"ok": True, "note": "되묻기를 준비했습니다. 여기서 도구 호출을 멈추세요."}
 
-    def t_declare_missing(self, term: str, axis: str, reason: str) -> dict:
-        self.trace.missing.append({"term": term, "axis": axis, "reason": reason})
-        return {"ok": True, "note": f"'{axis}' 는 없는 것으로 기록했습니다. "
-                                    "답변에서 그 축의 값을 말하지 마세요."}
+    def t_declare_missing(self, term: str = "", reason: str = "",
+                          axes: Any = None, axis: Any = None) -> dict:
+        """없는 축들을 **한 번에** 기록한다 (인수인계 17번).
+
+        ★ 기록 모양은 예전 그대로 축 하나당 한 줄이다.
+          trace.missing 을 읽는 곳이 셋(verify.check · agent_path._notes ·
+          agent_blocks)이라, 저장 모양까지 바꾸면 파급이 셋으로 퍼진다.
+          바뀐 것은 **부르는 모양**뿐이다.
+        """
+        names = _axis_list(axes, axis)
+        if not names:
+            return {"error": "axes 가 비어 있습니다. 없는 축 이름을 배열로 넣으십시오."}
+        already = {(m.get("term"), m.get("axis")) for m in self.trace.missing}
+        added = []
+        for a in names:
+            if (term, a) in already:
+                continue
+            self.trace.missing.append({"term": term, "axis": a, "reason": reason})
+            added.append(a)
+        joined = " · ".join(names)
+        return {"ok": True, "axes": names, "recorded": added, "count": len(names),
+                "note": f"'{joined}' 는 없는 것으로 기록했습니다. "
+                        "답변에서 그 축의 값을 말하지 마세요. "
+                        "없는 축이 더 있어도 이 도구를 다시 부르지 말고, "
+                        "지금 한 번에 넣었어야 합니다."}
 
 
 # ══════════════════════════════════════════════════════════
@@ -709,6 +1074,10 @@ def specs_for(ctx: dict | None = None) -> list[dict]:
         drop.add("get_salmal")
     if not ctx.get("user_id"):
         drop.add("get_user_taste")
+    if ctx.get("no_ask"):
+        # 되묻기 예산 소진 (orchestrator.ASK_BUDGET). 목록에 없으면 못 부른다 —
+        # 프롬프트로 부탁하는 것과 달리 이건 지켜진다.
+        drop.add("ask_user")
     hosted = hosted_specs()
     # ★ 이름이 겹치면 안 된다.
     #   우리 함수 web_search 와 내장 도구 {"type":"web_search"} 가 같은 이름이라,
