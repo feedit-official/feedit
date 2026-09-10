@@ -27,12 +27,12 @@ t("★ KW 기본 검색어가 비어 있다", () => {
 
 t("★ fsItem 이 발레코어로 안 떨어진다", () => {
   /* 마지막 기댈 곳이 빈 문자열이어야 한다. 무엇을 거치든 이름이 박혀 있으면 안 된다.
-     (2026-09-08: 색·디테일·TPO 를 fsItem 뒤에 붙이면서 줄 모양이 바뀌었다.
-      글자를 그대로 맞추는 대신 '박힌 기본값이 없다'를 본다.) */
-  const body = helpers.slice(helpers.indexOf('export function fsItem()'));
-  const line = body.slice(0, body.indexOf('}'));
-  assert.match(line, /\|\|\s*''\s*;/, '빈 문자열로 끝나야 한다: ' + line);
-  assert.doesNotMatch(line, /'[가-힣A-Za-z]/, '이름이 박혀 있다: ' + line);
+     객체 리터럴의 첫 `}`를 함수 끝으로 오인하지 않게 다음 함수 선언 전까지 본다. */
+  const start = helpers.indexOf('export function fsItem()');
+  const end = helpers.indexOf('export function fsItemFull()', start);
+  const body = helpers.slice(start, end);
+  assert.match(body, /return\s+''\s*;/, '빈 문자열로 끝나야 한다: ' + body);
+  assert.doesNotMatch(body, /return\s+['"]발레코어['"]/, '발레코어 기본값이 박혀 있다: ' + body);
 });
 
 t("★ 탭들이 발레코어를 기본값으로 안 쓴다", () => {

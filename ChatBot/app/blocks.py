@@ -140,9 +140,9 @@ def b_sentiment(t: dict) -> dict | None:
         {"k": "구매의향 지수", "v": str(s.get("index")), "unit": "점",
          "note": f"표본 {s.get('n_total')}건", "up": (s.get("index") or 0) >= 50},
         {"k": "긍정 신호", "v": str(s.get("pos_pct")), "unit": "%",
-         "note": s.get("top_pos") or "", "up": True},
+         "note": INTENT_KO.get(s.get("top_pos"), s.get("top_pos") or ""), "up": True},
         {"k": "부정 신호", "v": str(s.get("neg_pct")), "unit": "%",
-         "note": s.get("top_neg") or "", "up": False},
+         "note": INTENT_KO.get(s.get("top_neg"), s.get("top_neg") or ""), "up": False},
     ]}
 
 

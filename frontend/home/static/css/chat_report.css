@@ -19,23 +19,24 @@
 }
 .skillReport::before{content:'';position:absolute;inset:0 0 auto;height:3px;background:var(--skill-accent)}
 .skillReportHead{
-  min-height:39px;padding:3px 17px 0;display:flex;align-items:center;justify-content:space-between;
-  border-bottom:1px solid var(--pink-3);font-family:var(--num);font-size:9px;
+  min-height:35px;padding:3px 15px 0;display:flex;align-items:center;justify-content:space-between;
+  border-bottom:1px solid var(--pink-3);font-family:var(--num);font-size:8.5px;
   letter-spacing:.14em;color:var(--pink-2)
 }
 .skillReportHead em{font-style:normal}.skillReportTitle{
-  padding:clamp(20px,3vw,32px) clamp(18px,3vw,28px) 10px;
-  font-size:clamp(22px,3.2vw,34px);line-height:1.08;font-weight:650;letter-spacing:-.055em;
+  padding:clamp(17px,2vw,23px) clamp(16px,2.2vw,22px) 6px;
+  font-size:clamp(20px,2.25vw,28px);line-height:1.1;font-weight:650;letter-spacing:-.05em;
   color:var(--skill-ink);word-break:keep-all
 }
 .skillCanvas{
-  padding:clamp(15px,2.5vw,24px);display:grid;grid-template-columns:repeat(12,minmax(0,1fr));
-  gap:clamp(10px,1.7vw,16px);align-items:stretch
+  padding:clamp(13px,1.8vw,19px);display:grid;grid-template-columns:repeat(12,minmax(0,1fr));
+  gap:clamp(9px,1.2vw,12px);align-items:start
 }
 .skillModule{
-  min-width:0;position:relative;padding:clamp(14px,2vw,20px);overflow:hidden;
+  min-width:0;position:relative;padding:clamp(13px,1.55vw,17px);overflow:hidden;
   border:1px solid color-mix(in srgb,var(--skill-accent) 15%,var(--pink-3));
-  border-radius:11px;background:rgba(255,255,255,.78)
+  border-radius:10px;background:rgba(255,255,255,.78);
+  container:skill-module / inline-size
 }
 .skillModule::after{content:'';position:absolute;inset:0;pointer-events:none;
   box-shadow:inset 0 1px rgba(255,255,255,.64)}
@@ -43,13 +44,19 @@
 .skillModule--strong{border-color:color-mix(in srgb,var(--skill-accent) 42%,var(--pink-3));
   box-shadow:0 24px 55px -42px var(--skill-accent)}
 .skillModule--quiet{background:transparent;border-style:dashed;color:var(--pink-2)}
-.skillModule--hero{padding:clamp(20px,3vw,30px);background:
+.skillModule--hero{padding:clamp(16px,2vw,21px);background:
   radial-gradient(circle at 95% 0,color-mix(in srgb,var(--skill-accent) 19%,transparent),transparent 42%),#fff}
-.skillModule--hero .ansH h3{font-size:clamp(18px,2.4vw,26px);letter-spacing:-.035em}
-.skillModule--hero .kpi b{font-size:clamp(22px,3vw,34px)}
+.skillModule--hero .ansH h3{font-size:clamp(16px,1.6vw,20px);letter-spacing:-.035em}
+.skillModule--hero .kpi b{font-size:clamp(19px,2vw,25px)}
 .skillModule--chart{background:color-mix(in srgb,var(--skill-accent) 6%,#fff)}
 .skillModule--list .rank .row:first-child{border-top:2px solid var(--skill-accent)}
 .skillModule--editorial{background:var(--skill-wash);border:0;border-radius:2px}
+/* 이전 대화에 저장된 스펙이 rank를 editorial로 골랐더라도 데이터 표는 같은 카드
+   문법으로 보인다. 새 응답은 서버 스킬에서도 이 조합을 차단한다. */
+.skillModule--block-rank.skillModule--editorial{
+  background:#fff;border:1px solid color-mix(in srgb,var(--skill-accent) 24%,var(--pink-3));
+  border-radius:10px
+}
 .skillModule--editorial .note{background:#fff}
 .skillModule--compact{padding:11px 14px}.skillModule--compact .note{padding:0;background:transparent}
 
@@ -62,8 +69,77 @@
 .skillReport--contrast .skillReportTitle{color:#fff}
 .skillReport--contrast .skillCanvas{background:#171717}
 .skillReport--glass{background:rgba(255,255,255,.74);backdrop-filter:blur(18px)}
-.skillReport--airy .skillCanvas{gap:20px;padding:28px}.skillReport--airy .skillModule{padding:24px}
+.skillReport--airy .skillCanvas{gap:14px;padding:20px}.skillReport--airy .skillModule{padding:19px}
 .skillReport--compact .skillCanvas{gap:8px;padding:12px}.skillReport--compact .skillModule{padding:12px}
+
+/* 후보안의 Pulse Stack·Signal Bento에서 가져온 정보 밀도.
+   KPI 묶음은 바깥 카드 안에 카드를 또 넣지 않고 각 신호가 바로 벤토 셀이 된다. */
+.skillModule--block-kpis{padding:0!important;border:0;background:transparent;box-shadow:none;overflow:visible}
+.skillModule--block-kpis::after{display:none}
+.skillModule .kpis{grid-template-columns:repeat(var(--skill-kpi-cols,2),minmax(0,1fr));gap:8px;margin:0}
+.skillModule .kpi{min-width:0;padding:12px 13px;border-radius:9px}
+.skillModule .kpi span{font-size:10.5px;line-height:1.3}
+.skillModule .kpi b{margin-top:7px;font-size:20px;line-height:1.14;
+  word-break:keep-all;overflow-wrap:normal}
+.skillModule .kpi .dl{margin-top:6px;font-size:10px;line-height:1.4;word-break:keep-all}
+/* 긴 한글 설명은 숫자 칸을 밀지 않고 제목 아래 자연스럽게 한 번만 접힌다. */
+.skillModule .ansH{gap:10px;margin-bottom:12px}
+.skillModule .ansH h3{font-size:14px;line-height:1.3;word-break:keep-all}
+.skillModule .ansH em{font-size:9px;letter-spacing:.12em;white-space:nowrap}
+.skillModule .rank .row{grid-template-columns:18px minmax(0,1fr) auto;gap:9px;padding:8px 0}
+.skillModule .rank .n{font-size:10px}
+.skillModule .rank .k{min-width:0;display:flex;align-items:baseline;flex-wrap:wrap;
+  column-gap:7px;row-gap:2px;font-size:13px;line-height:1.4;word-break:keep-all}
+.skillModule .rank .k small{margin-left:0;font-size:10.5px;line-height:1.4;word-break:keep-all}
+.skillModule .rank .d{font-size:11.5px;white-space:nowrap}
+.skillModule .bars{gap:10px}
+.skillModule .bars .b{grid-template-columns:minmax(56px,74px) minmax(60px,1fr) auto;gap:9px}
+.skillModule .bars .b span{font-size:12px}.skillModule .bars .b em{font-size:10.5px}
+.skillModule .mTable{font-size:11.5px}.skillModule .mTable td{padding:9px 8px 9px 0}
+.skillModule .note{margin-top:8px;font-size:10.5px;line-height:1.55}
+
+/* 근거는 공용 안내문(.note)이 아니라 출처를 읽는 독립 인용 카드다.
+   바탕색을 겹치지 않고 얇은 번호 레일로 원문 대목과 메타데이터를 분리한다. */
+.evidenceList{display:flex;flex-direction:column;gap:8px}
+.evidenceQuote{
+  position:relative;display:grid;grid-template-columns:24px minmax(0,1fr);gap:11px;
+  margin:0;padding:13px 14px 12px;overflow:hidden;background:#fff;
+  border:1px solid var(--pink-3);border-radius:8px
+}
+.evidenceQuote::before{
+  content:'';position:absolute;inset:0 auto 0 0;width:2px;background:var(--skill-accent,var(--coral))
+}
+.evidenceNo{
+  padding-top:2px;font-family:var(--num);font-size:8.5px;letter-spacing:.1em;
+  color:var(--skill-accent,var(--coral))
+}
+.evidenceCopy{min-width:0}
+.evidenceCopy p{
+  margin:0;color:var(--pink-0);font-size:12.5px;font-weight:500;line-height:1.55;
+  letter-spacing:-.02em;word-break:keep-all;overflow-wrap:break-word
+}
+.evidenceMeta{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:8px}
+.evidenceMeta span{
+  min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  font-family:var(--num);font-size:9.5px;letter-spacing:.02em;color:var(--pink-2)
+}
+.evidenceMeta em{
+  flex:0 0 auto;padding:3px 6px;border-radius:999px;font-style:normal;
+  font-family:var(--num);font-size:8.5px;letter-spacing:.05em;color:var(--skill-accent,var(--coral));
+  background:color-mix(in srgb,var(--skill-accent,var(--coral)) 10%,#fff)
+}
+.skillModule--evidence.skillModule--editorial{
+  padding:15px;background:#fff;border:1px solid color-mix(in srgb,var(--skill-accent) 16%,var(--pink-3));
+  border-radius:10px
+}
+.skillModule--evidence .ansH{margin-bottom:10px}
+.skillModule--evidence .ansH h3{font-weight:600}
+.skillModule--evidence .ansH em{
+  padding:3px 6px;border:1px solid var(--pink-3);border-radius:999px;background:#fff
+}
+.skillModule--evidence .evidenceQuote{
+  background:color-mix(in srgb,var(--skill-accent) 4%,#fff);border-color:transparent
+}
 
 /* 아래 rpReport 는 이전 reportset 응답을 다시 열었을 때만 쓰는 호환 레이어다. */
 .rpReport{
@@ -151,11 +227,24 @@
 /* 탭 안 블록은 이미 .tabreport 가 테두리를 두르고 있으므로 줄 간격만 살짝 좁힌다 */
 .rpTabPanel .rank .row{padding:9px 0}
 
-/* .kpis 는 4열 고정이다. 팝업은 사이드바(296px)를 뺀 폭이라 4열이면 글자가 눌린다.
-   말풍선 안에서만 2열로 접는다. */
+/* 이전 reportset 등 생성형 캔버스 밖 KPI의 호환 규칙. 생성형은 아래 container query가
+   카드 자신의 폭을 보고 결정한다. */
 .msg.ai .kpis{grid-template-columns:repeat(2,minmax(0,1fr));margin-bottom:10px}
 @media(min-width:1180px){
   .msg.ai .kpis{grid-template-columns:repeat(4,minmax(0,1fr))}
+}
+.msg.ai .skillModule .kpis{
+  grid-template-columns:repeat(var(--skill-kpi-cols,2),minmax(0,1fr));margin:0
+}
+@container skill-module (min-width:680px){
+  .msg.ai .skillModule--block-kpis[data-items="4"] .kpis{
+    grid-template-columns:repeat(4,minmax(0,1fr));
+  }
+}
+@container skill-module (max-width:439px){
+  .msg.ai .skillModule--block-kpis[data-items="3"] .kpis{
+    grid-template-columns:1fr;
+  }
 }
 
 /* 카드 위에 오는 전체 폭 블록(판정·방향 요약)과 카드 사이 간격 */
@@ -173,14 +262,6 @@
 .rpProse ul{margin:0 0 10px;padding-left:0;list-style:none}
 .rpProse li{position:relative;padding-left:13px;margin-bottom:4px}
 .rpProse li::before{content:'·';position:absolute;left:2px;color:var(--coral)}
-
-/* 근거 인용 — 말이 먼저, 출처는 아래 작게.
-   .note 가 flex 라 형제로 두면 옆으로 붙는다. 한 칸 안에서 나눈다. */
-.msg.ai .note > span{min-width:0}
-.msg.ai .note b{display:block;font-weight:400;color:var(--pink-1);
-  font-size:12.5px;line-height:1.6;word-break:keep-all}
-.msg.ai .note em{display:block;margin-top:2px;font-style:normal;
-  font-size:10.5px;letter-spacing:.02em;color:var(--pink-2)}
 
 .rank .row[data-href]:hover .d{color:var(--coral)}
 

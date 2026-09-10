@@ -59,7 +59,8 @@ def _key_for(term: str, gate, store, hint: str | None) -> str:
 
 def _scan(trace) -> dict[str, Any]:
     """궤적에서 '무엇을 조회했나' 만 뽑는다. 값은 여기서 쓰지 않는다."""
-    got: dict[str, Any] = {"metric": {}, "facets": {}, "evidence": set(),
+    got: dict[str, Any] = {"metric": {}, "metric_results": {}, "facets": {},
+                           "evidence": set(), "evidence_results": {},
                            "rank": None, "web": None, "as_of": None, "similar": None,
                            "taste": None, "season": None}
     for c in (trace.calls if trace else []):
@@ -79,10 +80,12 @@ def _scan(trace) -> dict[str, Any]:
             if term:
                 axes = set(args.get("axes") or [])
                 got["metric"].setdefault(term, set()).update(axes)
+                got["metric_results"][term] = res
         elif name == "get_evidence" and (res.get("count") or 0) > 0:
             term = res.get("term") or args.get("term")
             if term:
                 got["evidence"].add(term)
+                got["evidence_results"][term] = res
         elif name == "rank_terms" and (res.get("items") or []):
             got["rank"] = res
         elif name == "similar_terms" and (res.get("items") or res.get("alternatives")):
@@ -98,6 +101,58 @@ def _scan(trace) -> dict[str, Any]:
         elif name == "season_fit" and (res.get("items") or res.get("unknown")):
             got["season"] = res
     return got
+
+
+def _trace_metric_entries(term: str, axes: set, res: dict, facet: str | None,
+                          as_of: str) -> list[dict]:
+    """저장소 재조회가 실패해도 이미 검증된 get_metric 결과로 핵심 카드를 살린다.
+
+    평소에는 report.build_term 이 더 풍부한 블록을 만든다. 이 함수는 그 재조회가
+    순간적으로 실패한 경우에만 쓰는 안전망이며, 도구 응답에 없는 값은 만들지 않는다.
+    """
+    out: list[dict] = []
+    temp = res.get("온도")
+    if isinstance(temp, dict) and temp.get("temp") is not None:
+        rows = [{"k": "트렌드 온도", "small": str(temp.get("band") or ""),
+                 "v": f"{temp['temp']}점", "up": float(temp["temp"]) >= 50}]
+        sample = temp.get("sample_n")
+        if sample is not None:
+            rows.append({"k": "언급량", "small": "도구 조회 결과",
+                         "v": f"{int(sample):,}건", "up": int(sample) >= 20})
+        block = {"type": "rank", "slot": "left", "title": term,
+                 "meta": " · ".join(x for x in (FACET_SAY.get(facet or "", facet or ""),
+                                                   str(res.get("as_of") or as_of)) if x),
+                 "rows": rows}
+        entry = _content("metric", block, term=term)
+        if entry:
+            out.append(entry)
+
+    raw_sources = res.get("출처별")
+    if "출처별" in axes and isinstance(raw_sources, list) and raw_sources:
+        sources = [{"name": report.SOURCE_KO.get(str(s.get("source_code") or ""),
+                                                  str(s.get("source_code") or "출처")),
+                    "raw_count": s.get("raw_count")}
+                   for s in raw_sources if isinstance(s, dict)]
+        entry = _content("sources", B.b_sources({"sources": sources},
+                                                 str(res.get("as_of") or as_of)), term=term)
+        if entry:
+            out.append(entry)
+    return out
+
+
+def _trace_evidence_entry(term: str, res: dict) -> dict | None:
+    items = []
+    for row in (res.get("items") or [])[:4]:
+        if not isinstance(row, dict) or not row.get("body"):
+            continue
+        items.append({"src": str(row.get("platform") or "출처 미상"), "kind": "",
+                      "tone": B.TONE_KO.get(row.get("sentiment"), row.get("sentiment")),
+                      "body": str(row["body"])})
+    if not items:
+        return None
+    return _content("evidence", {"type": "quotes", "slot": "right",
+                                  "title": "근거가 된 대목", "meta": f"{len(items)}건",
+                                  "items": items}, term=term)
 
 
 def _rank_block(res: dict, as_of: str) -> dict | None:
@@ -240,9 +295,10 @@ def _season_blocks(res: dict | None) -> list[dict]:
         verdict = str(item.get("verdict") or "—")
         rows.append({"k": str(item["term"]), "small": str(item.get("say") or ""),
                      "v": verdict, "up": verdict in ("적합", "무관")})
-    for term in (res.get("unknown") or [])[:3]:
-        rows.append({"k": str(term), "small": "착용 기준표에 없는 항목입니다.",
-                     "v": "판단 안 함", "up": False})
+    unknown = [str(term) for term in (res.get("unknown") or [])[:3] if term]
+    if unknown:
+        rows.append({"k": "판단하지 않은 항목", "small": " · ".join(unknown),
+                     "v": "기준표 없음", "up": False})
     if not rows:
         return []
     basis = str(res.get("basis") or "")
@@ -277,7 +333,10 @@ def build(trace, store, gate, question: str = "") -> list[dict]:
 
     # ★ 먼저 node 를 다 만든다. 둘 이상이면 나란히 보기를 앞에 세우기 위해서다.
     built: list[tuple[str, set, dict]] = []
+    trace_fallbacks: list[dict] = []
+    fallback_terms: set[str] = set()
     for term, axes in list(got["metric"].items())[:MAX_TERMS]:
+        node = None
         try:
             key = _key_for(term, gate, store, got["facets"].get(term))
             node = report.build_term(
@@ -286,9 +345,15 @@ def build(trace, store, gate, question: str = "") -> list[dict]:
                  "facet": _facet_of(key, got["facets"].get(term))},
                 as_of or "")
         except Exception:                       # noqa: BLE001
-            # 블록은 덤이다. 여기서 터져 답변까지 못 나가면 본말전도다.
-            continue
-        if not node.get("available"):
+            # 저장소 재조회가 실패해도 도구가 이미 돌려준 값은 버리지 않는다.
+            node = None
+        if not isinstance(node, dict) or not node.get("available"):
+            recovered = _trace_metric_entries(
+                term, axes, got["metric_results"].get(term) or {},
+                got["facets"].get(term), as_of)
+            if recovered:
+                trace_fallbacks.extend(recovered)
+                fallback_terms.add(term)
             continue
         built.append((term, axes, node))
 
@@ -302,6 +367,13 @@ def build(trace, store, gate, question: str = "") -> list[dict]:
         entry = _content("comparison", B.b_compare([n for _, _, n in built], as_of or ""))
         if entry:
             catalog.append(entry)
+    # 재조회 안전망도 일반 모듈과 같은 생성형 캔버스에 들어간다. compose_report 가
+    # 없거나 해당 모듈을 고르지 못해도 report_skill 의 폴백이 화면을 보존한다.
+    catalog.extend(trace_fallbacks)
+    for term in fallback_terms:
+        evidence = _trace_evidence_entry(term, got["evidence_results"].get(term) or {})
+        if evidence:
+            catalog.append(evidence)
     for term, axes, node in built:
         entries = [
             (_content("metric", B.b_metric_rank(node, as_of or node.get("observed_on") or ""), term=term)

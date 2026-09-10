@@ -194,7 +194,14 @@ document.addEventListener('click',e=>{
   const v=e.target.closest('[data-v]');
   /* data-sm 이 붙어 있으면 살!말? 로 갈 때 그 탭에서 시작한다 —
      내 피드에서 넘어온 건 언제나 '내 취향' 이어야 하니까. */
-  if(v){ if(v.dataset.sm)window.__smWant=v.dataset.sm; return goView(v.dataset.v) }
+  if(v){
+    /* 로그인·회원가입 링크는 href="#" 를 갖는다. 기본 앵커 이동을 그대로 두면
+       goView 가 pushState 한 직후 빈 hash 기록이 하나 더 생기고, popstate 가 그
+       기록을 인트로로 해석해 설명 화면으로 되돌린다. SPA 전환만 실행한다. */
+    e.preventDefault();
+    if(v.dataset.sm)window.__smWant=v.dataset.sm;
+    return goView(v.dataset.v);
+  }
   const tr=e.target.closest('[data-tr]');
   if(tr){ $$('.sItem').forEach(x=>x.classList.remove('on')); tr.classList.add('on');
           curTr=tr.dataset.tr; pushNav();

@@ -35,18 +35,18 @@
 .cpOverlay.sm .cpAv:hover{box-shadow:inset 0 0 0 1px #fff}
 .cpOverlay.sm .cpAv{background:var(--coral);color:#fff;box-shadow:none}
 .cpProfileText{min-width:0}
-.cpProfileText b{display:block;font-size:18.5px;font-weight:600;letter-spacing:-.02em}
-.cpProfileText p{font-size:14.5px;color:var(--pink-2);margin-top:3px;line-height:1.4}
+.cpProfileText b{display:block;font-size:17px;font-weight:600;letter-spacing:-.02em}
+.cpProfileText p{font-size:13px;color:var(--pink-2);margin-top:3px;line-height:1.4}
 .cpNewBtn{
   display:flex;align-items:center;justify-content:center;gap:6px;width:100%;
   background:var(--pink-0);color:var(--paper);border-radius:10px;padding:12px;
-  font-size:15.5px;font-weight:500;transition:opacity .25s,background .3s;
+  font-size:14px;font-weight:500;transition:opacity .25s,background .3s;
 }
 .cpNewBtn i{font-style:normal}
 .cpNewBtn:hover{opacity:.86}
 .cpOverlay.sm .cpNewBtn{background:var(--coral)}
 .cpListLabel{
-  font-family:var(--num);font-size:13px;letter-spacing:.16em;color:var(--pink-2);
+  font-family:var(--num);font-size:11.5px;letter-spacing:.14em;color:var(--pink-2);
   text-transform:uppercase;margin:20px 2px 8px;flex:0 0 auto;
 }
 .cpList{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:2px;margin:0 -6px;min-height:0}
@@ -56,14 +56,14 @@
 .cpItem:hover{background:var(--pink-3)}
 .cpItem.on{background:var(--pink-3)}
 .cpItem em{
-  display:block;font-style:normal;font-family:var(--num);font-size:12.5px;
+  display:block;font-style:normal;font-family:var(--num);font-size:11px;
   color:var(--pink-2);margin-bottom:3px;font-feature-settings:'zero' 0;
 }
 .cpItem span{
   display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
-  font-size:15.5px;color:var(--pink-1);line-height:1.5;word-break:keep-all;
+  font-size:14px;color:var(--pink-1);line-height:1.45;word-break:keep-all;
 }
-.cpListEmpty{font-size:15px;color:var(--pink-2);padding:8px}
+.cpListEmpty{font-size:13.5px;color:var(--pink-2);padding:8px}
 
 /* 대화 목록 줄 — 제목 버튼(.cpItem) + 수정 버튼(.cpEdit)을 나란히.
    연필은 평소엔 숨어 있다가(opacity:0) 줄에 마우스를 올리면 밑줄 그은
@@ -79,7 +79,7 @@
 .cpEdit:hover{background:var(--pink-3);color:var(--pink-0)}
 .cpEdit i{font-style:normal;font-size:14px;text-decoration:underline;text-underline-offset:2px}
 .cpTitleIn{
-  display:block;width:100%;font:inherit;font-size:15.5px;color:var(--pink-1);line-height:1.5;
+  display:block;width:100%;font:inherit;font-size:14px;color:var(--pink-1);line-height:1.45;
   background:#fff;border:1px solid var(--pink-0);border-radius:6px;padding:3px 7px;
 }
 
@@ -119,7 +119,7 @@
   box-shadow:0 1px 0 rgba(10,10,10,.05),0 10px 22px -14px rgba(10,10,10,.4)}
 .cpInputRow textarea{
   flex:1;resize:none;min-height:44px;max-height:120px;border-radius:14px;
-  padding:12px 15px;font-family:inherit;font-size:13.5px;background:#fff;
+  padding:12px 15px;font-family:inherit;font-size:13px;background:#fff;
   box-shadow:inset 0 0 0 1px var(--pink-3);outline:none;transition:box-shadow .25s;
 }
 .cpInputRow textarea:focus{box-shadow:inset 0 0 0 1px var(--pink-0)}
@@ -131,6 +131,20 @@
 }
 .cpOverlay.sm .cpSend{background:var(--coral)}
 .cpSend:hover{transform:scale(1.06)}
+
+/* 팝업 안 대화는 홈 본문보다 한 단계 조밀하게 쓴다. 리포트와 함께 한 화면에
+   읽히게 하되, 15px 아래로 내려 본문 가독성을 희생하지 않는다. */
+.cpOverlay .msg.me .bub{padding:12px 17px;font-size:14px;line-height:1.5}
+.cpOverlay .msg.ai{gap:10px}
+.cpOverlay .msg.ai .who{font-size:9.5px;letter-spacing:.19em}
+.cpOverlay .msg.ai .who i.cpStar{font-size:15px}
+.cpOverlay .msg.ai .say,
+.cpOverlay .msg.ai .nextQ{font-size:15px;line-height:1.72;max-width:82ch}
+.cpOverlay .msg.ai .say p,
+.cpOverlay .msg.ai .say ul,
+.cpOverlay .msg.ai .say ol{margin-bottom:8px}
+.cpOverlay .msg.ai .cue .cueRow{font-size:10.5px;line-height:1.55}
+.cpOverlay .msg.ai .who .cpStage{font-size:10.5px}
 
 @media(max-width:760px){
   .cpSide{width:220px;flex-basis:220px;padding:18px 14px}

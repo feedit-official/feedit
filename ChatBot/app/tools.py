@@ -259,7 +259,13 @@ SPECS: list[dict] = [
         "모멘텀=direction, 출처별=sources, 연관어=associations, 긍부정=sentiment, "
         "similar_terms=recommendations, get_user_taste=taste, season_fit=context, "
         "get_evidence=evidence/links, declare_missing=missing. term 은 특정 용어 모듈이면 "
-        "그 정확한 표기를 쓰고 공통 모듈이면 null. HTML·CSS나 수치·상품을 인자에 쓰지 마라.",
+        "그 정확한 표기를 쓰고 공통 모듈이면 null. 화면은 결론→핵심 신호→근거 순으로 "
+        "읽히게 하고, 중요한 모듈과 보조 모듈의 폭·강조를 다르게 해 편집형 리듬을 만든다. "
+        "모든 모듈을 같은 카드처럼 반복하거나 의미 없이 airy 를 쓰지 말고, 제목은 "
+        "'FEEDiT SIGNAL' 대신 질문의 대상과 결과를 드러내는 짧은 한국어로 쓴다. "
+        "rank·table은 hero/card/list, KPI는 hero/card로 표현하고 editorial·compact는 "
+        "근거와 설명에만 써서 데이터 카드의 시각 문법을 통일한다. "
+        "HTML·CSS나 수치·상품을 인자에 쓰지 마라.",
         {
             "title": {"type": "string", "description": "짧은 리포트 제목. 수치를 넣지 않는다"},
             "accent": {"type": "string", "enum": ["coral", "ink", "violet", "blue", "lime"]},

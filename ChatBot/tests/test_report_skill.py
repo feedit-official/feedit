@@ -2,7 +2,7 @@ import json
 import unittest
 from unittest.mock import patch
 
-from app import agent_blocks, orchestrator, report_skill
+from app import agent_blocks, blocks, orchestrator, report_skill
 from app.tools import Toolbox, specs_for
 
 
@@ -82,6 +82,21 @@ class ReportSkillTest(unittest.TestCase):
         self.assertEqual([m["kind"] for m in canvas["modules"]], ["direction", "metric"])
         self.assertEqual([m["span"] for m in canvas["modules"]], [8, 4])
 
+    def test_three_sentiment_kpis_get_three_columns_and_korean_labels(self):
+        block = blocks.b_sentiment({"sentiment": {
+            "index": 50, "n_total": 1, "pos_pct": 100.0, "neg_pct": 0.0,
+            "top_pos": "considering", "top_neg": "disappoint",
+        }})
+        catalog = [{"id": "sentiment:고프코어", "kind": "sentiment",
+                    "term": "고프코어", "block": block}]
+        trace = Trace([design([{"kind": "sentiment", "term": "고프코어",
+                                "presentation": "card", "span": 4,
+                                "emphasis": "normal"}])])
+        canvas = report_skill.build(catalog, trace)
+        module = canvas["modules"][0]
+        self.assertEqual(module["columns"], 3)
+        self.assertEqual(module["block"]["items"][1]["note"], "구매고민")
+
     def test_unknown_content_reference_is_not_invented(self):
         catalog = [{"id": "metric:고프코어", "kind": "metric", "term": "고프코어",
                     "block": {"type": "rank", "rows": []}}]
@@ -91,6 +106,36 @@ class ReportSkillTest(unittest.TestCase):
         canvas = report_skill.build(catalog, trace)
         self.assertEqual(canvas["source"], "fallback")
         self.assertEqual(canvas["modules"][0]["id"], "metric:고프코어")
+        self.assertEqual(canvas["title"], "고프코어 흐름")
+
+    def test_generic_model_title_is_replaced_with_content_title(self):
+        catalog = [{"id": "context:all:0", "kind": "context", "term": None,
+                    "block": {"type": "rank", "rows": []}}]
+        trace = Trace([design([{"kind": "context", "term": None,
+                                "presentation": "hero", "span": 12,
+                                "emphasis": "strong"}], title="FEEDiT SIGNAL")])
+        canvas = report_skill.build(catalog, trace)
+        self.assertEqual(canvas["title"], "오늘의 옷차림")
+
+    def test_rank_indicator_cannot_use_mismatched_editorial_surface(self):
+        catalog = [{"id": "context:all:0", "kind": "context", "term": None,
+                    "block": {"type": "rank", "title": "상황에 맞는지", "rows": []}}]
+        trace = Trace([design([{"kind": "context", "term": None,
+                                "presentation": "editorial", "span": 5,
+                                "emphasis": "normal"}])])
+        canvas = report_skill.build(catalog, trace)
+        self.assertEqual(canvas["modules"][0]["presentation"], "card")
+
+    def test_unknown_season_terms_are_grouped_into_one_row(self):
+        blocks = agent_blocks._season_blocks({
+            "basis": "20°C 기준",
+            "items": [{"term": "자켓", "verdict": "적합", "say": "잘 맞습니다."}],
+            "unknown": ["캐주얼", "고프코어", "긱시크"],
+        })
+        rows = blocks[0]["rows"]
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[1]["k"], "판단하지 않은 항목")
+        self.assertEqual(rows[1]["small"], "캐주얼 · 고프코어 · 긱시크")
 
     def test_missing_data_cannot_be_hidden_by_design(self):
         catalog = [
@@ -146,6 +191,24 @@ class ReportSkillTest(unittest.TestCase):
         self.assertEqual(blocks[0]["type"], "generative_report")
         self.assertEqual(blocks[0]["source"], "model")
         self.assertEqual(blocks[0]["modules"][0]["block"]["type"], "rank")
+
+    @patch("app.agent_blocks.report.build_term", side_effect=RuntimeError("temporary read failure"))
+    def test_metric_card_survives_store_rehydrate_failure_and_missing_design(self, _build):
+        calls = [
+            {"tool": "search_terms", "args": {"q": "고프코어"},
+             "result": {"found": [{"term": "고프코어", "facet": "style"}]}},
+            {"tool": "get_metric",
+             "args": {"term": "고프코어", "axes": ["온도", "출처별"]},
+             "result": {"term": "고프코어", "has_metric": True,
+                        "as_of": "2026-09-09",
+                        "온도": {"temp": 21, "band": "차가움", "sample_n": 11},
+                        "출처별": [{"source_code": "kream", "raw_count": 7}]}},
+        ]
+        result = agent_blocks.build(Trace(calls), Store(), Gate())
+        self.assertEqual(result[0]["type"], "generative_report")
+        self.assertEqual(result[0]["source"], "fallback")
+        self.assertEqual([m["kind"] for m in result[0]["modules"]], ["metric", "sources"])
+        self.assertEqual(result[0]["modules"][0]["block"]["rows"][0]["v"], "21점")
 
 
 if __name__ == "__main__":

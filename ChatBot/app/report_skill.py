@@ -37,6 +37,23 @@ SURFACES = {"paper", "soft", "contrast", "glass"}
 DENSITIES = {"airy", "balanced", "compact"}
 MAX_MODULES = 9
 
+# 모델은 정보의 위계와 폭을 고르되, 데이터 모양과 맞지 않는 표면까지 만들지는 못한다.
+# rank 를 editorial 로 그리면 같은 표 안에서도 어떤 것은 베이지 지면, 어떤 것은
+# 테두리 카드가 되어 새 지표가 생길 때마다 디자인이 달라진다.
+BLOCK_PRESENTATIONS = {
+    "rank": {"hero", "card", "list"},
+    "kpis": {"hero", "card"},
+    "bars": {"hero", "card", "chart"},
+    "table": {"hero", "card", "list"},
+    "quotes": {"editorial", "card"},
+    "links": {"editorial", "compact"},
+    "note": {"editorial", "compact", "card"},
+}
+BLOCK_DEFAULT_PRESENTATION = {
+    "rank": "card", "kpis": "card", "bars": "chart", "table": "card",
+    "quotes": "editorial", "links": "compact", "note": "compact",
+}
+
 
 def _pick(value: Any, allowed: set[str], fallback: str) -> str:
     value = str(value or "")
@@ -48,6 +65,15 @@ def _span(value: Any, fallback: int = 6) -> int:
         return max(4, min(12, int(value)))
     except (TypeError, ValueError):
         return fallback
+
+
+def _presentation(content: dict, requested: Any) -> str:
+    """블록의 정보 구조를 보존하는 범위에서만 모델의 표현 선택을 허용한다."""
+    block = content.get("block") if isinstance(content, dict) else None
+    block_type = str((block or {}).get("type") or "")
+    picked = _pick(requested, PRESENTATIONS, "card")
+    allowed = BLOCK_PRESENTATIONS.get(block_type, PRESENTATIONS)
+    return picked if picked in allowed else BLOCK_DEFAULT_PRESENTATION.get(block_type, "card")
 
 
 def design_from(trace) -> dict | None:
@@ -87,6 +113,52 @@ def _fallback_modules(catalog: list[dict]) -> list[dict]:
     return out
 
 
+def _fallback_title(catalog: list[dict]) -> str:
+    """내용 종류와 실제 용어만으로 짧은 편집 제목을 만든다."""
+    kinds = {str(content.get("kind") or "") for content in catalog}
+    terms = list(dict.fromkeys(
+        str(content.get("term") or "").strip()
+        for content in catalog if str(content.get("term") or "").strip()
+    ))
+    if "context" in kinds:
+        return "오늘의 옷차림"
+    if "comparison" in kinds and len(terms) >= 2:
+        return f"{terms[0]} · {terms[1]} 비교"
+    if "ranking" in kinds:
+        return "지금 뜨는 흐름"
+    if len(terms) == 1:
+        suffix = "다음 탐색" if "recommendations" in kinds else "흐름"
+        return f"{terms[0]} {suffix}"
+    if "taste" in kinds:
+        return "나의 취향 지도"
+    if "recommendations" in kinds:
+        return "추천 탐색"
+    if "evidence" in kinds or "links" in kinds:
+        return "근거 한눈에"
+    return "FEEDiT 트렌드 브리프"
+
+
+def _module_payload(module: dict) -> dict:
+    """콘텐츠 개수까지 보고 브라우저가 안전하게 그릴 레이아웃 힌트를 붙인다.
+
+    모델은 정보 관계와 모듈 폭을 고르지만, KPI 안쪽 열 수까지 추측하게 두지 않는다.
+    3개 지표는 한 줄 3칸, 4개 지표는 좁은 모듈에서 2×2가 기본이다. 실제 픽셀 폭이
+    넓으면 CSS 컨테이너 규칙이 4칸으로 확장한다.
+    """
+    content = module["content"]
+    block = content["block"]
+    payload = {
+        "id": content["id"], "kind": content["kind"],
+        "presentation": module["presentation"], "span": module["span"],
+        "emphasis": module["emphasis"], "block": block,
+    }
+    if block.get("type") == "kpis":
+        count = len(block.get("items") or [])
+        if count:
+            payload["columns"] = 3 if count == 3 else min(count, 2)
+    return payload
+
+
 def build(catalog: list[dict], trace) -> dict | None:
     """검증된 콘텐츠 카탈로그와 모델의 UI 스펙을 하나의 캔버스로 결합한다."""
     catalog = [c for c in catalog if isinstance(c, dict) and c.get("id") and c.get("block")]
@@ -94,6 +166,7 @@ def build(catalog: list[dict], trace) -> dict | None:
         return None
 
     spec = design_from(trace)
+    fallback_title = _fallback_title(catalog)[:48]
     modules: list[dict] = []
     used: set[str] = set()
     if spec:
@@ -109,7 +182,7 @@ def build(catalog: list[dict], trace) -> dict | None:
             used.add(content["id"])
             modules.append({
                 "content": content,
-                "presentation": _pick(request.get("presentation"), PRESENTATIONS, "card"),
+                "presentation": _presentation(content, request.get("presentation")),
                 "span": _span(request.get("span")),
                 "emphasis": _pick(request.get("emphasis"), EMPHASIS, "normal"),
             })
@@ -124,10 +197,12 @@ def build(catalog: list[dict], trace) -> dict | None:
     if not modules:
         modules = _fallback_modules(catalog)
         source = "fallback"
-        title, accent, surface, density = "FEEDiT SIGNAL", "coral", "paper", "balanced"
+        title, accent, surface, density = fallback_title, "coral", "paper", "balanced"
     else:
         source = "model"
-        title = str(spec.get("title") or "FEEDiT SIGNAL").strip()[:48]
+        title = str(spec.get("title") or "").strip()[:48]
+        if not title or title.casefold().replace(" ", "") == "feedit signal".replace(" ", ""):
+            title = fallback_title
         accent = _pick(spec.get("accent"), ACCENTS, "coral")
         surface = _pick(spec.get("surface"), SURFACES, "paper")
         density = _pick(spec.get("density"), DENSITIES, "balanced")
@@ -143,9 +218,5 @@ def build(catalog: list[dict], trace) -> dict | None:
         "type": "generative_report", "slot": "full", "title": title,
         "accent": accent, "surface": surface, "density": density,
         "source": source, "fingerprint": fingerprint,
-        "modules": [{
-            "id": m["content"]["id"], "kind": m["content"]["kind"],
-            "presentation": m["presentation"], "span": m["span"],
-            "emphasis": m["emphasis"], "block": m["content"]["block"],
-        } for m in modules],
+        "modules": [_module_payload(m) for m in modules],
     }

@@ -215,6 +215,11 @@ await t('속성은 겹쳐 걸리고, 하나만 뗄 수 있다', () => {
 const RH = await import(`${F}/trend/static/js/render_helpers.js`);
 const D  = await import(`${F}/trend/static/js/dispatch.js`);
 
+await t('★ 아무 필터도 고르지 않으면 조회 대상은 실제로 빈 문자열이다', () => {
+  S.FS.pick = {};
+  assert.equal(RH.fsItem(), '');
+});
+
 await t('★ 속성만 골라도 조회 대상이 된다 (빈 화면으로 안 떨어진다)', () => {
   S.FS.sel = [null, null, null, null]; S.FS.mat = null; S.FS.attr = [['색', '블랙']];
   assert.equal(RH.fsItem(), '블랙');

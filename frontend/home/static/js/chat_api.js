@@ -185,14 +185,17 @@ const BLOCK = {
     (x.note ? '<div class="dl ' + (x.up ? 'up' : 'dn') + '">' + esc(x.note) + '</div>' : '') +
     '</div>').join('') + '</div>',
 
-  quotes: b => H(b.title, b.meta) + (b.items || []).map(x =>
-    /* .note 는 flex 다. 인용과 출처를 형제로 두면 옆으로 붙는다 —
-       한 칸에 넣고 안에서 줄을 나눈다. */
-    '<div class="note"><i>◆</i><span>' +
-    '<b>' + esc(x.body) + '</b>' +
-    '<em>' + esc(x.src) + (x.kind ? ' · ' + esc(x.kind) : '') +
-    (x.tone ? ' · ' + esc(x.tone) : '') + '</em>' +
-    '</span></div>').join(''),
+  quotes: b => H(b.title, b.meta) + '<div class="evidenceList">' +
+    (b.items || []).map((x, i) => {
+      const source = [x.src, x.kind].filter(Boolean).map(esc).join(' · ');
+      return '<blockquote class="evidenceQuote">' +
+        '<span class="evidenceNo" aria-hidden="true">' + String(i + 1).padStart(2, '0') + '</span>' +
+        '<div class="evidenceCopy"><p>' + esc(x.body) + '</p>' +
+        '<footer class="evidenceMeta">' +
+        (source ? '<span>' + source + '</span>' : '') +
+        (x.tone ? '<em>' + esc(x.tone) + '</em>' : '') +
+        '</footer></div></blockquote>';
+    }).join('') + '</div>',
 
   /* 문단은 문단으로, 글머리표는 글머리표로 그린다.
      <br> 로만 이으면 문단 사이 간격이 없어 한 덩어리로 읽힌다.
@@ -251,16 +254,22 @@ const BLOCK = {
       const presentation = presentations.has(m.presentation) ? m.presentation : 'card';
       const weight = emphasis.has(m.emphasis) ? m.emphasis : 'normal';
       const span = Math.max(4, Math.min(12, Number.parseInt(m.span, 10) || 6));
+      const itemCount = Array.isArray(block.items) ? Math.min(9, block.items.length) : 0;
+      const defaultCols = itemCount === 3 ? 3 : Math.max(1, Math.min(2, itemCount || 2));
+      const columns = Math.max(1, Math.min(4, Number.parseInt(m.columns, 10) || defaultCols));
       return '<section class="skillModule skillModule--' + kind +
         ' skillModule--' + presentation + ' skillModule--' + weight +
-        '" style="grid-column:span ' + span + '">' + fn(block) + '</section>';
+        ' skillModule--block-' + esc(block.type) +
+        '" style="grid-column:span ' + span + (block.type === 'kpis'
+          ? ';--skill-kpi-cols:' + columns : '') + '"' +
+        (itemCount ? ' data-items="' + itemCount + '"' : '') + '>' + fn(block) + '</section>';
     }).filter(Boolean).join('');
     if(!modules) return '';
     return '<div class="skillReport skillReport--' + surface + ' skillReport--' + accent +
       ' skillReport--' + density + '" data-layout="' + esc(b.fingerprint || '') + '">' +
-      '<div class="skillReportHead"><span>FEEDiT / GENERATED VIEW</span><em>' +
-      String((b.modules || []).length).padStart(2,'0') + ' MODULES</em></div>' +
-      '<div class="skillReportTitle">' + esc(b.title || 'FEEDiT SIGNAL') + '</div>' +
+      '<div class="skillReportHead"><span>FEEDiT / LIVE REPORT</span><em>' +
+      String((b.modules || []).length).padStart(2,'0') + ' SIGNALS</em></div>' +
+      '<div class="skillReportTitle">' + esc(b.title || 'FEEDiT 트렌드 브리프') + '</div>' +
       '<div class="skillCanvas">' + modules + '</div></div>';
   },
 

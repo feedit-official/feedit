@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node --experimental-loader=./tests/fake_pg/loader.mjs tests/api.test.mjs && node tests/chart_live.test.mjs && node tests/trend_wiring.test.mjs && node tests/trend_empty.test.mjs && node tests/search_bar.test.mjs && node tests/search_live.test.mjs && node tests/search_sequence.test.mjs && node tests/search_dictionary.test.mjs && node tests/error_messages.test.mjs"
+    "test": "node --experimental-loader=./tests/fake_pg/loader.mjs tests/api.test.mjs && node tests/chart_live.test.mjs && node tests/trend_wiring.test.mjs && node tests/trend_empty.test.mjs && node tests/search_bar.test.mjs && node tests/search_live.test.mjs && node tests/search_sequence.test.mjs && node tests/search_dictionary.test.mjs && node tests/error_messages.test.mjs && node tests/router_signup.test.mjs"
   },
   "devDependencies": {
     "vite": "^7.1.3",
