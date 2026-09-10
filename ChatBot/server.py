@@ -152,6 +152,31 @@ def sse(event: str, data) -> bytes:
             f"data: {json.dumps(data, ensure_ascii=False)}\n\n").encode("utf-8")
 
 
+def _log_turn(question: str, rep: dict) -> None:
+    """답 하나가 어떻게 끝났는지 한 줄. (2026-09-10)
+
+    ★ 왜 필요한가 — 화면에 안내문이 뜨면 원인이 **시간(NET_ReadTimeout)** 인지
+      **한도(HTTP_429)** 인지 구분할 방법이 없었다. 둘 다 같은 문구로 나온다.
+      trace 는 report 이벤트에 실려 나가지만 그걸 보려면 개발자도구를 열어야 하고,
+      서버 콘솔에는 아무것도 남지 않았다. 추측하지 않으려고 한 줄 남긴다.
+    ★ 질문은 앞 40자만. 로그는 원본이 아니다.
+    """
+    tr = rep.get("trace") or {}
+    if not tr:
+        return
+    mark = "!" if (tr.get("stopped") not in ("done", None) or tr.get("over_budget")) else " "
+    try:
+        rounds = "+".join(str(x) for x in (tr.get("round_ms") or [])) or "-"
+        hosted = tr.get("hosted") or 0
+        print(f"{mark} [{time.strftime('%H:%M:%S')}] {tr.get('ms')}ms "
+              f"stopped={tr.get('stopped')} 바퀴={tr.get('rounds')}({rounds}ms) "
+              f"웹검색={hosted} 호출={tr.get('calls')} "
+              f"도구={','.join(tr.get('tools') or []) or '-'} "
+              f"| {question[:40]}", flush=True)
+    except Exception:                              # noqa: BLE001
+        pass                                       # 로그가 대화를 막지 않는다
+
+
 def split_deltas(html: str) -> list[str]:
     """한 줄 결론을 조각으로 나눈다.
 
@@ -402,6 +427,7 @@ class Handler(BaseHTTPRequestHandler):
                 push("text", {"delta": d})
                 time.sleep(0.012)
             push("report", rep)
+            _log_turn(question, rep)
             acts = actions_for(rep)
             if acts:
                 push("actions", acts)
