@@ -1,6 +1,6 @@
 import { $, $$, HAS_A, aAnimate } from '../../../core/static/js/dom.js';
 import { SAY, SM_ON, SM_SAY, STYLES, ansCardHTML, smSwitch } from './chat.js';
-import { isUp, askStream, reportHTML, actionsHTML, refusalHTML, requestLexicon, fillBars } from './chat_api.js';
+import { isUp, askStream, reportHTML, notesHTML, followupHTML, actionsHTML, refusalHTML, requestLexicon, fillBars } from './chat_api.js';
 import { requireAuth } from '../../../account/static/js/profile.js';
 
 /* ══════════════════════════════════════════════════════
@@ -138,7 +138,7 @@ export function cpRenderThread(opts){
     if(idx===typeIdx) return '<div class="msg ai" data-type-target="1">'+cpWhoHTML()+'<div class="say"></div></div>';
     { const card=(m.cardHtml!=null)?m.cardHtml:(m.key?ansCardHTML(m.key):'');
       return '<div class="msg ai">'+cpWhoHTML()+'<div class="say">'+(m.html||'')+'</div>'+
-        card+(m.actionsHtml||'')+'</div>'; }
+        card+(m.followHtml||'')+(m.cueHtml||'')+(m.actionsHtml||'')+'</div>'; }
   }).join('');
   $$('i[data-w]',th).forEach(f=>f.style.width=f.dataset.w+'%');
   wrap.scrollTop=wrap.scrollHeight;
@@ -273,6 +273,13 @@ async function cpAskLive(c,aiMsg,text){
         while(holder.firstChild)host.appendChild(holder.firstChild);
         fillBars(host);
       }
+      /* 카드 다음 순서는 셋이다 — 이어 갈 질문 · 못 한 것 · 버튼.
+         라이브로 붙이는 순서와 다시 그릴 때의 순서가 같아야 한다
+         (cpRenderThread 가 card 다음에 followHtml → cueHtml 을 끼운다). */
+      aiMsg.followHtml=followupHTML(rep.followup);
+      if(host&&aiMsg.followHtml)host.insertAdjacentHTML('beforeend',aiMsg.followHtml);
+      aiMsg.cueHtml=notesHTML(rep.notes);
+      if(host&&aiMsg.cueHtml)host.insertAdjacentHTML('beforeend',aiMsg.cueHtml);
     },
     actions:(acts)=>{
       aiMsg.actionsHtml=actionsHTML(acts);

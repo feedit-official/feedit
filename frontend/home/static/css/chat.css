@@ -264,6 +264,37 @@ body[data-view="trend"] .mFoot{display:none}
   word-break:keep-all;overflow-wrap:break-word;white-space:normal}
 .msg.ai .say b{color:var(--coral);font-weight:500}
 .msg.ai .act{display:flex;gap:8px;flex-wrap:wrap;margin-top:2px}
+/* 말풍선 안의 마크다운 (서버 mdclean.to_html 이 만든 태그만 온다).
+   ★ 예전 경로는 한 줄 결론이라 문단이랄 게 없었다. 새 경로는 목록과 강조가 있는
+     여러 문단이라 그 자리를 만들어 준다. 없으면 전부 한 덩어리로 흐른다. */
+.msg.ai .say p{margin:0 0 10px}
+.msg.ai .say p:last-child{margin-bottom:0}
+.msg.ai .say ul,.msg.ai .say ol{margin:0 0 10px;padding-left:1.15em}
+.msg.ai .say li{margin:3px 0}
+.msg.ai .say li::marker{color:var(--pink-2)}
+.msg.ai .say a{color:inherit;text-decoration:underline;text-underline-offset:2px}
+/* 이어 갈 질문 — 카드 다음, 안내 줄 앞.
+   ★ 크기는 본문(.say)과 같다. 이건 챗봇이 사용자에게 거는 말이지 각주가 아니다.
+     작게 두면 읽고 답할 문장인데 읽히지 않는다. (2026-09-10) */
+.msg.ai .nextQ{
+  margin-top:6px;max-width:76ch;
+  font-size:16.5px;line-height:1.8;letter-spacing:-.02em;
+  word-break:keep-all;overflow-wrap:break-word;
+}
+/* 못 한 것 한 줄 — 카드 다음, 버튼 앞 (chat_api.notesHTML).
+   ★ 답을 가리면 안 되는 글이다. 본문(.say 16.5px)보다 확실히 작게 두고 색도
+     한 단 낮춘다 — 읽으려 들면 읽히되, 먼저 눈에 들어오지는 않는 크기.
+   ★ 카드 안 .note(weekly_report.css)를 재사용하지 않는다. 그쪽은 카드 여백을
+     전제로 한 규칙이라 말풍선 아래에서는 간격이 어긋난다. */
+.msg.ai .cue{display:flex;flex-direction:column;gap:5px;margin-top:2px;max-width:76ch}
+.msg.ai .cue .cueRow{
+  display:flex;gap:7px;align-items:flex-start;
+  font-size:11px;line-height:1.6;letter-spacing:-.01em;color:var(--pink-2);
+  word-break:keep-all;overflow-wrap:break-word;
+}
+.msg.ai .cue .cueRow i{
+  font-style:normal;color:var(--coral);flex:0 0 auto;font-size:9px;line-height:1.95;
+}
 /* 답을 기다리는 동안 — 별이 돌고, 별+FEEDiT 글자가 옅어졌다 밝아지며 "생각 중"을 말한다 */
 /* ✧ 글자 자체가 90˚마다 거의 대칭이라 회전만 주면 눈에 잘 안 띈다 —
    크기까지 같이 들썩여야 "돌고 있다"가 확실히 읽힌다 */

@@ -234,6 +234,44 @@ export async function requestLexicon(surface, question){
 
 /* ── 다음 행동 버튼 ──────────────────────────────────
    .msg.ai .act 안에서만 스타일이 걸린다. AI 말풍선 안에 넣어야 한다. */
+/* 이 답변에서 무엇을 못 했는지 — 말풍선 아래 작은 한 줄. (2026-09-10)
+   ★ 서버(agent_path._notes)는 다섯 가지를 보낸다:
+       NO_DATA · VERIFIED · VERIFY_FAILED · WEB_SOURCED · PARTIAL
+     지금까지 화면은 이 목록을 **한 번도 읽지 않았다.** reportHTML 이 보는 것은
+     as_of · intent · blocks 뿐이라, "웹에서 찾은 값입니다" 도 "측정 자료에 없는
+     내용을 덜어냈습니다" 도 사용자에게 도달하지 못했다. 못 한 것을 숨기지
+     않는다는 원칙이 서버에서 끝나고 화면 앞에서 멈춰 있던 자리다.
+   ★ NO_DATA 만 뺀다 — agent_blocks 가 이미 카드 안에 note 블록으로 그린다.
+     여기서 또 그리면 같은 문장이 카드 안과 카드 아래에 두 번 뜬다.
+   ★ 카드가 아니라 말풍선 옆에 붙인다. 블록이 없는 답(웹으로만 답한 날씨 같은)은
+     카드를 아예 안 그리는데(reportHTML 의 규칙 — 빈 카드가 "뭔가 실패했나" 로
+     읽혔던 자리), 안내 한 줄 때문에 그 빈 카드를 되살릴 수는 없다. */
+/* 이어 갈 질문 — 리포트 카드 **아래** 한 줄. (2026-09-10)
+   ★ 서버(agent_path._split_followup)가 답변 본문에서 떼어 보낸다. 본문에 남겨
+     두면 말풍선에 그려져 카드 **위**에 뜨고, 사용자는 근거를 보기도 전에 질문부터
+     받는다. 순서가 뒤집혀 있었다.
+   ★ 여기 오는 내용은 서버가 만든 안전한 HTML 이다(mdclean.to_html — 이스케이프를
+     먼저 하고 아는 표시만 태그로 바꾼다). 그래서 다시 이스케이프하지 않는다.
+     하면 <b> 가 글자로 보인다. */
+export function followupHTML(html){
+  const s = String(html || '').trim().replace(/^<p>([\s\S]*)<\/p>$/, '$1');
+  if(!s) return '';
+  /* ★ 표식(✧)을 붙이지 않는다. 이 줄은 주석이나 안내가 아니라 **말**이라서,
+     앞에 기호가 붙으면 시스템 메시지처럼 읽힌다. 본문과 같은 크기·같은 모양으로
+     그냥 이어지는 것이 맞다. (2026-09-10) */
+  return '<div class="nextQ">' + s + '</div>';
+}
+
+const CUE_SKIP = new Set(['NO_DATA']);
+
+export function notesHTML(notes){
+  const rows = (notes || []).filter(n => n && n.message && !CUE_SKIP.has(n.code));
+  if(!rows.length) return '';
+  return '<div class="cue">' + rows.map(n =>
+    '<div class="cueRow"><i>◆</i><span>' + esc(n.message) + '</span></div>'
+  ).join('') + '</div>';
+}
+
 export function actionsHTML(acts){
   if(!acts || !acts.length) return '';
   return '<div class="act">' + acts.map(a => {
