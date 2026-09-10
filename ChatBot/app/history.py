@@ -28,6 +28,21 @@ TTL_SEC = 2 * 60 * 60
 MAX_CONV = 500
 
 
+# 되묻기로 끝난 턴의 intent. agent_path.ask() 가 이 값을 돌려주고,
+# engine 이 그대로 기억에 넣는다. 예산(orchestrator.ASK_BUDGET)이 이걸 센다.
+ASK_INTENT = "agent.ask"
+
+
+def count_asks(turns) -> int:
+    """이 대화에서 되물은 횟수.
+
+    ★ 답변 본문이 아니라 intent 로 센다. 기억이 들고 있는 세 가지 중 하나라,
+      새로 저장할 것이 없다.
+    """
+    return sum(1 for t in (turns or [])
+               if isinstance(t, dict) and str(t.get("intent") or "") == ASK_INTENT)
+
+
 def make_turn(question: str, intent: str, mode: str, terms: list[dict]) -> dict:
     return {
         "q": " ".join(str(question or "").split())[:200],

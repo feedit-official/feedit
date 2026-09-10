@@ -63,6 +63,15 @@ class ChatEngine:
             past_a = (history.sanitize(history_in) if history_in
                       else self.memory.recent(conversation_id))
             ctx = {"mode": mode}
+            # ★ 되묻기 예산 (15번). **서버 기억**에서도 센다.
+            #   클라이언트가 보내는 history 에는 되묻기 턴이 빠진다 —
+            #   chat_popup 은 report 이벤트가 올 때만 turn 을 남기는데,
+            #   되묻기는 kind="meta" 라 report 를 보내지 않기 때문이다.
+            #   그쪽만 보면 예산이 영원히 0 이라 상한이 걸리지 않는다.
+            #   둘 중 큰 쪽을 쓴다 — 서버가 재시작하면 기억이 비지만,
+            #   그때 한 번 더 되묻는 것은 감당할 수 있는 실패다.
+            ctx["asked_before"] = max(history.count_asks(past_a),
+                                      history.count_asks(self.memory.recent(conversation_id)))
             # 화면에서 넘어온 것들. 없으면 없는 대로 — 도구 목록만 줄어든다.
             for k in ("screen_term", "salmal_card_id", "user_id", "region"):
                 v = extra.get(k) if extra else None

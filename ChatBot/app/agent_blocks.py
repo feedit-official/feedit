@@ -30,6 +30,7 @@ from typing import Any
 
 from . import blocks as B
 from . import report
+from .tools import FACET_SAY          # 축 한글 이름 — 화면 문구를 도구와 맞춘다
 
 MAX_TERMS = 2       # 카드 하나에 term 둘까지. 셋이면 2단 그리드가 흘러넘친다.
 MAX_BLOCKS = 7
@@ -63,7 +64,7 @@ def _key_for(term: str, gate, store, hint: str | None) -> str:
 def _scan(trace) -> dict[str, Any]:
     """궤적에서 '무엇을 조회했나' 만 뽑는다. 값은 여기서 쓰지 않는다."""
     got: dict[str, Any] = {"metric": {}, "facets": {}, "evidence": set(),
-                           "rank": None, "web": None, "as_of": None}
+                           "rank": None, "web": None, "as_of": None, "similar": None}
     for c in (trace.calls if trace else []):
         name, args = c.get("tool"), (c.get("args") or {})
         res = c.get("result")
@@ -87,6 +88,10 @@ def _scan(trace) -> dict[str, Any]:
                 got["evidence"].add(term)
         elif name == "rank_terms" and (res.get("items") or []):
             got["rank"] = res
+        elif name == "similar_terms" and (res.get("items") or res.get("alternatives")):
+            # ★ alternatives 만 있어도 그린다. 제목이 "아이템 축에서 지금 높은 것"
+            #   으로 바뀌므로 화면이 잘못 말하지 않는다(_similar_block).
+            got["similar"] = res
         elif name == "web_search" and (res.get("items") or []):
             got["web"] = res
     return got
@@ -114,6 +119,52 @@ def _rank_block(res: dict, as_of: str) -> dict | None:
                      "up": (temp is not None and int(temp) >= 50)})
     return {"type": "rank", "slot": "full", "title": "지금 뜨는 것",
             "meta": meta, "rows": rows}
+
+
+def _similar_block(res: dict, as_of: str) -> dict | None:
+    """비슷한 것 — 순위표와 같은 모양으로 그린다 (2026-09-10).
+
+    ★ 새 블록 타입을 만들지 않는다. 프론트가 모르는 type 은 **에러 없이 안
+      그려진다**(인수인계 4장). rank 는 이미 아는 모양이라 그대로 쓴다.
+    ★ 온도가 있는 것(축 상위)과 없는 것(연관어)이 섞인다. 없는 자리에
+      숫자를 채우지 않고 왜 뽑혔는지를 적는다.
+    ★ items 가 비면 '비슷한 것' 을 못 찾은 것이다. 그때는 alternatives 를
+      **다른 제목으로** 그린다. 같은 제목 아래 두면 화면이 거짓말을 한다.
+    """
+    items = res.get("items") or []
+    fallback = not items
+    if fallback:
+        items = res.get("alternatives") or []
+    if not items:
+        return None
+    rows = []
+    for it in items[:8]:
+        temp = it.get("temp")
+        # ★ 왜 뽑혔는지를 적는다. 겹친 말이 있으면 그것이 제일 설득력 있는 이유다.
+        shared = it.get("shared") or []
+        why = ("함께 쓰이는 말: " + " · ".join(shared[:3])) if shared else (it.get("why") or "")
+        rows.append({"k": it.get("term") or "", "small": why,
+                     "v": (f"{int(temp)}점" if temp is not None else "—"),
+                     "up": (temp is not None and int(temp) >= 50)})
+    base = str(res.get("term") or "").strip()
+    # ★ 제목과 내용이 어긋나지 않게 한다 (2026-09-10).
+    #   연관어가 얇아 축 상위로 대신한 목록에 "팬츠와 비슷한 것" 을 달면,
+    #   자켓·백팩이 팬츠와 비슷하다고 화면이 말하는 셈이 된다.
+    if fallback:
+        axis = FACET_SAY.get(res.get("facet") or "", "같은")
+        title = f"{axis} 축에서 지금 높은 것"
+    else:
+        title = f"{base}{_wa(base)} 비슷한 것" if base else "비슷한 것"
+    return {"type": "rank", "slot": "full", "title": title,
+            "meta": as_of or "", "rows": rows}
+
+
+def _wa(word: str) -> str:
+    """받침을 보고 '와/과' 를 고른다. '트랙탑 와(과)' 처럼 쓰지 않는다."""
+    ch = (word or "").strip()[-1:]
+    if not ch or not ("가" <= ch <= "힣"):
+        return "와"
+    return "과" if (ord(ch) - 0xAC00) % 28 else "와"
 
 
 def _evidence_links(node: dict) -> dict | None:
@@ -151,6 +202,11 @@ def build(trace, store, gate) -> list[dict]:
 
     if got["rank"]:
         blk = _rank_block(got["rank"], as_of)
+        if blk:
+            out.append(blk)
+
+    if got["similar"]:
+        blk = _similar_block(got["similar"], as_of)
         if blk:
             out.append(blk)
 
