@@ -152,19 +152,24 @@
   .msg.ai .ansCard{width:100%}
 }
 
-/* 살말 리포트의 두 후속 행동은 같은 무게로 보이되, 생성 작업은 코랄로 구분한다. */
-.cpOverlay.sm .act [data-community]{border-color:var(--pink-1)}
-.cpOverlay.sm .act [data-virtual-fit]{background:var(--coral);border-color:var(--coral);color:#fff}
+/* 살말 리포트의 후속 행동 셋(지표로 보기 · 물어보기 · 입혀보기)은 같은 버튼이다.
+   하나만 코랄로 칠하면 그것만 "진짜 버튼" 으로 읽혀 나머지가 눌리지 않는 것처럼 보인다. */
 
-/* Virtual Fitting — 답변 아래에서 펼쳐지고 결과도 같은 대화에 남는다. */
-.cpFit{width:min(100%,680px);margin-top:4px;border:1px solid var(--pink-3);border-radius:15px;overflow:hidden;background:#fff}
+/* Virtual Fitting — 답변 아래에서 펼쳐지고 결과도 같은 대화에 남는다.
+   폭은 지표 리포트 카드와 같이 대화 너비를 그대로 쓴다 — 좁으면 올린 옷이
+   무엇인지 보이지 않아 고를 수가 없다(2026-09-11). */
+.cpFit{width:100%;margin-top:4px;border:1px solid var(--pink-3);border-radius:15px;overflow:hidden;background:#fff}
 .cpFitHead{display:flex;align-items:center;gap:10px;padding:13px 15px;border-bottom:1px solid var(--pink-3)}
 .cpFitHead span{font-family:var(--num);font-size:9.5px;letter-spacing:.14em;color:var(--coral)}
 .cpFitHead b{font-size:14px;letter-spacing:-.02em}
-.cpFitGrid{display:grid;grid-template-columns:minmax(210px,270px) minmax(0,1fr)}
+.cpFitGrid{display:grid;grid-template-columns:minmax(280px,360px) minmax(0,1fr)}
 .cpFitSetup{padding:15px;border-right:1px solid var(--pink-3)}
-.cpFitItem{position:relative;width:100%;height:120px;border:1px dashed var(--pink-2);border-radius:10px;overflow:hidden;background:var(--paper);display:grid;place-items:center}
-.cpFitItemImg{width:100%;height:100%;object-fit:contain}
+.cpFitItem{position:relative;width:100%;height:300px;padding:12px;border:1px dashed var(--pink-2);border-radius:10px;overflow:hidden;background:var(--paper);display:flex;align-items:center;justify-content:center}
+/* ★ 올린 아이템 사진은 **자르지 않는다.**
+   width/height:100% 로 채우고 object-fit 에만 기대면, 어딘가에서 그 한 줄이
+   먹히지 않는 순간 사진이 칸 밖으로 넘어가 잘려 나간다(2026-09-11 실측:
+   스커트 밑단이 잘렸다). max-* 와 auto 로 두면 어떤 경우에도 칸을 넘지 않는다. */
+.cpFitItemImg{max-width:100%;max-height:100%;width:auto;height:auto;object-fit:contain}
 .cpFitItem small{position:absolute;right:7px;bottom:7px;padding:4px 7px;border-radius:20px;background:rgba(20,18,17,.72);color:#fff;font-size:10px}
 .cpFitEmpty{font-size:13px;color:var(--pink-2)}
 .cpFitSetup>label{display:block;margin-top:12px;font-size:12px;font-weight:600;color:var(--pink-1)}
@@ -174,14 +179,18 @@
 .cpFitModels img{display:block;width:100%;height:78px;object-fit:cover;object-position:top;border:2px solid transparent;border-radius:8px;background:var(--pink-3)}
 .cpFitModels span{display:block;text-align:center;margin-top:4px;font-size:10.5px}
 .cpFitModels input:checked+img{border-color:var(--coral);box-shadow:0 0 0 2px rgba(255,107,74,.13)}
-.cpFitGo{width:100%;margin-top:12px;background:var(--coral);color:#fff;padding:9px 12px;font-size:12px}
+/* 폭이 100% 라 기본 정렬(왼쪽)로는 글자가 한쪽에 붙는다 — 가운데로 맞춘다 */
+.cpFitGo{width:100%;margin-top:12px;justify-content:center;text-align:center;background:var(--coral);color:#fff;padding:10px 12px;font-size:12.5px}
 .cpFitGo:disabled{opacity:.58;cursor:wait}
-.cpFitOutput{min-height:300px;position:relative;display:grid;place-items:center;padding:14px;background:#1c1917}
-.cpFitResult{max-width:100%;max-height:330px;object-fit:contain;border-radius:8px}
+/* 상태 문구가 결과 이미지 위에 겹치지 않도록 아래쪽 여백을 따로 둔다 */
+.cpFitOutput{min-height:520px;position:relative;display:flex;align-items:center;justify-content:center;padding:16px 16px 36px;background:#1c1917}
+.cpFitResult{max-width:100%;max-height:540px;width:auto;height:auto;object-fit:contain;border-radius:8px}
 .cpFitResultEmpty{text-align:center;color:rgba(255,255,255,.55);font-size:12px;line-height:1.6}
 .cpFitState{position:absolute;left:12px;right:12px;bottom:10px;text-align:center;color:rgba(255,255,255,.72);font-size:11px;line-height:1.45}
 .cpFitState.error{color:#ff9e89}.cpFitState.success{color:#fff}
 @media(max-width:620px){
   .cpFitGrid{grid-template-columns:1fr}.cpFitSetup{border-right:0;border-bottom:1px solid var(--pink-3)}
-  .cpFitOutput{min-height:260px}
+  .cpFitItem{height:240px}
+  .cpFitOutput{min-height:340px}
+  .cpFitResult{max-height:360px}
 }

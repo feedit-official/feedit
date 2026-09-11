@@ -20,4 +20,6 @@ urlpatterns = [
     path("trend", views.trend, name="trend"),
     path("assoc", views.assoc, name="assoc"),
     path("products", views.products, name="products"),
+    path("salmal/card", views.salmal_card, name="salmal-card"),
+    path("salmal/search", views.salmal_search, name="salmal-search"),
 ]

@@ -584,22 +584,79 @@ function showToast(msg){
 /* ============================================================
    글쓰기 모달 — "살까말까 물어보기"
    ============================================================ */
-(function(){
-  const sel=$('#cBrand');
-  BRAND_LIST.forEach(b=>{
-    const opt=document.createElement('option');
-    opt.value=b; opt.textContent=b;
-    sel.appendChild(opt);
+/* ── 브랜드 검색 ──────────────────────────────────────
+   치는 동안 맞는 브랜드를 아래 목록으로 보여 준다.
+   목록에 없는 브랜드는 그대로 적어서 낼 수 있다 — 우리가 아는 브랜드만
+   물어볼 수 있는 것이 아니기 때문이다.
+   ↑↓ 로 옮기고 Enter 로 고르며 Esc 로 닫는다. */
+const brandCombo=(function(){
+  const input=$('#cBrand'), list=$('#cBrandList');
+  let open=false, cursor=-1, shown=[];
+
+  const norm=s=>String(s||'').toLowerCase().replace(/[\s'’·\-_.]+/g,'');
+  function match(q){
+    const n=norm(q);
+    if(!n) return BRAND_LIST.slice(0,8);
+    const starts=[], has=[];
+    BRAND_LIST.forEach(b=>{
+      const nb=norm(b);
+      if(nb.startsWith(n)) starts.push(b);
+      else if(nb.includes(n)) has.push(b);
+    });
+    return [...starts,...has].slice(0,8);
+  }
+  function paint(){
+    list.innerHTML=shown.map((b,i)=>
+      '<li role="option" class="cComboItem'+(i===cursor?' on':'')+'" data-brand="'+b.replace(/"/g,'&quot;')+'"'+
+      ' aria-selected="'+(i===cursor)+'">'+b+'</li>').join('');
+  }
+  function show(q){
+    shown=match(q);
+    if(!shown.length){ hide(); return; }
+    cursor=-1; paint();
+    list.hidden=false; open=true;
+    input.setAttribute('aria-expanded','true');
+  }
+  function hide(){
+    list.hidden=true; open=false; cursor=-1;
+    input.setAttribute('aria-expanded','false');
+  }
+  function pick(b){ input.value=b; hide(); }
+  function move(step){
+    if(!open){ show(input.value); return; }
+    if(!shown.length)return;
+    cursor=(cursor+step+shown.length)%shown.length;
+    paint();
+    const on=list.querySelector('.cComboItem.on');
+    if(on&&on.scrollIntoView)on.scrollIntoView({block:'nearest'});
+  }
+
+  input.addEventListener('input',()=>show(input.value));
+  input.addEventListener('focus',()=>show(input.value));
+  input.addEventListener('keydown',e=>{
+    if(e.key==='ArrowDown'){ e.preventDefault(); move(1); return; }
+    if(e.key==='ArrowUp'){ e.preventDefault(); move(-1); return; }
+    if(e.key==='Enter'&&open&&cursor>=0){ e.preventDefault(); pick(shown[cursor]); return; }
+    if(e.key==='Escape'&&open){ e.preventDefault(); e.stopPropagation(); hide(); }
   });
-  const other=document.createElement('option');
-  other.value='기타'; other.textContent='기타 (직접 입력 예정)';
-  sel.appendChild(other);
+  /* mousedown 으로 잡는다 — click 은 input 의 blur 뒤라 목록이 이미 닫혀 있다 */
+  list.addEventListener('mousedown',e=>{
+    const li=e.target.closest('.cComboItem'); if(!li)return;
+    e.preventDefault(); pick(li.dataset.brand);
+  });
+  document.addEventListener('click',e=>{
+    if(!open)return;
+    if(e.target.closest('#cBrandCombo'))return;
+    hide();
+  });
+  return {hide};
 })();
 
 let createImgURL=null;
 function resetCreateForm(){
   $('#cTitle').value='';
   $('#cBrand').value='';
+  brandCombo.hide();
   $('#cPrice').value='';
   $('#cNote').value='';
   $('#imgInput').value='';
@@ -614,6 +671,12 @@ function openCreateModal(draft){
   resetCreateForm();
   if(draft&&typeof draft==='object'){
     $('#cTitle').value=String(draft.title||'').replace(/\s+/g,' ').trim().slice(0,120);
+    /* 챗봇이 확인한 것만 채운다 — 확인하지 못한 칸은 비워 두고 사용자가 적는다 */
+    if(draft.brand) $('#cBrand').value=String(draft.brand).replace(/\s+/g,' ').trim().slice(0,60);
+    if(draft.price!=null&&String(draft.price).trim()!==''){
+      const digits=String(draft.price).replace(/[^0-9]/g,'');
+      if(digits) $('#cPrice').value=digits;
+    }
     if(draft.image){
       createImgURL=String(draft.image);
       $('#imgPreview').src=createImgURL;
@@ -652,12 +715,12 @@ $('#cPrice').addEventListener('input',()=>{
 
 $('#createSubmit').addEventListener('click',()=>{
   const title=$('#cTitle').value.trim();
-  const brand=$('#cBrand').value;
+  const brand=$('#cBrand').value.replace(/\s+/g,' ').trim();
   const priceRaw=$('#cPrice').value.trim();
   const note=$('#cNote').value.trim();
 
   if(!title){ showToast('상품명을 입력해주세요'); return; }
-  if(!brand){ showToast('브랜드를 선택해주세요'); return; }
+  if(!brand){ showToast('브랜드를 입력해주세요'); return; }
   if(!priceRaw){ showToast('가격을 입력해주세요'); return; }
 
   const seq=VOTES.length?VOTES[VOTES.length-1].seq+1:0;

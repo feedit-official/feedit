@@ -22,6 +22,7 @@ from __future__ import annotations
 import os
 import re
 import time
+import traceback
 
 from . import agent_blocks, llm, mdclean, orchestrator, verify
 
@@ -76,6 +77,41 @@ def _terms_from(trace) -> list[dict]:
                     seen.add(name)
                     out.append({"canonical": name, "facet": None, "available": True})
     return out[:5]
+
+
+def _item_draft(trace) -> dict | None:
+    """'물어보기' 카드가 그대로 받아 쓰는 상품 초안.
+
+    ★ 답변 문장에서 상품명을 뽑지 않는다 — 모델이 지어낸 이름도 카드에 실린다.
+      도구에 적힌 것만이 확인한 것이다(_terms_from 과 같은 원칙).
+    ① get_salmal_index 에 적어 준 상품명·브랜드·가격이 있으면 그것.
+    ② 없으면 search_terms 로 **실제로 찾아본 말**을 상품명 자리에 쓴다.
+      링크 질문에서 모델은 링크가 무엇인지 확인한 뒤 그 이름으로 찾는다
+      (orchestrator 규칙: q="아디다스 트랙탑"). 링크 주소를 그대로 남기는 것보다
+      낫고, 사용자가 카드에서 고쳐 쓸 수 있다.
+    """
+    draft = None
+    searched = ""
+    for c in (trace.calls if trace else []):
+        tool, res = c.get("tool"), c.get("result")
+        if tool == "search_terms" and not searched:
+            q = str((c.get("args") or {}).get("q") or "").strip()
+            if q and not q.lower().startswith(("http://", "https://")):
+                searched = q[:120]
+        if tool != "get_salmal_index" or not isinstance(res, dict):
+            continue
+        item = res.get("item_draft")
+        if isinstance(item, dict) and item.get("recorded"):
+            draft = {"title": item.get("name") or "", "brand": item.get("brand") or "",
+                     "price": item.get("price"), "source": "챗봇이 확인한 값"}
+    if draft and draft["title"]:
+        return draft
+    if searched:
+        base = draft or {"title": "", "brand": "", "price": None}
+        base["title"] = searched
+        base["source"] = "챗봇이 찾아본 이름"
+        return base
+    return draft
 
 
 def _as_of(trace) -> str | None:
@@ -144,7 +180,9 @@ def _notes(trace, rep: verify.Report, res: orchestrator.Result) -> list[dict]:
     elif rep.skipped:
         notes.append({"code": "VERIFY_FAILED", "term": None,
                       "message": f"사실 확인을 끝내지 못했습니다 ({rep.skipped})."})
-    if res.stopped in ("max_rounds", "max_calls", "time_budget"):
+    # 되살린 답에는 붙이지 않는다 — 모델이 조회를 마치고 쓴 답이다(2026-09-11).
+    if (res.stopped in ("max_rounds", "max_calls", "time_budget")
+            and not getattr(res, "recovered", False)):
         notes.append({"code": "PARTIAL", "term": None,
                       "message": "조회를 끝까지 하지 못하고 지금까지 모은 것으로 답했습니다."})
     return notes
@@ -163,7 +201,10 @@ def ask(question: str, *, store, gate, mode: str = "general",
     #   둘 다 예산 밖이었다. 그래서 예산 14초짜리 답이 25초에 나왔다.
     #   마감시각 하나를 여기서 만들어 두 층에 그대로 넘긴다 —
     #   예산이 비로소 **답변 한 번의 전체 벽시계**가 된다.
-    deadline = t0 + orchestrator.TIME_BUDGET
+    # ★ 예산은 질문을 보고 정한다 (2026-09-11). 링크 질문은 링크가 무엇인지
+    #   확인하는 바퀴가 하나 더 들어서, 같은 시계를 주면 답 쓰는 바퀴가 밀린다.
+    budget = orchestrator.budget_for(question)
+    deadline = t0 + budget
 
     res = orchestrator.run(question, store=store, gate=gate, ctx=ctx,
                            history=history, salmal=salmal, taste=taste,
@@ -201,9 +242,17 @@ def ask(question: str, *, store, gate, mode: str = "general",
     terms = _terms_from(res.trace)
     as_of = _as_of(res.trace)
     # 블록 만들기가 실패해도 답변은 나가야 한다. 블록은 덤이다.
+    # ★ 다만 **조용히** 삼키지 않는다 (2026-09-11).
+    #   리포트 카드가 통째로 안 뜨는 일이 있었는데, 카탈로그가 비어서인지
+    #   여기서 예외가 났는지 구분할 방법이 화면에도 콘솔에도 없었다.
+    #   계측이 없으면 처방도 없다(AGENTS.md §4).
+    block_error = ""
     try:
         blks = agent_blocks.build(res.trace, store, gate, question=question)
-    except Exception:                            # noqa: BLE001
+    except Exception as ex:                      # noqa: BLE001
+        block_error = f"{type(ex).__name__}: {str(ex)[:120]}"
+        print("! agent_blocks.build 실패 —", block_error, flush=True)
+        traceback.print_exc()
         blks = []
     report_design = (None if not blks or blks[0].get("type") != "generative_report" else {
         "source": blks[0].get("source"),
@@ -226,6 +275,8 @@ def ask(question: str, *, store, gate, mode: str = "general",
         # 카드 아래에 붙는 이어 갈 질문. 없으면 빈 문자열.
         "followup": mdclean.to_html(follow),
         "terms": terms,
+        # 물어보기(커뮤니티 카드)가 그대로 받아 쓰는 상품 초안. 없으면 None.
+        "item_draft": _item_draft(res.trace),
         # ★ 화면 계약: chat_api.reportHTML 은 as_of 를 **객체**로 읽는다
         #   (rep.as_of && rep.as_of.metric). 문자열을 주면 .metric 이 undefined 라
         #   카드 제목줄의 기준일이 조용히 사라진다. 예전 경로(engine.py:205)도
@@ -239,7 +290,11 @@ def ask(question: str, *, store, gate, mode: str = "general",
         #   ★ llm_* (모델 호출 실패·타임아웃) 도 부분 답변이다. 예전에는 빠져
         #     있어서, 중간에 끊긴 답이 완전한 답인 척 화면에 떴다.
         #     (2026-09-09 실측: stopped=llm_NET_ReadTimeout 인데 partial=False)
-        "partial": (res.stopped in ("time_budget", "max_rounds", "max_calls")
+        # ★ 상한에 걸렸어도 모델이 써 둔 답을 되살렸으면 부분 답변이 아니다
+        #   (2026-09-11). 온전한 답 아래에 "조회를 끝까지 하지 못했다" 가 붙으면
+        #   사용자는 멀쩡한 답을 의심한다.
+        "partial": ((res.stopped in ("time_budget", "max_rounds", "max_calls")
+                     and not getattr(res, "recovered", False))
                     or str(res.stopped or "").startswith("llm_")),
         # 진단 — 어느 도구를 몇 바퀴에 불렀나. 화면엔 안 뜨지만 로그에 남는다.
         "trace": {
@@ -254,10 +309,13 @@ def ask(question: str, *, store, gate, mode: str = "general",
             # 이름 붙은 variant 는 더 이상 없다. fingerprint 로 같은 조합에
             # 계속 쏠리는 회귀를 관찰한다.
             "report_design": report_design,
+            # 카드가 안 떴을 때 어디서 비었는지 — 블록 수와 조립 실패 사유.
+            "blocks": len(blks),
+            "block_error": block_error,
             # ★ 예산을 지켰나. 넘었으면 그 자체가 버그다(18번) —
             #   어느 층이 예산 밖에서 모델을 부르고 있다는 뜻이다.
-            "budget_ms": int(orchestrator.TIME_BUDGET * 1000),
-            "over_budget": ms > int(orchestrator.TIME_BUDGET * 1000) + OVER_GRACE_MS,
+            "budget_ms": int(budget * 1000),
+            "over_budget": ms > int(budget * 1000) + OVER_GRACE_MS,
         },
         "nlu": {"intent": "agent", "source": "orchestrator",
                 "model": llm.role("orchestrator")["model"]},

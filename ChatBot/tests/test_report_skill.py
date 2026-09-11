@@ -210,6 +210,24 @@ class ReportSkillTest(unittest.TestCase):
         self.assertEqual([m["kind"] for m in result[0]["modules"]], ["metric", "sources"])
         self.assertEqual(result[0]["modules"][0]["block"]["rows"][0]["v"], "21점")
 
+    def test_salmal_card_survives_a_cut_off_loop(self):
+        """예산이 끊겨 compose_report 를 못 불러도 살말 카드는 남아야 한다.
+
+        실측(2026-09-11): 이 조합에서 report_skill.build 가 spec=None 을
+        그대로 읽어 AttributeError 로 터졌고, agent_path 가 예외를 삼켜
+        리포트 카드가 통째로 사라졌다. 화면에는 문장만 남았다.
+        """
+        calls = [
+            {"tool": "get_salmal_index", "args": {"term": "셔츠"},
+             "result": {"term": "셔츠", "score": 61, "recommendation": "보류",
+                        "confidence": "낮음", "coverage": 35, "signals": [],
+                        "missing": ["taste", "price"]}},
+        ]
+        result = agent_blocks.build(Trace(calls), Store(), Gate())
+        self.assertEqual(result[0]["type"], "generative_report")
+        self.assertEqual(result[0]["source"], "fallback")
+        self.assertIn("salmal", [m["kind"] for m in result[0]["modules"]])
+
 
 if __name__ == "__main__":
     unittest.main()

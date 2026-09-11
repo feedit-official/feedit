@@ -169,9 +169,14 @@
           <div class="cRow2">
             <div class="cField">
               <label class="cLabel">브랜드</label>
-              <select class="cInput" id="cBrand">
-                <option value="" disabled="" selected="">브랜드 선택</option>
-              <option value="ADIDAS">ADIDAS</option><option value="AMOMENTO">AMOMENTO</option><option value="ANDERSSON BELL">ANDERSSON BELL</option><option value="CARHARTT WIP">CARHARTT WIP</option><option value="CENTIME">CENTIME</option><option value="COS">COS</option><option value="GENTLE MONSTER">GENTLE MONSTER</option><option value="INSILENCE">INSILENCE</option><option value="KIJUN">KIJUN</option><option value="LE 17 SEPTEMBRE">LE 17 SEPTEMBRE</option><option value="LEMAIRE">LEMAIRE</option><option value="LEVI'S">LEVI'S</option><option value="MATIN KIM">MATIN KIM</option><option value="MSTA">MSTA</option><option value="MUSINSA STANDARD">MUSINSA STANDARD</option><option value="NAUTICA">NAUTICA</option><option value="NEW BALANCE">NEW BALANCE</option><option value="RANDOM IDENTITIES">RANDOM IDENTITIES</option><option value="SOLEW">SOLEW</option><option value="THISISNEVERTHAT">THISISNEVERTHAT</option><option value="UNIFORM BRIDGE">UNIFORM BRIDGE</option><option value="기타">기타 (직접 입력 예정)</option></select>
+              <!-- 브랜드는 고르는 것이 아니라 찾는 것이다 —
+                   치는 동안 맞는 브랜드가 아래에 뜨고, 목록에 없으면 그대로 적어도 된다. -->
+              <div class="cCombo" id="cBrandCombo">
+                <input type="text" class="cInput" id="cBrand" placeholder="브랜드를 검색하세요"
+                       autocomplete="off" role="combobox" aria-autocomplete="list"
+                       aria-expanded="false" aria-controls="cBrandList">
+                <ul class="cComboList" id="cBrandList" role="listbox" hidden></ul>
+              </div>
             </div>
             <div class="cField">
               <label class="cLabel">가격</label>

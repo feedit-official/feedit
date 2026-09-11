@@ -24,7 +24,7 @@ from __future__ import annotations
 
 from datetime import timedelta
 
-from django.db.models import Count, Max
+from django.db.models import Count, Max, Q
 from django.http import JsonResponse
 from django.utils import timezone
 from django.views.decorators.http import require_GET
@@ -33,9 +33,12 @@ from apps.core.models import (
     Brand,
     DictionaryTerm,
     Product,
+    ProductSourceSnapshot,
     ProductTerm,
     TermAssocDaily,
     TermMetricDaily,
+    VoteBallot,
+    VoteCard,
 )
 
 # 설계서 §1 의 값들. RDS 에 아직 안 들어왔으면 None 으로 나가고,
@@ -43,6 +46,13 @@ from apps.core.models import (
 METRIC_FIELDS = ("temp", "momentum", "ma7", "ma28", "level", "pct_rank")
 
 MAX_LIMIT = 500
+
+
+def _discount_pct(value):
+    value = _num(value)
+    if value is None:
+        return None
+    return round(value * 100 if 0 <= value <= 1 else value, 1)
 
 
 def _ok(data, **extra):
@@ -686,3 +696,86 @@ def facets(request):
 
     return _ok(data, matched=matched, narrowed=True, selected=sel,
                products=n_products)
+
+
+def _salmal_card_payload(card):
+    product = card.product
+    ballots = VoteBallot.objects.filter(card_id=card.id)
+    total = ballots.count()
+    buys = ballots.filter(choice=VoteBallot.Choice.BUY).count()
+    tags = [str(x).strip() for x in (card.tags or []) if str(x).strip()]
+    product_tags = []
+    price = None
+    if product is not None:
+        product_tags = list(
+            ProductTerm.objects.filter(product_id=product.id)
+            .values_list("term__canonical_name", flat=True)[:20]
+        )
+        latest = (
+            ProductSourceSnapshot.objects.filter(product_source__product_id=product.id)
+            .order_by("-observed_at")
+            .values("list_price", "sale_price", "discount_rate", "stock_status", "observed_at")
+            .first()
+        )
+        if latest:
+            price = {
+                "list_price": _num(latest["list_price"]),
+                "sale_price": _num(latest["sale_price"]),
+                "discount_rate": _discount_pct(latest["discount_rate"]),
+                "stock_status": latest["stock_status"],
+                "observed_at": latest["observed_at"],
+            }
+    return {
+        "card": {
+            "id": card.id, "title": card.title, "description": card.description,
+            "image_url": card.image_url, "tags": tags,
+            "status": card.status, "created_at": card.created_at,
+        },
+        "product": (None if product is None else {
+            "id": product.id, "name": product.canonical_name,
+            "brand": product.brand.name if product.brand_id else None,
+            "category": product.category.name if product.category_id else None,
+            "tags": list(dict.fromkeys([*tags, *product_tags])),
+        }),
+        "vote_summary": {
+            "total": total, "buy": buys, "pass": total - buys,
+            "buy_pct": (round(buys / total * 100, 1) if total else None),
+            "closed": card.status == VoteCard.Status.CLOSED,
+        },
+        "price_snapshot": price,
+        "as_of": timezone.now().isoformat(),
+    }
+
+
+@require_GET
+def salmal_card(request):
+    card_id = _int(request, "card_id", 0, 0, 2_147_483_647)
+    if not card_id:
+        return _empty("card_id를 지정해 주세요.")
+    card = VoteCard.objects.filter(id=card_id).select_related(
+        "product", "product__brand", "product__category"
+    ).first()
+    if card is None:
+        return _empty("해당 살!말? 카드를 찾지 못했습니다.", card_id=card_id)
+    return _ok(_salmal_card_payload(card))
+
+
+@require_GET
+def salmal_search(request):
+    term = (request.GET.get("term") or "").strip()
+    if not term:
+        return _empty("term을 지정해 주세요.")
+    limit = _int(request, "limit", 5, 1, 10)
+    cards = (
+        VoteCard.objects.filter(
+            Q(title__icontains=term) |
+            Q(product__canonical_name__icontains=term) |
+            Q(product__brand__name__icontains=term)
+        )
+        .select_related("product", "product__brand", "product__category")
+        .order_by("-created_at")[:limit]
+    )
+    rows = [_salmal_card_payload(card) for card in cards]
+    if not rows:
+        return _empty(f"‘{term}’과 연결된 살!말? 카드가 없습니다.", term=term)
+    return _ok({"term": term, "items": rows, "count": len(rows)})

@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 from typing import Any
 
@@ -47,6 +48,11 @@ from .tools import Toolbox, progress_say, specs_for
 
 # ── 안전장치 값 ────────────────────────────────────────────
 MAX_ROUNDS = 4          # 한 질문에 도구를 부를 수 있는 바퀴 수
+# ★ 링크 질문은 바퀴가 하나 더 든다 (2026-09-11 실측, 예산과 같은 이유).
+#   `33058ms/33000ms stopped=max_rounds 바퀴=4(5328+12387+4624+3006ms)`
+#   ① 링크 확인 ② 지표·지수 ③ 결측 기록 ④ compose_report — 네 바퀴를 다 쓰고
+#   **답을 쓰는 다섯 번째 바퀴가 없었다.** 예산은 남았는데 바퀴가 모자란 것이다.
+LINK_EXTRA_ROUNDS = 1
 MAX_CALLS = 10          # 바퀴를 합쳐 도구 호출 총량
 # ★ 2026-09-09 추가 — 같은 도구를 인자만 바꿔 계속 부르는 것을 막는다.
 #   _sig() 는 **동일 인자**만 걸러서, search_terms("살로몬 XT-6") →
@@ -124,9 +130,33 @@ VERIFY_RESERVE = 2.0    # 그 8초 안에서 verify.fix 몫 (나머지 6초가 _
 #     잘리면 그 시간이 통째로 버려진 뒤 마무리 몫까지 줄어든다. 차라리 시작하지
 #     않고 그 시간을 마무리에 얹는다 — 같은 예산에서 한 번을 제대로 쓴다.
 WRITE_MIN = 6.5
+# ★ 링크 질문은 **바퀴가 하나 더 든다** (2026-09-11 실측).
+#   `18574ms stopped=time_budget 바퀴=3(5563+6871ms) 웹검색=2 호출=5`
+#   ① 링크가 무엇인지 확인(호스티드 web_search) 5.6초
+#   ② 확인한 용어로 지표·지수 조회 6.9초
+#   ③ 답을 쓰고 compose_report — **여기까지 오지 못했다.**
+#   ①은 링크 질문에만 있는 비용이고, 그 탓에 ③이 예산 밖으로 밀린다.
+#   질문마다 다른 일을 시키면서 같은 시계를 주면, 링크 질문은 구조적으로
+#   답을 못 쓴다. 그 한 바퀴만큼을 더 준다.
+LINK_EXTRA = float(os.getenv("FEEDIT_CHAT_LINK_EXTRA") or 8.0)
+_URL = re.compile(r"https?://|\bwww\.[^\s]+", re.I)
 CALL_TIMEOUT = 20       # 한 번의 모델 호출 상한
 MIN_CALL = 2.5          # 이보다 적게 남으면 부르지 않는다 — 못 끝낼 호출은 기다림만 늘린다
 FINISH_MAX_TOKENS = 700 # 마무리 답변 길이 상한. 안 묶으면 쓰다가 끊긴다
+
+
+def _is_link_question(question: str) -> bool:
+    return bool(_URL.search(str(question or "")))
+
+
+def budget_for(question: str) -> float:
+    """이 질문 하나에 줄 전체 벽시계. 링크가 있으면 확인 바퀴만큼 더 준다."""
+    return TIME_BUDGET + (LINK_EXTRA if _is_link_question(question) else 0.0)
+
+
+def rounds_for(question: str) -> int:
+    """이 질문에 허용할 바퀴 수. 링크 확인에 한 바퀴를 먼저 쓰기 때문이다."""
+    return MAX_ROUNDS + (LINK_EXTRA_ROUNDS if _is_link_question(question) else 0)
 
 
 def reserve(left: float, want: float) -> float:
@@ -156,6 +186,12 @@ FEEDiT 는 SNS·커머스를 수집해 용어별 트렌드 지표를 계산하�
      축마다 따로 부르면 도구 상한에 걸려 뒤쪽 축이 기록되지 않는다.
 3. **모르면 되묻는다.** "이거 어때?" 처럼 무엇을 묻는지 알 수 없으면
    추측하지 말고 ask_user 를 불러라. 그건 실패가 아니다.
+   ★ 단, **우리가 할 수 없는 일에는 되묻지 마라.** 주문·결제·장바구니 담기·
+     개인정보 입력은 FEEDiT 챗봇이 하지 않는다("이거 대신 주문해 줘",
+     "결제해 줘", "장바구니에 넣어 줘"). 어떤 상품인지 되물으면 사용자는
+     고르기만 하면 해 준다는 뜻으로 읽는다 — 실제로 그렇게 읽혔다.
+     되묻지 말고 **첫 문장에서 못 한다고 말한 뒤**, 대신 살지 말지 판단은
+     도울 수 있다고 한 줄로 덧붙여라. 도구를 부르지 마라.
    다만 **되묻기는 한 대화에 한 번뿐이다.** 두 번 되묻는 챗봇은 답을 못 하는
    챗봇이다. 예산을 다 쓰면 ask_user 가 도구 목록에서 아예 빠진다 —
    그때는 가장 그럴듯한 것으로 잡아 답하고, 무엇을 가정했는지 한 줄로 밝힌 뒤
@@ -213,6 +249,19 @@ FEEDiT 는 SNS·커머스를 수집해 용어별 트렌드 지표를 계산하�
    - HTML·CSS·수치·상품명은 만들지 않는다. 데이터는 서버가 실제 결과와 결합한다.
    - compose_report 를 부른 뒤에는 다른 도구를 부르지 말고 바로 답을 쓴다.
    - 조회 결과가 전혀 없거나 ask_user 로 되묻는 경우에는 부르지 않는다.
+   - **declare_missing 이 필요하면 compose_report 와 같은 바퀴에서 함께 불러라.**
+     둘 다 조회가 끝난 뒤의 기록·구성이다. 따로 나누면 바퀴를 하나 더 쓰고,
+     그만큼 답을 쓰는 바퀴가 밀린다(2026-09-11 실측: 네 바퀴를 다 쓰고도
+     답을 못 썼다).
+
+13. **살말 모드에서는 get_salmal_index를 반드시 부른다.** 지수·살/말/보류 결론은
+    이 도구 결과만 사용한다. recommendation_allowed=false이면 억지로 살/말을 고르지
+    말고 보류 또는 판단 자료 부족이라고 말한다. 커뮤니티 투표는 참고 신호일 뿐이다.
+    ★ 링크나 사진으로 무슨 브랜드의 무슨 옷인지 확인했다면 그 상품명·브랜드·가격을
+    **같은 호출의 item_name·brand·price 에 함께 적는다.** 화면의 '물어보기' 버튼이
+    그 값으로 커뮤니티 카드를 채운다 — 적지 않으면 사용자가 친 원문(링크 주소)이
+    상품명 칸에 그대로 들어간다. 확인하지 못한 칸은 null 로 둔다.
+    이 때문에 도구를 한 번 더 부르지 마라. 바퀴가 모자라면 리포트가 통째로 사라진다.
 
 ## 도구 고르는 법
 - 질문이 용어를 지목했으면 → search_terms 로 정확한 표기를 얻고 get_metric
@@ -230,6 +279,10 @@ FEEDiT 는 SNS·커머스를 수집해 용어별 트렌드 지표를 계산하�
 - **상품 링크나 정확한 상품명이 오면 그대로 찾지 말고 나눠서 찾아라.**
   우리 지표에는 **상품 단위가 없다.** 브랜드 · 아이템 · 소재 단위로만 있다.
   ① 링크뿐이라 무엇인지 모르면 web_search 로 무슨 브랜드의 무슨 옷인지 먼저 확인한다.
+     ★ **web_search 는 한 번만.** 브랜드·상품명·가격을 한 번에 확인해라.
+       두 번 나눠 찾으면 그 한 번이 5초 넘게 들어(2026-09-11 실측: 웹검색 2회),
+       정작 답을 쓰는 바퀴가 예산 밖으로 밀린다. 한 번 찾아 모르면 모르는 대로
+       두고, 지표 조회로 넘어가라.
   ② search_terms 는 **한 번만** 부른다. 구성 요소는 alts 에 함께 넣어라 —
      `q="아디다스 트랙탑", alts=["아디다스","트랙탑"]`. 나눠서 두 번 세 번 부르면
      부를 때마다 바퀴를 하나씩 쓰고, 조회만 하다 답 쓸 시간이 없어진다.
@@ -307,6 +360,10 @@ class Result:
         #   우리 TraceLog 에는 **안 남는다** — 모델 쪽에서 도는 것이라 도구 목록에도
         #   안 보인다. 그래서 링크 질문이 왜 느린지가 로그에서 통째로 빠져 있었다.
         self.hosted: int = 0
+        # ★ 상한(바퀴·시간)에 걸렸지만 모델이 **이미 다 써 둔 답**을 되살렸나.
+        #   그렇다면 답은 온전하다 — 화면에 "조회를 끝까지 못 했다" 고 적으면
+        #   멀쩡한 답에 경고가 붙는다.
+        self.recovered: bool = False
 
 
 def _recent_terms(history: list[dict] | None, limit: int = 5) -> list[str]:
@@ -394,6 +451,7 @@ def _sig(name: str, args: dict) -> str:
 
 _REPORT_MATERIAL = {
     "rank_terms", "get_metric", "get_evidence", "get_user_taste",
+    "get_salmal", "search_salmal", "get_salmal_index",
     "season_fit", "similar_terms", "declare_missing",
 }
 
@@ -429,23 +487,45 @@ def run(question: str, *, store, gate, ctx: dict | None = None,
     seen: set[str] = set()
     per_tool: dict[str, int] = {}      # 도구 이름 → 부른 횟수 (MAX_PER_TOOL)
     pending_answer = ""               # 디자인 호출을 빼먹은 답은 잠시 보류한다.
+    borrowed = False                  # 뒷몫을 빌려 마지막 한 바퀴를 도는 중인가
     started = time.monotonic()
     # ★ 마감시각은 밖에서 온다(agent_path). 혼자 돌 때만 여기서 만든다 —
     #   그래야 _finish · verify 까지 같은 하나를 나눠 쓴다(18번).
     if deadline is None:
-        deadline = started + TIME_BUDGET
+        deadline = started + budget_for(question)
     out.deadline = deadline
     # 루프는 예산을 다 쓰지 않는다. 뒷단계 몫을 먼저 떼고 시작한다.
     loop_end = deadline - reserve(deadline - started, TAIL_RESERVE)
 
-    for rnd in range(MAX_ROUNDS):
+    max_rounds = rounds_for(question)
+    for rnd in range(max_rounds):
         out.rounds = rnd + 1
         left = loop_end - time.monotonic()
         # ★ 남은 시간이 한 호출을 끝낼 만큼이 아니면 시작하지 않는다(WRITE_MIN).
         #   시작해서 잘리면 그 시간은 통째로 버려지고, 마무리에 쓸 몫까지 줄어든다.
+        if left < WRITE_MIN and _has_report_material(box.trace):
+            # ★ 다만 조회가 이미 끝났다면 남은 일은 **답 쓰기 하나**다 (2026-09-11).
+            #   뒷몫(TAIL_RESERVE)은 루프가 답을 못 썼을 때 _finish 가 대신 쓰라고
+            #   비워 둔 시간이다. 그런데 그 시간을 비워 두느라 루프가 답을 못 쓰면,
+            #   같은 일을 **한 번 더** 하려고 예산을 두 번 쓰는 셈이 된다.
+            #   이 바퀴가 성공하면 _finish 는 아예 필요 없고, 실패해도 _recap 이
+            #   도구 결과로 받는다(모델을 부르지 않는다). 그러니 여기서 빌린다.
+            left = deadline - VERIFY_RESERVE - time.monotonic()
+            if left >= WRITE_MIN:
+                # 빌렸으면 이번이 마지막이다. 그 사실을 모델에게 말해 준다 —
+                # 말하지 않으면 도구를 더 부르다 끝나고, 빌린 시간도 버려진다.
+                borrowed = True
         if left < WRITE_MIN:
             out.stopped = "time_budget"
             break
+        if borrowed:
+            items.append({
+                "role": "user",
+                "content": ("시간이 거의 없습니다. 데이터 도구를 더 부르지 말고, "
+                            "지금까지 받은 결과만으로 compose_report 를 한 번 부른 뒤 "
+                            "바로 답을 쓰세요."),
+            })
+            borrowed = False
 
         t_round = time.monotonic()
         res = llm.respond(
@@ -476,7 +556,7 @@ def run(question: str, *, store, gate, ctx: dict | None = None,
             # 디자인 도구 호출을 요구한다. 호출이 끝나면 보류한 문장을 그대로 써서
             # 같은 답을 다시 생성하는 왕복은 만들지 않는다.
             if (candidate and _has_report_material(box.trace)
-                    and not _has_report_design(box.trace) and rnd < MAX_ROUNDS - 1):
+                    and not _has_report_design(box.trace) and rnd < max_rounds - 1):
                 pending_answer = candidate
                 items.extend(raw.get("output") or [])
                 items.append({
@@ -489,6 +569,17 @@ def run(question: str, *, store, gate, ctx: dict | None = None,
             out.answer = candidate
             out.stopped = "done"
             break
+
+        # ★ compose_report 를 부르면서 **같이 쓴 답변 문장**은 버리지 않는다
+        #   (2026-09-11). 모델은 마지막 바퀴에서 도구 호출과 문장을 함께 내는
+        #   일이 잦은데, 이 루프는 호출이 있으면 문장을 통째로 버리고 다음
+        #   바퀴에서 다시 쓰게 했다. 그 바퀴가 없으면(max_rounds) 답이 사라진다.
+        #   compose_report 는 조회가 끝났다는 신호라서, 그 바퀴의 문장만 받는다 —
+        #   중간 바퀴의 "이제 지표를 볼게요" 같은 말은 답이 아니다.
+        if not pending_answer and any(c["name"] == "compose_report" for c in calls):
+            said = (res.get("text") or "").strip()
+            if said:
+                pending_answer = said
 
         # ★ 모델이 낸 출력 항목을 그대로 되돌려 넣는다.
         #   이게 없으면 모델은 자기가 뭘 불렀는지 모른 채 다음 바퀴를 돌고,
@@ -557,6 +648,15 @@ def run(question: str, *, store, gate, ctx: dict | None = None,
     else:
         out.stopped = "max_rounds"
 
+    # ★ 디자인 호출을 기다리며 보류해 둔 답이 있는데 루프가 끝났다면,
+    #   그 답을 버리지 않는다 (2026-09-11). 예전에는 compose_report 가 돌았을
+    #   때만 꺼내 썼다 — 시간이 모자라 못 돌면 **이미 다 써 둔 답을 버리고**
+    #   같은 답을 쓰려고 모델을 한 번 더 불렀다. 화면은 폴백 레이아웃으로
+    #   그려지지만(report_skill), 답변 문장은 멀쩡한 것이 남는다.
+    if not out.answer and not out.ask and pending_answer:
+        out.answer = pending_answer
+        out.recovered = True
+
     # 바퀴를 다 썼거나 시간이 다 됐는데 답이 없다 —
     # 모은 것으로 한 번만 더, 도구 없이 쓰게 한다.
     if not out.answer and not out.ask:
@@ -594,6 +694,64 @@ _FINISH_INSTRUCTIONS = """너는 FEEDiT 의 패션 트렌드 분석 상담원이
 7. 이어 갈 질문이 있으면 맨 마지막 줄에 `[다음] …` 한 줄로."""
 
 
+_AXIS_LABEL = {"taste": "취향", "behavior": "검색·찜", "trend": "트렌드",
+               "price": "가격", "community": "커뮤니티"}
+
+
+def _recap(out: Result) -> str:
+    """조회한 것으로 마무리 문장을 **직접** 쓴다. 모델을 부르지 않는다.
+
+    ★ 왜 (2026-09-11 실측)
+      링크 질문은 웹 검색 한 바퀴를 먼저 쓰기 때문에, 마무리 문장을 쓸 시간이
+      남지 않는 일이 있다. 그때 화면에는 지표 카드가 다 그려져 있는데 본문은
+      "여기까지 확인했습니다. 어느 쪽을 더 볼까요?" 한 줄뿐이었다. 무엇을 봤고
+      무엇이 나왔는지가 통째로 사라진 셈이다.
+
+      값은 전부 도구 결과에서 가져온다. 지어내는 문장이 아니라 **옮겨 적는**
+      문장이라 모델 없이 쓸 수 있고, 그래서 시간이 없을 때도 쓸 수 있다.
+    """
+    calls = list(out.trace.calls if out.trace else [])
+    if not calls:
+        return ""
+    metrics: list[str] = []
+    empty: list[str] = []
+    salmal: dict | None = None
+    for c in calls:
+        res = c.get("result")
+        if not isinstance(res, dict):
+            continue
+        if c.get("tool") == "get_metric":
+            term = str(res.get("term") or (c.get("args") or {}).get("term") or "").strip()
+            if not term:
+                continue
+            temp = res.get("온도") if isinstance(res.get("온도"), dict) else None
+            if res.get("has_metric") and temp and temp.get("temp") is not None:
+                band = str(temp.get("band") or "").strip()
+                metrics.append(f"{term} {temp['temp']}점{f' ({band})' if band else ''}")
+            elif res.get("has_metric") is False:
+                empty.append(term)
+        elif c.get("tool") == "get_salmal_index" and res.get("score") is not None:
+            salmal = res
+
+    lines: list[str] = []
+    if salmal:
+        conf = str(salmal.get("confidence") or "")
+        lines.append(f"살말 지수 {salmal['score']}점 · {salmal.get('recommendation') or '보류'}"
+                     + (f" (신뢰도 {conf})" if conf else "") + ".")
+    if metrics:
+        lines.append("확인한 지표: " + " · ".join(metrics[:4]) + ".")
+    if empty:
+        lines.append("측정 자료가 없던 것: " + " · ".join(dict.fromkeys(empty))[:120] + ".")
+    if salmal and salmal.get("missing"):
+        missing = [_AXIS_LABEL.get(x, x) for x in salmal["missing"]]
+        lines.append("빠진 신호: " + " · ".join(missing) + ".")
+    if not lines:
+        return ""
+    lines.append("요약 문장을 쓸 시간이 모자라 조회한 것만 정리했습니다. "
+                 "어느 쪽을 더 볼까요?")
+    return "\n\n".join(lines)
+
+
 def _stop_say(out: Result) -> str:
     """지어내지 않는다. 왜 못 했는지만 말한다."""
     # ★ 도구 결과가 있으면 화면에는 **카드가 다 그려진다.** 그 옆에 "아무것도
@@ -602,7 +760,8 @@ def _stop_say(out: Result) -> str:
     #   조회는 됐고 **요약 문장만** 못 쓴 것이니, 그렇게 적는다.
     got = bool(out.trace and out.trace.calls)
     if out.stopped in STOP_SAY:
-        return STOP_SAY[out.stopped]
+        # 조회한 것이 있으면 그것을 적는다. 한 줄로 닫는 것은 마지막 수단이다.
+        return _recap(out) or STOP_SAY[out.stopped]
     if str(out.stopped).startswith("llm_"):
         # ★ 이건 데이터 문제가 아니라 **모델 응답이 끊긴 것**이다 (2026-09-10).
         #   "지표를 불러오지 못했습니다" 라고 적으면 사용자는 그 용어의 자료가

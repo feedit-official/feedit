@@ -391,3 +391,18 @@ select.cInput{
 /* 사진은 틀에 맞춰 잘라 넣는다 — 비율이 달라도 늘어나지 않는다 */
 .voteCard .fig .plate,.modalFig .plate{
   background-size:cover;background-position:center;background-repeat:no-repeat}
+
+/* ── 브랜드 검색 드롭다운 ─────────────────────────────
+   입력칸 바로 아래에 붙는다. 모달 안이라 위로 겹칠 수 있게 z-index 를 준다. */
+.cCombo{position:relative}
+.cComboList{
+  position:absolute;left:0;right:0;top:calc(100% + 6px);z-index:30;
+  max-height:198px;overflow:auto;margin:0;padding:5px;list-style:none;
+  background:#fff;border:1px solid var(--pink-3);border-radius:12px;
+  box-shadow:0 18px 38px -22px rgba(20,18,17,.45);
+}
+.cComboItem{
+  padding:8px 10px;border-radius:8px;font-size:13px;color:var(--pink-0);
+  cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.cComboItem:hover,.cComboItem.on{background:var(--paper)}

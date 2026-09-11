@@ -16,8 +16,8 @@ LLM 이 하지 않는 것
 """
 from __future__ import annotations
 
-from . import (agent_path, context, followup, history, llm, mdclean, plans,
-               polish, report, websearch)
+from . import (agent_blocks, agent_path, context, followup, history, llm, mdclean,
+               plans, polish, report, report_skill, salmal_index, websearch)
 from .lexicon_gate import LexiconGate
 from .nlu import classify
 from .intents import is_salmal_question, is_greeting, GENERAL_CODES, SALMAL_CODES
@@ -25,10 +25,13 @@ from .store import ReadOnlyStore
 
 
 class ChatEngine:
-    def __init__(self, store: ReadOnlyStore | None = None, *, use_llm: bool = True):
+    def __init__(self, store: ReadOnlyStore | None = None, *, use_llm: bool = True,
+                 salmal=None, taste=None):
         self.store = store or ReadOnlyStore()
         self.gate = LexiconGate(self.store)
         self.use_llm = use_llm
+        self.salmal = salmal
+        self.taste = taste
         self.memory = history.Memory()
 
     # ── 진단 ──────────────────────────────────────────
@@ -59,7 +62,7 @@ class ChatEngine:
         #   설명하는 것이라, 애초에 도구가 값을 내줄 수 있는 질문이 아니다.
         #   ②어투 다듬기 · ③웹검색처럼 "LLM이 거들 뿐인 자리" 하나를 새로 둔다.
         if imgs:
-            return self._vision_ask(q, mode, imgs, conversation_id, on_progress)
+            return self._vision_ask(q, mode, imgs, conversation_id, extra, on_progress)
 
         # ── 새 경로 (2026-09-09) ────────────────────────────
         #   FEEDIT_CHAT_ORCHESTRATOR=1 이면 도구 루프로 간다.
@@ -83,12 +86,13 @@ class ChatEngine:
             ctx["asked_before"] = max(history.count_asks(past_a),
                                       history.count_asks(self.memory.recent(conversation_id)))
             # 화면에서 넘어온 것들. 없으면 없는 대로 — 도구 목록만 줄어든다.
-            for k in ("screen_term", "salmal_card_id", "user_id", "region"):
+            for k in ("screen_term", "salmal_card_id", "user_id", "region", "taste_context"):
                 v = extra.get(k) if extra else None
                 if v:
                     ctx[k] = v
             out = agent_path.ask(q, store=self.store, gate=self.gate, mode=mode,
-                                 history=past_a, ctx=ctx, on_progress=on_progress)
+                                 history=past_a, ctx=ctx, salmal=self.salmal,
+                                 taste=self.taste, on_progress=on_progress)
             self._remember(conversation_id, q, out.get("intent") or "agent", mode,
                            out.get("terms") or [])
             return out
@@ -189,7 +193,8 @@ class ChatEngine:
 
     # ── 이미지 첨부 ───────────────────────────────────
     def _vision_ask(self, q: str, mode: str, images: list[str],
-                     conversation_id: str | None, on_progress=None) -> dict:
+                     conversation_id: str | None, extra: dict | None = None,
+                     on_progress=None) -> dict:
         """사진을 보고 답한다. 값은 도구에서만 나온다는 원칙(AGENTS.md §2)이
         지표·가격 같은 우리 DB 값 얘기라, 사진 속 옷을 설명하는 이 자리에는
         해당하지 않는다 — greeting·smalltalk처럼 LLM이 그대로 답을 만드는
@@ -199,6 +204,32 @@ class ChatEngine:
                     "message": "지금은 사진을 분석할 수 없습니다. 잠시 후 다시 시도해 주세요."}
         if on_progress:
             on_progress("사진을 보는 중")
+        if mode == "salmal":
+            visual = llm.vision_salmal(q, images)
+            if not visual:
+                return {"ok": False, "reason": "IMAGE_FAILED",
+                        "message": "사진을 분석하지 못했습니다. 다시 시도해 주세요."}
+            result = salmal_index.calculate(
+                term=str(visual.get("item") or ""),
+                product_tags=visual.get("tags") or [],
+                taste_context=(extra or {}).get("taste_context"),
+            )
+            result.update({"term": visual.get("item") or "사진 속 아이템", "as_of": "사진 분석 기준"})
+            catalog = []
+            for i, block in enumerate(agent_blocks.salmal_blocks(result)):
+                catalog.append({"id": f"salmal:visual:{i}", "kind": "salmal",
+                                "term": result["term"], "block": block})
+            canvas = report_skill.build(catalog, trace=None)
+            self._remember(conversation_id, q or "[사진]", "vision.salmal", mode, [])
+            return {"ok": True, "kind": "agent", "intent": "vision.salmal",
+                    "headline": mdclean.to_html(str(visual.get("summary") or "사진을 확인했습니다.")),
+                    "followup": "", "terms": [], "as_of": {},
+                    "blocks": [canvas] if canvas else [], "notes": [], "sources": [],
+                    "partial": not result.get("recommendation_allowed"),
+                    # 사진에서는 이름만 안다 — 브랜드·가격은 비워 두고 사용자가 채운다.
+                    "item_draft": {"title": result["term"], "brand": "", "price": None,
+                                   "source": "사진 분석"},
+                    "visual_item": {"name": result["term"], "tags": visual.get("tags") or []}}
         answer = llm.vision(q, images, mode=mode)
         if not answer:
             return {"ok": False, "reason": "IMAGE_FAILED",

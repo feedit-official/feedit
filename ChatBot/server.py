@@ -44,7 +44,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
 from app import plans
+from app.adapters import SalmalHTTPAdapter
 from app.engine import ChatEngine
+from app import vton
 
 # ── 어디에 여나 ────────────────────────────────────────────
 #   기본은 127.0.0.1 이다. 그대로 둔다 — 인증이 없기 때문이다.
@@ -151,7 +153,7 @@ def engine() -> ChatEngine:
     if _engine is None:
         with _engine_lock:
             if _engine is None:
-                _engine = ChatEngine()
+                _engine = ChatEngine(salmal=SalmalHTTPAdapter())
     return _engine
 
 
@@ -176,9 +178,15 @@ def _log_turn(question: str, rep: dict) -> None:
     try:
         rounds = "+".join(str(x) for x in (tr.get("round_ms") or [])) or "-"
         hosted = tr.get("hosted") or 0
-        print(f"{mark} [{time.strftime('%H:%M:%S')}] {tr.get('ms')}ms "
+        blocks = tr.get("blocks")
+        block_note = f"블록={blocks}" if blocks is not None else ""
+        if tr.get("block_error"):
+            block_note += f"(조립실패 {tr['block_error']})"
+        budget = tr.get("budget_ms")
+        print(f"{mark} [{time.strftime('%H:%M:%S')}] {tr.get('ms')}ms"
+              f"{f'/{budget}ms' if budget else ''} "
               f"stopped={tr.get('stopped')} 바퀴={tr.get('rounds')}({rounds}ms) "
-              f"웹검색={hosted} 호출={tr.get('calls')} "
+              f"웹검색={hosted} 호출={tr.get('calls')} {block_note} "
               f"도구={','.join(tr.get('tools') or []) or '-'} "
               f"| {question[:40]}", flush=True)
     except Exception:                              # noqa: BLE001
@@ -212,7 +220,36 @@ def split_deltas(html: str) -> list[str]:
     return out
 
 
-def actions_for(rep: dict) -> list[dict]:
+def clean_taste_context(raw: dict) -> dict:
+    """브라우저가 보낸 취향 컨텍스트를 길이·모양만 잘라서 통과시킨다.
+
+    값을 새로 만들지 않는다 — 자르기만 한다. favorite_style_profiles 는
+    가입할 때 고른 스타일과 그 대표 어휘라서 중첩이 한 겹 있다.
+    """
+    out: dict = {}
+    for key in ("favorite_styles", "searched_terms", "saved_terms"):
+        value = raw.get(key)
+        if isinstance(value, list):
+            out[key] = [str(x)[:80] for x in value[:30] if str(x).strip()]
+    profiles = raw.get("favorite_style_profiles")
+    if isinstance(profiles, list):
+        cleaned = []
+        for item in profiles[:10]:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("name") or "").strip()[:40]
+            if not name:
+                continue
+            words = item.get("keywords")
+            words = [str(w)[:40] for w in words[:8] if str(w).strip()] \
+                if isinstance(words, list) else []
+            cleaned.append({"name": name, "keywords": words})
+        if cleaned:
+            out["favorite_style_profiles"] = cleaned
+    return out
+
+
+def actions_for(rep: dict, mode: str = "general") -> list[dict]:
     """다음에 무엇을 할 수 있는지. 화면에 실제로 있는 곳으로만 보낸다."""
     acts = []
     terms = rep.get("terms") or []
@@ -225,6 +262,20 @@ def actions_for(rep: dict) -> list[dict]:
                      "part": "temp", "keyword": first.get("canonical")})
     if rep.get("hint", {}).get("code") == "MODE_MISMATCH":
         acts.append(rep["hint"]["action"] | {"label": "살!말? 모드로"})
+    if mode == "salmal":
+        # 물어보기 카드는 **확인한 것만** 들고 간다. 확인하지 못한 칸은 비워 두고
+        # 사용자가 직접 적는다 — 짐작으로 채우면 사용자가 확인한 값으로 읽는다.
+        community = {"label": "물어보기", "type": "community"}
+        draft = rep.get("item_draft")
+        if isinstance(draft, dict):
+            keep = {k: draft.get(k) for k in ("title", "brand", "price", "source")
+                    if draft.get(k) not in (None, "")}
+            if keep:
+                community["draft"] = keep
+        acts.extend([
+            community,
+            {"label": "입혀보기", "type": "virtual_fit"},
+        ])
     return acts
 
 
@@ -352,7 +403,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = urlparse(self.path).path
-        if path not in ("/v1/chat", "/v1/lexicon/requests"):
+        if path not in ("/v1/chat", "/v1/lexicon/requests", "/v1/virtual-fitting"):
             return self._json(404, {"ok": False, "error": "NOT_FOUND"})
         # ★ 쓰는 길은 전부 여기를 지난다. 검사를 분기 뒤에 두면
         #   새 엔드포인트를 더할 때 조용히 빠뜨리게 된다.
@@ -360,6 +411,23 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == "/v1/lexicon/requests":
             return self._lexicon_request()
+        if path == "/v1/virtual-fitting":
+            req = self._read_json()
+            if not req:
+                return self._json(400, {"ok": False, "error": "BAD_BODY"})
+            try:
+                result = vton.generate(
+                    image_data_url=str(req.get("image") or ""),
+                    model_id=str(req.get("model_id") or "woman"),
+                    category=str(req.get("category") or "상의"),
+                )
+            except (ValueError, RuntimeError) as exc:
+                return self._json(400, {"ok": False, "error": type(exc).__name__,
+                                        "message": str(exc)})
+            except Exception as exc:  # noqa: BLE001
+                return self._json(502, {"ok": False, "error": type(exc).__name__,
+                                        "message": "착용 이미지를 만들지 못했습니다."})
+            return self._json(200, {"ok": True, **result})
         try:
             n = int(self.headers.get("Content-Length") or 0)
         except ValueError:
@@ -423,8 +491,10 @@ class Handler(BaseHTTPRequestHandler):
             # 화면 컨텍스트 — 새 경로가 "이거 어때?" 를 푸는 재료.
             #   없으면 없는 대로 돈다(도구 목록만 줄어든다).
             extra = {k: req.get(k) for k in
-                     ("screen_term", "salmal_card_id", "user_id", "region")
+                     ("screen_term", "salmal_card_id", "user_id", "region", "taste_context")
                      if req.get(k)}
+            if isinstance(extra.get("taste_context"), dict):
+                extra["taste_context"] = clean_taste_context(extra["taste_context"])
             # ★ 도구를 부를 때마다 사용자의 말로 흘려보낸다 (설계도 부록 10).
             #   답이 완성될 때까지 화면이 비어 있으면 3초만 지나도 고장난 것처럼
             #   보인다. 같은 시간이라도 무엇을 보고 있는지 알면 기다림이 된다.
@@ -453,7 +523,7 @@ class Handler(BaseHTTPRequestHandler):
                 time.sleep(0.012)
             push("report", rep)
             _log_turn(question, rep)
-            acts = actions_for(rep)
+            acts = actions_for(rep, mode=mode)
             if acts:
                 push("actions", acts)
             push("done", {"ok": True, "intent": rep.get("intent"),
