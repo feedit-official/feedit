@@ -1,6 +1,6 @@
 import { $, $$, HAS_A, aAnimate } from '../../../core/static/js/dom.js';
 import { SAY, SM_ON, SM_SAY, STYLES, LIKED, ansCardHTML, smSwitch } from './chat.js';
-import { API_BASE, isUp, askStream, reportHTML, notesHTML, followupHTML, actionsHTML, refusalHTML, requestLexicon, fillBars, MAX_IMAGES, imageFileToDataURL, bindImageDrop } from './chat_api.js';
+import { API_BASE, isUp, askStream, reportHTML, notesHTML, followupHTML, actionsHTML, refusalHTML, requestLexicon, fillBars, MAX_IMAGES, imageFileToDataURL, bindImageDrop, wantsVirtualFit, responseCardHTML } from './chat_api.js';
 import { ME, requireAuth } from '../../../account/static/js/profile.js';
 
 /* ══════════════════════════════════════════════════════
@@ -23,6 +23,7 @@ const CP_PROFILE={
 };
 /* 답변 중엔 이 하나로 통일 — 별이 돌고 글자가 옅어졌다 밝아지며 "생각 중"을 표현한다 */
 let cpTypeTimer=null;
+let cpActiveRun=null;
 /* escapeHtml 은 salmalBoot() 지역 함수라 팝업(전역 스코프)에서는 안 보인다 — 따로 하나 둔다 */
 function cpEsc(s){
   return String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -161,24 +162,53 @@ function cpWhoHTML(stage){
   return '<div class="who"><i class="cpStar">✧</i>FEEDiT' +
          '<span class="cpStage">' + (stage ? cpEsc(stage) : '') + '</span></div>';
 }
+const VF_CATEGORIES=['상의','하의','아우터','원피스(셋업)','신발','양말'];
+function cpFitModel(text){
+  return /(남자|남성|맨즈|male)/i.test(String(text||''))?'man':'woman';
+}
+function cpNewFit(images,text){
+  const attached=images||[];
+  return {key:String(Date.now()),
+    items:VF_CATEGORIES.map((category,index)=>({category,image:attached[index]||'',auto:Boolean(attached[index])})),
+    model:cpFitModel(text),status:'',result:'',loading:false};
+}
+function cpFitItems(f){
+  if(Array.isArray(f.items)){
+    const rows=f.items.slice(0,VF_CATEGORIES.length);
+    VF_CATEGORIES.forEach(category=>{
+      if(!rows.some(item=>item&&item.category===category)&&rows.length<VF_CATEGORIES.length)
+        rows.push({category,image:''});
+    });
+    f.items=rows;
+    return f.items;
+  }
+  f.items=VF_CATEGORIES.map(category=>({category,image:'',auto:false}));
+  if(f.image)f.items[0].image=f.image;
+  return f.items;
+}
 function cpFitHTML(m){
   const f=m.fit; if(!f)return '';
-  const image=f.image?'<img class="cpFitItemImg" src="'+cpEsc(f.image)+'" alt="입혀볼 아이템">':
-    '<div class="cpFitEmpty">아이템 사진을 올려 주세요.</div>';
-  const result=f.result?'<img class="cpFitResult" src="'+cpEsc(f.result)+'" alt="AI 모델 착용 결과">':
+  const items=cpFitItems(f);
+  const result=f.loading?'<div class="cpFitLoader" aria-label="착용 이미지 생성 중"><i class="cpStar">✧</i></div>':
+    f.result?'<img class="cpFitResult" src="'+cpEsc(f.result)+'" alt="AI 모델 착용 결과">':
     '<div class="cpFitResultEmpty">완성된 착용 이미지가 여기에 나타납니다.</div>';
-  const categories=['상의','하의','아우터','원피스(셋업)','신발'];
+  const state=(!f.loading&&f.stateKind==='error')?'<p class="cpFitState error">'+cpEsc(f.status||'')+'</p>':'';
   return '<section class="cpFit" data-fit-key="'+cpEsc(f.key)+'">'+
-    '<div class="cpFitHead"><span>GPT IMAGE 2</span><b>채팅에서 바로 입혀보기</b></div>'+
+    '<div class="cpFitHead"><span>GPT IMAGE 2.5 SUNBURST</span><b>코디 입혀보기</b></div>'+
     '<div class="cpFitGrid"><div class="cpFitSetup">'+
-      '<button type="button" class="cpFitItem" data-vf-pick>'+image+'<small>사진 바꾸기</small></button>'+
-      '<input type="file" data-vf-file accept="image/png,image/jpeg,image/webp" hidden>'+
-      '<label>옷 종류<select data-vf-category>'+categories.map(x=>'<option'+(f.category===x?' selected':'')+'>'+x+'</option>').join('')+'</select></label>'+
+      '<p class="cpFitGuide">종류별 사진을 넣으면 선택한 옷을 한 장의 코디로 합칩니다.</p>'+
+      '<div class="cpFitItems">'+items.map((item,index)=>
+        '<div class="cpFitSlot">'+(item.image?'<button type="button" class="cpFitRemove" data-vf-remove="'+index+'" aria-label="'+cpEsc(item.category)+' 이미지 삭제">×</button>':'')+
+        '<button type="button" class="cpFitItem" data-vf-pick="'+index+'">'+
+        (item.image?'<img class="cpFitItemImg" src="'+cpEsc(item.image)+'" alt="'+cpEsc(item.category)+'">':
+          '<span class="cpFitPlus">＋</span>')+'<small>'+cpEsc(item.auto?'자동 분류':item.category)+'</small></button>'+
+        '<input type="file" data-vf-file="'+index+'" accept="image/png,image/jpeg,image/webp" hidden></div>').join('')+
+      '</div>'+
       '<div class="cpFitModels">'+
         '<label><input type="radio" data-vf-model value="woman" name="vf-'+cpEsc(f.key)+'"'+(f.model==='woman'?' checked':'')+'><img src="/assets/vton-models/woman.png" alt="여성 AI 모델"><span>여성 모델</span></label>'+
         '<label><input type="radio" data-vf-model value="man" name="vf-'+cpEsc(f.key)+'"'+(f.model==='man'?' checked':'')+'><img src="/assets/vton-models/man.png" alt="남성 AI 모델"><span>남성 모델</span></label>'+
-      '</div><button type="button" class="pill cpFitGo" data-vf-generate'+(f.loading?' disabled':'')+'>'+(f.loading?'입혀보는 중…':'입혀보기')+'</button>'+
-    '</div><div class="cpFitOutput">'+result+'<p class="cpFitState '+cpEsc(f.stateKind||'')+'">'+cpEsc(f.status||'')+'</p></div></div></section>';
+      '</div><div class="cpFitAction"><button type="button" class="pill cpFitGo" data-vf-generate'+(f.loading?' disabled':'')+'>입혀보기</button></div>'+
+    '</div><div class="cpFitOutput">'+result+state+'</div></div></section>';
 }
 /* 사용자가 친 문장을 상품명 자리에 쓸 수 있는지. 주소가 섞여 있으면 쓰지 않는다 —
    "https://… 이거 사도 될까?" 에서 주소를 떼어 내도 남는 말은 상품명이 아니다. */
@@ -208,7 +238,7 @@ export function cpRenderThread(opts){
     }
     if(m.pending) return '<div class="msg ai thinking" data-msg-index="'+idx+'">'+cpWhoHTML(m.stage)+'</div>';
     if(idx===typeIdx) return '<div class="msg ai" data-msg-index="'+idx+'" data-type-target="1">'+cpWhoHTML()+'<div class="say"></div></div>';
-    { const card=(m.cardHtml!=null)?m.cardHtml:(m.key?ansCardHTML(m.key):'');
+    { const card=responseCardHTML(m,ansCardHTML);
       return '<div class="msg ai" data-msg-index="'+idx+'">'+cpWhoHTML()+'<div class="say">'+(m.html||'')+'</div>'+
         card+(m.followHtml||'')+(m.cueHtml||'')+(m.actionsHtml||'')+cpFitHTML(m)+'</div>'; }
   }).join('');
@@ -314,6 +344,7 @@ function cpAskMock(c,aiMsg,key){
    데모가 깨지면 안 된다(AGENTS.md). 대화 id 에 모드를 붙여 보낸다 —
    두 모드가 따로 1,2,3… 으로 세므로 안 붙이면 섞인다. */
 async function cpAskLive(c,aiMsg,text,images){
+  const run=aiMsg.run;
   const conv='cp-'+cpMode()+'-'+c.id;
   const history=cpHistoryFor(c);
   /* pending 은 아직 true 로 남겨둔다 — 첫 실제 응답(text/report/error)이
@@ -335,7 +366,7 @@ async function cpAskLive(c,aiMsg,text,images){
     if(cpActiveConvo()===c)cpRenderThread();
   };
   let acc='';
-  await askStream({question:text, mode:cpMode(), plan:'FREE',
+  await askStream({question:text, mode:cpMode(), plan:'FREE', request_id:run.requestId,
                     conversation_id:conv, history,
                     taste_context:cpTasteContext(c),
                     images:(images&&images.length)?images:undefined},{
@@ -395,7 +426,20 @@ async function cpAskLive(c,aiMsg,text,images){
       if(host)host.insertAdjacentHTML('beforeend',aiMsg.cardHtml);
     },
     done:()=>{ settle(); const wrap=$('#cpThreadWrap'); if(wrap&&cpActiveConvo()===c)wrap.scrollTop=wrap.scrollHeight; }
-  });
+  },{signal:run.controller.signal});
+}
+function cpRunButton(running){
+  const btn=$('#cpSend'); if(!btn)return;
+  btn.classList.toggle('stop',running);
+  btn.textContent=running?'■':'→';
+  btn.setAttribute('aria-label',running?'답변 중단':'보내기');
+  btn.title=running?'답변 생성을 중단합니다':'';
+}
+export function cpStop(){
+  const run=cpActiveRun; if(!run)return;
+  run.controller.abort();
+  fetch(API_BASE+'/v1/chat/cancel',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({request_id:run.requestId})}).catch(()=>{});
 }
 /* 질문 하나를 대화에 밀어 넣는다. 서버가 떠 있으면 실제 답(마크다운·근거가
    전부 정리된 리포트 카드)을, 아니면 데모용 캔 답을 "생각 중" 뒤에 채운다. */
@@ -405,23 +449,43 @@ function cpAsk(text,key,opts){
   let c=(opts&&opts.forceNew)?cpNewConvo():cpActiveConvo(); if(!c)c=cpNewConvo();
   c.messages.push({role:'me', text, images});
   if(!c.title)c.title=cpTitleFrom(text||'사진 문의');
-  const aiMsg={role:'ai', html:'', key, pending:true};
+  const directFit=wantsVirtualFit(text,images);
+  const aiMsg={role:'ai', html:'', key, pending:!directFit};
+  if(directFit)aiMsg.fit=cpNewFit(images,text);
   c.messages.push(aiMsg);
   cpRenderList();
   cpRenderThread();
+  if(directFit){ cpGenerateFitMessage(aiMsg); return; }
+  const requestId='cp-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,10);
+  const run={controller:new AbortController(),requestId,c,aiMsg};
+  aiMsg.run=run;
+  cpActiveRun=run; cpRunButton(true);
   (async()=>{
-    let live=false;
-    try{ live=await isUp() }catch(e){ live=false }
-    if(!live) return cpAskMock(c,aiMsg,key);
-    try{ await cpAskLive(c,aiMsg,text,images) }
+    try{
+      let live=false;
+      try{ live=await isUp() }catch(e){ live=false }
+      if(run.controller.signal.aborted)throw new DOMException('Aborted','AbortError');
+      if(!live){cpAskMock(c,aiMsg,key);return}
+      await cpAskLive(c,aiMsg,text,images);
+    }
     catch(e){
-      const last=c.messages[c.messages.length-1];
-      if(last===aiMsg) cpAskMock(c,aiMsg,key);
+      if(run.controller.signal.aborted){
+        aiMsg.pending=false; aiMsg.html='<p>답변 생성을 중단했습니다.</p>';
+        aiMsg.cardHtml=''; aiMsg.followHtml=''; aiMsg.cueHtml=''; aiMsg.actionsHtml='';
+        if(cpActiveConvo()===c)cpRenderThread();
+      }else{
+        const last=c.messages[c.messages.length-1];
+        if(last===aiMsg) cpAskMock(c,aiMsg,key);
+      }
+    }finally{
+      delete aiMsg.run;
+      if(cpActiveRun===run){cpActiveRun=null;cpRunButton(false)}
     }
   })();
 }
 export function cpSend(){
   if(!requireAuth())return;
+  if(cpActiveRun){cpStop();return}
   const ta=$('#cpInput'); const v=(ta&&ta.value.trim())||'';
   if(!v && !cpImages.length)return;
   cpAsk(v,cpKeyFor(v),{images:cpImgTake()});
@@ -504,14 +568,23 @@ document.addEventListener('click', e=>{
     if(m){
       const aiIndex=c.messages.indexOf(m);
       const user=c.messages.slice(0,aiIndex).reverse().find(x=>x.role==='me');
-      m.fit={key:String(Date.now()), image:(user&&user.images&&user.images[0])||'',
-             model:'woman', category:'상의', status:'', result:'', loading:false};
+      const images=(user&&user.images)||[];
+      m.fit=cpNewFit(images,'');
       cpRenderThread();
     }
     return;
   }
+  const remove=e.target.closest('#cpThread [data-vf-remove]');
+  if(remove){
+    const m=cpAIMessageFor(remove), index=Number(remove.dataset.vfRemove);
+    if(m&&m.fit&&cpFitItems(m.fit)[index]){
+      const item=cpFitItems(m.fit)[index]; item.image=''; item.auto=false;
+      m.fit.result=''; m.fit.status=''; m.fit.stateKind=''; cpRenderThread();
+    }
+    return;
+  }
   const pick=e.target.closest('#cpThread [data-vf-pick]');
-  if(pick){ const input=pick.closest('.cpFit').querySelector('[data-vf-file]'); if(input)input.click(); return; }
+  if(pick){ const input=pick.closest('.cpFit').querySelector('[data-vf-file="'+pick.dataset.vfPick+'"]'); if(input)input.click(); return; }
   const generate=e.target.closest('#cpThread [data-vf-generate]');
   if(generate){ cpGenerateFit(generate); return; }
   /* 탭 리포트(구조안 02) — 서버 왕복 없이 그 카드 안에서만 전환한다. */
@@ -527,26 +600,31 @@ document.addEventListener('click', e=>{
 document.addEventListener('change',async e=>{
   const model=e.target.closest('#cpThread [data-vf-model]');
   if(model){ const m=cpAIMessageFor(model); if(m&&m.fit)m.fit.model=model.value; return; }
-  const category=e.target.closest('#cpThread [data-vf-category]');
-  if(category){ const m=cpAIMessageFor(category); if(m&&m.fit)m.fit.category=category.value; return; }
   const file=e.target.closest('#cpThread [data-vf-file]');
   if(file){
     const m=cpAIMessageFor(file), picked=file.files&&file.files[0]; if(!m||!m.fit||!picked)return;
-    try{ m.fit.image=await imageFileToDataURL(picked); m.fit.status='사진을 준비했습니다.'; m.fit.stateKind=''; }
+    const index=Number(file.dataset.vfFile);
+    try{ const item=cpFitItems(m.fit)[index]; item.image=await imageFileToDataURL(picked); item.auto=false; m.fit.result=''; m.fit.status=''; m.fit.stateKind=''; }
     catch(_err){ m.fit.status='이미지를 읽지 못했습니다.'; m.fit.stateKind='error'; }
     cpRenderThread();
   }
 });
 async function cpGenerateFit(button){
   const m=cpAIMessageFor(button); if(!m||!m.fit||m.fit.loading)return;
-  if(!m.fit.image){ m.fit.status='아이템 사진이 필요합니다.'; m.fit.stateKind='error'; cpRenderThread(); return; }
-  m.fit.loading=true; m.fit.status='상품 디테일을 보존해 AI 모델에게 입혀보고 있어요.'; m.fit.stateKind='loading'; cpRenderThread();
+  return cpGenerateFitMessage(m);
+}
+async function cpGenerateFitMessage(m){
+  if(!m||!m.fit||m.fit.loading)return;
+  const items=cpFitItems(m.fit).filter(item=>item.image)
+    .map(item=>({image:item.image,category:item.auto?'자동 분류':item.category}));
+  if(!items.length){ m.fit.status='아이템 사진이 하나 이상 필요합니다.'; m.fit.stateKind='error'; cpRenderThread(); return; }
+  m.fit.loading=true; m.fit.status=''; m.fit.stateKind='loading'; cpRenderThread();
   try{
     const res=await fetch(API_BASE+'/v1/virtual-fitting',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({image:m.fit.image,model_id:m.fit.model,category:m.fit.category})});
+      body:JSON.stringify({items,model_id:m.fit.model})});
     const data=await res.json();
     if(!res.ok||!data.ok)throw new Error(data.message||'착용 이미지를 만들지 못했습니다.');
-    m.fit.result=data.image; m.fit.status='착용 이미지가 완성됐어요.'; m.fit.stateKind='success';
+    m.fit.result=data.image; m.fit.status=''; m.fit.stateKind='success';
   }catch(err){ m.fit.status=(err&&err.message)||'착용 이미지를 만들지 못했습니다.'; m.fit.stateKind='error'; }
   m.fit.loading=false; cpRenderThread();
 }

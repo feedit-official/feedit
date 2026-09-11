@@ -3,7 +3,7 @@
 
    ★ 없는 클래스를 쓰지 않는다.
      여기서 쓰는 것은 전부 이미 CSS 에 있는 것들이다 —
-       .ansCard .ansBar .ansBody .ansH .rank .bars   (home/static/css/chat.css)
+       .ansBody .ansH .rank .bars                    (home/static/css/chat.css)
        .skillReport .skillCanvas .skillModule             (home/static/css/chat_report.css)
        .rpReport .rpReportGrid .rpReportSection            (이전 응답 호환용)
        .tabreport .rpTabs .rpTabBtn .rpTabPanel          (이전 응답 호환용)
@@ -44,9 +44,21 @@ export function esc(s){
    서버로는 JSON 본문에 data URL(base64) 문자열로 실어 보낸다.
    원본 그대로 올리면 사진 한 장에도 챗바 요청이 몇 MB씩 나오므로,
    캔버스로 긴 변을 줄이고 JPEG로 다시 압축한 뒤에 보낸다. */
-export const MAX_IMAGES = 3;
+export const MAX_IMAGES = 6;
 const IMG_MAX_DIM = 1280;
 const IMG_QUALITY = 0.82;
+
+export function wantsVirtualFit(text, images){
+  return Boolean(images&&images.length&&/(입혀\s*(줘|주세요|봐|보기)?|착용\s*(시켜|해|해줘|해주세요)|가상\s*피팅|코디\s*입혀)/i.test(String(text||'')));
+}
+
+export function responseCardHTML(message, mockRenderer){
+  if(message&&message.cardHtml!=null)return message.cardHtml;
+  /* 착장 전용 메시지는 일반 답변이 아니다. key는 질문 예시를 고르기 위한 값이라
+     여기서 목업 카드로 해석하면 발레코어 데모가 합성 카드 위에 끼어든다. */
+  if(message&&message.fit)return '';
+  return message&&message.key&&mockRenderer?mockRenderer(message.key):'';
+}
 
 function loadImage(file){
   return new Promise((resolve, reject) => {
@@ -112,10 +124,10 @@ export async function isUp(){
 
 /* ── SSE 스트림 읽기 ──────────────────────────────────
    EventSource 는 POST 를 못 보낸다. fetch + ReadableStream 으로 직접 판다. */
-export async function askStream(payload, on){
+export async function askStream(payload, on, options={}){
   const res = await fetch(API_BASE + '/v1/chat', {
     method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify(payload)
+    body: JSON.stringify(payload), signal:options.signal
   });
   if(!res.ok || !res.body) throw new Error('HTTP ' + res.status);
 
@@ -179,7 +191,7 @@ const BLOCK = {
       (r.up ? ' class="c"' : '') + '></i></span></td>' +
       '<td class="n ' + (r.up ? 'up' : 'dn') + '">' + esc(r.v) + '</td></tr>').join('') + '</table>',
 
-  kpis: b => '<div class="kpis">' + (b.items || []).map(x =>
+  kpis: b => H(b.title, b.meta) + '<div class="kpis">' + (b.items || []).map(x =>
     '<div class="kpi"><span>' + esc(x.k) + '</span>' +
     '<b>' + esc(x.v) + (x.unit ? '<u>' + esc(x.unit) + '</u>' : '') + '</b>' +
     (x.note ? '<div class="dl ' + (x.up ? 'up' : 'dn') + '">' + esc(x.note) + '</div>' : '') +
@@ -326,10 +338,6 @@ const BLOCK = {
 };
 
 export function reportHTML(rep){
-  const asOf = (rep.as_of && rep.as_of.metric) || '';
-  const bar = '<div class="ansBar"><u></u><u></u><u></u><span>' +
-    esc('feedit.ai / ' + (rep.intent || 'chat') + ' / ' + asOf) + '</span></div>';
-
   const blocks = rep.blocks || [];
   /* 그릴 게 없으면 아무것도 그리지 않는다.
      예전엔 제목줄만 있는 빈 카드를 돌려줬다 — 답은 말풍선에 멀쩡히 있는데
@@ -351,8 +359,17 @@ export function reportHTML(rep){
   const body = (left || right)
     ? '<div class="ansBody"><div>' + left + '</div><div>' + right + '</div></div>'
     : '';
-  const card = body ? '<div class="ansCard">' + bar + body + '</div>' : '';
-  return (full ? '<div class="rpFull">' + full + '</div>' : '') + card;
+  const content = (full ? '<div class="rpFull">' + full + '</div>' : '') + body;
+  if(!content) return '';
+
+  /* 생성형 리포트는 이미 LIVE REPORT 프레임까지 완성된 블록이다. 그 밖의
+     이전/호환 지표만 같은 외곽 프레임으로 감싸 브라우저 창 모양(ansBar)이
+     다시 나타나지 않게 한다. */
+  if(blocks.length === 1 && blocks[0].type === 'generative_report') return full;
+  return '<div class="skillReport skillReport--legacy">' +
+    '<div class="skillReportHead"><span>FEEDiT / LIVE REPORT</span><em>' +
+    String(blocks.length).padStart(2,'0') + ' SIGNALS</em></div>' +
+    '<div class="skillLegacyCanvas">' + content + '</div></div>';
 }
 
 /* ── 사전에 없는 말 ───────────────────────────────────
@@ -430,7 +447,9 @@ export function notesHTML(notes){
 export function actionsHTML(acts){
   if(!acts || !acts.length) return '';
   return '<div class="act">' + acts.map(a => {
-    const d = ['<button class="pill ghost"'];
+    const kind=String(a.type||(a.view?'view':'action')).replace(/[^a-z_-]/gi,'');
+    const icon=a.type==='community'?'◌':a.type==='virtual_fit'?'✦':a.type==='switch_mode'?'⇄':'↗';
+    const d = ['<button class="pill ghost actBtn act-'+esc(kind)+'"'];
     if(a.view) d.push('data-v="' + esc(a.view) + '"');
     /* 스타일은 **이름** 으로 보낸다. 라우터는 id 를 기대하므로
        chat_popup 의 cpFixStyleLinks() 가 이름 → id 로 바꿔 단다.
@@ -445,7 +464,8 @@ export function actionsHTML(acts){
       if(a.draft) d.push('data-draft="' + esc(JSON.stringify(a.draft)) + '"');
     }
     if(a.type === 'virtual_fit') d.push('data-virtual-fit="1"');
-    return d.join(' ') + '>' + esc(a.label) + ' <i>→</i></button>';
+    return d.join(' ') + '><i class="actIcon" aria-hidden="true">'+icon+'</i><span>'+
+      esc(a.label)+'</span><i class="actArrow" aria-hidden="true">→</i></button>';
   }).join('') + '</div>';
 }
 

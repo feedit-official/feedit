@@ -15,7 +15,7 @@
 .skillReport{
   --skill-accent:var(--coral);--skill-ink:#171717;--skill-wash:#f7f4ef;
   overflow:hidden;position:relative;background:#fff;border:1px solid var(--pink-3);
-  border-radius:14px;box-shadow:0 42px 100px -70px rgba(10,10,10,.72)
+  border-radius:14px;box-shadow:none
 }
 .skillReport::before{content:'';position:absolute;inset:0 0 auto;height:3px;background:var(--skill-accent)}
 .skillReportHead{
@@ -72,10 +72,19 @@
 .skillReport--airy .skillCanvas{gap:14px;padding:20px}.skillReport--airy .skillModule{padding:19px}
 .skillReport--compact .skillCanvas{gap:8px;padding:12px}.skillReport--compact .skillModule{padding:12px}
 
+/* 예전 블록 응답과 오프라인 목업도 생성형 리포트와 같은 외곽 프레임을 쓴다.
+   내부 2단 지표 문법만 보존하고 브라우저 창처럼 보이던 ansBar는 제거한다. */
+.skillReport--legacy{--skill-accent:var(--coral)}
+.skillLegacyCanvas{padding:clamp(13px,1.8vw,19px)}
+.skillLegacyCanvas>.rpFull+.ansBody{margin-top:12px}
+.skillLegacyCanvas .ansBody{overflow:hidden;border:1px solid var(--pink-3);border-radius:10px}
+.skillLegacyCanvas>.rpFull:empty{display:none}
+
 /* 후보안의 Pulse Stack·Signal Bento에서 가져온 정보 밀도.
    KPI 묶음은 바깥 카드 안에 카드를 또 넣지 않고 각 신호가 바로 벤토 셀이 된다. */
 .skillModule--block-kpis{padding:0!important;border:0;background:transparent;box-shadow:none;overflow:visible}
 .skillModule--block-kpis::after{display:none}
+.skillModule--block-kpis>.ansH{padding:0 2px;margin:0 0 8px}
 .skillModule .kpis{grid-template-columns:repeat(var(--skill-kpi-cols,2),minmax(0,1fr));gap:8px;margin:0}
 .skillModule .kpi{min-width:0;padding:12px 13px;border-radius:9px}
 .skillModule .kpi span{font-size:10.5px;line-height:1.3}

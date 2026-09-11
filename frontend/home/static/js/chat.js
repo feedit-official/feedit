@@ -219,8 +219,9 @@ export const SAY={
 const SAY_STYLE={rise:'ballet',gorp:'gorp',ballet:'ballet',plat:'street',body:'classic'};
 export function ansCardHTML(key){
   const a=M_ANSWERS[key]||M_ANSWERS.rise;
-  return '<div class="ansCard">'+
-    '<div class="ansBar"><u></u><u></u><u></u><span>'+a.url+'</span></div>'+
+  return '<div class="skillReport skillReport--legacy">'+
+    '<div class="skillReportHead"><span>FEEDiT / LIVE REPORT</span><em>02 SIGNALS</em></div>'+
+    '<div class="skillLegacyCanvas">'+
     '<div class="ansBody">'+
       '<div><div class="ansH"><h3>'+a.title+'</h3><em>통합 · 8/7–8/13</em></div><div class="rank">'+
       a.rank.map((r,i)=>'<div class="row"><span class="n">'+String(i+1).padStart(2,'0')+'</span>'+
@@ -231,7 +232,7 @@ export function ansCardHTML(key){
       M_PLATFORMS.map(pl=>'<div class="b"><span>'+pl[0]+'</span><u><i data-w="'+pl[1]+'"></i></u>'+
         '<em>'+pl[1]+'</em></div>').join('')+
       '</div></div>'+
-    '</div></div>';
+    '</div></div></div>';
 }
 function ask(text,key){
   const th=$('#thread'), home=$('#v-home'); if(!th)return;
