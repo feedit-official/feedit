@@ -1,7 +1,7 @@
 import { $, $$, HAS_A, aAnimate } from '../../../core/static/js/dom.js';
-import { SAY, SM_ON, SM_SAY, STYLES, ansCardHTML, smSwitch } from './chat.js';
-import { isUp, askStream, reportHTML, notesHTML, followupHTML, actionsHTML, refusalHTML, requestLexicon, fillBars, MAX_IMAGES, imageFileToDataURL, bindImageDrop } from './chat_api.js';
-import { requireAuth } from '../../../account/static/js/profile.js';
+import { SAY, SM_ON, SM_SAY, STYLES, LIKED, ansCardHTML, smSwitch } from './chat.js';
+import { API_BASE, isUp, askStream, reportHTML, notesHTML, followupHTML, actionsHTML, refusalHTML, requestLexicon, fillBars, MAX_IMAGES, imageFileToDataURL, bindImageDrop } from './chat_api.js';
+import { ME, requireAuth } from '../../../account/static/js/profile.js';
 
 /* ══════════════════════════════════════════════════════
    챗봇 팝업 — 일반 모드 · 살말 모드
@@ -161,6 +161,30 @@ function cpWhoHTML(stage){
   return '<div class="who"><i class="cpStar">✧</i>FEEDiT' +
          '<span class="cpStage">' + (stage ? cpEsc(stage) : '') + '</span></div>';
 }
+function cpFitHTML(m){
+  const f=m.fit; if(!f)return '';
+  const image=f.image?'<img class="cpFitItemImg" src="'+cpEsc(f.image)+'" alt="입혀볼 아이템">':
+    '<div class="cpFitEmpty">아이템 사진을 올려 주세요.</div>';
+  const result=f.result?'<img class="cpFitResult" src="'+cpEsc(f.result)+'" alt="AI 모델 착용 결과">':
+    '<div class="cpFitResultEmpty">완성된 착용 이미지가 여기에 나타납니다.</div>';
+  const categories=['상의','하의','아우터','원피스(셋업)','신발','양말','안경','벨트'];
+  return '<section class="cpFit" data-fit-key="'+cpEsc(f.key)+'">'+
+    '<div class="cpFitHead"><span>GPT IMAGE 2</span><b>채팅에서 바로 입혀보기</b></div>'+
+    '<div class="cpFitGrid"><div class="cpFitSetup">'+
+      '<button type="button" class="cpFitItem" data-vf-pick>'+image+'<small>사진 바꾸기</small></button>'+
+      '<input type="file" data-vf-file accept="image/png,image/jpeg,image/webp" hidden>'+
+      '<label>옷 종류<select data-vf-category>'+categories.map(x=>'<option'+(f.category===x?' selected':'')+'>'+x+'</option>').join('')+'</select></label>'+
+      '<div class="cpFitModels">'+
+        '<label><input type="radio" data-vf-model value="woman" name="vf-'+cpEsc(f.key)+'"'+(f.model==='woman'?' checked':'')+'><img src="/assets/vton-models/woman.png" alt="여성 AI 모델"><span>여성 모델</span></label>'+
+        '<label><input type="radio" data-vf-model value="man" name="vf-'+cpEsc(f.key)+'"'+(f.model==='man'?' checked':'')+'><img src="/assets/vton-models/man.png" alt="남성 AI 모델"><span>남성 모델</span></label>'+
+      '</div><button type="button" class="pill cpFitGo" data-vf-generate'+(f.loading?' disabled':'')+'>'+(f.loading?'입혀보는 중…':'입혀보기')+'</button>'+
+    '</div><div class="cpFitOutput">'+result+'<p class="cpFitState '+cpEsc(f.stateKind||'')+'">'+cpEsc(f.status||'')+'</p></div></div></section>';
+}
+function cpAIMessageFor(el){
+  const node=el&&el.closest('.msg.ai'), c=cpActiveConvo();
+  if(!node||!c)return null;
+  return c.messages[Number(node.dataset.msgIndex)]||null;
+}
 export function cpRenderThread(opts){
   const wrap=$('#cpThreadWrap'), th=$('#cpThread'); if(!wrap||!th)return;
   const c=cpActiveConvo();
@@ -175,11 +199,11 @@ export function cpRenderThread(opts){
       const bub=m.text?('<div class="bub">'+cpEsc(m.text)+'</div>'):'';
       return '<div class="msg me">'+imgs+bub+'</div>';
     }
-    if(m.pending) return '<div class="msg ai thinking">'+cpWhoHTML(m.stage)+'</div>';
-    if(idx===typeIdx) return '<div class="msg ai" data-type-target="1">'+cpWhoHTML()+'<div class="say"></div></div>';
+    if(m.pending) return '<div class="msg ai thinking" data-msg-index="'+idx+'">'+cpWhoHTML(m.stage)+'</div>';
+    if(idx===typeIdx) return '<div class="msg ai" data-msg-index="'+idx+'" data-type-target="1">'+cpWhoHTML()+'<div class="say"></div></div>';
     { const card=(m.cardHtml!=null)?m.cardHtml:(m.key?ansCardHTML(m.key):'');
-      return '<div class="msg ai">'+cpWhoHTML()+'<div class="say">'+(m.html||'')+'</div>'+
-        card+(m.followHtml||'')+(m.cueHtml||'')+(m.actionsHtml||'')+'</div>'; }
+      return '<div class="msg ai" data-msg-index="'+idx+'">'+cpWhoHTML()+'<div class="say">'+(m.html||'')+'</div>'+
+        card+(m.followHtml||'')+(m.cueHtml||'')+(m.actionsHtml||'')+cpFitHTML(m)+'</div>'; }
   }).join('');
   $$('i[data-w]',th).forEach(f=>f.style.width=f.dataset.w+'%');
   wrap.scrollTop=wrap.scrollHeight;
@@ -245,6 +269,21 @@ function cpHistoryFor(c){
   for(const m of c.messages) if(m.role==='ai'&&m.turn) out.push(m.turn);
   return out.slice(-8);
 }
+function cpTasteContext(c){
+  const byId=new Map(STYLES.map(s=>[s.id,s.n]));
+  const favorite=[...ME.styles].map(id=>byId.get(id)).filter(Boolean);
+  const saved=[];
+  LIKED.forEach(v=>{
+    if(v&&v.nm)saved.push(v.nm);
+    if(v&&v.br)saved.push(v.br);
+  });
+  const searched=[];
+  for(const turn of cpHistoryFor(c)) for(const term of (turn.terms||[])){
+    if(term&&term.canonical)searched.push(term.canonical);
+  }
+  return {favorite_styles:favorite.slice(0,10), searched_terms:[...new Set(searched)].slice(-20),
+          saved_terms:[...new Set(saved)].slice(0,30)};
+}
 function cpAskMock(c,aiMsg,key){
   /* 이 시점엔 이미 서버 연결을 한 번 시도해 본 뒤다(isUp() 또는 askStream 실패) —
      그 위에 예전처럼 650~1200ms + 타이핑 애니메이션을 더 얹지 않는다.
@@ -283,6 +322,7 @@ async function cpAskLive(c,aiMsg,text,images){
   let acc='';
   await askStream({question:text, mode:cpMode(), plan:'FREE',
                     conversation_id:conv, history,
+                    taste_context:cpTasteContext(c),
                     images:(images&&images.length)?images:undefined},{
     /* ★ 진행 상황 (server.py 의 push("status", {stage:"tool", message})).
        예전에는 이 핸들러가 아예 없어서 서버가 보낸 이벤트가 **조용히
@@ -419,6 +459,35 @@ document.addEventListener('click', e=>{
   if(hr){ window.open(hr.dataset.href, '_blank', 'noopener'); return; }
   const rq=e.target.closest('#cpThread [data-lexreq]');
   if(rq){ cpSendLexiconRequest(rq); return; }
+  const community=e.target.closest('#cpThread [data-community]');
+  if(community){
+    const c=cpActiveConvo();
+    const ai=cpAIMessageFor(community), aiIndex=c&&c.messages.indexOf(ai);
+    const user=(c&&aiIndex>=0)?c.messages.slice(0,aiIndex).reverse().find(m=>m.role==='me'):null;
+    window.__salmalDraft={title:(user&&user.text)||'', image:(user&&user.images&&user.images[0])||''};
+    closeChatPopup();
+    const nav=document.querySelector('#mNav [data-v="salmal"]');
+    if(nav)nav.click();
+    setTimeout(()=>{ if(window.smOpenCreate)window.smOpenCreate(window.__salmalDraft) },320);
+    return;
+  }
+  const fit=e.target.closest('#cpThread [data-virtual-fit]');
+  if(fit){
+    const c=cpActiveConvo();
+    const m=cpAIMessageFor(fit);
+    if(m){
+      const aiIndex=c.messages.indexOf(m);
+      const user=c.messages.slice(0,aiIndex).reverse().find(x=>x.role==='me');
+      m.fit={key:String(Date.now()), image:(user&&user.images&&user.images[0])||'',
+             model:'woman', category:'상의', status:'', result:'', loading:false};
+      cpRenderThread();
+    }
+    return;
+  }
+  const pick=e.target.closest('#cpThread [data-vf-pick]');
+  if(pick){ const input=pick.closest('.cpFit').querySelector('[data-vf-file]'); if(input)input.click(); return; }
+  const generate=e.target.closest('#cpThread [data-vf-generate]');
+  if(generate){ cpGenerateFit(generate); return; }
   /* 탭 리포트(구조안 02) — 서버 왕복 없이 그 카드 안에서만 전환한다. */
   const tb=e.target.closest('#cpThread [data-tab]');
   if(tb){
@@ -429,6 +498,32 @@ document.addEventListener('click', e=>{
     return;
   }
 });
+document.addEventListener('change',async e=>{
+  const model=e.target.closest('#cpThread [data-vf-model]');
+  if(model){ const m=cpAIMessageFor(model); if(m&&m.fit)m.fit.model=model.value; return; }
+  const category=e.target.closest('#cpThread [data-vf-category]');
+  if(category){ const m=cpAIMessageFor(category); if(m&&m.fit)m.fit.category=category.value; return; }
+  const file=e.target.closest('#cpThread [data-vf-file]');
+  if(file){
+    const m=cpAIMessageFor(file), picked=file.files&&file.files[0]; if(!m||!m.fit||!picked)return;
+    try{ m.fit.image=await imageFileToDataURL(picked); m.fit.status='사진을 준비했습니다.'; m.fit.stateKind=''; }
+    catch(_err){ m.fit.status='이미지를 읽지 못했습니다.'; m.fit.stateKind='error'; }
+    cpRenderThread();
+  }
+});
+async function cpGenerateFit(button){
+  const m=cpAIMessageFor(button); if(!m||!m.fit||m.fit.loading)return;
+  if(!m.fit.image){ m.fit.status='아이템 사진이 필요합니다.'; m.fit.stateKind='error'; cpRenderThread(); return; }
+  m.fit.loading=true; m.fit.status='상품 디테일을 보존해 AI 모델에게 입혀보고 있어요.'; m.fit.stateKind='loading'; cpRenderThread();
+  try{
+    const res=await fetch(API_BASE+'/v1/virtual-fitting',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({image:m.fit.image,model_id:m.fit.model,category:m.fit.category})});
+    const data=await res.json();
+    if(!res.ok||!data.ok)throw new Error(data.message||'착용 이미지를 만들지 못했습니다.');
+    m.fit.result=data.image; m.fit.status='착용 이미지가 완성됐어요.'; m.fit.stateKind='success';
+  }catch(err){ m.fit.status=(err&&err.message)||'착용 이미지를 만들지 못했습니다.'; m.fit.stateKind='error'; }
+  m.fit.loading=false; cpRenderThread();
+}
 /* 등록 요청 버튼 — 누른 즉시 잠그고(중복 전송 방지), 서버가 답하면 결과를 말한다.
    "누르면 되는 척" 을 하지 않는다(server.py 주석) — 실패해도 실패라고 말한다. */
 async function cpSendLexiconRequest(btn){

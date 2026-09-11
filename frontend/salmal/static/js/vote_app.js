@@ -609,9 +609,19 @@ function resetCreateForm(){
   $('#imgDropInner').style.display='';
   $('#imgDrop').classList.remove('has-img');
 }
-function openCreateModal(){
+function openCreateModal(draft){
   if(!requireAuth())return;
   resetCreateForm();
+  if(draft&&typeof draft==='object'){
+    $('#cTitle').value=String(draft.title||'').replace(/\s+/g,' ').trim().slice(0,120);
+    if(draft.image){
+      createImgURL=String(draft.image);
+      $('#imgPreview').src=createImgURL;
+      $('#imgPreview').hidden=false;
+      $('#imgDropInner').style.display='none';
+      $('#imgDrop').classList.add('has-img');
+    }
+  }
   $('#createOverlay').classList.add('on');
   document.body.style.overflow='hidden';
 }
@@ -619,7 +629,7 @@ function closeCreateModal(){
   $('#createOverlay').classList.remove('on');
   document.body.style.overflow='';
 }
-$('#addItemBtn').addEventListener('click',openCreateModal);
+$('#addItemBtn').addEventListener('click',()=>openCreateModal());
 $('#createClose').addEventListener('click',closeCreateModal);
 $('#createOverlay').addEventListener('click',e=>{ if(e.target.id==='createOverlay') closeCreateModal(); });
 
@@ -698,6 +708,11 @@ window.smGoTab=(tab)=>{
   $$('#smTabs button').forEach(x=>x.classList.remove('on'));
   b.classList.add('on');
   state.tab=tab; state.page=1; renderGrid();
+};
+/* 챗봇의 '물어보기' 버튼에서 상품명·첨부 사진을 그대로 이어받는다. */
+window.smOpenCreate=(draft)=>{
+  window.__salmalDraft=null;
+  openCreateModal(draft||{});
 };
 
 }

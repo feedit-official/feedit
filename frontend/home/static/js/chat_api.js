@@ -240,7 +240,7 @@ const BLOCK = {
     const surfaces = new Set(['paper','soft','contrast','glass']);
     const densities = new Set(['airy','balanced','compact']);
     const kinds = new Set(['ranking','comparison','metric','direction','sources','associations',
-      'sentiment','recommendations','taste','context','evidence','links','missing']);
+      'sentiment','recommendations','taste','context','salmal','evidence','links','missing']);
     const presentations = new Set(['hero','card','chart','list','editorial','compact']);
     const emphasis = new Set(['strong','normal','quiet']);
     const accent = accents.has(b.accent) ? b.accent : 'coral';
@@ -438,6 +438,8 @@ export function actionsHTML(acts){
     if(a.style) d.push('data-style-name="' + esc(a.style) + '"');
     if(a.keyword) d.push('data-kw="' + esc(a.keyword) + '"');
     if(a.type === 'switch_mode') d.push('data-mode="' + esc(a.to) + '"');
+    if(a.type === 'community') d.push('data-community="1"');
+    if(a.type === 'virtual_fit') d.push('data-virtual-fit="1"');
     return d.join(' ') + '>' + esc(a.label) + ' <i>→</i></button>';
   }).join('') + '</div>';
 }

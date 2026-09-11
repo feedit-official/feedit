@@ -151,3 +151,37 @@
   .cpProfileText p{display:none}
   .msg.ai .ansCard{width:100%}
 }
+
+/* 살말 리포트의 두 후속 행동은 같은 무게로 보이되, 생성 작업은 코랄로 구분한다. */
+.cpOverlay.sm .act [data-community]{border-color:var(--pink-1)}
+.cpOverlay.sm .act [data-virtual-fit]{background:var(--coral);border-color:var(--coral);color:#fff}
+
+/* Virtual Fitting — 답변 아래에서 펼쳐지고 결과도 같은 대화에 남는다. */
+.cpFit{width:min(100%,680px);margin-top:4px;border:1px solid var(--pink-3);border-radius:15px;overflow:hidden;background:#fff}
+.cpFitHead{display:flex;align-items:center;gap:10px;padding:13px 15px;border-bottom:1px solid var(--pink-3)}
+.cpFitHead span{font-family:var(--num);font-size:9.5px;letter-spacing:.14em;color:var(--coral)}
+.cpFitHead b{font-size:14px;letter-spacing:-.02em}
+.cpFitGrid{display:grid;grid-template-columns:minmax(210px,270px) minmax(0,1fr)}
+.cpFitSetup{padding:15px;border-right:1px solid var(--pink-3)}
+.cpFitItem{position:relative;width:100%;height:120px;border:1px dashed var(--pink-2);border-radius:10px;overflow:hidden;background:var(--paper);display:grid;place-items:center}
+.cpFitItemImg{width:100%;height:100%;object-fit:contain}
+.cpFitItem small{position:absolute;right:7px;bottom:7px;padding:4px 7px;border-radius:20px;background:rgba(20,18,17,.72);color:#fff;font-size:10px}
+.cpFitEmpty{font-size:13px;color:var(--pink-2)}
+.cpFitSetup>label{display:block;margin-top:12px;font-size:12px;font-weight:600;color:var(--pink-1)}
+.cpFitSetup select{width:100%;margin-top:6px;padding:8px 9px;border:1px solid var(--pink-3);border-radius:8px;background:#fff;font:inherit;font-size:12px}
+.cpFitModels{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:12px}
+.cpFitModels label{position:relative;cursor:pointer}.cpFitModels input{position:absolute;opacity:0}
+.cpFitModels img{display:block;width:100%;height:78px;object-fit:cover;object-position:top;border:2px solid transparent;border-radius:8px;background:var(--pink-3)}
+.cpFitModels span{display:block;text-align:center;margin-top:4px;font-size:10.5px}
+.cpFitModels input:checked+img{border-color:var(--coral);box-shadow:0 0 0 2px rgba(255,107,74,.13)}
+.cpFitGo{width:100%;margin-top:12px;background:var(--coral);color:#fff;padding:9px 12px;font-size:12px}
+.cpFitGo:disabled{opacity:.58;cursor:wait}
+.cpFitOutput{min-height:300px;position:relative;display:grid;place-items:center;padding:14px;background:#1c1917}
+.cpFitResult{max-width:100%;max-height:330px;object-fit:contain;border-radius:8px}
+.cpFitResultEmpty{text-align:center;color:rgba(255,255,255,.55);font-size:12px;line-height:1.6}
+.cpFitState{position:absolute;left:12px;right:12px;bottom:10px;text-align:center;color:rgba(255,255,255,.72);font-size:11px;line-height:1.45}
+.cpFitState.error{color:#ff9e89}.cpFitState.success{color:#fff}
+@media(max-width:620px){
+  .cpFitGrid{grid-template-columns:1fr}.cpFitSetup{border-right:0;border-bottom:1px solid var(--pink-3)}
+  .cpFitOutput{min-height:260px}
+}
