@@ -17,6 +17,9 @@
     }
   ],
   "functions": {
+    "api/v1/virtual-fitting.js": {
+      "maxDuration": 300
+    },
     "api/**/*.js": {
       "maxDuration": 30
     }

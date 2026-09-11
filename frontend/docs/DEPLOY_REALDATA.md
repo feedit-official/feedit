@@ -21,6 +21,7 @@ GET  /api/assoc?term=발레코어   연관어
 GET  /api/products?q=엄브로     상품·가격
 GET  /api/v1/health           챗봇이 답할 수 있는 상태인가
 POST /api/v1/chat             챗봇 (SSE) — feedit-chat 으로 넘긴다
+POST /api/v1/virtual-fitting  입혀보기 — feedit-chat 으로 넘긴다
 ```
 
 ---

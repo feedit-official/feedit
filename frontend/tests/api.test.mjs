@@ -185,6 +185,7 @@ await t('진단 — 지표가 0행이면 원인을 짚어 준다', async () => {
 // ══════════════════════════════════════════════════════════
 const chatHealth = (await import('../api/v1/health.js')).default;
 const chat       = (await import('../api/v1/chat.js')).default;
+const virtualFit = (await import('../api/v1/virtual-fitting.js')).default;
 
 const mkStreamRes = () => {
   const r = { statusCode: 0, headers: {}, chunks: [] };
@@ -235,6 +236,37 @@ await t('챗봇 chat — POST 가 아니면 받지 않는다', async () => {
   const res = mkStreamRes();
   await chat({ method: 'GET', url: '/api/v1/chat' }, res);
   assert.equal(res.statusCode, 405);
+});
+
+await t('★ 입혀보기 — Vercel 함수가 EC2 API와 토큰을 중계한다', async () => {
+  process.env.CHAT_BACKEND_URL = 'http://chat.example.test/';
+  process.env.CHAT_BACKEND_TOKEN = 'server-only-token';
+  let call;
+  globalThis.fetch = async (url, options) => {
+    call = { url, options };
+    return { status: 200, text: async () => JSON.stringify({ ok: true, image: 'data:image/png;base64,eA==' }) };
+  };
+  const res = mkRes();
+  await virtualFit({ method: 'POST', headers: { 'x-forwarded-for': '203.0.113.7' },
+    body: { items: [{ image: 'data:image/jpeg;base64,eA==', category: '상의' }], model_id: 'woman' } }, res);
+  assert.equal(res.statusCode, 200);
+  assert.equal(call.url, 'http://chat.example.test/v1/virtual-fitting');
+  assert.equal(call.options.headers['X-FEEDiT-Token'], 'server-only-token');
+  assert.equal(call.options.headers['X-Forwarded-For'], '203.0.113.7');
+  assert.equal(JSON.parse(call.options.body).model_id, 'woman');
+  delete process.env.CHAT_BACKEND_URL;
+  delete process.env.CHAT_BACKEND_TOKEN;
+});
+
+await t('입혀보기 — 백엔드 HTML 오류도 읽을 수 있는 JSON 오류로 바꾼다', async () => {
+  process.env.CHAT_BACKEND_URL = 'http://chat.example.test';
+  globalThis.fetch = async () => ({ status: 404, text: async () => 'The page could not be found' });
+  const res = mkRes();
+  await virtualFit({ method: 'POST', headers: {}, body: { items: [{}] } }, res);
+  assert.equal(res.statusCode, 502);
+  assert.equal(res.body.ok, false);
+  assert.ok(/올바른 응답/.test(res.body.message));
+  delete process.env.CHAT_BACKEND_URL;
 });
 
 

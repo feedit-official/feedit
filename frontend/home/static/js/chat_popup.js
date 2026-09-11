@@ -622,7 +622,10 @@ async function cpGenerateFitMessage(m){
   try{
     const res=await fetch(API_BASE+'/v1/virtual-fitting',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({items,model_id:m.fit.model})});
-    const data=await res.json();
+    const raw=await res.text();
+    let data;
+    try{ data=JSON.parse(raw); }
+    catch(_parseError){ throw new Error('입혀보기 서버 응답을 확인하지 못했습니다. 배포 설정을 확인해 주세요.'); }
     if(!res.ok||!data.ok)throw new Error(data.message||'착용 이미지를 만들지 못했습니다.');
     m.fit.result=data.image; m.fit.status=''; m.fit.stateKind='success';
   }catch(err){ m.fit.status=(err&&err.message)||'착용 이미지를 만들지 못했습니다.'; m.fit.stateKind='error'; }

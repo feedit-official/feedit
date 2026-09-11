@@ -1853,3 +1853,27 @@ KPI·순위·안내 블록으로 표시된다.
 ### 남은 것 · 주의
 
 - 커밋·푸시·배포는 하지 않았다.
+
+## 2026-09-11 16:56 KST — Codex · Vercel 입혀보기 중계 경로 복구
+
+### 무엇을 바꿨나
+
+- 브라우저가 호출하는 `/api/v1/virtual-fitting`에 대응하는 Vercel 함수가 없어
+  404 HTML(`The page could not be found`)을 JSON으로 읽던 문제를 수정했다.
+- 새 함수가 기존 `CHAT_BACKEND_URL`과 `CHAT_BACKEND_TOKEN`으로 EC2의
+  `/v1/virtual-fitting`을 중계하며, 생성 시간을 위해 최대 실행 시간을 늘렸다.
+- Vercel이나 앞단이 HTML 오류를 반환해도 원문 파싱 오류 대신 사용자가 이해할 수
+  있는 입혀보기 연결 오류를 표시한다.
+
+### 어떻게 확인했나
+
+- EC2 중계 주소·서버 전용 토큰·사용자 IP 전달과 HTML 오류의 JSON 변환을 테스트했다.
+- 프런트엔드 테스트, Vite 프로덕션 빌드, `git diff --check`를 통과시켰다.
+
+### 남은 것 · 주의
+
+- Vercel에는 새 환경변수가 필요하지 않다. 기존 `CHAT_BACKEND_URL`과
+  `CHAT_BACKEND_TOKEN`을 Production에 유지하고 재배포해야 한다.
+- `OPENAI_API_KEY`와 `FEEDIT_PUBLIC_BETA=1`은 Vercel이 아니라 EC2 챗봇 `.env`에 둔다.
+- 실제 유료 Sunburst 생성 호출은 자동 검증에서 실행하지 않았다.
+- 커밋·푸시·배포는 하지 않았다.
