@@ -383,8 +383,9 @@
   }
   const WANTED_VERTEX_SHADER=`
     precision highp float;
-    uniform float uTime,uAssemble,uDisperse,uAlpha,uPixelRatio,uPointSize,uPointerActive,uCursorRadius;
+    uniform float uTime,uAssemble,uDisperse,uAlpha,uPixelRatio,uPointSize,uPointerActive,uCursorRadius,uSuction;
     uniform vec2 uMouse;
+    uniform vec3 uSuctionTarget;
     uniform vec3 uCenters[5];
     uniform float uScales[5],uSpins[5],uPointSizes[5];
     attribute vec3 aScatter,aLoose,aColor,aColor2;
@@ -425,6 +426,20 @@
       vec3 exitCloud=aScatter*1.42+direction*(3.0+aSeed*4.0);
       world=mix(world,exitCloud,disperse);
       float y01=clamp((position.y+.56)/1.12,0.0,1.0),gy=1.0-y01;
+      float suctionStart=(1.0-y01)*.62+aSeed*.075;
+      float particleSuction=smoothstep(suctionStart,min(.995,suctionStart+.28),uSuction);
+      vec2 vacuumDelta=uSuctionTarget.xy-world.xy;
+      vec2 vacuumDirection=normalize(vacuumDelta+vec2(.0001));
+      vec2 vacuumNormal=vec2(-vacuumDirection.y,vacuumDirection.x);
+      float spiralPhase=aSeed*41.0+particleSuction*18.0+uTime*3.4;
+      float funnel=sin(3.14159265*particleSuction);
+      float sidePull=sin(spiralPhase)*(.08+.25*(1.0-particleSuction))*funnel;
+      float lift=(.12+.32*(1.0-y01))*funnel;
+      vec3 vacuumPath=mix(world,uSuctionTarget,particleSuction);
+      vacuumPath.xy+=vacuumNormal*sidePull;
+      vacuumPath.y+=lift;
+      vacuumPath.z+=cos(spiralPhase)*(.06+.16*(1.0-particleSuction))*funnel;
+      world=mix(world,vacuumPath,step(.0001,uSuction));
       float gradientWidth=max(.0001,(aGrad.y-aGrad.x)*.7);
       float gradientPhase=(gy-uTime*.075-aGrad.x)/gradientWidth;
       float xw=mod(gradientPhase,3.2);
@@ -432,9 +447,9 @@
       vec3 color=mix(aColor,aColor2,colorFlow);
       vec4 mvPosition=modelViewMatrix*vec4(world,1.0);
       gl_Position=projectionMatrix*mvPosition;
-      gl_PointSize=figurePointSize(aFigure)*uPixelRatio*mix(.40,1.0,focus);
+      gl_PointSize=figurePointSize(aFigure)*uPixelRatio*mix(.40,1.0,focus)*mix(1.0,.16,smoothstep(.72,1.0,particleSuction));
       vColor=color;vFocus=focus;
-      vAlpha=uAlpha*(1.0-disperse)*mix(.30,1.0,focus);
+      vAlpha=uAlpha*(1.0-disperse)*mix(.30,1.0,focus)*(1.0-smoothstep(.9,1.0,particleSuction));
     }`;
 
   const WANTED_FRAGMENT_SHADER=`
@@ -453,8 +468,8 @@
     }`;
 
   const WANTED_GLOW_VERTEX_SHADER=WANTED_VERTEX_SHADER.replace(
-    'gl_PointSize=figurePointSize(aFigure)*uPixelRatio*mix(.40,1.0,focus);',
-    'gl_PointSize=figurePointSize(aFigure)*uPixelRatio*6.5*mix(.78,1.02,focus);'
+    'gl_PointSize=figurePointSize(aFigure)*uPixelRatio*mix(.40,1.0,focus)*mix(1.0,.16,smoothstep(.72,1.0,particleSuction));',
+    'gl_PointSize=figurePointSize(aFigure)*uPixelRatio*6.5*mix(.78,1.02,focus)*mix(1.0,.16,smoothstep(.72,1.0,particleSuction));'
   );
   const WANTED_GLOW_FRAGMENT_SHADER=`
     precision highp float;
@@ -469,8 +484,8 @@
     }`;
 
   const WANTED_AURA_VERTEX_SHADER=WANTED_VERTEX_SHADER.replace(
-    'gl_PointSize=figurePointSize(aFigure)*uPixelRatio*mix(.40,1.0,focus);',
-    'gl_PointSize=figurePointSize(aFigure)*uPixelRatio*18.0*mix(.84,1.0,focus);'
+    'gl_PointSize=figurePointSize(aFigure)*uPixelRatio*mix(.40,1.0,focus)*mix(1.0,.16,smoothstep(.72,1.0,particleSuction));',
+    'gl_PointSize=figurePointSize(aFigure)*uPixelRatio*18.0*mix(.84,1.0,focus)*mix(1.0,.16,smoothstep(.72,1.0,particleSuction));'
   );
   const WANTED_AURA_FRAGMENT_SHADER=`
     precision highp float;
@@ -486,7 +501,7 @@
 
   class WantedParticleBody{
     constructor(canvas,options={}){
-      this.canvas=canvas;this.options=options;this.group=!!options.group;this.alpha=1;this.progress=0;this.visible=true;this.loaded=false;
+      this.canvas=canvas;this.options=options;this.group=!!options.group;this.alpha=1;this.progress=0;this.disperse=0;this.suction=0;this.suctionTargetClient=null;this.visible=true;this.loaded=false;
       this.scene=new T.Scene();this.camera=new T.PerspectiveCamera(38,1,.1,100);this.camera.position.set(0,0,12);
       this.renderer=new T.WebGLRenderer({canvas,alpha:true,antialias:false,powerPreference:'high-performance',premultipliedAlpha:true});
       this.renderer.setClearColor(0,0);if('outputEncoding'in this.renderer)this.renderer.outputEncoding=T.sRGBEncoding;
@@ -536,7 +551,7 @@
       });
       const geometry=new T.BufferGeometry();
       geometry.setAttribute('position',new T.BufferAttribute(positions,3));geometry.setAttribute('aScatter',new T.BufferAttribute(scatter,3));geometry.setAttribute('aLoose',new T.BufferAttribute(loose,3));geometry.setAttribute('aColor',new T.BufferAttribute(colors,3));geometry.setAttribute('aColor2',new T.BufferAttribute(colors2,3));geometry.setAttribute('aGrad',new T.BufferAttribute(gradients,2));geometry.setAttribute('aFigure',new T.BufferAttribute(figures,1));geometry.setAttribute('aSeed',new T.BufferAttribute(seeds,1));geometry.setAttribute('aFeature',new T.BufferAttribute(features,1));
-      this.uniforms={uTime:{value:0},uAssemble:{value:REDUCED?1:0},uDisperse:{value:0},uAlpha:{value:1},uPixelRatio:{value:Math.min(devicePixelRatio||1,2)},uPointSize:{value:this.group?2.8:2.85},uPointerActive:{value:this.group?1:0},uCursorRadius:{value:1},uMouse:{value:new T.Vector2()},uCenters:{value:this.centers},uScales:{value:this.scales},uSpins:{value:this.spins},uPointSizes:{value:this.pointSizes}};
+      this.uniforms={uTime:{value:0},uAssemble:{value:REDUCED?1:0},uDisperse:{value:0},uAlpha:{value:1},uPixelRatio:{value:Math.min(devicePixelRatio||1,2)},uPointSize:{value:this.group?2.8:2.85},uPointerActive:{value:this.group?1:0},uCursorRadius:{value:1},uSuction:{value:0},uSuctionTarget:{value:new T.Vector3()},uMouse:{value:new T.Vector2()},uCenters:{value:this.centers},uScales:{value:this.scales},uSpins:{value:this.spins},uPointSizes:{value:this.pointSizes}};
       const auraMaterial=new T.ShaderMaterial({uniforms:this.uniforms,vertexShader:WANTED_AURA_VERTEX_SHADER,fragmentShader:WANTED_AURA_FRAGMENT_SHADER,transparent:true,depthTest:false,depthWrite:false,blending:T.NormalBlending});
       this.auraPoints=new T.Points(geometry,auraMaterial);this.auraPoints.frustumCulled=false;this.auraPoints.renderOrder=0;this.scene.add(this.auraPoints);
       const glowMaterial=new T.ShaderMaterial({uniforms:this.uniforms,vertexShader:WANTED_GLOW_VERTEX_SHADER,fragmentShader:WANTED_GLOW_FRAGMENT_SHADER,transparent:true,depthTest:false,depthWrite:false,blending:T.AdditiveBlending});
@@ -566,9 +581,18 @@
         }
         for(let i=1;i<5;i++){this.centers[i].set(0,0,0);this.scales[i]=0}
       }
-      if(this.uniforms){this.uniforms.uPixelRatio.value=Math.min(devicePixelRatio||1,2);this.uniforms.uCursorRadius.value=2400/height*viewHeight}
+      if(this.uniforms){this.uniforms.uPixelRatio.value=Math.min(devicePixelRatio||1,2);this.uniforms.uCursorRadius.value=2400/height*viewHeight;this.updateSuctionTarget()}
     }
     setProgress(value){this.progress=clamp(value,0,1)}
+    setSuction(value){this.suction=clamp(value,0,1);if(this.uniforms)this.uniforms.uSuction.value=this.suction}
+    setSuctionTarget(clientX,clientY){this.suctionTargetClient={x:clientX,y:clientY};this.updateSuctionTarget()}
+    updateSuctionTarget(){
+      if(!this.uniforms||!this.suctionTargetClient||!this.viewWidth||!this.viewHeight)return;
+      const rect=this.canvas.getBoundingClientRect();
+      const x=((this.suctionTargetClient.x-rect.left)/Math.max(1,rect.width)-.5)*this.viewWidth;
+      const y=(.5-(this.suctionTargetClient.y-rect.top)/Math.max(1,rect.height))*this.viewHeight;
+      this.uniforms.uSuctionTarget.value.set(x,y,0);
+    }
     updateMouse(){
       if(!this.uniforms)return;
       const rect=this.canvas.getBoundingClientRect(),inside=POINTER.inside&&POINTER.x>=rect.left&&POINTER.x<=rect.right&&POINTER.y>=rect.top&&POINTER.y<=rect.bottom;
@@ -613,7 +637,7 @@
         if(this.group){this.uniforms.uAssemble.value=REDUCED?1:clamp((now-this.startTime-100)/1850,0,1);this.uniforms.uDisperse.value=this.progress}
         else{this.uniforms.uAssemble.value=REDUCED?1:this.progress;this.uniforms.uDisperse.value=0}
         for(let i=0;i<(this.group?5:1);i++)this.spins[i]=time*this.spinSpeed[i];
-        this.uniforms.uTime.value=time;this.uniforms.uAlpha.value=this.alpha;this.updateMouse();this.updateLabels();this.renderer.render(this.scene,this.camera);
+        this.uniforms.uTime.value=time;this.uniforms.uAlpha.value=this.alpha;this.uniforms.uSuction.value=this.suction;this.updateMouse();this.updateLabels();this.renderer.render(this.scene,this.camera);
       }
       requestAnimationFrame(this.loop);
     }
