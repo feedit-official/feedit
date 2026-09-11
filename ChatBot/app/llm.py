@@ -385,6 +385,29 @@ def vision(question: str, images: list[str], *, mode: str = "general") -> str | 
     return out["text"] if out else None
 
 
+def vision_salmal(question: str, images: list[str]) -> dict | None:
+    """사진에서 보이는 상품명·스타일 태그·짧은 조언만 구조화한다.
+
+    지수는 이 모델 출력 숫자가 아니라 salmal_index의 고정 계산식이 만든다.
+    """
+    content: list[dict] = [{"type": "input_text", "text": question or "이 아이템 살까 말까?"}]
+    for u in images[:4]:
+        content.append({"type": "input_image", "image_url": u})
+    schema = strict_schema("salmal_visual", {
+        "item": {"type": "string"},
+        "tags": {"type": "array", "items": {"type": "string"}},
+        "summary": {"type": "string"},
+    }, ["item", "tags", "summary"])
+    instructions = (
+        "FEEDiT 살말 분석용 시각 판독기입니다. 사진에서 직접 확인되는 의류 종류와 "
+        "스타일 태그만 반환하세요. 브랜드, 가격, 재고, 트렌드 수치나 점수는 추측하지 "
+        "마세요. tags는 한국어 명사 1~6개, summary는 보이는 특징과 구매 전 확인할 점을 "
+        "2~3문장으로 작성하세요."
+    )
+    return respond(instructions, [{"role": "user", "content": content}], schema,
+                   timeout=30, **role("vision"))
+
+
 def strict_schema(name: str, properties: dict, required: list[str]) -> dict:
     """Structured Outputs 스키마 껍데기.
 

@@ -438,7 +438,12 @@ export function actionsHTML(acts){
     if(a.style) d.push('data-style-name="' + esc(a.style) + '"');
     if(a.keyword) d.push('data-kw="' + esc(a.keyword) + '"');
     if(a.type === 'switch_mode') d.push('data-mode="' + esc(a.to) + '"');
-    if(a.type === 'community') d.push('data-community="1"');
+    /* 물어보기는 서버가 확인한 상품 초안을 함께 들고 간다 —
+       없으면 예전처럼 사용자가 친 문장으로 떨어진다(chat_popup.js). */
+    if(a.type === 'community'){
+      d.push('data-community="1"');
+      if(a.draft) d.push('data-draft="' + esc(JSON.stringify(a.draft)) + '"');
+    }
     if(a.type === 'virtual_fit') d.push('data-virtual-fit="1"');
     return d.join(' ') + '>' + esc(a.label) + ' <i>→</i></button>';
   }).join('') + '</div>';

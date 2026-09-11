@@ -31,9 +31,11 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from typing import Any, Callable
 
 from . import season as season_ref     # 인자 이름(season)과 겹치지 않게
+from . import salmal_index
 from .config import MIN_OBS_7, MIN_OBS_14, MIN_OBS_28, THIN_SAMPLE, temp_band
 
 # ══════════════════════════════════════════════════════════
@@ -207,6 +209,23 @@ SPECS: list[dict] = [
         ["term", "limit"],
     ),
     _fn(
+        "get_salmal_index",
+        "구매 고민 대상의 검증된 신호를 가중 결합해 0~100 살말 지수와 근거를 돌려준다. "
+        "살말 모드에서는 결론을 쓰기 전에 반드시 호출한다. 없는 축은 임의로 채우지 않는다. "
+        "★ 링크·사진·질문에서 **확인한** 구체적 상품이 있으면 item_name·brand·price 에 "
+        "함께 적는다. 그 값이 화면의 '물어보기' 버튼을 눌렀을 때 커뮤니티 카드 작성칸에 "
+        "그대로 들어간다 — 적지 않으면 사용자가 친 원문(링크 주소)이 상품명 칸에 남는다. "
+        "확인하지 못한 칸은 반드시 null 로 둔다. 짐작해서 채우면 사용자가 확인된 값으로 "
+        "읽고 그대로 올린다. 가격은 상품 페이지나 검색 결과에서 실제로 본 판매가만 적는다.",
+        {"term": {"type": "string", "description": "판단할 정확한 용어 또는 상품명"},
+         "item_name": {"type": ["string", "null"],
+                       "description": "확인한 상품명(브랜드 제외). 모르면 null"},
+         "brand": {"type": ["string", "null"], "description": "확인한 브랜드명. 모르면 null"},
+         "price": {"type": ["integer", "null"],
+                   "description": "확인한 원화 판매가(숫자만). 확인 못 했으면 null"}},
+        ["term", "item_name", "brand", "price"],
+    ),
+    _fn(
         "get_user_taste",
         "로그인한 사용자의 취향 가중치를 가져온다. "
         "'나한테 어울려?' '내 취향이야?' 의 유일한 근거다. "
@@ -258,6 +277,7 @@ SPECS: list[dict] = [
         "것만 쓴다: rank_terms=ranking, 둘 이상 get_metric=comparison, get_metric=metric, "
         "모멘텀=direction, 출처별=sources, 연관어=associations, 긍부정=sentiment, "
         "similar_terms=recommendations, get_user_taste=taste, season_fit=context, "
+        "get_salmal_index=salmal, "
         "get_evidence=evidence/links, declare_missing=missing. term 은 특정 용어 모듈이면 "
         "그 정확한 표기를 쓰고 공통 모듈이면 null. 화면은 결론→핵심 신호→근거 순으로 "
         "읽히게 하고, 중요한 모듈과 보조 모듈의 폭·강조를 다르게 해 편집형 리듬을 만든다. "
@@ -278,7 +298,7 @@ SPECS: list[dict] = [
                     "properties": {
                         "kind": {"type": "string", "enum": [
                             "ranking", "comparison", "metric", "direction", "sources",
-                            "associations", "sentiment", "recommendations", "taste",
+                            "associations", "sentiment", "recommendations", "taste", "salmal",
                             "context", "evidence", "links", "missing"]},
                         "term": {"type": ["string", "null"],
                                  "description": "특정 용어 모듈이면 정확한 용어, 공통이면 null"},
@@ -298,6 +318,9 @@ SPECS: list[dict] = [
         "ask_user",
         "무엇을 볼지 되묻는다. 실패가 아니라 정상 행동이다. "
         "'이거 어때?' 처럼 정보가 질문에 없어 어떤 모델도 풀 수 없을 때 쓴다. "
+        "★ 우리가 할 수 없는 일(주문·결제·장바구니·개인정보 입력)에는 부르지 마라. "
+        "어떤 상품을 주문할지 되물으면 사용자는 고르기만 하면 해 준다는 뜻으로 읽는다. "
+        "그때는 도구 없이 못 한다고 답한다. "
         "추측해서 엉뚱한 용어로 답하지 말고 이것을 부른다.",
         {
             "question": {"type": "string", "description": "되물을 한 문장"},
@@ -407,6 +430,8 @@ def progress_say(name: str, args: dict) -> str | None:
         return "살!말? 투표 보는 중"
     if name == "search_salmal":
         return f"{head}비슷한 고민 찾는 중"
+    if name == "get_salmal_index":
+        return f"{head}살말 지수 계산하는 중"
     if name == "get_user_taste":
         return "취향에 맞춰 보는 중"
     if name == "compose_report":
@@ -813,6 +838,31 @@ class Toolbox:
             return {"unavailable": "살!말? 데이터 연결이 아직 없습니다.", "term": term}
         return self.salmal.search(term, limit=max(1, min(int(limit or 5), 10)))
 
+    def t_get_salmal_index(self, term: str, item_name=None, brand=None,
+                           price=None) -> dict:
+        metric = self.t_get_metric(term, ["온도", "모멘텀"])
+        temp = metric.get("온도") if isinstance(metric, dict) else None
+        trend = {"temp": temp.get("temp")} if isinstance(temp, dict) else None
+        card = None
+        card_id = self.ctx.get("salmal_card_id")
+        if card_id and self.salmal is not None:
+            card = self.salmal.card(int(card_id))
+        product = (card or {}).get("product") or {}
+        result = salmal_index.calculate(
+            term=term,
+            product_tags=product.get("tags") or (card or {}).get("card", {}).get("tags") or [],
+            taste_context=self.ctx.get("taste_context"),
+            trend=trend,
+            price=(card or {}).get("price_snapshot"),
+            community=(card or {}).get("vote_summary"),
+        )
+        result.update({"term": term, "as_of": (card or {}).get("as_of") or metric.get("as_of"),
+                       "card": (card or {}).get("card"), "product": product or None,
+                       "price_snapshot": (card or {}).get("price_snapshot"),
+                       "vote_summary": (card or {}).get("vote_summary"),
+                       "item_draft": _item_draft(item_name, brand, price)})
+        return result
+
     def t_get_user_taste(self) -> dict:
         uid = self.ctx.get("user_id")
         if not uid:
@@ -832,7 +882,7 @@ class Toolbox:
         이 도구는 안전한 디자인 어휘만 남기므로 HTML/CSS 주입 경로가 없다.
         """
         allowed = {
-            "kinds": {"ranking", "comparison", "metric", "direction", "sources",
+            "kinds": {"ranking", "comparison", "metric", "direction", "sources", "salmal",
                       "associations", "sentiment", "recommendations", "taste", "context",
                       "evidence", "links", "missing"},
             "presentations": {"hero", "card", "chart", "list", "editorial", "compact"},
@@ -1156,6 +1206,36 @@ def hosted_specs() -> list[dict]:
     return out
 
 
+def _item_draft(name, brand, price) -> dict | None:
+    """모델이 확인한 상품의 정체를 그대로 적어 둔다. 값을 만들지 않는다.
+
+    ★ 왜 지수 도구에 붙였나 (2026-09-11)
+      링크를 주면 챗봇은 이미 "아디다스 럭비 폴로 셔츠" 라고 부르며 답한다.
+      그런데 그 이름은 **답변 문장 안에만** 있어서, '물어보기' 로 넘어갈 때
+      화면은 사용자가 친 원문(링크)을 그대로 상품명 칸에 넣었다.
+      답변에서 정규식으로 뽑는 고침은 다음 질문에서 또 틀린다.
+      그렇다고 전용 도구를 따로 만들면 **바퀴를 하나 더 쓴다** — 실제로
+      그렇게 했다가 14초 예산이 모자라 compose_report 까지 못 가고 리포트
+      카드가 통째로 사라졌다(AGENTS.md §3: 스펙이 한 번에 받게 고친다).
+      살말 모드에서 어차피 반드시 부르는 이 도구가 같이 받는다.
+    """
+    def _text(v, limit):
+        t = str(v or "").replace("\n", " ").strip()
+        return t[:limit] or None
+
+    won = None
+    if price is not None:
+        digits = re.sub(r"[^0-9]", "", str(price))
+        if digits:
+            won = int(digits[:9])
+    draft = {"name": _text(name, 120), "brand": _text(brand, 60), "price": won}
+    filled = [k for k, v in draft.items() if v is not None]
+    if not filled:
+        return None
+    draft["recorded"] = filled
+    return draft
+
+
 def specs_for(ctx: dict | None = None) -> list[dict]:
     """컨텍스트에 맞는 도구만 준다.
 
@@ -1168,6 +1248,8 @@ def specs_for(ctx: dict | None = None) -> list[dict]:
     drop = set()
     if not ctx.get("salmal_card_id"):
         drop.add("get_salmal")
+    if ctx.get("mode") != "salmal":
+        drop.add("get_salmal_index")
     if not ctx.get("user_id"):
         drop.add("get_user_taste")
     if ctx.get("no_ask"):

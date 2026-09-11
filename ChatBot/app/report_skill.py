@@ -26,7 +26,7 @@ from typing import Any
 
 
 KINDS = {
-    "ranking", "comparison", "metric", "direction", "sources",
+    "ranking", "comparison", "metric", "direction", "sources", "salmal",
     "associations", "sentiment", "recommendations", "taste", "context",
     "evidence", "links", "missing",
 }
@@ -122,6 +122,8 @@ def _fallback_title(catalog: list[dict]) -> str:
     ))
     if "context" in kinds:
         return "오늘의 옷차림"
+    if "salmal" in kinds:
+        return "나를 위한 살말 리포트"
     if "comparison" in kinds and len(terms) >= 2:
         return f"{terms[0]} · {terms[1]} 비교"
     if "ranking" in kinds:
@@ -136,6 +138,49 @@ def _fallback_title(catalog: list[dict]) -> str:
     if "evidence" in kinds or "links" in kinds:
         return "근거 한눈에"
     return "FEEDiT 트렌드 브리프"
+
+
+def _normalize_notes(modules: list[dict]) -> None:
+    """안내문(note)은 누가 고르든 **한 가지 모양**으로 그린다.
+
+    ★ 왜 (2026-09-11 실측)
+      같은 화면 안에서 "상품 단위 지표: 측정 자료 없음" 은 베이지 지면
+      (editorial), "이번 판단에 빠진 신호" 는 흰 카드, "판매가·재고·세일"
+      은 점선 상자로 나왔다. 셋 다 **같은 말**(없는 자료)인데 모양이 셋이라
+      사용자는 서로 다른 종류의 정보로 읽는다. 모델이 고른 표현이든 서버가
+      덧붙인 것이든, 안내문은 안내문이다.
+    """
+    for module in modules:
+        block = (module.get("content") or {}).get("block") or {}
+        if block.get("type") != "note":
+            continue
+        module["presentation"] = "compact"
+        module["emphasis"] = "normal"
+        module["span"] = 12
+
+
+def _pack_rows(modules: list[dict]) -> None:
+    """한 줄에 남는 칸이 있으면 그 줄의 마지막 모듈이 끝까지 채운다.
+
+    ★ 왜 (2026-09-11 실측)
+      '트랙 자켓 구매 판단' 에서 방향 지표가 6열짜리 모듈 하나로 놓여
+      오른쪽 절반이 통째로 비었다. 12열 캔버스는 모델이 폭을 고르지만,
+      **비어 있는 칸은 디자인이 아니라 사고**다. 순서와 위계는 그대로 두고
+      줄 끝의 여백만 메운다.
+    """
+    row: list[dict] = []
+    used = 0
+    for module in modules:
+        span = module["span"]
+        if row and used + span > 12:
+            row[-1]["span"] += 12 - used
+            row, used = [], 0
+        row.append(module)
+        used += span
+        if used >= 12:
+            row, used = [], 0
+    if row and used < 12:
+        row[-1]["span"] += 12 - used
 
 
 def _module_payload(module: dict) -> dict:
@@ -155,7 +200,10 @@ def _module_payload(module: dict) -> dict:
     if block.get("type") == "kpis":
         count = len(block.get("items") or [])
         if count:
-            payload["columns"] = 3 if count == 3 else min(count, 2)
+            # 폭을 다 쓰는 모듈이면 4개도 한 줄에 선다. 좁은 모듈에서만 2×2.
+            wide = module["span"] >= 10
+            payload["columns"] = (count if count <= 4 and wide else
+                                  3 if count == 3 else min(count, 2))
     return payload
 
 
@@ -187,25 +235,40 @@ def build(catalog: list[dict], trace) -> dict | None:
                 "emphasis": _pick(request.get("emphasis"), EMPHASIS, "normal"),
             })
 
-    # 없는 자료를 숨기는 디자인은 허용하지 않는다. missing 은 모델이 빼도 끝에 붙인다.
+    # 살말 근거와 없는 자료를 숨기는 디자인은 허용하지 않는다.
     for content in catalog:
-        if content.get("kind") == "missing" and content["id"] not in used:
+        if content.get("kind") in ("salmal", "missing") and content["id"] not in used:
             used.add(content["id"])
-            modules.append({"content": content, "presentation": "compact",
-                            "span": 12, "emphasis": "quiet"})
+            is_missing = content.get("kind") == "missing"
+            modules.append({"content": content,
+                            "presentation": "compact" if is_missing else _presentation(content, "card"),
+                            "span": 12, "emphasis": "quiet" if is_missing else "normal"})
 
     if not modules:
         modules = _fallback_modules(catalog)
         source = "fallback"
         title, accent, surface, density = fallback_title, "coral", "paper", "balanced"
     else:
-        source = "model"
-        title = str(spec.get("title") or "").strip()[:48]
+        # ★ spec 이 없어도 여기로 온다 (2026-09-11 실측 버그).
+        #   바로 위의 "살말·없는 자료는 숨기지 않는다" 루프가 spec 과 무관하게
+        #   모듈을 넣기 때문에, compose_report 를 부르기 전에 예산이 끊기면
+        #   modules 는 차 있고 spec 은 None 인 상태가 된다. 그 조합에서
+        #   spec.get() 이 AttributeError 로 터졌고, agent_path 가 예외를
+        #   조용히 삼켜 **리포트 카드가 통째로 사라졌다.** 화면에는 문장만
+        #   남아서 원인이 보이지 않았다.
+        design = spec or {}
+        source = "model" if spec else "fallback"
+        title = str(design.get("title") or "").strip()[:48]
         if not title or title.casefold().replace(" ", "") == "feedit signal".replace(" ", ""):
             title = fallback_title
-        accent = _pick(spec.get("accent"), ACCENTS, "coral")
-        surface = _pick(spec.get("surface"), SURFACES, "paper")
-        density = _pick(spec.get("density"), DENSITIES, "balanced")
+        accent = _pick(design.get("accent"), ACCENTS, "coral")
+        surface = _pick(design.get("surface"), SURFACES, "paper")
+        density = _pick(design.get("density"), DENSITIES, "balanced")
+
+    # 모듈이 다 정해진 뒤에 시각 문법을 맞춘다 — 모델이 고른 것과 서버가
+    # 덧붙인 것이 같은 화면에서 서로 다른 모양이 되지 않게.
+    _normalize_notes(modules)
+    _pack_rows(modules)
 
     serial = json.dumps({
         "source": source, "accent": accent, "surface": surface, "density": density,

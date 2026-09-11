@@ -167,7 +167,7 @@ function cpFitHTML(m){
     '<div class="cpFitEmpty">아이템 사진을 올려 주세요.</div>';
   const result=f.result?'<img class="cpFitResult" src="'+cpEsc(f.result)+'" alt="AI 모델 착용 결과">':
     '<div class="cpFitResultEmpty">완성된 착용 이미지가 여기에 나타납니다.</div>';
-  const categories=['상의','하의','아우터','원피스(셋업)','신발','양말','안경','벨트'];
+  const categories=['상의','하의','아우터','원피스(셋업)','신발'];
   return '<section class="cpFit" data-fit-key="'+cpEsc(f.key)+'">'+
     '<div class="cpFitHead"><span>GPT IMAGE 2</span><b>채팅에서 바로 입혀보기</b></div>'+
     '<div class="cpFitGrid"><div class="cpFitSetup">'+
@@ -179,6 +179,13 @@ function cpFitHTML(m){
         '<label><input type="radio" data-vf-model value="man" name="vf-'+cpEsc(f.key)+'"'+(f.model==='man'?' checked':'')+'><img src="/assets/vton-models/man.png" alt="남성 AI 모델"><span>남성 모델</span></label>'+
       '</div><button type="button" class="pill cpFitGo" data-vf-generate'+(f.loading?' disabled':'')+'>'+(f.loading?'입혀보는 중…':'입혀보기')+'</button>'+
     '</div><div class="cpFitOutput">'+result+'<p class="cpFitState '+cpEsc(f.stateKind||'')+'">'+cpEsc(f.status||'')+'</p></div></div></section>';
+}
+/* 사용자가 친 문장을 상품명 자리에 쓸 수 있는지. 주소가 섞여 있으면 쓰지 않는다 —
+   "https://… 이거 사도 될까?" 에서 주소를 떼어 내도 남는 말은 상품명이 아니다. */
+function cpTitleFromText(text){
+  const t=String(text||'').trim();
+  if(!t)return '';
+  return /https?:\/\/|www\.[^\s]+/i.test(t) ? '' : t;
 }
 function cpAIMessageFor(el){
   const node=el&&el.closest('.msg.ai'), c=cpActiveConvo();
@@ -269,9 +276,15 @@ function cpHistoryFor(c){
   for(const m of c.messages) if(m.role==='ai'&&m.turn) out.push(m.turn);
   return out.slice(-8);
 }
+/* 살말 지수의 '취향' 축이 보는 것 — 가입할 때 고른 즐겨입는 스타일이다.
+   이름만 보내면 서버에서 "블록코어" 와 "벌룬 카고 미디 스커트" 를 맞대게 되어
+   겹치는 일이 거의 없다. 그래서 스타일의 대표 어휘(STYLES.kw)도 같이 보낸다 —
+   표는 STYLES 에 드러나 있고, 고치면 판단이 바뀐다. */
 function cpTasteContext(c){
-  const byId=new Map(STYLES.map(s=>[s.id,s.n]));
-  const favorite=[...ME.styles].map(id=>byId.get(id)).filter(Boolean);
+  const byId=new Map(STYLES.map(s=>[s.id,s]));
+  const picked=[...ME.styles].map(id=>byId.get(id)).filter(Boolean);
+  const favorite=picked.map(s=>s.n);
+  const profiles=picked.map(s=>({name:s.n, keywords:[s.en, ...(s.kw||[])].filter(Boolean).slice(0,8)}));
   const saved=[];
   LIKED.forEach(v=>{
     if(v&&v.nm)saved.push(v.nm);
@@ -281,7 +294,9 @@ function cpTasteContext(c){
   for(const turn of cpHistoryFor(c)) for(const term of (turn.terms||[])){
     if(term&&term.canonical)searched.push(term.canonical);
   }
-  return {favorite_styles:favorite.slice(0,10), searched_terms:[...new Set(searched)].slice(-20),
+  return {favorite_styles:favorite.slice(0,10),
+          favorite_style_profiles:profiles.slice(0,10),
+          searched_terms:[...new Set(searched)].slice(-20),
           saved_terms:[...new Set(saved)].slice(0,30)};
 }
 function cpAskMock(c,aiMsg,key){
@@ -464,7 +479,18 @@ document.addEventListener('click', e=>{
     const c=cpActiveConvo();
     const ai=cpAIMessageFor(community), aiIndex=c&&c.messages.indexOf(ai);
     const user=(c&&aiIndex>=0)?c.messages.slice(0,aiIndex).reverse().find(m=>m.role==='me'):null;
-    window.__salmalDraft={title:(user&&user.text)||'', image:(user&&user.images&&user.images[0])||''};
+    /* 서버가 확인한 상품명·브랜드·가격이 있으면 그것을 쓴다.
+       없을 때만 사용자가 친 문장으로 떨어지되, **링크는 상품명이 아니다** —
+       주소가 섞여 있으면 상품명 칸을 비워 두고 사용자가 직접 적게 한다
+       (2026-09-11: 카드 상품명에 무신사 주소가 그대로 들어갔다). */
+    let served=null;
+    try{ served=community.dataset.draft?JSON.parse(community.dataset.draft):null; }
+    catch(_e){ served=null; }
+    window.__salmalDraft={
+      title:(served&&served.title)||cpTitleFromText(user&&user.text),
+      brand:(served&&served.brand)||'',
+      price:(served&&served.price!=null)?served.price:'',
+      image:(user&&user.images&&user.images[0])||''};
     closeChatPopup();
     const nav=document.querySelector('#mNav [data-v="salmal"]');
     if(nav)nav.click();
