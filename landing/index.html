@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ko">
+<html lang="ko" class="experience-locked">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -11,10 +11,10 @@
   <link rel="preconnect" href="https://cdn.jsdelivr.net">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Roboto+Flex:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Roboto+Flex:wght@400;500;600;700&amp;family=Space+Grotesk:wght@400;500;700&amp;display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://static.wanted.co.kr/fonts/pretendard/pretendard/pretendardvariable-dynamic-subset.min.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/wanteddev/wanted-sans@v1.0.3/packages/wanted-sans/fonts/webfonts/variable/split/WantedSansVariable.min.css">
-  <link rel="stylesheet" href="./css/landing.css?v=20260909-wanted-exact18">
+  <link rel="stylesheet" href="./css/landing.css?v=20260911-form-orbit38">
 </head>
 <body class="experience-locked">
   <div class="experience-gate" id="experienceGate">
@@ -23,6 +23,11 @@
     </button>
   </div>
   <div class="progress" aria-hidden="true"><i></i></div>
+  <div class="story-film" id="storyFilm" aria-hidden="true">
+    <video id="storyFilmVideo" muted loop playsinline webkit-playsinline preload="metadata">
+      <source src="./assets/feedit-story-4k.mp4" type="video/mp4">
+    </video>
+  </div>
   <header class="wanted-nav" aria-label="대회 페이지 헤더">
     <div class="wanted-nav-inner">
       <div class="wanted-nav-left">
@@ -33,6 +38,7 @@
     </div>
   </header>
   <div class="entry-caption" id="entryCaption" aria-hidden="true">Wanted x KRAFTON Cofa AI Championship 2026 출품작 <i></i> FEEDiT</div>
+  <div class="story-phases" id="storyPhases" aria-hidden="true"><span data-story-phase="impact">IMPACT</span><i></i><span data-story-phase="think">THINK</span><i></i><span data-story-phase="build">BUILD</span></div>
   <main>
     <section class="hero-scroll" id="start"><div class="hero sticky-panel">
       <canvas id="impactCanvas" class="particle-canvas" aria-hidden="true"></canvas>
@@ -50,20 +56,96 @@
 
     <section class="zip-scroll" id="reveal"><div class="zip-stage sticky-panel">
       <div class="zip-open" aria-hidden="true"></div><div class="zip-photo" aria-hidden="true"></div><div class="zip-seam" aria-hidden="true"><i id="zipPull"><b></b></i></div>
-      <div class="single-particle-light think-backlight" aria-hidden="true"></div>
-      <div class="zip-copy"><span>01 / THINK</span><h2>SCROLL<br>INTO THE<br><em>THREAD.</em></h2></div>
-      <canvas id="thinkCanvas" class="particle-canvas" aria-hidden="true"></canvas><div class="think-label">THINK</div>
+      <div class="zip-copy"><span>01 / THINK</span><h2>FEEDiT이<br><em>뭔데?</em></h2></div>
     </div></section>
 
     <section class="why" id="why"><div class="lace-stage" aria-hidden="true"><div class="lace-denim"></div><svg class="lace-reveal" viewBox="0 0 1024 1536" preserveAspectRatio="xMidYMid meet"><defs><mask id="laceMask"><rect width="1024" height="1536" fill="#000"/><path id="laceDraw" d="M601 87 C427 142 330 244 363 348 C390 437 558 463 646 570 C746 692 698 787 548 874 C396 963 351 1064 412 1168 C451 1237 523 1310 602 1430" fill="none" stroke="#fff" stroke-width="92" stroke-linecap="round" stroke-linejoin="round"/></mask></defs><image href="./assets/shoelace-denim.png" width="1024" height="1536" mask="url(#laceMask)"/></svg><span class="lace-tip">FOLLOW THE THREAD</span></div>
-      <div class="why-intro"><span class="kicker">02 / WHY FEEDiT</span><h2>스크롤 속 패션을,<br><em>하나의 트렌드로.</em></h2><p>매거진·SNS에 흩어진 패션 데이터를 모으고 <b>FEED</b>, 정제하여 <b>EDIT</b> 트렌드의 온도를 파악합니다.</p></div>
-      <article class="story-card card-life" data-side="left"><span class="card-index">01 — SPEED</span><p>유행은 기다려주지 않습니다.</p><div class="life-number"><del>36개월</del><strong>2<span>–</span>6개월</strong></div><small>패션 수명 주기</small></article>
-      <article class="signal-cloud" data-side="right"><span>SNS</span><span>SHORTS</span><span>COMMUNITY</span><span>SHOP</span><span>INFLUENCER</span><p>더 빨라지고<br>더 다양해진 트렌드 신호.</p></article>
-      <article class="story-card card-gap" data-side="left"><span class="card-index">02 — FRICTION</span><h3>정보는 넘치는데,<br>흐름은 없습니다.</h3><div class="journey"><span>발견</span><i></i><span>검증</span><i></i><span>비교</span><i class="broken"></i><span>구매</span></div><p>구매 판단이 한 곳에서 이어지지 않습니다.</p></article>
-      <div class="stats" data-side="right"><article><span>비교 플랫폼 수</span><strong>3<sup>+</sup></strong><small>구매 전 평균</small></article><article><span>장바구니 이탈률</span><strong>70.19<sup>%</sup></strong><small>파편화된 정보로 이탈</small></article><article><span>가격 비교 보류</span><strong>62<sup>%</sup></strong><small>구매 결정 지연</small></article></div>
-      <article class="unify" data-side="left"><span class="kicker">03 / ONE CONTINUOUS FLOW</span><h3>탐색에서<br>구매 판단까지.</h3><p>각 시장의 기술을 통합해 소비자가 트렌드를 탐색하고, 데이터를 분석하며, 구매를 결정하는 전 과정을 하나의 서비스로 연결합니다.</p>
-        <div class="orbit-map" aria-label="FEEDiT 서비스 구성"><div class="orbit o1"><span>Fashion Tech<small>AI × 패션 산업</small></span></div><div class="orbit o2"><span>AI Styling<small>개인화 스타일링</small></span></div><div class="orbit o3"><span>Social Listening<small>트렌드 분석</small></span></div><div class="orbit o4"><span>E-commerce<small>온라인 패션 소비</small></span></div><strong>FEED<span>i</span>T</strong></div>
+      <div class="why-intro"><span class="kicker">02 / WHY FEEDiT</span><h2>스크롤 속 패션을,<br><em>하나의 트렌드로.</em></h2><p>매거진·SNS에 흩어진 패션 데이터를 모으고 <b>FEED</b>,<br><span class="edit-line">정제하여 <b>EDIT</b> 트렌드의 온도를 파악합니다.</span></p><div class="why-stream" aria-hidden="true"><span>SNS</span><i></i><span>SHORTS</span><i></i><span>SHOP</span><i></i><strong>FEED <b>/</b> EDIT</strong></div></div>
+      <article class="story-card card-life" data-side="left"><span class="card-index">01 — SPEED</span><p>유행은 기다려주지 않습니다.</p><div class="life-number"><del>36개월</del><strong>2<span>–</span>6개월</strong></div><div class="life-cycle-rail" aria-hidden="true"><span>PAST</span><i><b></b></i><span>NOW</span></div><small>패션 수명 주기</small></article>
+      <article class="signal-cloud" data-side="right" aria-label="패션 트렌드 신호 실시간 수집">
+        <div class="signal-radar" aria-hidden="true"><i class="signal-ring ring-one"></i><i class="signal-ring ring-two"></i><i class="signal-ring ring-three"></i><b class="signal-sweep"></b><div class="signal-core"><small>LIVE</small><strong>08</strong><em>SIGNALS</em></div></div>
+        <span class="signal-chip s1"><i></i>SNS <b>+68%</b></span><span class="signal-chip s2"><i></i>SHORTS <b>+91%</b></span><span class="signal-chip s3"><i></i>COMMUNITY <b>LIVE</b></span><span class="signal-chip s4"><i></i>SHOP <b>+42%</b></span><span class="signal-chip s5"><i></i>INFLUENCER <b>HOT</b></span><span class="signal-chip s6"><i></i>SEARCH <b>↗ 36</b></span><span class="signal-chip s7"><i></i>RUNWAY <b>NEW</b></span><span class="signal-chip s8"><i></i>REVIEW <b>2.4K</b></span>
+        <div class="signal-ticker" aria-hidden="true"><div>RUNWAY &nbsp;•&nbsp; SOCIAL &nbsp;•&nbsp; SEARCH &nbsp;•&nbsp; SHORTS &nbsp;•&nbsp; COMMERCE &nbsp;•&nbsp; CREATOR &nbsp;•&nbsp; RUNWAY &nbsp;•&nbsp; SOCIAL &nbsp;•&nbsp; SEARCH &nbsp;•&nbsp;</div></div>
+        <p>더 빨라지고<br>더 다양해진 트렌드 신호.<small>흩어진 움직임을 실시간으로 감지합니다.</small></p>
       </article>
+      <article class="story-card card-gap" data-side="left"><span class="card-index">02 — FRICTION</span><h3>정보는 넘치는데,<br>흐름은 없습니다.</h3><div class="journey"><span>발견</span><i></i><span>검증</span><i></i><span>비교</span><i class="broken"></i><span>구매</span></div><div class="friction-field" aria-label="온라인 장바구니 이탈률 70.19 퍼센트"><i></i><i></i><i></i><i></i><b><strong>70.19%</strong><span>구매 직전 이탈</span></b></div><p>구매 판단이 한 곳에서 이어지지 않습니다.</p></article>
+      <div class="stats" data-side="right"><header class="stats-heading"><span>02 / FRICTION</span><h3>소비자의 무한 고민</h3></header><article><span>비교 플랫폼 수</span><strong data-count="3" data-suffix="+">3<sup>+</sup></strong><small>구매 전 평균</small></article><article><span>장바구니 이탈률</span><strong data-count="70.19" data-decimals="2" data-suffix="%">70.19<sup>%</sup></strong><small>파편화된 정보로 이탈</small></article><article><span>가격 비교 보류</span><strong data-count="62" data-suffix="%">62<sup>%</sup></strong><small>구매 결정 지연</small></article></div>
+      <article class="unify" data-side="left"><span class="kicker">03 / ONE CONTINUOUS FLOW</span><h3>탐색에서<br>구매 판단까지.</h3><p>각 시장의 기술을 통합해 소비자가 트렌드를 탐색하고, 데이터를 분석하며,<br>구매를 결정하는 전 과정을 하나의 서비스로 연결합니다.</p>
+        <div class="orbit-map" aria-label="FEEDiT 서비스 구성"><div class="orbit o1"><span>Fashion Tech<small>AI × 패션 산업</small></span></div><div class="orbit o2"><span>AI Styling<small>개인화 스타일링</small></span></div><div class="orbit o3"><span>Social Listening<small>트렌드 분석</small></span></div><div class="orbit o4"><span>E-commerce<small>온라인 패션 소비</small></span></div><div class="orbit-brand" aria-label="FEEDiT"><img src="./assets/feedit-logo.svg" alt=""><strong>FEED<span class="dotI">ı<span class="tit"></span></span>T</strong></div></div>
+      </article>
+
+      <section class="solution-scroll" id="solution" aria-labelledby="solutionTitle">
+        <div class="solution-sticky">
+          <header class="solution-heading">
+            <span>03.1 / HOW FEEDiT WORKS</span>
+            <h2 id="solutionTitle">흩어진 순간을,<br><em>결정의 흐름</em>으로.</h2>
+            <p>문제와 구매 사이, FEEDiT은 세 번 움직입니다.</p>
+          </header>
+
+          <div class="solution-stage">
+            <article class="solution-scene active" data-solution-scene="0">
+              <div class="solution-copy">
+                <span>01 / FEED — 모으다</span>
+                <h3>흩어진 신호를<br>한 피드로.</h3>
+                <p>SNS·숏폼·커뮤니티·쇼핑의 움직임을 한곳에 모아, 지금 봐야 할 신호부터 보여줍니다.</p>
+                <div class="solution-tags"><b>9 SOURCES</b><b>6H REFRESH</b><b>124K / DAY</b></div>
+              </div>
+              <div class="product-window feed-window">
+                <div class="product-top"><span class="mini-brand"><img src="./assets/feedit-logo.svg" alt="">FEEDiT</span><span>FASHION TREND AI</span><i></i><i></i><i></i></div>
+                <div class="feed-layout">
+                  <div class="feed-editorial"><img src="./assets/solution-feed.jpg" alt="화이트 수트를 입은 패션 모델"><span>EDITORIAL SIGNAL 08</span></div>
+                  <div class="feed-panel"><small><i></i> LIVE SIGNALS</small><h4>지금 뜨는<br>패션만 남겼어요.</h4><ol><li><b>01</b><span>발레코어</span><em>+91%</em></li><li><b>02</b><span>드레이프 셔츠</span><em>+68%</em></li><li><b>03</b><span>오프화이트 수트</span><em>+42%</em></li></ol><div class="feed-query"><span>✦</span> 발레코어, 지금 들어가도 늦지 않았어?<b>→</b></div></div>
+                </div>
+              </div>
+            </article>
+
+            <article class="solution-scene" data-solution-scene="1">
+              <div class="solution-copy">
+                <span>02 / EDIT — 고르다</span>
+                <h3>언급량보다<br>흐름을 읽습니다.</h3>
+                <p>상승 속도·반응·수명 주기를 함께 분석해 반짝 노이즈와 진짜 트렌드를 구분합니다.</p>
+                <div class="solution-tags"><b>RISING / FALLING</b><b>LIFECYCLE</b><b>INFLECTION</b></div>
+              </div>
+              <div class="product-window edit-window">
+                <div class="product-top"><span class="mini-brand"><img src="./assets/feedit-logo.svg" alt="">FEEDiT</span><span>TREND ANALYSIS · 2026.09</span><i></i><i></i><i></i></div>
+                <div class="edit-layout">
+                  <aside><strong>FEED</strong><span class="on">내 피드</span><span>실시간 트렌드</span><strong>EDIT</strong><span>수명 주기</span><span>연관 키워드</span></aside>
+                  <div class="chart-panel"><header><div><small>TREND TEMPERATURE</small><h4>오버사이즈 테일러링</h4></div><strong>82<sup>°</sup></strong></header><svg viewBox="0 0 620 250" role="img" aria-label="오버사이즈 테일러링 트렌드 상승 그래프"><defs><linearGradient id="chartFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ff6249" stop-opacity=".34"/><stop offset="1" stop-color="#ff6249" stop-opacity="0"/></linearGradient></defs><path class="chart-grid" d="M20 40H600M20 95H600M20 150H600M20 205H600"/><path class="chart-area" d="M20 205 C86 198 104 176 151 180 C203 185 213 140 266 151 C319 163 347 105 398 119 C453 134 473 70 522 82 C558 91 578 52 600 38 L600 230 L20 230Z"/><path class="chart-line" d="M20 205 C86 198 104 176 151 180 C203 185 213 140 266 151 C319 163 347 105 398 119 C453 134 473 70 522 82 C558 91 578 52 600 38"/><circle cx="600" cy="38" r="7"/></svg><div class="chart-meta"><span><i></i>언급 속도 <b>+34%</b></span><span><i></i>예상 잔여 수명 <b>11주</b></span><span><i></i>구매 전환 <b>HIGH</b></span></div></div>
+                  <figure><img src="./assets/solution-edit.jpg" alt="블랙 오버사이즈 룩의 패션 모델"><figcaption>LIVE LOOK / 008</figcaption></figure>
+                </div>
+              </div>
+            </article>
+
+            <article class="solution-scene" data-solution-scene="2">
+              <div class="solution-copy">
+                <span>03 / DECIDE — 결정하다</span>
+                <h3>분석을<br>구매의 확신으로.</h3>
+                <p>트렌드 지표와 취향이 비슷한 사람들의 선택을 상품 옆에 붙여, 비교에서 결제까지 끊김 없이 연결합니다.</p>
+                <div class="solution-tags"><b>살!말?</b><b>TASTE MATCH</b><b>ONE FLOW</b></div>
+              </div>
+              <div class="product-window decide-window">
+                <div class="product-top"><span class="mini-brand"><img src="./assets/feedit-logo.svg" alt="">FEEDiT</span><span>살까, 말까.</span><i></i><i></i><i></i></div>
+                <div class="decide-layout">
+                  <figure><img src="./assets/solution-decide.jpg" alt="인디고 데님 재킷"><figcaption><span>LEE 101J</span><small>INDIGO DENIM JACKET</small></figcaption></figure>
+                  <div class="vote-panel"><span class="live-now"><i></i> 102명이 함께 고민 중</span><small>취향 일치도 91%</small><h4>이 데님,<br>지금 사도 될까?</h4><div class="vote-meter"><span style="--vote:72%"><b>살!</b><em>72%</em></span><span><b>말!</b><em>28%</em></span></div><ul><li><span>트렌드 온도</span><b>82°</b></li><li><span>예상 잔여 수명</span><b>11주</b></li><li><span>가격 매력도</span><b>GOOD</b></li></ul><button type="button" tabindex="-1">상품과 함께 보기 <span>→</span></button></div>
+                </div>
+              </div>
+            </article>
+          </div>
+
+          <div class="solution-controls" aria-label="FEEDiT 해결 방식 화면 선택">
+            <button type="button" data-solution-prev aria-label="이전 화면">←</button>
+            <span class="solution-control-count" aria-live="polite"><strong>01</strong><i>/ 03</i></span>
+            <div class="solution-dots" role="group" aria-label="화면 바로 선택">
+              <button class="active" type="button" data-solution-go="0" aria-label="FEED 화면"></button>
+              <button type="button" data-solution-go="1" aria-label="EDIT 화면"></button>
+              <button type="button" data-solution-go="2" aria-label="DECIDE 화면"></button>
+            </div>
+            <button type="button" data-solution-next aria-label="다음 화면">→</button>
+            <small>AUTO · 3 SEC</small>
+          </div>
+        </div>
+      </section>
     </section>
 
     <section class="build-scroll" id="build"><div class="build-stage sticky-panel">
@@ -76,7 +158,7 @@
   </main>
   <button class="sound-toggle pending" id="soundToggle" type="button" aria-label="배경 음악 준비 중" aria-pressed="false"><span class="sound-wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span><span class="sound-slash" aria-hidden="true"></span></button>
   <audio id="themeAudio" src="./assets/feedit-theme.wav" preload="auto" autoplay muted playsinline loop></audio>
-  <div class="transition-curtain" id="curtain" aria-hidden="true"><div class="curtain-mark">F</div><span>ENTERING FEEDiT</span></div>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script><script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script><script src="./js/wanted-reference-data.js?v=20260909-wanted-exact18"></script><script src="./js/particles-webgl.js?v=20260909-wanted-exact18"></script><script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/gsap.min.js"></script><script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/ScrollTrigger.min.js"></script><script src="https://cdn.jsdelivr.net/npm/lenis@1.3.26/dist/lenis.min.js"></script><script src="./js/landing.js?v=20260909-wanted-exact18"></script>
+  <div class="transition-curtain" id="curtain" aria-hidden="true"><div class="curtain-mark"><img src="./assets/feedit-transition-logo.svg" alt="FEEDiT"></div><span>ENTERING FEEDiT</span></div>
+  <script src="./vendor/three.min.js?v=0.128.0"></script><script src="./vendor/GLTFLoader.js?v=0.128.0"></script><script src="./js/wanted-reference-data.js?v=20260911-form-orbit38"></script><script src="./js/particles-webgl.js?v=20260911-form-orbit38"></script><script src="./vendor/gsap.min.js?v=3.13.0"></script><script src="./vendor/ScrollTrigger.min.js?v=3.13.0"></script><script src="./vendor/lenis.min.js?v=1.3.26"></script><script src="./js/landing.js?v=20260911-form-orbit38"></script>
 </body>
 </html>
