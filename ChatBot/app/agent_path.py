@@ -84,7 +84,7 @@ def _item_draft(trace) -> dict | None:
 
     ★ 답변 문장에서 상품명을 뽑지 않는다 — 모델이 지어낸 이름도 카드에 실린다.
       도구에 적힌 것만이 확인한 것이다(_terms_from 과 같은 원칙).
-    ① get_salmal_index 에 적어 준 상품명·브랜드·가격이 있으면 그것.
+    ① inspect_product_link 또는 get_salmal_index 가 확인한 상품명·브랜드·가격이 있으면 그것.
     ② 없으면 search_terms 로 **실제로 찾아본 말**을 상품명 자리에 쓴다.
       링크 질문에서 모델은 링크가 무엇인지 확인한 뒤 그 이름으로 찾는다
       (orchestrator 규칙: q="아디다스 트랙탑"). 링크 주소를 그대로 남기는 것보다
@@ -94,6 +94,9 @@ def _item_draft(trace) -> dict | None:
     searched = ""
     for c in (trace.calls if trace else []):
         tool, res = c.get("tool"), c.get("result")
+        if tool == "inspect_product_link" and isinstance(res, dict) and res.get("found"):
+            draft = {"title": res.get("item_name") or "", "brand": res.get("brand") or "",
+                     "price": res.get("price_krw"), "source": "상품 링크에서 확인한 값"}
         if tool == "search_terms" and not searched:
             q = str((c.get("args") or {}).get("q") or "").strip()
             if q and not q.lower().startswith(("http://", "https://")):
@@ -190,7 +193,7 @@ def _notes(trace, rep: verify.Report, res: orchestrator.Result) -> list[dict]:
 
 def ask(question: str, *, store, gate, mode: str = "general",
         history: list[dict] | None = None, ctx: dict | None = None,
-        salmal=None, taste=None, on_progress=None) -> dict:
+        salmal=None, taste=None, on_progress=None, cancel_check=None) -> dict:
     """새 경로 한 번. engine.ask() 와 같은 모양의 dict 를 돌려준다."""
     t0 = time.monotonic()
     ctx = dict(ctx or {})
@@ -208,7 +211,8 @@ def ask(question: str, *, store, gate, mode: str = "general",
 
     res = orchestrator.run(question, store=store, gate=gate, ctx=ctx,
                            history=history, salmal=salmal, taste=taste,
-                           on_progress=on_progress, deadline=deadline)
+                           on_progress=on_progress, deadline=deadline,
+                           cancel_check=cancel_check)
 
     # 되묻기 — 답이 아니라 질문을 돌려준다. 실패가 아니다(설계도 원칙 3).
     if res.ask:
@@ -247,8 +251,15 @@ def ask(question: str, *, store, gate, mode: str = "general",
     #   여기서 예외가 났는지 구분할 방법이 화면에도 콘솔에도 없었다.
     #   계측이 없으면 처방도 없다(AGENTS.md §4).
     block_error = ""
+    designed = any(c.get("tool") == "compose_report"
+                   for c in (res.trace.calls if res.trace else []))
+    # 정상 완료된 답에서 디자인 도구를 고르지 않은 것은 모델의 명시적인 '문장만으로
+    # 충분함' 판단이다. 시간·호출 상한 때문에 도구를 못 부른 경우에만 안전망 카드로
+    # 조회 결과를 보존한다.
+    should_build = designed or res.stopped != "done"
     try:
-        blks = agent_blocks.build(res.trace, store, gate, question=question)
+        blks = (agent_blocks.build(res.trace, store, gate, question=question)
+                if should_build else [])
     except Exception as ex:                      # noqa: BLE001
         block_error = f"{type(ex).__name__}: {str(ex)[:120]}"
         print("! agent_blocks.build 실패 —", block_error, flush=True)

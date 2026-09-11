@@ -30,6 +30,17 @@ ok(box.textContent.includes('82점'), '기존 데이터 블록을 재사용한�
 ok(!box.innerHTML.includes('variant'), '이름 붙은 레이아웃 variant 가 없다');
 ok(box.textContent.includes('LIVE REPORT') && box.textContent.includes('SIGNALS'), '편집형 메타 헤더를 표시한다');
 
+console.log('\n=== 이전 지표 프레임 통일 ===');
+const legacyBox=document.createElement('div');
+legacyBox.innerHTML=api.reportHTML({intent:'agent',as_of:{metric:'2026-09-11'},blocks:[
+  {type:'rank',slot:'left',title:'니트',rows:[{k:'트렌드 온도',v:'56점'}]},
+  {type:'bars',slot:'right',title:'플랫폼별 언급량',items:[{k:'에이블리',v:37,max:37}]},
+]});
+ok(!!legacyBox.querySelector('.skillReport--legacy'), '이전 2단 지표도 LIVE REPORT 외곽 프레임을 쓴다');
+ok(legacyBox.textContent.includes('FEEDiT / LIVE REPORT') && legacyBox.textContent.includes('02 SIGNALS'),
+  '이전 지표에도 같은 메타 헤더를 표시한다');
+ok(!legacyBox.querySelector('.ansBar'), '브라우저 창 모양의 별도 헤더를 제거한다');
+
 console.log('\n=== 근거 인용 카드 ===');
 const evidence=structuredClone(report);
 evidence.blocks[0].modules=[{id:'evidence:고프코어',kind:'evidence',presentation:'editorial',

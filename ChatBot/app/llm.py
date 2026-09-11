@@ -378,7 +378,7 @@ def vision(question: str, images: list[str], *, mode: str = "general") -> str | 
     r = role("vision")
     instr = _VISION_SALMAL if mode == "salmal" else _VISION_GENERAL
     content: list[dict] = [{"type": "input_text", "text": question or "이 사진을 봐 주세요."}]
-    for u in images[:4]:
+    for u in images[:6]:
         content.append({"type": "input_image", "image_url": u})
     payload = [{"role": "user", "content": content}]
     out = respond(instr, payload, effort=r["effort"], model=r["model"], timeout=30)
@@ -391,7 +391,7 @@ def vision_salmal(question: str, images: list[str]) -> dict | None:
     지수는 이 모델 출력 숫자가 아니라 salmal_index의 고정 계산식이 만든다.
     """
     content: list[dict] = [{"type": "input_text", "text": question or "이 아이템 살까 말까?"}]
-    for u in images[:4]:
+    for u in images[:6]:
         content.append({"type": "input_image", "image_url": u})
     schema = strict_schema("salmal_visual", {
         "item": {"type": "string"},

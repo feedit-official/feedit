@@ -124,7 +124,11 @@ cd feedit/frontend && npm run dev
 **서버를 안 켜도 프론트는 그냥 돈다.** 챗봇만 기존 목업 응답으로 떨어진다.
 데모가 서버 유무에 좌우되면 안 되기 때문이다.
 
-플랜을 바꿔 보려면 브라우저 콘솔에서:
+공개 베타는 기본으로 모든 기능이 열린다(`FEEDIT_PUBLIC_BETA=1`). 이때 요청의
+`FREE` 값과 기존 `FEEDIT_CHAT_TOKEN`은 접근을 막지 않는다. 베타 종료 후
+`FEEDIT_PUBLIC_BETA=0`으로 바꾸면 아래 플랜 값과 공유 토큰 검사가 다시 적용된다.
+
+베타 종료 후 플랜을 바꿔 보려면 브라우저 콘솔에서:
 
 ```js
 window.FEEDIT_PLAN = 'FREE'   // 기본값은 'PRO'

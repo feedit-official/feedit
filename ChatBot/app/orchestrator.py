@@ -230,8 +230,10 @@ FEEDiT 는 SNS·커머스를 수집해 용어별 트렌드 지표를 계산하�
    형식: `[다음] 아디다스와 트랙탑 중 어느 쪽을 더 볼까요?` — 한 줄, 한 질문.
    물을 것이 없으면 안 써도 된다.
 
-12. **조회 결과가 생기면 compose_report 로 화면을 직접 구성한다.** 데이터 조회를
-   모두 마친 뒤, 최종 문장을 쓰기 직전에 정확히 한 번 부른다. 이것은 완성 양식을
+12. **구조화 화면이 답을 더 쉽게 읽게 할 때만 compose_report 를 쓴다.** 순위·비교·
+   여러 지표·살말 근거처럼 정보 관계를 시각화할 가치가 있을 때, 데이터 조회를
+   모두 마친 뒤 최종 문장을 쓰기 직전에 한 번 부른다. 짧은 사실 확인, 인사, 간단한
+   설명, 거절처럼 문장만으로 충분하면 부르지 말고 바로 답한다. 이것은 완성 양식을
    고르는 도구가 아니다. 이번 질문에 필요한 모듈만 고르고, 각 모듈의 표현 역할·
    12열 폭·강조도와 전체 색·표면·밀도를 조합하는 UI 스킬이다.
    - 이미 받은 도구 결과에 있는 kind 와 term 만 쓴다. 없는 지표를 화면에 만들지 마라.
@@ -248,7 +250,8 @@ FEEDiT 는 SNS·커머스를 수집해 용어별 트렌드 지표를 계산하�
      한국어로 쓴다. 수치는 제목에 넣지 않는다.
    - HTML·CSS·수치·상품명은 만들지 않는다. 데이터는 서버가 실제 결과와 결합한다.
    - compose_report 를 부른 뒤에는 다른 도구를 부르지 말고 바로 답을 쓴다.
-   - 조회 결과가 전혀 없거나 ask_user 로 되묻는 경우에는 부르지 않는다.
+   - 조회 결과가 있어도 한두 문장으로 충분하면 부르지 않는다.
+   - 조회 결과가 전혀 없거나 ask_user 로 되묻는 경우에도 부르지 않는다.
    - **declare_missing 이 필요하면 compose_report 와 같은 바퀴에서 함께 불러라.**
      둘 다 조회가 끝난 뒤의 기록·구성이다. 따로 나누면 바퀴를 하나 더 쓰고,
      그만큼 답을 쓰는 바퀴가 밀린다(2026-09-11 실측: 네 바퀴를 다 쓰고도
@@ -278,8 +281,9 @@ FEEDiT 는 SNS·커머스를 수집해 용어별 트렌드 지표를 계산하�
   둘 다 조회되면 화면에 '나란히 보기' 가 붙는다.
 - **상품 링크나 정확한 상품명이 오면 그대로 찾지 말고 나눠서 찾아라.**
   우리 지표에는 **상품 단위가 없다.** 브랜드 · 아이템 · 소재 단위로만 있다.
-  ① 링크뿐이라 무엇인지 모르면 web_search 로 무슨 브랜드의 무슨 옷인지 먼저 확인한다.
-     ★ **web_search 는 한 번만.** 브랜드·상품명·가격을 한 번에 확인해라.
+  ① 링크뿐이라 무엇인지 모르면 inspect_product_link 로 브랜드·상품명·현재 원화 판매가를
+     한 번에 확인한다. 확인된 필드만 사용하고 null은 추측해서 채우지 않는다.
+     상품 링크 확인에 일반 web_search를 중복 호출하지 않는다.
        두 번 나눠 찾으면 그 한 번이 5초 넘게 들어(2026-09-11 실측: 웹검색 2회),
        정작 답을 쓰는 바퀴가 예산 밖으로 밀린다. 한 번 찾아 모르면 모르는 대로
        두고, 지표 조회로 넘어가라.
@@ -469,7 +473,8 @@ def _has_report_design(trace) -> bool:
 
 def run(question: str, *, store, gate, ctx: dict | None = None,
         history: list[dict] | None = None, salmal=None, taste=None,
-        websearch=None, on_progress=None, deadline: float | None = None) -> Result:
+        websearch=None, on_progress=None, deadline: float | None = None,
+        cancel_check=None) -> Result:
     ctx = ctx or {}
     out = Result()
     box = Toolbox(store, gate, ctx=ctx, salmal=salmal, taste=taste, websearch=websearch)
@@ -499,6 +504,9 @@ def run(question: str, *, store, gate, ctx: dict | None = None,
 
     max_rounds = rounds_for(question)
     for rnd in range(max_rounds):
+        if cancel_check and cancel_check():
+            out.stopped = "cancelled"
+            break
         out.rounds = rnd + 1
         left = loop_end - time.monotonic()
         # ★ 남은 시간이 한 호출을 끝낼 만큼이 아니면 시작하지 않는다(WRITE_MIN).
@@ -522,8 +530,8 @@ def run(question: str, *, store, gate, ctx: dict | None = None,
             items.append({
                 "role": "user",
                 "content": ("시간이 거의 없습니다. 데이터 도구를 더 부르지 말고, "
-                            "지금까지 받은 결과만으로 compose_report 를 한 번 부른 뒤 "
-                            "바로 답을 쓰세요."),
+                            "지금까지 받은 결과만으로 바로 답하세요. 여러 지표를 나란히 "
+                            "보여야 할 때만 compose_report 를 한 번 부르세요."),
             })
             borrowed = False
 
@@ -551,21 +559,6 @@ def run(question: str, *, store, gate, ctx: dict | None = None,
         if not calls:
             # 도구를 더 안 부른다 = 답할 준비가 됐다.
             candidate = (res.get("text") or "").strip()
-            # compose_report 는 프롬프트 권고가 아니라 출력 파이프라인이다.
-            # 모델이 조회 뒤 바로 문장을 써도 한 바퀴가 남아 있으면 답을 보류하고
-            # 디자인 도구 호출을 요구한다. 호출이 끝나면 보류한 문장을 그대로 써서
-            # 같은 답을 다시 생성하는 왕복은 만들지 않는다.
-            if (candidate and _has_report_material(box.trace)
-                    and not _has_report_design(box.trace) and rnd < max_rounds - 1):
-                pending_answer = candidate
-                items.extend(raw.get("output") or [])
-                items.append({
-                    "role": "user",
-                    "content": ("답변 본문은 준비됐습니다. 출력하기 전에 방금 조회한 실제 "
-                                "결과만 사용해 compose_report 를 정확히 한 번 부르세요. "
-                                "새 데이터 도구는 부르지 마세요."),
-                })
-                continue
             out.answer = candidate
             out.stopped = "done"
             break
@@ -587,6 +580,9 @@ def run(question: str, *, store, gate, ctx: dict | None = None,
         items.extend(raw.get("output") or [])
 
         for c in calls:
+            if cancel_check and cancel_check():
+                out.stopped = "cancelled"
+                break
             if out.calls >= MAX_CALLS:
                 out.stopped = "max_calls"
                 break
@@ -631,6 +627,12 @@ def run(question: str, *, store, gate, ctx: dict | None = None,
             result = box.run(c["name"], c["args"])
             items.append(llm.tool_result_item(c["call_id"], result))
 
+        # 도구 사이에서 들어온 중단은 아래의 보류 답 복구보다 우선한다.
+        # 그렇지 않으면 compose_report 와 함께 써 둔 문장이 cancelled 를 done 으로
+        # 다시 덮어, 사용자가 중단했는데 완료 응답이 전송될 수 있다.
+        if out.stopped == "cancelled":
+            break
+
         # 보류된 답이 있고 디자인 스킬 호출이 끝났으면 같은 문장을 다시 쓰게
         # 하지 않는다. 여기서 바로 닫아 지연과 비용을 한 바퀴 줄인다.
         if pending_answer and _has_report_design(box.trace):
@@ -659,7 +661,9 @@ def run(question: str, *, store, gate, ctx: dict | None = None,
 
     # 바퀴를 다 썼거나 시간이 다 됐는데 답이 없다 —
     # 모은 것으로 한 번만 더, 도구 없이 쓰게 한다.
-    if not out.answer and not out.ask:
+    if out.stopped == "cancelled":
+        out.answer = "답변 생성을 중단했습니다."
+    elif not out.answer and not out.ask:
         out.answer = _finish(items, out, deadline)
 
     return out

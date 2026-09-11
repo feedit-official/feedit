@@ -7,6 +7,8 @@
 """
 from __future__ import annotations
 
+import os
+
 FREE, PRO, BUSINESS = "FREE", "PRO", "BUSINESS"
 VALID = (FREE, PRO, BUSINESS)
 
@@ -48,6 +50,13 @@ LABEL = {
 
 RANK = {FREE: 0, PRO: 1, BUSINESS: 2}
 
+# 공개 베타 동안은 새로 clone/pull 한 환경도 별도 플랜 설정 없이 모든 챗봇 기능을
+# 쓴다. 환경변수가 **없는 것이 베타 ON** 이다. 이전 .env 에 FREE나 공유 토큰이
+# 남아 있어 팀원마다 동작이 달라지는 문제를 막는다. 베타 종료 때만 0으로 끈다.
+PUBLIC_BETA = str(os.getenv("FEEDIT_PUBLIC_BETA", "1")).strip().lower() not in {
+    "0", "false", "off", "no",
+}
+
 # 하루 한도. pricing.js 는 PRO 를 "무제한"이라 적어 뒀지만 무제한은 구현할 수 없다.
 # 300회는 실질 무제한이되 원가 폭주를 막는다. 문구 수정은 설계서 15장 #6.
 QUOTA = {
@@ -66,6 +75,11 @@ def normalize(plan) -> str:
     모르는 값을 PRO 로 올리면 사고가 조용히 지나간다. 반대여야 한다.
     """
     return plan if plan in VALID else FREE
+
+
+def effective(plan) -> str:
+    """HTTP 사용자에게 실제 적용할 플랜. 공개 베타에서는 전 기능을 연다."""
+    return BUSINESS if PUBLIC_BETA else normalize(plan)
 
 
 def allows(plan: str, key: str) -> bool:

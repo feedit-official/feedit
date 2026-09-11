@@ -97,6 +97,13 @@ class ReportSkillTest(unittest.TestCase):
         self.assertEqual(module["columns"], 3)
         self.assertEqual(module["block"]["items"][1]["note"], "구매고민")
 
+    def test_direction_kpis_keep_their_term_and_facet_label(self):
+        node = dict(NODE, direction={"label": "완만한 상승", "ratio": 1.2,
+                                    "ma7": 23.0, "ma28": 19.0, "tone": "up"})
+        block = blocks.b_direction(node)
+        self.assertEqual(block["title"], "고프코어")
+        self.assertEqual(block["meta"], "스타일")
+
     def test_unknown_content_reference_is_not_invented(self):
         catalog = [{"id": "metric:고프코어", "kind": "metric", "term": "고프코어",
                     "block": {"type": "rank", "rows": []}}]
@@ -159,25 +166,24 @@ class ReportSkillTest(unittest.TestCase):
         self.assertNotIn("12", box.trace.numbers())
 
     @patch("app.orchestrator.llm.respond")
-    def test_orchestrator_enforces_design_before_releasing_prepared_answer(self, respond):
-        report_args = {
-            "title": "지금 뜨는 흐름", "accent": "coral", "surface": "paper",
-            "density": "balanced", "modules": [{"kind": "ranking", "term": None,
-            "presentation": "hero", "span": 12, "emphasis": "strong"}],
-        }
+    def test_orchestrator_allows_plain_answer_when_design_is_unnecessary(self, respond):
         respond.side_effect = [
             {"_raw": {"output": [{"type": "function_call", "call_id": "c1",
               "name": "rank_terms", "arguments": json.dumps({"facet": None, "limit": 5})}]},
              "text": ""},
             {"_raw": {"output": [{"type": "message"}]}, "text": "고프코어가 가장 높아요."},
-            {"_raw": {"output": [{"type": "function_call", "call_id": "c2",
-              "name": "compose_report", "arguments": json.dumps(report_args, ensure_ascii=False)}]},
-             "text": ""},
         ]
         result = orchestrator.run("요즘 뭐가 핫해?", store=Store(), gate=Gate())
         self.assertEqual(result.answer, "고프코어가 가장 높아요.")
-        self.assertIn("compose_report", [c["tool"] for c in result.trace.calls])
-        self.assertEqual(respond.call_count, 3)
+        self.assertNotIn("compose_report", [c["tool"] for c in result.trace.calls])
+        self.assertEqual(respond.call_count, 2)
+
+    @patch("app.orchestrator.llm.respond")
+    def test_orchestrator_stops_before_model_call_when_cancelled(self, respond):
+        result = orchestrator.run("멈춰 줘", store=Store(), gate=Gate(),
+                                  cancel_check=lambda: True)
+        self.assertEqual(result.stopped, "cancelled")
+        respond.assert_not_called()
 
     @patch("app.agent_blocks.report.build_term", return_value=NODE)
     def test_agent_blocks_binds_only_real_metric_to_generated_canvas(self, _build):

@@ -336,9 +336,11 @@ cd ChatBot && python3 server.py                     # http://127.0.0.1:8770
 > RDS 로 옮기는 길은 `docs_RDS_격차분석.md` 의 1번 항목(적재 경로)이
 > 끝나야 열립니다. 자세한 내용은 `ChatBot/README.md`.
 
-> ⚠ **챗봇 서버에는 아직 로그인이 없습니다.** 로컬에서는 `127.0.0.1` 에만 묶여 있고,
-> 배포에서는 Caddy 의 `/v1/*` 로만 들어옵니다. 대신 두 가지로 막습니다 —
-> 공유 토큰(`FEEDIT_CHAT_TOKEN`)과 IP 당 분당 횟수 제한. 8-5 를 보세요.
+> **공개 베타 기본값은 `FEEDIT_PUBLIC_BETA=1`입니다.** 이 기간에는 기존 `.env`에
+> `FEEDIT_CHAT_TOKEN`이 남아 있어도 무시하고 모든 챗봇 기능을 엽니다. 팀원이 새로
+> pull한 뒤 토큰 불일치로 목업만 보는 일을 막기 위한 기본값입니다. IP 당 분당 횟수
+> 제한은 유지합니다. 베타 종료 후 `FEEDIT_PUBLIC_BETA=0`으로 바꾸면 공유 토큰과
+> 플랜 제한이 다시 적용됩니다.
 
 크롤러가 없는 팀원은 챗봇만 빼고 씁니다:
 
@@ -410,7 +412,8 @@ git clone https://github.com/feedit-official/feedit.git
 cd feedit
 cat > .env <<'ENV'
 OPENAI_API_KEY=sk-...
-FEEDIT_CHAT_TOKEN=<버셀 CHAT_BACKEND_TOKEN 과 같은 값>
+FEEDIT_PUBLIC_BETA=1
+# 베타 종료 후에만 설정: FEEDIT_CHAT_TOKEN=<버셀 CHAT_BACKEND_TOKEN 과 같은 값>
 FEEDIT_CHAT_RATE_PER_MIN=20
 CHAT_DOMAIN=<도메인>
 CHAT_DATA_DIR=/opt/feedit-chat-data
@@ -483,21 +486,21 @@ npm workspaces 를 쓰는 저장소에만 적용되는데, 우리는 아닙니�
 | `BACKEND_API_URL` | `api/_lib/db.js` — Django 경유 (권장) | RDS 직결로 떨어짐 |
 | `DATABASE_URL` | RDS 직결 (Django 를 안 쓸 때) | 지표가 '측정 불가' |
 | `CHAT_BACKEND_URL` | `api/v1/chat.js` — 챗봇 서버 주소 | 챗봇이 목업 답변으로 떨어짐 |
-| `CHAT_BACKEND_TOKEN` | `api/v1/chat.js` — 챗봇 공유 토큰 | 챗봇 서버가 401 |
+| `CHAT_BACKEND_TOKEN` | `api/v1/chat.js` — 베타 종료 후 챗봇 공유 토큰 | 공개 베타에서는 불필요 |
 
 `PGHOST` · `PGPORT` · `PGUSER` · `PGPASSWORD` · `PGDATABASE` 로 나눠 넣어도 됩니다.
 
-**챗봇을 붙이려면** — Vercel 환경변수 두 개를 짝으로 넣습니다.
+**공개 베타에서 챗봇을 붙이려면** `CHAT_BACKEND_URL`만 넣습니다.
 
 ```
 CHAT_BACKEND_URL   = https://feedit-official.duckdns.org
-CHAT_BACKEND_TOKEN = (서버 .env 의 FEEDIT_CHAT_TOKEN 과 똑같은 값)
 ```
 
-토큰 값은 서버에서 꺼냅니다:
+베타 종료 후에는 서버에서 `FEEDIT_PUBLIC_BETA=0`으로 바꾸고 토큰 두 값을
+같게 설정합니다:
 
-```bash
-grep '^FEEDIT_CHAT_TOKEN=' .env
+```
+CHAT_BACKEND_TOKEN = (서버 .env 의 FEEDIT_CHAT_TOKEN 과 똑같은 값)
 ```
 
 함수가 `CHAT_BACKEND_URL + '/v1/chat'` 을 부르므로 주소 끝에 경로를 붙이지 마세요.

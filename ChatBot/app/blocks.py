@@ -69,7 +69,8 @@ def b_direction(t: dict) -> dict | None:
         return {"type": "note", "slot": "left",
                 "text": f"최근 28일 중 관측이 {cov.get('obs28', 0)}일뿐이라 "
                         f"오르는지 내리는지 말할 수 없습니다."}
-    return {"type": "kpis", "slot": "full", "items": [
+    return {"type": "kpis", "slot": "full", "title": t.get("canonical") or "",
+            "meta": t.get("facet_name") or "", "items": [
         {"k": "방향", "v": d["label"], "unit": "", "note": "최근 7일 대 4주", "up": d["tone"] == "up"},
         # ★ 문턱을 여기서 따로 정하지 않는다 (2026-09-09).
         #   note 가 늘 "1보다 크면 오르는 중" 이고 up 이 ratio>=1 이라,

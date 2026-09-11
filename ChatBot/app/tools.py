@@ -35,7 +35,7 @@ import re
 from typing import Any, Callable
 
 from . import season as season_ref     # 인자 이름(season)과 겹치지 않게
-from . import salmal_index
+from . import product_link, salmal_index
 from .config import MIN_OBS_7, MIN_OBS_14, MIN_OBS_28, THIN_SAMPLE, temp_band
 
 # ══════════════════════════════════════════════════════════
@@ -234,6 +234,14 @@ SPECS: list[dict] = [
         [],
     ),
     _fn(
+        "inspect_product_link",
+        "사용자가 보낸 상품 URL에서 현재 표시된 상품명·브랜드·원화 판매가를 한 번에 "
+        "확인한다. 링크 질문에서는 일반 web_search보다 먼저 정확히 한 번 호출한다. "
+        "확인하지 못한 필드는 null이며 추측해서 채우지 않는다.",
+        {"url": {"type": "string", "description": "사용자가 보낸 원본 http(s) URL"}},
+        ["url"],
+    ),
+    _fn(
         "web_search",
         "사전 밖 지식이나 최신 소식을 웹에서 찾는다. "
         "우리 지표로 답할 수 없는 질문에 쓴다. 출처를 함께 돌려주며, "
@@ -270,10 +278,12 @@ SPECS: list[dict] = [
     ),
     _fn(
         "compose_report",
-        "조회가 끝난 뒤 이번 답에 필요한 결과만 골라 화면을 직접 구성하는 UI 스킬이다. "
+        "순위·비교·여러 지표처럼 구조화 화면이 읽기를 실제로 돕는 답에서만, 조회가 "
+        "끝난 뒤 필요한 결과를 골라 화면을 구성하는 선택형 UI 스킬이다. 짧은 사실 확인, "
+        "인사, 간단한 설명처럼 문장만으로 충분하면 호출하지 않는다. "
         "완성 템플릿을 고르는 도구가 아니다. 데이터 모듈의 표현 방식과 12열 폭, "
-        "강조도를 조합해 매 요청마다 새 캔버스를 만든다. 데이터가 있는 답에서는 최종 "
-        "문장을 쓰기 직전에 정확히 한 번 부른다. kind 는 이미 호출한 도구 결과에 있는 "
+        "강조도를 조합해 필요한 요청에만 새 캔버스를 만든다. 호출한다면 최종 문장을 "
+        "쓰기 직전에 한 번만 부른다. kind 는 이미 호출한 도구 결과에 있는 "
         "것만 쓴다: rank_terms=ranking, 둘 이상 get_metric=comparison, get_metric=metric, "
         "모멘텀=direction, 출처별=sources, 연관어=associations, 긍부정=sentiment, "
         "similar_terms=recommendations, get_user_taste=taste, season_fit=context, "
@@ -434,6 +444,8 @@ def progress_say(name: str, args: dict) -> str | None:
         return f"{head}살말 지수 계산하는 중"
     if name == "get_user_taste":
         return "취향에 맞춰 보는 중"
+    if name == "inspect_product_link":
+        return "보내신 링크에서 브랜드와 가격을 확인하는 중"
     if name == "compose_report":
         return "결과에 맞는 화면을 구성하는 중"
     if name == "web_search":
@@ -538,6 +550,7 @@ class Toolbox:
         self.salmal = salmal
         self.taste = taste
         self.websearch = websearch
+        self.product = None
         self.trace = TraceLog()
 
     # ── 디스패치 ────────────────────────────────────────
@@ -840,6 +853,10 @@ class Toolbox:
 
     def t_get_salmal_index(self, term: str, item_name=None, brand=None,
                            price=None) -> dict:
+        if self.product:
+            item_name = item_name or self.product.get("item_name")
+            brand = brand or self.product.get("brand")
+            price = price if price is not None else self.product.get("price_krw")
         metric = self.t_get_metric(term, ["온도", "모멘텀"])
         temp = metric.get("온도") if isinstance(metric, dict) else None
         trend = {"temp": temp.get("temp")} if isinstance(temp, dict) else None
@@ -919,6 +936,12 @@ class Toolbox:
                 "note": "실제 조회 결과와 일치하는 모듈만 화면에 결합됩니다."}
 
     # ── 밖 ──────────────────────────────────────────────
+    def t_inspect_product_link(self, url: str) -> dict:
+        result = product_link.inspect(url)
+        if result.get("found"):
+            self.product = result
+        return result
+
     def t_web_search(self, q: str) -> dict:
         if self.websearch is None:
             return {"unavailable": "웹 검색이 꺼져 있습니다."}

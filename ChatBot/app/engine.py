@@ -47,9 +47,10 @@ class ChatEngine:
             history_in: list | None = None,
             extra: dict | None = None,
             on_progress=None,
-            images: list[str] | None = None) -> dict:
+            images: list[str] | None = None,
+            cancel_check=None) -> dict:
         q = " ".join(str(question or "").split())
-        imgs = [u for u in (images or []) if isinstance(u, str) and u.strip()][:4]
+        imgs = [u for u in (images or []) if isinstance(u, str) and u.strip()][:6]
         if not q and not imgs:
             return {"ok": False, "reason": "EMPTY", "message": "질문을 입력해 주세요."}
         if len(q) > 500:
@@ -92,7 +93,8 @@ class ChatEngine:
                     ctx[k] = v
             out = agent_path.ask(q, store=self.store, gate=self.gate, mode=mode,
                                  history=past_a, ctx=ctx, salmal=self.salmal,
-                                 taste=self.taste, on_progress=on_progress)
+                                 taste=self.taste, on_progress=on_progress,
+                                 cancel_check=cancel_check)
             self._remember(conversation_id, q, out.get("intent") or "agent", mode,
                            out.get("terms") or [])
             return out

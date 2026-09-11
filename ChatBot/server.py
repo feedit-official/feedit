@@ -6,7 +6,8 @@
   전송 계층은 나중에 Django/FastAPI 로 갈아 끼울 것이라 지금 얇게 둔다.
   ChatEngine 은 HTTP 를 모른다 — 갈아 끼울 때 손댈 곳은 이 파일뿐이다.
 
-  ⚠ 로그인은 아직 없다. 대신 밖에 열 때를 위해 두 가지를 둔다 —
+  ⚠ 로그인은 아직 없다. 공개 베타에서는 공유 토큰 없이 누구나 쓴다.
+     베타가 끝나 FEEDIT_PUBLIC_BETA=0 이 되면 밖에 열 때 두 가지를 둔다 —
      ① IP 당 분당 횟수 제한 (항상 켜짐, 설정 필요 없음)
      ② 공유 토큰 FEEDIT_CHAT_TOKEN (설정했을 때만 검사)
      둘 다 로그인의 대체물이 아니다. 스캐너가 우리 OpenAI 키를 태우는 것을
@@ -23,6 +24,8 @@
        images 는 data URL 문자열 배열(최대 MAX_IMAGES장, data:image/... 로 시작)이다.
        사진이 오면 지표 게이트·도구 루프를 타지 않고 곧장 비전 모델로 간다
        (ChatEngine._vision_ask, 2026-09-10 — 아래 이미지 첨부 절 참고).
+  POST /v1/chat/cancel               실행 중인 답변 중단
+       {request_id}
   POST /v1/lexicon/requests          어휘 등록 요청
        {surface, facet_guess, question}
 
@@ -65,23 +68,37 @@ ALLOW_ORIGINS = {o.strip() for o in
 # ★ 이미지 첨부(2026-09-10) 전에는 64KB였다. 사진은 base64로 실려 오면
 #   원본보다 33% 정도 불어나므로, 프론트가 축소·압축해 보내는 걸 전제로 하고도
 #   여유를 넉넉히 둔다. MAX_IMAGES · MAX_IMAGE_DATAURL 이 실제 상한을 잡는다.
-MAX_BODY = 8 * 1024 * 1024
-MAX_IMAGES = 3
+MAX_BODY = 32 * 1024 * 1024
+MAX_IMAGES = 6
 MAX_IMAGE_DATAURL = 6 * 1024 * 1024   # data URL 문자열 길이 기준 — 대략 디코딩 4.5MB
 
 # ── 밖에 열 때의 최소 방어 ──────────────────────────────────
 #   ★ 이건 로그인이 아니다. "주소를 아무도 모른다" 는 방어가 아니라서 둔다 —
 #     공개된 주소는 봇이 몇 시간 안에 찾아낸다. 그때 막아 주는 건 이 둘뿐이다.
 #
+#   공개 베타(FEEDIT_PUBLIC_BETA 기본 1)에서는 기존 .env 에 값이 남아 있어도
+#   FEEDIT_CHAT_TOKEN 을 무시한다. 팀원별 로컬 설정 때문에 누구는 되고 누구는
+#   목업으로 떨어지는 상태를 만들지 않는다. 베타 종료 후에만 다시 검사한다.
 #   FEEDIT_CHAT_TOKEN  비워 두면 검사하지 않는다(로컬 개발 그대로).
 #                      넣으면 X-FEEDiT-Token 머리글이 같아야 통과한다.
 #                      버셀 함수가 붙여 주므로 브라우저는 토큰을 모른다.
-CHAT_TOKEN = (os.getenv("FEEDIT_CHAT_TOKEN") or "").strip()
+def _chat_token() -> str:
+    return "" if plans.PUBLIC_BETA else (os.getenv("FEEDIT_CHAT_TOKEN") or "").strip()
+
+
+CHAT_TOKEN = _chat_token()
 
 #   IP 당 분당 질문 수. 사람은 분당 몇 번 못 묻는다.
 RATE_PER_MIN = int(os.getenv("FEEDIT_CHAT_RATE_PER_MIN", "20"))
 _hits: dict[str, list[float]] = {}
 _hits_lock = threading.Lock()
+_chat_cancels: dict[str, threading.Event] = {}
+_chat_cancels_lock = threading.Lock()
+
+
+def _request_id(value) -> str:
+    value = str(value or "").strip()
+    return value[:80] if re.fullmatch(r"[A-Za-z0-9._:-]{8,80}", value) else ""
 
 
 def rate_ok(ip: str) -> bool:
@@ -338,10 +355,13 @@ class Handler(BaseHTTPRequestHandler):
                                     "env_file": where(), "last_error": llm.LAST_ERROR})
         if u.path == "/v1/me":
             q = parse_qs(u.query)
-            plan = plans.normalize((q.get("plan") or ["FREE"])[0])
+            plan = plans.effective((q.get("plan") or ["FREE"])[0])
             return self._json(200, {"ok": True, "plan": plan,
                                     "quota": plans.QUOTA[plan],
-                                    "note": "인증이 아직 없습니다. 개발용으로 질의 문자열의 plan 을 그대로 씁니다."})
+                                    "public_beta": plans.PUBLIC_BETA,
+                                    "note": ("공개 베타 기간에는 모든 챗봇 기능을 사용할 수 있습니다."
+                                             if plans.PUBLIC_BETA else
+                                             "인증이 아직 없습니다. 개발용으로 질의 문자열의 plan 을 그대로 씁니다.")})
         return self._json(404, {"ok": False, "error": "NOT_FOUND"})
 
     # ── POST ──────────────────────────────────────────
@@ -403,7 +423,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = urlparse(self.path).path
-        if path not in ("/v1/chat", "/v1/lexicon/requests", "/v1/virtual-fitting"):
+        if path not in ("/v1/chat", "/v1/chat/cancel", "/v1/lexicon/requests",
+                        "/v1/virtual-fitting"):
             return self._json(404, {"ok": False, "error": "NOT_FOUND"})
         # ★ 쓰는 길은 전부 여기를 지난다. 검사를 분기 뒤에 두면
         #   새 엔드포인트를 더할 때 조용히 빠뜨리게 된다.
@@ -411,12 +432,23 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == "/v1/lexicon/requests":
             return self._lexicon_request()
+        if path == "/v1/chat/cancel":
+            req = self._read_json()
+            request_id = _request_id((req or {}).get("request_id"))
+            if not request_id:
+                return self._json(400, {"ok": False, "error": "BAD_REQUEST_ID"})
+            with _chat_cancels_lock:
+                event = _chat_cancels.get(request_id)
+                if event:
+                    event.set()
+            return self._json(200, {"ok": True, "cancelled": bool(event)})
         if path == "/v1/virtual-fitting":
             req = self._read_json()
             if not req:
                 return self._json(400, {"ok": False, "error": "BAD_BODY"})
             try:
                 result = vton.generate(
+                    items=req.get("items") if isinstance(req.get("items"), list) else None,
                     image_data_url=str(req.get("image") or ""),
                     model_id=str(req.get("model_id") or "woman"),
                     category=str(req.get("category") or "상의"),
@@ -440,8 +472,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(400, {"ok": False, "error": "BAD_JSON"})
 
         question = str(req.get("question") or "")
+        request_id = _request_id(req.get("request_id"))
+        cancel_event = threading.Event()
         mode = "salmal" if req.get("mode") == "salmal" else "general"
-        plan = plans.normalize(req.get("plan"))
+        plan = plans.effective(req.get("plan"))
         conv = str(req.get("conversation_id") or "")[:64] or None
         # 클라이언트가 최근 턴을 같이 보낼 수 있다 (세션 목록의 원본은 클라이언트다).
         # 안 보내면 서버 메모리의 같은 conversation_id 를 쓴다.
@@ -471,6 +505,10 @@ class Handler(BaseHTTPRequestHandler):
                 "message": f"오늘 무료 이용 횟수({limit}회)를 다 쓰셨습니다.\n"
                            "내일 다시 이용하시거나, 더 넉넉한 플랜으로 올려 보세요.",
             })
+
+        if request_id:
+            with _chat_cancels_lock:
+                _chat_cancels[request_id] = cancel_event
 
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream; charset=utf-8")
@@ -503,7 +541,11 @@ class Handler(BaseHTTPRequestHandler):
 
             rep = e.ask(question, mode=mode, plan=plan,
                         conversation_id=conv, history_in=hist, extra=extra,
-                        on_progress=say, images=images or None)
+                        on_progress=say, images=images or None,
+                        cancel_check=cancel_event.is_set)
+
+            if cancel_event.is_set():
+                return
 
             if not rep.get("ok"):
                 # 실패도 대화다. 에러 코드로 끝내지 않고 할 말을 준다.
@@ -515,6 +557,8 @@ class Handler(BaseHTTPRequestHandler):
                 for d in split_deltas(rep["message"]):
                     push("text", {"delta": d})
                     time.sleep(0.012)
+                if images:
+                    push("actions", [{"label": "바로 입혀보기", "type": "virtual_fit"}])
                 push("done", {"ok": True})
                 return
 
@@ -524,6 +568,8 @@ class Handler(BaseHTTPRequestHandler):
             push("report", rep)
             _log_turn(question, rep)
             acts = actions_for(rep, mode=mode)
+            if images and not any(a.get("type") == "virtual_fit" for a in acts):
+                acts.append({"label": "바로 입혀보기", "type": "virtual_fit"})
             if acts:
                 push("actions", acts)
             push("done", {"ok": True, "intent": rep.get("intent"),
@@ -539,6 +585,10 @@ class Handler(BaseHTTPRequestHandler):
                 push("done", {"ok": False})
             except OSError:
                 pass
+        finally:
+            if request_id:
+                with _chat_cancels_lock:
+                    _chat_cancels.pop(request_id, None)
 
 
 def main():
@@ -568,8 +618,11 @@ def main():
     print(f"  기준일 {e.store.latest_day()} · 지표 term {len(e.gate.prefer):,}개")
     print(f"  모델 {llm.MODEL} · 키 {llm.key_hint()}")
     print(f"  허용 오리진 {sorted(ALLOW_ORIGINS)}")
-    print(f"  토큰 {'검사함' if CHAT_TOKEN else '없음(로컬 개발)'} · 분당 {RATE_PER_MIN}회 제한")
-    if HOST not in ("127.0.0.1", "localhost") and not CHAT_TOKEN:
+    access = "공개 베타(토큰 검사 안 함)" if plans.PUBLIC_BETA else (
+        "토큰 검사함" if CHAT_TOKEN else "토큰 없음(로컬 개발)")
+    print(f"  접근 {access} · 분당 {RATE_PER_MIN}회 제한")
+    if (not plans.PUBLIC_BETA and HOST not in ("127.0.0.1", "localhost")
+            and not CHAT_TOKEN):
         print("  ⚠ 밖에 열면서 FEEDIT_CHAT_TOKEN 이 없습니다. 주소가 알려지면 누구나 질문할 수 있습니다.")
     try:
         srv.serve_forever()

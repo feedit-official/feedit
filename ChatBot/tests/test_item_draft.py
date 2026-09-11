@@ -2,16 +2,17 @@
 
 링크만 친 질문에서 상품명 칸에 주소가 그대로 들어가던 자리다(2026-09-11).
 모델이 확인한 것을 도구 인자로 받아, 그것만 화면으로 넘어가는지 본다.
-초안 때문에 도구를 한 번 더 부르지 않는다 — 바퀴가 모자라면 리포트가 사라진다.
+상품 링크는 전용 도구 한 번으로 세 필드를 함께 확인한다.
 """
 import sys
+import os
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 sys.modules.setdefault("requests", Mock())
 
 import server
-from app import agent_path, tools
+from app import agent_path, plans, tools
 
 
 class _Trace:
@@ -43,6 +44,27 @@ class ItemDraftArgTests(unittest.TestCase):
         # 초안 전용 도구를 따로 두지 않는다 — 바퀴를 하나 더 쓴다.
         self.assertNotIn("record_item_identity", {s.get("name") for s in tools.SPECS})
 
+    def test_product_link_tool_collects_brand_and_price_together(self):
+        spec = [s for s in tools.SPECS if s.get("name") == "inspect_product_link"][0]
+        self.assertEqual(set(spec["parameters"]["properties"]), {"url"})
+
+
+class PublicBetaTests(unittest.TestCase):
+    def test_public_beta_unlocks_the_full_chat_plan(self):
+        with patch.object(plans, "PUBLIC_BETA", True):
+            self.assertEqual(plans.effective(plans.FREE), plans.BUSINESS)
+
+    def test_public_beta_ignores_a_stale_shared_token(self):
+        with patch.object(plans, "PUBLIC_BETA", True), \
+             patch.dict(os.environ, {"FEEDIT_CHAT_TOKEN": "old-team-token"}):
+            self.assertEqual(server._chat_token(), "")
+
+    def test_turning_beta_off_restores_plan_and_token_rules(self):
+        with patch.object(plans, "PUBLIC_BETA", False), \
+             patch.dict(os.environ, {"FEEDIT_CHAT_TOKEN": "private-token"}):
+            self.assertEqual(plans.effective(plans.FREE), plans.FREE)
+            self.assertEqual(server._chat_token(), "private-token")
+
 
 class DraftHandoffTests(unittest.TestCase):
     def test_draft_comes_from_the_tool_not_from_the_answer(self):
@@ -71,6 +93,14 @@ class DraftHandoffTests(unittest.TestCase):
                          "args": {"q": "https://www.musinsa.com/products/6719206"},
                          "result": {}}])
         self.assertIsNone(agent_path._item_draft(trace))
+
+    def test_link_inspection_becomes_the_confirmed_draft(self):
+        trace = _Trace([{"tool": "inspect_product_link", "args": {"url": "https://shop.test/p/1"},
+                         "result": {"found": True, "item_name": "트랙 재킷",
+                                    "brand": "아디다스", "price_krw": 129000}}])
+        draft = agent_path._item_draft(trace)
+        self.assertEqual(draft, {"title": "트랙 재킷", "brand": "아디다스",
+                                 "price": 129000, "source": "상품 링크에서 확인한 값"})
 
     def test_no_lookup_means_no_draft(self):
         self.assertIsNone(agent_path._item_draft(_Trace([
