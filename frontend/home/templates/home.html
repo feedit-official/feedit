@@ -92,9 +92,11 @@
       </aside>
       <div class="cpMain">
         <div class="cpThreadWrap" id="cpThreadWrap">
-          <div class="cpEmpty"><p id="cpEmptyText">궁금한 걸 물어보세요.</p></div>
+          <div class="cpEmpty" id="cpEmpty"><p id="cpEmptyText">궁금한 걸 물어보세요.</p></div>
           <div class="thread cpThread" id="cpThread"></div>
         </div>
+        <!-- 살말 모드에서 즐겨입는 스타일이 비어 있을 때만 뜬다(취향 = 판단의 35%) -->
+        <div class="cpTaste" id="cpTaste" hidden></div>
         <div class="cpInputWrap">
           <div class="imgAttach cpImgAttach" id="cpImgAttach" hidden></div>
           <div class="cpInputRow">

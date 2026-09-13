@@ -173,6 +173,9 @@
 .cpOverlay .msg.ai .actArrow{color:var(--pink-2);font-size:11px}
 .cpOverlay.sm .msg.ai .actBtn:hover{box-shadow:inset 0 0 0 1px var(--coral),0 8px 18px -15px rgba(10,10,10,.7)}
 .cpOverlay.sm .msg.ai .act-virtual_fit .actIcon{background:var(--coral);color:#fff}
+/* 물어보기 아이콘은 글자 두 개('!?')다 — 한 글자 기호와 같은 칸에 들어가도록
+   자간을 좁히고 살짝 굵게 잡는다. (2026-09-13) */
+.cpOverlay .msg.ai .act-community .actIcon{font-size:11.5px;font-weight:700;letter-spacing:-.04em}
 
 /* Virtual Fitting — 답변 아래에서 펼쳐지고 결과도 같은 대화에 남는다.
    폭은 지표 리포트 카드와 같이 대화 너비를 그대로 쓴다 — 좁으면 올린 옷이
@@ -222,3 +225,96 @@
   .cpFitOutput{min-height:340px;aspect-ratio:1}
   .cpFitResult{max-height:none;width:100%;height:100%;object-fit:cover}
 }
+
+
+/* ══════════════════════════════════════════════════════
+   2026-09-13 추가 — 대화 보관·삭제, 다시 묻기, 답변 피드백,
+   빈 화면 예시, 취향 안내, 착장 재시도
+   ══════════════════════════════════════════════════════ */
+
+/* 목록 삭제 버튼 — 연필과 같은 자리·같은 규칙(평소 숨김, 줄에 올리면 드러남).
+   한 번 누르면 '삭제?' 로 넓어지므로 폭을 고정하지 않는다. */
+.cpDel{
+  flex:0 0 auto;min-width:30px;height:30px;padding:0 6px;border-radius:8px;
+  display:grid;place-items:center;color:var(--pink-2);
+  opacity:0;transition:opacity .18s,background .2s,color .2s;
+}
+.cpItemRow:hover .cpDel,.cpItemRow:focus-within .cpDel{opacity:1}
+.cpDel:hover{background:var(--pink-3);color:var(--pink-0)}
+.cpDel svg{width:14px;height:14px;display:block}
+.cpDel i{font-style:normal;font-size:11.5px}
+.cpDel.armed{opacity:1;background:var(--coral);color:#fff}
+.cpDel.armed i{font-size:11.5px;font-weight:600}
+
+/* 다시 묻기 — 내 말풍선 아래 작은 글씨. 평소엔 옅고, 줄에 올리면 또렷해진다. */
+.cpAgain{
+  align-self:flex-end;margin-top:-2px;padding:2px 4px;font-size:11.5px;
+  color:var(--pink-2);opacity:.75;transition:opacity .18s,color .18s;
+}
+.msg.me:hover .cpAgain{opacity:1;color:var(--pink-0)}
+.cpAgain:hover{text-decoration:underline;text-underline-offset:2px}
+.cpDropped{font-size:11px;color:var(--pink-2)}
+
+/* 답변 피드백 — 답 아래 한 줄. 카드와 경쟁하지 않게 작고 조용히. */
+.cpFb{display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin-top:10px;
+  font-size:11.5px;color:var(--pink-2)}
+.cpFb span{margin-right:2px}
+.cpFb button{
+  padding:4px 9px;border-radius:999px;background:#fff;color:var(--pink-1);
+  box-shadow:inset 0 0 0 1px var(--pink-3);font-size:11.5px;
+  transition:box-shadow .2s,color .2s;
+}
+.cpFb button:hover{color:var(--pink-0);box-shadow:inset 0 0 0 1px var(--pink-1)}
+.cpFb.open span{width:100%;margin-bottom:2px}
+.cpFb .cpFbSkip{box-shadow:none;color:var(--pink-2)}
+.cpFb.done{color:var(--pink-2)}
+
+/* 빈 화면 — 안내 한 줄 · 예시 질문 · 모드 차이. 가운데 정렬은 그대로 두되
+   세로로 쌓는다(예전에는 문장 하나뿐이라 가운데 한 줄이면 충분했다). */
+.cpEmpty{flex-direction:column;gap:14px;padding:0 20px}
+.cpEmpty p{margin:0}
+/* 한 줄에 두 개씩, 폭은 문구만큼.
+   · flex-wrap 으로 두면 문장 길이가 제각각이라 3+1 로 접혔다 → 두 칸 격자로 고정.
+   · 1fr 로 나누면 짧은 문구도 긴 문구만큼 늘어나 빈 여백이 생긴다 → max-content.
+   칸은 그 열에서 가장 긴 문구에 맞고, 짧은 칩은 그 안에서 가운데 선다.
+   좁은 화면에서는 한 줄에 하나씩. */
+.cpEmptyChips{display:grid;grid-template-columns:repeat(2,max-content);gap:8px;
+  justify-content:center;justify-items:center;max-width:100%}
+.cpEmptyChips button{
+  padding:10px 16px;border-radius:999px;background:#fff;color:var(--pink-1);
+  max-width:100%;text-align:center;word-break:keep-all;
+  box-shadow:inset 0 0 0 1px var(--pink-3);font-size:13px;line-height:1.3;
+  transition:box-shadow .2s,transform .2s,color .2s;
+}
+.cpEmptyChips button b{font-weight:600;color:var(--pink-0)}
+.cpEmptyChips button:hover{transform:translateY(-1px);color:var(--pink-0);
+  box-shadow:inset 0 0 0 1px var(--pink-1)}
+.cpOverlay.sm .cpEmptyChips button:hover{box-shadow:inset 0 0 0 1px var(--coral)}
+.cpEmptyHint{font-size:12px;color:var(--pink-2);line-height:1.6}
+.cpEmptyHint b{font-weight:600;color:var(--pink-1)}
+
+/* 취향 안내 띠 — 입력줄 바로 위. 살말 모드에서 스타일이 비었을 때만 뜬다. */
+.cpTaste{
+  flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;gap:12px;
+  padding:11px clamp(20px,3vw,40px);border-top:1px solid var(--pink-3);
+  background:color-mix(in srgb,var(--coral) 7%,#faf9f7);
+  font-size:12.5px;color:var(--pink-1);
+}
+.cpTaste button{
+  flex:0 0 auto;padding:7px 13px;border-radius:999px;background:var(--pink-0);color:var(--paper);
+  font-size:12px;font-weight:600;transition:opacity .2s;
+}
+.cpTaste button:hover{opacity:.86}
+/* display:flex 는 기본 [hidden] 규칙을 이긴다 — 숨김을 따로 못 박는다 */
+.cpTaste[hidden]{display:none}
+
+@media(max-width:760px){
+  .cpEmptyChips{grid-template-columns:max-content}
+}
+
+/* 착장 생성 실패 — 문구 옆에서 바로 다시 시도한다 */
+.cpFitRetry{
+  margin-left:8px;padding:3px 9px;border-radius:999px;background:#fff;color:var(--pink-0);
+  box-shadow:inset 0 0 0 1px var(--pink-3);font-size:11.5px;
+}
+.cpFitRetry:hover{box-shadow:inset 0 0 0 1px var(--pink-1)}

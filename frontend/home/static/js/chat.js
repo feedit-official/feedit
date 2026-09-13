@@ -7,9 +7,9 @@ import { MAX_IMAGES, imageFileToDataURL, bindImageDrop } from './chat_api.js';
    ============================================================ */
 export const IMG=n=>'assets/hi/f'+String(n).padStart(2,'0')+'.jpg';
 
-const M_QUESTIONS=[
-  ['고프코어','언제 꺾였어?'],['발레코어','아직 유효해?'],['스웨이드','이번 겨울도 갈까?'],
-  ['무신사 vs 29CM','지금 온도차가 어때?'],['블록코어','다음은 뭐야?']
+export const M_QUESTIONS=[
+  ['트렌드 TOP 10','알려줘'],['발레코어','아직 유효해?'],['스웨이드','이번 겨울도 갈까?'],
+  ['오늘 날씨에','뭐 입어야 해?'],['블록코어','다음은 뭐야?']
 ];
 const HOT=[
   ['발레코어',248,'ballet'],['스웨이드 자켓',186,'classic'],['버건디 니트',142,'classic'],
@@ -282,7 +282,7 @@ export var SM_ON=false, smBusy=false, smSwT=0;
 const SM_STATEMENT=[['살까 말까,'],['혼자 ','고민','하지 마세요.']];
 /* 이 모드는 사람에게 묻는 게 아니라, 지표로 점수를 매겨 판단을 내려 준다 */
 const SM_LEAD='온도 · 가격 · 수명주기를 계산해 사도 되는지 답합니다.';
-const SM_QUESTIONS=[
+export const SM_QUESTIONS=[
   ['이 코트','지금 사도 될까?'],['발레 플랫','품절 전에 사야 하나?'],
   ['스투시 후디','정가 주고 살 값어치 있어?'],['카고 팬츠','내년에도 입을까?'],
   ['이 가격','기다리면 더 내려가?']

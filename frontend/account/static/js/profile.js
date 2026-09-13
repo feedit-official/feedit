@@ -237,6 +237,9 @@ function styleSelectBind(){
       acctModal('styleSelectModal', false);
       acctChips($('#styleWrap'), ME.styles);   /* 마이페이지 칩과 동기화 */
       myRender();
+      /* 취향이 바뀐 것을 화면들에 알린다 — 챗봇 팝업의 '스타일 고르기' 안내는
+         이 신호를 받아 사라진다(2026-09-13). */
+      try{ document.dispatchEvent(new CustomEvent('feedit:styles')) }catch(e){}
     });
   }
   const close = $('#styleSelectClose');
@@ -245,7 +248,7 @@ function styleSelectBind(){
     close.addEventListener('click', () => acctModal('styleSelectModal', false));
   }
 }
-function openStyleSelect(){
+export function openStyleSelect(){
   styleSelectBuild();
   styleSelectBind();
   acctModal('styleSelectModal', true);

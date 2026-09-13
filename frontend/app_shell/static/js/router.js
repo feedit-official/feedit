@@ -1,7 +1,7 @@
 import { $, $$, HAS_A, aAnimate, aSpring, aStagger, aTimeline, aUtils } from '../../../core/static/js/dom.js';
 import { AUTH, acctBoot, dropPendingAuth, likeClick, myRender, requireAuth, resetSignupForm } from '../../../account/static/js/profile.js';
 import { SM_ON, hotBuild, mImgInit, newChat, qRoll, sendChat, smSwitch } from '../../../home/static/js/chat.js';
-import { closeChatPopup, cpEditTitle, cpImgInit, cpNewConvo, cpRenderList, cpRenderThread, cpSend, cpStore, cpToggleMode, openChatWith } from '../../../home/static/js/chat_popup.js';
+import { closeChatPopup, cpDelClick, cpEditTitle, cpImgInit, cpNewConvo, cpRenderList, cpRenderThread, cpSave, cpSend, cpStore, cpToggleMode, openChatWith } from '../../../home/static/js/chat_popup.js';
 import { mPaintVote, mVote, smBuild } from '../../../salmal/static/js/nav_widget.js';
 import { prBuild } from '../../../pricing/static/js/pricing.js';
 import { renderDeck } from '../../../intro/static/js/deck.js';
@@ -242,9 +242,12 @@ $('#cpNewBtn')&&$('#cpNewBtn').addEventListener('click',()=>{
 $('#cpList')&&$('#cpList').addEventListener('click',e=>{
   const edit=e.target.closest('.cpEdit[data-edit]');
   if(edit){ cpEditTitle(+edit.dataset.edit); return; }
+  /* 삭제는 chat_popup 쪽에서 두 번 누르기(확인)까지 맡는다 */
+  const del=e.target.closest('.cpDel[data-del]');
+  if(del){ cpDelClick(del); return; }
   const item=e.target.closest('.cpItem[data-cid]'); if(!item)return;
   cpStore().activeId=+item.dataset.cid;
-  cpRenderList(); cpRenderThread();
+  cpRenderList(); cpRenderThread(); cpSave();
 });
 $('#cpSend')&&$('#cpSend').addEventListener('click',cpSend);
 $('#cpInput')&&$('#cpInput').addEventListener('keydown',e=>{

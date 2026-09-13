@@ -396,6 +396,17 @@ export function refusalHTML(err){
     '" data-question="' + esc(err.question || '') + '">등록 요청</button></div>') + '</div>';
 }
 
+/* 답변 하나에 대한 의견을 보낸다 (2026-09-13).
+   틀린 답을 봐도 알릴 방법이 없다는 것이 가장 큰 구멍이었다 — 서비스는 무엇이
+   자주 틀리는지 알 수 없었다. 실패해도 사용자를 붙잡지 않는다(조용히 false). */
+export async function sendAnswerFeedback(payload){
+  try{
+    const res=await fetch(API_BASE+'/v1/feedback',{method:'POST',
+      headers:{'Content-Type':'application/json'},body:JSON.stringify(payload||{})});
+    return res.ok;
+  }catch(e){ return false }
+}
+
 /* 사진이 상의·하의·아우터 중 무엇인지 서버에 묻는다 (2026-09-13).
    착장 위젯이 첨부 사진을 알맞은 칸에 넣기 위한 편의 기능이라, 실패는 실패로
    끝내지 않고 빈 배열로 돌려준다 — 부르는 쪽이 예전처럼 순서대로 채운다. */
@@ -467,7 +478,9 @@ export function actionsHTML(acts){
   if(!acts || !acts.length) return '';
   return '<div class="act">' + acts.map(a => {
     const kind=String(a.type||(a.view?'view':'action')).replace(/[^a-z_-]/gi,'');
-    const icon=a.type==='community'?'◌':a.type==='virtual_fit'?'✦':a.type==='switch_mode'?'⇄':'↗';
+    /* 물어보기(살!말? 커뮤니티에 올리기)는 '!?' — 살까 말까 묻는 동작이 아이콘에
+       그대로 드러난다. 예전 '◌' 는 무엇을 하는 버튼인지 읽히지 않았다. (2026-09-13) */
+    const icon=a.type==='community'?'!?':a.type==='virtual_fit'?'✦':a.type==='switch_mode'?'⇄':'↗';
     const d = ['<button class="pill ghost actBtn act-'+esc(kind)+'"'];
     if(a.view) d.push('data-v="' + esc(a.view) + '"');
     /* 스타일은 **이름** 으로 보낸다. 라우터는 id 를 기대하므로

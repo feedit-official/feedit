@@ -1,7 +1,7 @@
 import { $, $$, HAS_A, aAnimate } from '../../../core/static/js/dom.js';
-import { SAY, SM_ON, SM_SAY, STYLES, LIKED, ansCardHTML, smSwitch } from './chat.js';
-import { API_BASE, classifyFitImages, isUp, askStream, reportHTML, notesHTML, followupHTML, actionsHTML, refusalHTML, requestLexicon, fillBars, MAX_IMAGES, imageFileToDataURL, bindImageDrop, wantsVirtualFit, responseCardHTML } from './chat_api.js';
-import { AUTH, ME, requireAuth } from '../../../account/static/js/profile.js';
+import { SAY, SM_ON, SM_SAY, STYLES, LIKED, M_QUESTIONS, SM_QUESTIONS, ansCardHTML, smSwitch } from './chat.js';
+import { API_BASE, classifyFitImages, sendAnswerFeedback, isUp, askStream, reportHTML, notesHTML, followupHTML, actionsHTML, refusalHTML, requestLexicon, fillBars, MAX_IMAGES, imageFileToDataURL, bindImageDrop, wantsVirtualFit, responseCardHTML } from './chat_api.js';
+import { AUTH, ME, openStyleSelect, requireAuth } from '../../../account/static/js/profile.js';
 
 /* ══════════════════════════════════════════════════════
    챗봇 팝업 — 일반 모드 · 살말 모드
@@ -13,6 +13,71 @@ import { AUTH, ME, requireAuth } from '../../../account/static/js/profile.js';
    ══════════════════════════════════════════════════════ */
 const CP_STORE={ general:{convos:[],activeId:null}, salmal:{convos:[],activeId:null} };
 let CP_UID=1;
+
+/* ── 대화 보관 (2026-09-13) ────────────────────────────
+   예전에는 대화가 이 파일의 변수에만 있었다. 새로고침 한 번에 어제 물어본 답이
+   통째로 사라졌고, 사용자는 같은 질문을 다시 쳐야 했다.
+   서버에 계정별로 쌓는 것이 옳지만 그 전까지는 브라우저에 남긴다 —
+   같은 기기에서는 새로고침·재방문을 견딘다.
+   ★ 용량이 문제다. 첨부 사진이 data URL 이라 대화 몇 개로도 한도를 넘긴다.
+     넘치면 (1) 오래된 대화의 사진부터 버리고 (2) 그래도 넘치면 오래된 대화를
+     버린다. 사진을 버린 대화는 글은 그대로 남는다 — 다시 열었을 때 무엇을
+     물었는지는 읽을 수 있어야 한다. */
+const CP_KEY='feedit.chat.v1';
+const CP_KEEP=20;                    /* 모드별로 보관할 대화 수 */
+let cpSaveT=0;
+function cpPackMsg(m,keepImages){
+  const out={role:m.role,text:m.text||'',html:m.html||'',key:m.key||null,
+             cardHtml:m.cardHtml||'',followHtml:m.followHtml||'',cueHtml:m.cueHtml||'',
+             actionsHtml:m.actionsHtml||'',turn:m.turn||null,
+             feedback:m.feedback||null,imagesDropped:!!m.imagesDropped};
+  if(m.images&&m.images.length){
+    if(keepImages)out.images=m.images; else out.imagesDropped=true;
+  }
+  return out;   /* run·fit 은 일부러 뺀다 — 진행 중 상태와 약속(Promise)은 저장할 것이 아니다 */
+}
+function cpPack(keepImagesFor){
+  const out={};
+  for(const mode of ['general','salmal']){
+    const s=CP_STORE[mode];
+    out[mode]={activeId:s.activeId,
+      convos:s.convos.slice(0,CP_KEEP).map((c,i)=>({
+        id:c.id,title:c.title||'',time:c.time||'',
+        messages:(c.messages||[]).filter(m=>!m.pending).map(m=>cpPackMsg(m,i<keepImagesFor))}))};
+  }
+  return out;
+}
+export function cpSave(){
+  if(typeof localStorage==='undefined')return;
+  clearTimeout(cpSaveT);
+  /* 연달아 바뀌는 동안 매번 쓰지 않는다 — 타이핑 중 저장이 겹치면 버벅인다 */
+  cpSaveT=setTimeout(()=>{
+    for(const keep of [CP_KEEP,3,1,0]){
+      try{ localStorage.setItem(CP_KEY,JSON.stringify({v:1,uid:CP_UID,store:cpPack(keep)})); return }
+      catch(e){ /* 한도 초과 — 사진을 더 버리고 다시 */ }
+    }
+    try{ localStorage.removeItem(CP_KEY) }catch(e){ /* 지우지도 못하면 포기한다 */ }
+  },400);
+}
+function cpRestore(){
+  if(typeof localStorage==='undefined')return;
+  let saved=null;
+  try{ saved=JSON.parse(localStorage.getItem(CP_KEY)||'null') }catch(e){ saved=null }
+  if(!saved||saved.v!==1||!saved.store)return;
+  let max=0;
+  for(const mode of ['general','salmal']){
+    const from=saved.store[mode];
+    if(!from||!Array.isArray(from.convos))continue;
+    CP_STORE[mode].convos=from.convos.filter(c=>c&&Array.isArray(c.messages)).map(c=>{
+      max=Math.max(max,Number(c.id)||0);
+      return {id:Number(c.id)||0,title:String(c.title||''),time:String(c.time||''),
+              messages:c.messages.map(m=>Object.assign({},m,{pending:false}))};
+    });
+    CP_STORE[mode].activeId=from.activeId||null;
+  }
+  CP_UID=Math.max(CP_UID,max+1,Number(saved.uid)||1);
+}
+cpRestore();
 /* 사이드바 프로필(이름·소개)은 모드별로 다르게 남겨 둔다 — 팝업 자체가 둘이라는 것을
    보여주는 자리라서다. 대화 안의 답변 라벨은 별개로 항상 FEEDiT 하나로 묶는다(아래). */
 const CP_PROFILE={
@@ -83,6 +148,7 @@ export function cpNewConvo(){
   const c={id:CP_UID++, title:'', time:cpNowLabel(), messages:[]};
   s.convos.unshift(c);
   s.activeId=c.id;
+  cpSave();
   return c;
 }
 /* 질문 문장에서 어떤 카드를 보여줄지 고른다 — sendChat() 이 쓰던 것과 같은 규칙 */
@@ -105,9 +171,14 @@ function cpPaintProfile(){
   $('#cpAv').textContent=SM_ON?'◑':'✧';
   $('#cpName').textContent=p.name;
   $('#cpDesc').textContent=p.desc;
-  const empty=$('#cpEmptyText'); if(empty)empty.textContent=p.empty;
+  cpEmptyPaint();
+  cpTastePaint();
   const ta=$('#cpInput'); if(ta)ta.placeholder=p.ph;
 }
+/* 대화 삭제 아이콘 — 선 하나 굵기로 그린 휴지통. 이모지(🗑)는 기기마다
+   컬러·굵기가 달라 옆의 연필과 톤이 맞지 않았다. (2026-09-13) */
+const CP_TRASH='<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.4 3.6h9.2M5.5 3.6V2.5h3v1.1M3.6 3.6l.5 8h5.8l.5-8M5.9 5.9v3.6M8.1 5.9v3.6"/></svg>';
+
 export function cpRenderList(){
   const list=$('#cpList'); if(!list)return;
   const s=cpStore();
@@ -125,7 +196,36 @@ export function cpRenderList(){
         '</button>'+
         '<button type="button" class="cpEdit" data-edit="'+c.id+'" '+
           'title="제목 수정" aria-label="제목 수정"><i>✎</i></button>'+
+        /* 삭제는 두 번 눌러야 지워진다 — 한 번 누르면 '삭제?' 로 바뀌고,
+           3초 안에 다시 누르지 않으면 되돌아간다. 브라우저 confirm 창은
+           팝업 위에 또 창을 띄우게 되고, 실수로 지운 대화는 되돌릴 수 없다. */
+        '<button type="button" class="cpDel" data-del="'+c.id+'" '+
+          'title="대화 삭제" aria-label="대화 삭제">'+CP_TRASH+'</button>'+
       '</div>').join('');
+}
+
+/* 대화 하나를 지운다. 지운 것이 보고 있던 대화면 다음 대화로 옮겨 간다.
+   목록이 비면 빈 화면(예시 질문)으로 돌아간다. (2026-09-13) */
+export function cpDeleteConvo(id){
+  const s=cpStore();
+  const at=s.convos.findIndex(c=>c.id===id);
+  if(at<0)return;
+  /* 답변을 만드는 중인 대화를 지우면 그 응답부터 멈춘다 */
+  if(cpActiveRun&&cpActiveRun.c&&cpActiveRun.c.id===id)cpStop();
+  s.convos.splice(at,1);
+  if(s.activeId===id)s.activeId=s.convos.length?s.convos[Math.min(at,s.convos.length-1)].id:null;
+  cpRenderList(); cpRenderThread(); cpSave();
+}
+let cpDelArmed=0, cpDelT=0;
+export function cpDelClick(btn){
+  const id=Number(btn.dataset.del);
+  if(cpDelArmed===id){ clearTimeout(cpDelT); cpDelArmed=0; cpDeleteConvo(id); return }
+  clearTimeout(cpDelT);
+  cpDelArmed=id;
+  btn.classList.add('armed');
+  btn.setAttribute('title','한 번 더 누르면 삭제됩니다');
+  btn.innerHTML='<i>삭제</i>';
+  cpDelT=setTimeout(()=>{ cpDelArmed=0; cpRenderList() },3000);
 }
 
 /* 대화 목록 제목을 그 자리에서 고친다.
@@ -146,7 +246,7 @@ export function cpEditTitle(id){
   const commit=(save)=>{
     if(done)return; done=true;
     if(save)c.title=input.value.replace(/\s+/g,' ').trim();
-    cpRenderList();
+    cpRenderList(); cpSave();
   };
   input.addEventListener('keydown',e=>{
     if(e.key==='Enter'){ e.preventDefault(); commit(true) }
@@ -156,6 +256,61 @@ export function cpEditTitle(id){
 }
 /* AI 말풍선 한 줄 — 별 아이콘 + FEEDiT. 답을 기다리는 동안(pending)엔
    말풍선 대신 이 헤더만 돌고 옅어졌다 밝아지며 "생각 중"을 표현한다 */
+/* ── 답변 피드백 (2026-09-13) ──────────────────────────
+   틀린 답을 봐도 알릴 곳이 없었다. 한 줄로 묻고, '아쉬움' 이면 사유를 고르게 한다.
+   사유는 실제로 자주 나는 실패 네 가지다 — 무엇을 고쳐야 하는지가 바로 읽힌다. */
+const CP_FB_REASONS=['사실이 틀렸어요','엉뚱한 걸 답했어요','자료가 부족해요','원하는 내용이 아니에요'];
+function cpFeedbackHTML(m,idx){
+  if(!m||m.pending)return '';
+  if(!m.html&&!m.cardHtml&&!m.key)return '';
+  if(m.feedback==='up')return '<div class="cpFb done">의견 고맙습니다.</div>';
+  if(m.feedback==='down')return '<div class="cpFb done">알려 주셔서 고맙습니다. 답변 품질을 고치는 데 씁니다.</div>';
+  if(m.fbOpen){
+    return '<div class="cpFb open"><span>무엇이 아쉬웠나요?</span>'+
+      CP_FB_REASONS.map(r=>'<button type="button" data-fb-reason="'+idx+'" data-reason="'+cpEsc(r)+'">'+
+        cpEsc(r)+'</button>').join('')+
+      '<button type="button" class="cpFbSkip" data-fb-close="'+idx+'">닫기</button></div>';
+  }
+  return '<div class="cpFb"><span>이 답변이 도움이 되었나요?</span>'+
+    '<button type="button" data-fb="up" data-fb-idx="'+idx+'">도움됨</button>'+
+    '<button type="button" data-fb="down" data-fb-idx="'+idx+'">아쉬움</button></div>';
+}
+/* 살말 모드에서 즐겨입는 스타일이 비어 있으면 판단의 가장 무거운 축(취향 35%)이
+   통째로 빠진다. 마이페이지까지 가야 고를 수 있던 것을, 여기서 바로 고르게 한다. */
+function cpTastePaint(){
+  const box=$('#cpTaste'); if(!box)return;
+  const need=SM_ON&&AUTH.in&&ME.styles&&ME.styles.size===0;
+  box.hidden=!need;
+  if(need&&!box.dataset.built){
+    box.dataset.built='1';
+    box.innerHTML='<span>즐겨입는 스타일을 고르면 살말 판단이 정확해집니다 '+
+      '(취향이 판단의 35%입니다).</span>'+
+      '<button type="button" id="cpTasteBtn">스타일 고르기</button>';
+    box.addEventListener('click',e=>{
+      if(e.target.closest('#cpTasteBtn'))openStyleSelect();
+    });
+  }
+}
+/* 빈 화면 — 무엇을 물어야 할지 알려 준다. 모드 차이와 전환 단축키도 여기서 한 번
+   보여 준다. 예시는 홈 챗바가 돌리는 것과 같은 목록을 쓴다. */
+function cpEmptyPaint(){
+  const box=$('#cpEmpty'); if(!box)return;
+  const p=CP_PROFILE[cpMode()];
+  const set=(SM_ON?SM_QUESTIONS:M_QUESTIONS).slice(0,4);
+  box.innerHTML='<p id="cpEmptyText">'+cpEsc(p.empty)+'</p>'+
+    '<div class="cpEmptyChips">'+set.map(q=>{
+      const text=q[0]+' '+q[1];
+      return '<button type="button" data-ask="'+cpEsc(text)+'">'+
+        '<b>'+cpEsc(q[0])+'</b> '+cpEsc(q[1])+'</button>';
+    }).join('')+'</div>'+
+    '<p class="cpEmptyHint">'+(SM_ON
+      ? '살!말? 모드는 <b>살지 말지</b>를 판단합니다. 트렌드 흐름이 궁금하면'
+      : '일반 모드는 <b>트렌드 흐름</b>을 알려드립니다. 살지 말지 고민이라면')+
+    ' <b>Tab</b> 키로 모드를 바꾸세요.</p>';
+}
+
+document.addEventListener('feedit:styles',()=>cpTastePaint());
+
 function cpWhoHTML(stage){
   /* ★ stage — 서버가 도구를 부를 때마다 보내는 한 줄("온도 보는 중").
      기다리는 동안 무엇을 보고 있는지 알면 같은 시간도 기다림이 된다. */
@@ -231,7 +386,9 @@ function cpFitHTML(m){
   const result=f.loading?'<div class="cpFitLoader" aria-label="착용 이미지 생성 중"><i class="cpStar">✧</i></div>':
     f.result?'<img class="cpFitResult" src="'+cpEsc(f.result)+'" alt="AI 모델 착용 결과">':
     '<div class="cpFitResultEmpty">완성된 착용 이미지가 여기에 나타납니다.</div>';
-  const state=(!f.loading&&f.stateKind==='error')?'<p class="cpFitState error">'+cpEsc(f.status||'')+'</p>':'';
+  const state=(!f.loading&&f.stateKind==='error')
+    ?'<p class="cpFitState error">'+cpEsc(f.status||'')+
+     '<button type="button" class="cpFitRetry" data-vf-retry="1">다시 시도</button></p>':'';
   return '<section class="cpFit" data-fit-key="'+cpEsc(f.key)+'">'+
     '<div class="cpFitHead"><span>GPT IMAGE 2.5 SUNBURST</span><b>코디 입혀보기</b></div>'+
     '<div class="cpFitGrid"><div class="cpFitSetup">'+
@@ -274,13 +431,21 @@ export function cpRenderThread(opts){
       const imgs=(m.images&&m.images.length)
         ?'<div class="bubImgs">'+m.images.map(u=>'<img src="'+u+'" alt="">').join('')+'</div>':'';
       const bub=m.text?('<div class="bub">'+cpEsc(m.text)+'</div>'):'';
-      return '<div class="msg me">'+imgs+bub+'</div>';
+      /* 다시 묻기 — 같은 질문과 사진을 입력창에 그대로 되돌려 놓는다. 조금만
+         고쳐 다시 묻고 싶을 때 링크와 사진을 처음부터 다시 올리지 않아도 된다.
+         사진이 저장 한도 때문에 빠진 대화는 글만 되돌린다. (2026-09-13) */
+      const again=(m.text||(m.images&&m.images.length))
+        ?'<button type="button" class="cpAgain" data-again="'+idx+'">다시 묻기</button>':'';
+      const dropped=m.imagesDropped&&!(m.images&&m.images.length)
+        ?'<div class="cpDropped">첨부 사진은 저장 한도로 남기지 못했습니다.</div>':'';
+      return '<div class="msg me">'+imgs+dropped+bub+again+'</div>';
     }
     if(m.pending) return '<div class="msg ai thinking" data-msg-index="'+idx+'">'+cpWhoHTML(m.stage)+'</div>';
     if(idx===typeIdx) return '<div class="msg ai" data-msg-index="'+idx+'" data-type-target="1">'+cpWhoHTML()+'<div class="say"></div></div>';
     { const card=responseCardHTML(m,ansCardHTML);
       return '<div class="msg ai" data-msg-index="'+idx+'">'+cpWhoHTML()+'<div class="say">'+(m.html||'')+'</div>'+
-        card+(m.followHtml||'')+(m.cueHtml||'')+(m.actionsHtml||'')+cpFitHTML(m)+'</div>'; }
+        card+(m.followHtml||'')+(m.cueHtml||'')+(m.actionsHtml||'')+cpFitHTML(m)+
+        cpFeedbackHTML(m,idx)+'</div>'; }
   }).join('');
   $$('i[data-w]',th).forEach(f=>f.style.width=f.dataset.w+'%');
   wrap.scrollTop=wrap.scrollHeight;
@@ -495,6 +660,7 @@ function cpAsk(text,key,opts){
   c.messages.push(aiMsg);
   cpRenderList();
   cpRenderThread();
+  cpSave();
   if(directFit){ cpFitAutoSort(aiMsg); cpGenerateFitMessage(aiMsg); return; }
   const requestId='cp-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,10);
   const run={controller:new AbortController(),requestId,c,aiMsg};
@@ -520,6 +686,7 @@ function cpAsk(text,key,opts){
     }finally{
       delete aiMsg.run;
       if(cpActiveRun===run){cpActiveRun=null;cpRunButton(false)}
+      cpSave();          /* 답이 끝난 상태 그대로 남긴다 */
     }
   })();
 }
@@ -628,11 +795,49 @@ document.addEventListener('click', e=>{
     setTimeout(()=>{ if(window.smOpenCreate)window.smOpenCreate(window.__salmalDraft) },320);
     return;
   }
+  /* '바로 입혀보기' — 누르면 펼치고, 한 번 더 누르면 접는다 (2026-09-13).
+     접을 때 만들어 둔 것을 버리지 않는다(m.fitSaved). 사진을 넣고 결과까지 뽑은
+     뒤 실수로 닫았다가 다시 열었을 때 처음부터 다시 하게 되면 안 된다.
+     ★ 만드는 중에는 닫지 않는다 — 화면에서 사라진 채로 요청만 도는 꼴이 된다. */
+  /* 예시 질문 칩 — 빈 화면에서 바로 묻는다 */
+  const ask=e.target.closest('#cpEmpty [data-ask]');
+  if(ask){ cpAsk(ask.dataset.ask, cpKeyFor(ask.dataset.ask)); return; }
+  /* 다시 묻기 — 질문과 사진을 입력창으로 되돌린다 */
+  const again=e.target.closest('#cpThread [data-again]');
+  if(again){
+    const c=cpActiveConvo(); if(!c)return;
+    const m=c.messages[Number(again.dataset.again)]; if(!m)return;
+    const ta=$('#cpInput');
+    if(ta){ ta.value=m.text||''; ta.style.height=''; ta.style.height=Math.min(ta.scrollHeight,120)+'px'; ta.focus(); }
+    if(m.images&&m.images.length){ cpImages=m.images.slice(0,MAX_IMAGES).map(url=>({url})); cpImgPaint(); }
+    return;
+  }
+  /* 답변 피드백 */
+  const fb=e.target.closest('#cpThread [data-fb]');
+  if(fb){ cpFeedback(Number(fb.dataset.fbIdx), fb.dataset.fb); return; }
+  const fbr=e.target.closest('#cpThread [data-fb-reason]');
+  if(fbr){ cpFeedback(Number(fbr.dataset.fbReason),'down',fbr.dataset.reason); return; }
+  const fbc=e.target.closest('#cpThread [data-fb-close]');
+  if(fbc){
+    const c=cpActiveConvo(); const m=c&&c.messages[Number(fbc.dataset.fbClose)];
+    if(m){ delete m.fbOpen; cpRenderThread(); }
+    return;
+  }
+  /* 착장 생성 재시도 — 실패하면 문구만 남아 다시 만들 방법이 없었다 */
+  const retry=e.target.closest('#cpThread [data-vf-retry]');
+  if(retry){ const m=cpAIMessageFor(retry); if(m)cpGenerateFitMessage(m); return; }
   const fit=e.target.closest('#cpThread [data-virtual-fit]');
   if(fit){
     const c=cpActiveConvo();
     const m=cpAIMessageFor(fit);
     if(m){
+      if(m.fit){
+        if(m.fit.loading)return;
+        m.fitSaved=m.fit; delete m.fit;
+        cpRenderThread();
+        return;
+      }
+      if(m.fitSaved){ m.fit=m.fitSaved; delete m.fitSaved; cpRenderThread(); return; }
       const aiIndex=c.messages.indexOf(m);
       const user=c.messages.slice(0,aiIndex).reverse().find(x=>x.role==='me');
       const images=(user&&user.images)||[];
@@ -703,6 +908,20 @@ async function cpGenerateFitMessage(m){
   }catch(err){ m.fit.status=(err&&err.message)||'착용 이미지를 만들지 못했습니다.'; m.fit.stateKind='error'; }
   m.fit.loading=false; cpRenderThread();
 }
+/* 피드백 한 번. '아쉬움' 은 사유를 고르는 줄로 한 번 더 열린다.
+   보내기에 실패해도 화면은 고맙다고 답한다 — 사용자가 할 수 있는 일이 없다. */
+function cpFeedback(idx,verdict,reason){
+  const c=cpActiveConvo(); if(!c)return;
+  const m=c.messages[idx]; if(!m)return;
+  if(verdict==='down'&&!reason){ m.fbOpen=true; cpRenderThread(); return; }
+  delete m.fbOpen;
+  m.feedback=verdict;
+  cpRenderThread(); cpSave();
+  const user=c.messages.slice(0,idx).reverse().find(x=>x.role==='me');
+  sendAnswerFeedback({verdict, reason:reason||'', mode:cpMode(),
+    question:(user&&user.text)||'', intent:(m.turn&&m.turn.intent)||''});
+}
+
 /* 등록 요청 버튼 — 누른 즉시 잠그고(중복 전송 방지), 서버가 답하면 결과를 말한다.
    "누르면 되는 척" 을 하지 않는다(server.py 주석) — 실패해도 실패라고 말한다. */
 async function cpSendLexiconRequest(btn){
