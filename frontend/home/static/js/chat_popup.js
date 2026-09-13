@@ -1,7 +1,7 @@
 import { $, $$, HAS_A, aAnimate } from '../../../core/static/js/dom.js';
 import { SAY, SM_ON, SM_SAY, STYLES, LIKED, ansCardHTML, smSwitch } from './chat.js';
-import { API_BASE, isUp, askStream, reportHTML, notesHTML, followupHTML, actionsHTML, refusalHTML, requestLexicon, fillBars, MAX_IMAGES, imageFileToDataURL, bindImageDrop, wantsVirtualFit, responseCardHTML } from './chat_api.js';
-import { ME, requireAuth } from '../../../account/static/js/profile.js';
+import { API_BASE, classifyFitImages, isUp, askStream, reportHTML, notesHTML, followupHTML, actionsHTML, refusalHTML, requestLexicon, fillBars, MAX_IMAGES, imageFileToDataURL, bindImageDrop, wantsVirtualFit, responseCardHTML } from './chat_api.js';
+import { AUTH, ME, requireAuth } from '../../../account/static/js/profile.js';
 
 /* ══════════════════════════════════════════════════════
    챗봇 팝업 — 일반 모드 · 살말 모드
@@ -170,7 +170,46 @@ function cpNewFit(images,text){
   const attached=images||[];
   return {key:String(Date.now()),
     items:VF_CATEGORIES.map((category,index)=>({category,image:attached[index]||'',auto:Boolean(attached[index])})),
-    model:cpFitModel(text),status:'',result:'',loading:false};
+    model:cpFitModel(text),status:'',result:'',loading:false,
+    /* 붙인 사진이 있으면 곧바로 종류를 확인한다(cpFitAutoSort). 그 전까지는
+       예전처럼 순서대로 놓아 둔다 — 기다리는 동안 빈 화면을 보여주지 않는다. */
+    sorting:attached.length>0};
+}
+/* ★ 첨부 사진을 알맞은 칸으로 옮긴다 (2026-09-13).
+   스커트를 올렸는데 '상의' 칸이 차 버려서, 상의를 넣으려면 사용자가 지우고 다시
+   넣어야 했다. 어떤 옷인지는 사진을 볼 수 있는 서버만 안다 — 물어보고 옮긴다.
+   같은 칸이 겹치면 뒤엣것은 빈 칸으로 흘려보내고, 판별을 못 한 사진은 예전처럼
+   남은 칸에 순서대로 놓는다. 실패해도 화면은 그대로다(칸만 안 바뀐다). */
+function cpFitAutoSort(m){
+  const f=m&&m.fit; if(!f||!f.sorting)return Promise.resolve();
+  /* 생성 버튼이 분류를 기다릴 수 있게 약속을 남겨 둔다 — 분류 도중에 만들면
+     칸이 바뀌기 전 순서로 프롬프트가 나간다. */
+  f._sort=cpFitSortNow(m,f);
+  return f._sort;
+}
+async function cpFitSortNow(m,f){
+  const shots=cpFitItems(f).map(item=>item.image).filter(Boolean);
+  if(!shots.length){ f.sorting=false; return }
+  let cats=[];
+  try{ cats=await classifyFitImages(shots); }catch(e){ cats=[] }
+  f.sorting=false;
+  if(cats.length){
+    const slots=VF_CATEGORIES.map(category=>({category,image:'',auto:false}));
+    const leftover=[];
+    shots.forEach((image,i)=>{
+      const at=VF_CATEGORIES.indexOf(String(cats[i]||''));
+      if(at>=0&&!slots[at].image)slots[at].image=image;
+      else leftover.push(image);
+    });
+    /* 판별 못 했거나 칸이 겹친 사진 — 남은 칸에 순서대로. 여기서 버리면
+       사용자가 올린 사진이 조용히 사라진다. */
+    leftover.forEach(image=>{
+      const slot=slots.find(x=>!x.image);
+      if(slot){ slot.image=image; slot.auto=true }
+    });
+    f.items=slots;
+  }
+  if(cpActiveConvo()&&cpActiveConvo().messages.includes(m))cpRenderThread();
 }
 function cpFitItems(f){
   if(Array.isArray(f.items)){
@@ -196,7 +235,8 @@ function cpFitHTML(m){
   return '<section class="cpFit" data-fit-key="'+cpEsc(f.key)+'">'+
     '<div class="cpFitHead"><span>GPT IMAGE 2.5 SUNBURST</span><b>코디 입혀보기</b></div>'+
     '<div class="cpFitGrid"><div class="cpFitSetup">'+
-      '<p class="cpFitGuide">종류별 사진을 넣으면 선택한 옷을 한 장의 코디로 합칩니다.</p>'+
+      '<p class="cpFitGuide">'+(f.sorting?'사진이 어느 칸인지 확인하는 중입니다…'
+        :'종류별 사진을 넣으면 선택한 옷을 한 장의 코디로 합칩니다.')+'</p>'+
       '<div class="cpFitItems">'+items.map((item,index)=>
         '<div class="cpFitSlot">'+(item.image?'<button type="button" class="cpFitRemove" data-vf-remove="'+index+'" aria-label="'+cpEsc(item.category)+' 이미지 삭제">×</button>':'')+
         '<button type="button" class="cpFitItem" data-vf-pick="'+index+'">'+
@@ -455,7 +495,7 @@ function cpAsk(text,key,opts){
   c.messages.push(aiMsg);
   cpRenderList();
   cpRenderThread();
-  if(directFit){ cpGenerateFitMessage(aiMsg); return; }
+  if(directFit){ cpFitAutoSort(aiMsg); cpGenerateFitMessage(aiMsg); return; }
   const requestId='cp-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,10);
   const run={controller:new AbortController(),requestId,c,aiMsg};
   aiMsg.run=run;
@@ -484,10 +524,26 @@ function cpAsk(text,key,opts){
   })();
 }
 export function cpSend(){
-  if(!requireAuth())return;
   if(cpActiveRun){cpStop();return}
   const ta=$('#cpInput'); const v=(ta&&ta.value.trim())||'';
   if(!v && !cpImages.length)return;
+  /* ★ 로그인 관문 (2026-09-13). 예전에는 여기서 그냥 돌아섰다 —
+     "발레코어 요즘 어때?" 를 치다 로그인 화면으로 넘어가면 로그인을 마쳐도
+     그 질문이 사라져 사용자가 다시 쳐야 했다. 이제는 지금 친 문장과 사진을
+     그대로 들고 갔다가, 로그인이 끝나면 팝업을 다시 열어 그대로 보낸다.
+     입력창은 여기서 비우지 않는다 — 로그인을 그만두고 돌아왔을 때
+     쳐 둔 문장이 남아 있어야 한다. */
+  if(!AUTH.in){
+    const images=cpImages.map(im=>im.url);
+    requireAuth(()=>{
+      openChatPopup();
+      const box=$('#cpInput');
+      if(box && box.value.trim()===v){ box.value=''; box.style.height=''; }
+      if(images.length)cpImgTake();
+      cpAsk(v,cpKeyFor(v),{images});
+    });
+    return;
+  }
   cpAsk(v,cpKeyFor(v),{images:cpImgTake()});
   if(ta){ ta.value=''; ta.style.height=''; }
 }
@@ -508,7 +564,11 @@ export function closeChatPopup(){
    {fresh:true} 면 무조건 새 대화 — 홈에서 한 줄 치는 건 새로 묻는 동작이지
    마지막 대화를 잇는 동작이 아니다. 없으면 열려 있던(또는 마지막) 대화에 잇는다. */
 export function openChatWith(text,key,opts){
-  if(!requireAuth())return;
+  /* 로그인 전이면 이 질문을 들고 로그인 화면으로 간다. 끝나면 그대로 이어 묻는다. */
+  if(!AUTH.in){
+    requireAuth(()=>openChatWith(text,key,opts));
+    return;
+  }
   openChatPopup();
   if(opts&&opts.fresh) cpNewConvo();
   cpAsk(text, key||cpKeyFor(text), opts);
@@ -523,9 +583,16 @@ function cpAvFlip(){
 }
 export function cpToggleMode(){
   cpAvFlip();
-  smSwitch(!SM_ON);
-  const ov=$('#cpOverlay'); if(ov)ov.classList.toggle('sm',SM_ON);
-  cpPaintProfile(); cpRenderList(); cpRenderThread();
+  /* ★ force=true — 홈 쪽 연출 잠금(smBusy, 0.9초)에 막히면 한 번 눌러선 안 바뀐다.
+     사용자가 직접 누른 전환은 언제나 즉시 먹힌다.
+     try/finally 로 감싼 이유: 홈 화면 연출이 실패해도 팝업 화면은 반드시 새로
+     그린다 — 예전에는 그 예외 탓에 팝업만 옛 모드로 남아 두 번 눌러야 했다.
+     (2026-09-13) */
+  try{ smSwitch(!SM_ON,null,true); }
+  finally{
+    const ov=$('#cpOverlay'); if(ov)ov.classList.toggle('sm',SM_ON);
+    cpPaintProfile(); cpRenderList(); cpRenderThread();
+  }
 }
 /* 리포트 안 버튼 — 근접 키워드 재질문 · 모드 전환 힌트 · 외부 링크.
    actionsHTML/refusalHTML 이 만드는 data-kw·data-mode·data-href 를 여기서 받는다. */
@@ -571,6 +638,7 @@ document.addEventListener('click', e=>{
       const images=(user&&user.images)||[];
       m.fit=cpNewFit(images,'');
       cpRenderThread();
+      cpFitAutoSort(m);
     }
     return;
   }
@@ -615,6 +683,10 @@ async function cpGenerateFit(button){
 }
 async function cpGenerateFitMessage(m){
   if(!m||!m.fit||m.fit.loading)return;
+  /* 자동 분류가 돌고 있으면 끝난 뒤에 만든다 — 칸이 정해진 다음이라야
+     프롬프트에 "2번째 이미지는 하의" 처럼 제대로 실린다. (2026-09-13) */
+  if(m.fit._sort){ try{ await m.fit._sort }catch(e){ /* 분류 실패는 넘어간다 */ } }
+  if(!m.fit||m.fit.loading)return;
   const items=cpFitItems(m.fit).filter(item=>item.image)
     .map(item=>({image:item.image,category:item.auto?'자동 분류':item.category}));
   if(!items.length){ m.fit.status='아이템 사진이 하나 이상 필요합니다.'; m.fit.stateKind='error'; cpRenderThread(); return; }

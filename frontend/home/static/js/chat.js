@@ -362,14 +362,20 @@ function smStatement(on){
   }else paint();
 }
 
-/* ── 모드 전환 본체 ── */
-export function smSwitch(on,ev){
-  if(smBusy||on===SM_ON)return; smBusy=true;
+/* ── 모드 전환 본체 ──
+   smBusy 는 **연출용 잠금**이다(스윕이 겹쳐 돌지 않게 0.9초). 사용자가 직접 누른
+   전환까지 이 잠금에 막히면 "한 번 눌러선 안 바뀐다" 가 된다 — 팝업의 Tab·마크
+   전환은 force=true 로 부른다. 잠금 해제도 finally 로 옮겼다: 아래 연출 중 하나가
+   던지면 예전에는 smBusy 가 true 로 굳어 그 뒤 전환이 통째로 죽었다. (2026-09-13) */
+export function smSwitch(on,ev,force){
+  if(on===SM_ON)return;
+  if(smBusy&&!force)return;
+  smBusy=true;
   const btn=$('#smToggle'), home=$('#v-home');
 
   const commit=()=>{
     SM_ON=on;
-    home.classList.toggle('smMode',on);
+    if(home)home.classList.toggle('smMode',on);
     document.body.classList.toggle('smOn',on);
     if(btn){
       /* 켜고 끄는 동작은 이 한 줄이 전부다 — 썸 슬라이드·트랙 색·문구 자리·
@@ -384,15 +390,17 @@ export function smSwitch(on,ev){
        연속으로 눌렸을 때 클래스가 이미 붙어 있으면 애니메이션이 다시 시작되지 않아
        빛이 중간에 멈춰 보였다 — 한 번 떼고 리플로우를 강제해 처음부터 돌린다. */
     if(smSwT)clearTimeout(smSwT);
-    home.classList.remove('smSweep','smOut');
-    if(on){
-      void home.offsetWidth;                 /* 리플로우 — 연타해도 스윕이 처음부터 돈다 */
-      home.classList.add('smSweep');
-      smSwT=setTimeout(()=>{ home.classList.remove('smSweep'); smSwT=0 },2520);
-    }else{
-      /* 돌던 빛을 그 자리에서 멈추지 않고, 계속 돌린 채로 잦아들게 한다 */
-      home.classList.add('smOut');
-      smSwT=setTimeout(()=>{ home.classList.remove('smOut'); smSwT=0 },900);
+    if(home){
+      home.classList.remove('smSweep','smOut');
+      if(on){
+        void home.offsetWidth;               /* 리플로우 — 연타해도 스윕이 처음부터 돈다 */
+        home.classList.add('smSweep');
+        smSwT=setTimeout(()=>{ home.classList.remove('smSweep'); smSwT=0 },2520);
+      }else{
+        /* 돌던 빛을 그 자리에서 멈추지 않고, 계속 돌린 채로 잦아들게 한다 */
+        home.classList.add('smOut');
+        smSwT=setTimeout(()=>{ home.classList.remove('smOut'); smSwT=0 },900);
+      }
     }
     smStatement(on);
     /* 예시 질문 세트 교체 — 별이 한 박자 빠르게 돌며 넘어간다 */
@@ -403,8 +411,8 @@ export function smSwitch(on,ev){
     if(inp)inp.placeholder='';
   };
   /* 가리는 것 없이 바로 바꾼다. 색은 CSS 전이가 0.62초에 걸쳐 따라온다. */
-  commit(); smBarBeat(); smRoomBeat();
-  setTimeout(()=>{smBusy=false},900);
+  try{ commit(); smBarBeat(); smRoomBeat(); }
+  finally{ setTimeout(()=>{smBusy=false},900); }
 }
 
 /* ── 홈 챗바 이미지 첨부 ──────────────────────────────

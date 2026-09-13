@@ -384,12 +384,31 @@ export function refusalHTML(err){
         near.map(o => '<button type="button" data-kw="' + esc(o.canonical) + '">' +
           esc(o.canonical) + '</button>').join('') + '</div>'
       : '') +
+    /* 링크 상품을 못 이은 경우엔 등록 요청을 붙이지 않는다 — 등록할 말이
+       상품명(영문 전체)이라 사전 항목이 될 수 없다. 대신 한 단어를 되묻는
+       문장이 message 에 이미 들어 있다. (2026-09-13) */
+    (err.reason === 'LINK_NOT_IDENTIFIED' ? '' :
     /* JS 훅은 클래스가 아니라 data 속성으로 단다.
        CSS 에 없는 클래스를 붙이면 "이건 스타일이 있나" 를 매번 확인해야 한다.
        버튼 모양은 .kwReq .ask button 이 이미 갖고 있다. */
     '<div class="ask"><span>패션 용어가 맞다면 등록을 요청해 주세요. 검토 후 사전에 추가됩니다.</span>' +
     '<button type="button" data-lexreq="1" data-surface="' + esc(err.surface_guess || '') +
-    '" data-question="' + esc(err.question || '') + '">등록 요청</button></div></div>';
+    '" data-question="' + esc(err.question || '') + '">등록 요청</button></div>') + '</div>';
+}
+
+/* 사진이 상의·하의·아우터 중 무엇인지 서버에 묻는다 (2026-09-13).
+   착장 위젯이 첨부 사진을 알맞은 칸에 넣기 위한 편의 기능이라, 실패는 실패로
+   끝내지 않고 빈 배열로 돌려준다 — 부르는 쪽이 예전처럼 순서대로 채운다. */
+export async function classifyFitImages(images){
+  const rows=(images||[]).filter(u=>typeof u==='string'&&u).slice(0,MAX_IMAGES);
+  if(!rows.length)return [];
+  try{
+    const res=await fetch(API_BASE+'/v1/fit-classify',{method:'POST',
+      headers:{'Content-Type':'application/json'},body:JSON.stringify({images:rows})});
+    if(!res.ok)return [];
+    const data=await res.json();
+    return Array.isArray(data&&data.categories)?data.categories.map(c=>String(c||'')):[];
+  }catch(e){ return [] }
 }
 
 /* 등록 요청 버튼 하나를 실제로 서버에 보낸다.

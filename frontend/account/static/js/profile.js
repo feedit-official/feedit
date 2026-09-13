@@ -89,10 +89,27 @@ bioBind();
 export var AUTH = { in: false };
 /* 로그인 없이 쓸 수 없는 기능(챗봇 사용 · 트렌드 분석 · 살!말? 투표/등록)의
    공통 관문. 로그인 전이면 로그인 화면으로 보내고 false 를 돌려준다. */
-export function requireAuth(){
+/* 로그인 관문에 걸려 중단된 동작 하나. 로그인/가입이 끝나면 그대로 이어 한다.
+   ★ 2026-09-13. 챗봇에 "발레코어 요즘 어때?" 를 치던 중 로그인 화면으로 넘어가면
+     로그인을 마쳐도 질문이 사라져 있었다. 사용자는 같은 문장을 다시 쳐야 했다.
+     하나만 들고 있는다 — 여러 개를 쌓아 두면 로그인 뒤에 예상치 못한 화면이
+     연달아 뜬다. 새로 걸리면 앞의 것을 버린다. */
+let pendingAfterAuth = null;
+export function requireAuth(resume){
   if(AUTH.in)return true;
+  pendingAfterAuth = (typeof resume === 'function') ? resume : null;
   goView('login');
   return false;
+}
+/* 로그인을 포기하고 다른 화면으로 갔다면 이어 할 일도 버린다 —
+   한참 뒤에 로그인했을 때 잊고 있던 질문이 튀어나오면 안 된다. */
+export function dropPendingAuth(){ pendingAfterAuth = null; }
+function runPendingAuth(){
+  const fn = pendingAfterAuth;
+  pendingAfterAuth = null;
+  if(!fn) return;
+  /* 화면 전환(goView) 애니메이션이 끝난 뒤에 이어 한다 */
+  setTimeout(() => { try{ fn() }catch(e){ /* 이어 하기 실패는 조용히 넘긴다 */ } }, 320);
 }
 /* 회원가입 진행 중 구글 모드 여부 — 가입 폼을 벗어나면 반드시 초기화된다 */
 let signupGoogleMode = false;
@@ -134,9 +151,11 @@ function authLogin(){
   AUTH.in = true;
   authPaint();
   goView('home');
+  runPendingAuth();
 }
 function authLogout(){
   AUTH.in = false;
+  pendingAfterAuth = null;
   authPaint();
   goView('home');
 }
@@ -148,6 +167,7 @@ function signupComplete(){
   ME.styles.clear();   /* 팝업은 항상 빈 상태에서 시작한다 */
   goView('home');
   openStyleSelect();
+  runPendingAuth();
 }
 /* 작은 확인 토스트 — 살!말? 쪽과 같은 #toast 를 그대로 쓴다 */
 var acctToastT;

@@ -1,5 +1,5 @@
 import { $, $$, HAS_A, aAnimate, aSpring, aStagger, aTimeline, aUtils } from '../../../core/static/js/dom.js';
-import { AUTH, acctBoot, likeClick, myRender, requireAuth, resetSignupForm } from '../../../account/static/js/profile.js';
+import { AUTH, acctBoot, dropPendingAuth, likeClick, myRender, requireAuth, resetSignupForm } from '../../../account/static/js/profile.js';
 import { SM_ON, hotBuild, mImgInit, newChat, qRoll, sendChat, smSwitch } from '../../../home/static/js/chat.js';
 import { closeChatPopup, cpEditTitle, cpImgInit, cpNewConvo, cpRenderList, cpRenderThread, cpSend, cpStore, cpToggleMode, openChatWith } from '../../../home/static/js/chat_popup.js';
 import { mPaintVote, mVote, smBuild } from '../../../salmal/static/js/nav_widget.js';
@@ -102,6 +102,10 @@ export function goView(v){
     return;
   }
   if(curView==='signup'&&v!=='signup')resetSignupForm();   /* 완료 안 하고 나가면 다음엔 처음 상태로 */
+  /* 로그인/가입 화면을 그냥 벗어났다 — 관문에 걸려 들고 있던 질문도 여기서 버린다.
+     한참 뒤에 로그인했을 때 잊고 있던 질문이 저절로 보내지면 안 된다. (2026-09-13) */
+  if((curView==='login'||curView==='signup')&&v!=='login'&&v!=='signup'&&!AUTH.in)
+    dropPendingAuth();
   curView=v;
   $$('#mNav button').forEach(b=>b.classList.toggle('on',b.dataset.v===v));
   document.body.classList.toggle('acctmode',v==='login'||v==='signup'||v==='mypage');
@@ -227,6 +231,10 @@ $('#mInput')&&$('#mInput').addEventListener('keydown',e=>{
    있어야 한다. salmalBoot 안에 두면 살!말? 탭을 한 번도 안 들어간 채로
    홈에서 팝업을 열었을 때 닫기·전송·새 대화가 전부 먹통이 된다. */
 $('#cpAv')&&$('#cpAv').addEventListener('click',cpToggleMode);
+/* 마크가 버튼 역할을 하므로 키보드로도 눌린다 — Enter · Space */
+$('#cpAv')&&$('#cpAv').addEventListener('keydown',e=>{
+  if(e.key==='Enter'||e.key===' '){ e.preventDefault(); cpToggleMode(); }
+});
 $('#cpNewBtn')&&$('#cpNewBtn').addEventListener('click',()=>{
   cpNewConvo(); cpRenderList(); cpRenderThread();
   const ta=$('#cpInput'); if(ta)ta.focus();
@@ -253,6 +261,22 @@ $('#cpClose')&&$('#cpClose').addEventListener('click',closeChatPopup);
 $('#cpOverlay')&&$('#cpOverlay').addEventListener('click',e=>{ if(e.target.id==='cpOverlay')closeChatPopup(); });
 document.addEventListener('keydown',e=>{
   if(e.key==='Escape'&&$('#cpOverlay').classList.contains('on'))closeChatPopup();
+});
+/* Tab — 일반 ↔ 살말 모드 전환 (2026-09-13).
+   좌상단 마크를 마우스로 누르는 것 말고 키보드로도 오가게 한다. 팝업이 열려 있을
+   때만 가로챈다.
+   ★ Shift+Tab 은 그대로 둔다 — 브라우저 기본 이동을 통째로 막으면 마우스 없이는
+     대화 목록·버튼에 닿을 수 없다. 되돌아가는 이동 하나는 남겨 둔다.
+   ★ 제목을 고치는 중(.cpTitleIn)이거나 한글 조합 중일 땐 건드리지 않는다. */
+document.addEventListener('keydown',e=>{
+  if(e.key!=='Tab'||e.shiftKey||e.ctrlKey||e.metaKey||e.altKey)return;
+  if(e.isComposing||e.keyCode===229)return;
+  const ov=$('#cpOverlay'); if(!ov||!ov.classList.contains('on'))return;
+  const t=e.target;
+  if(t&&t.classList&&t.classList.contains('cpTitleIn'))return;
+  e.preventDefault();
+  cpToggleMode();
+  const ta=$('#cpInput'); if(ta)ta.focus();
 });
 
 /* ── 모드 전환 — 버튼으로만 ─────────────────────────── */
