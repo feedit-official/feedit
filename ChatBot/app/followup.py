@@ -18,6 +18,15 @@ from __future__ import annotations
 
 import re
 
+# 주소가 섞인 질문 — 이어받지 않는다.
+#   ★ 2026-09-13. "https://www.musinsa.com/products/7160737 이거 지금 사도 될까?" 가
+#     앞 턴의 '트랙탑' 으로 읽혔다. 링크는 사전에 걸리지 않으니 search 가 비고,
+#     "이거" 가 지시대명사로 잡혀 ② 대상 이어받기가 그대로 발동한 것이다.
+#     **링크를 붙였다는 것은 그 링크의 물건을 묻는다는 뜻이다** — 앞에서 말하던
+#     것으로 읽으면 전혀 다른 상품을 답하게 된다. 무엇인지는 링크를 확인해서
+#     정한다(engine.py 의 상품 링크 확인). 여기서는 이어받지 않는 것으로 끝낸다.
+URL = re.compile(r"https?://\S+|\bwww\.[^\s]+", re.I)
+
 # 앞머리 접속어 — "그러면", "그럼", "그러니까", "그래서", "그리고", "반대로", "그다음"
 LEAD = re.compile(r"^\s*(그러면|그럼|그러믄|그러니까|그래서|그리고|반대로|그\s*다음|다음은|then)\s*[,·]?\s*",
                   re.I)
@@ -42,7 +51,8 @@ COMPARE = re.compile(r"(둘\s*(중|다)|어느\s*(게|것|쪽)|누가\s*더|뭐�
 
 def _residue(question: str, parsed: dict) -> str:
     """질문에서 사전에 걸린 말과 접속어를 걷어내고 남은 부분."""
-    q = LEAD.sub("", str(question or "")).strip()
+    q = URL.sub(" ", str(question or ""))
+    q = LEAD.sub("", q).strip()
     for bucket in ("search", "modifier", "other"):
         for h in parsed.get(bucket) or []:
             for w in {h.get("surface"), h.get("canonical")}:
@@ -89,6 +99,9 @@ def resolve(question: str, parsed: dict, nlu: dict, history: list[dict],
       · 이어짐의 형태다 — 앞머리 접속어가 있거나, 사전 말을 빼면 조사만 남는다
     """
     out: dict = {}
+    if URL.search(str(question or "")):
+        # 링크 질문. 대상은 링크가 정한다 — 앞 턴에서 가져오지 않는다.
+        return out
     prev = _last(history, mode)
     if not prev:
         return out

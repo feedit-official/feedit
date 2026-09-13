@@ -17,7 +17,9 @@ LLM 이 하지 않는 것
 from __future__ import annotations
 
 from . import (agent_blocks, agent_path, context, followup, history, llm, mdclean,
-               plans, polish, report, report_skill, salmal_index, websearch)
+               plans, polish, product_link, report, report_skill, salmal_index,
+               websearch)
+from .followup import URL as _URL
 from .lexicon_gate import LexiconGate
 from .nlu import classify
 from .intents import is_salmal_question, is_greeting, GENERAL_CODES, SALMAL_CODES
@@ -120,10 +122,29 @@ class ChatEngine:
 
         carried = followup.resolve(q, parsed, nlu, past, mode)
 
+        # ★ 링크 질문 — 무엇을 묻는지는 **링크가 정한다**.
+        #   사전에 걸린 말이 없는 링크 질문은 앞 대화(④)로 넘기지 않는다.
+        #   넘기면 "https://…/7160737 이거 사도 될까?" 가 앞 턴의 다른 상품으로
+        #   읽힌다(2026-09-13 트랙탑 오독). 대신 링크를 열어 상품명·브랜드를
+        #   확인하고, 확인한 말만 사전 게이트에 다시 태운다.
+        is_link = bool(_URL.search(q))
+        seen = None
+        if is_link and not parsed["search"] and self.use_llm and llm.available():
+            seen = product_link.inspect(q, timeout=12)
+            if seen.get("found"):
+                for text in (seen.get("item_name"), seen.get("brand")):
+                    again = self.gate.parse(str(text or ""))
+                    if again["search"]:
+                        parsed["search"].extend(again["search"])
+                if parsed["search"]:
+                    label = " ".join(x for x in (seen.get("brand"),
+                                                 seen.get("item_name")) if x)
+                    carried = {"why": f"링크에서 확인한 '{label}' 로 읽었습니다."}
+
         # ④ 규칙(정규식)으로도 못 이었다 — 잡담인지, 놓친 후속 질문인지 LLM에게 맥락을 묻는다.
         #    마지막 수단으로, 딱 한 번만 부른다. candidate_terms 는 이미 게이트를 통과했던
         #    값뿐이라 사전 밖 단어를 새로 지어낼 수 없다 (context.py 참고).
-        if not parsed["search"] and not carried and self.use_llm and past:
+        if not parsed["search"] and not carried and not is_link and self.use_llm and past:
             codes = GENERAL_CODES if mode == "general" else SALMAL_CODES
             ctx = context.resolve(q, past, codes, mode=mode)
             if ctx and ctx["kind"] == "smalltalk":
@@ -152,7 +173,8 @@ class ChatEngine:
         # 사전에 걸린 말이 없으면 여기서 끝난다.
         # ★ 지식 질문이어도 검색으로 우회시키지 않는다 (설계서 3.4).
         if not parsed["search"]:
-            out = report.not_in_lexicon(self.gate, self.store, q)
+            out = (report.link_not_identified(q, seen) if is_link
+                   else report.not_in_lexicon(self.gate, self.store, q))
             out["intent"] = intent
             out["question"] = q
             out["nlu"] = nlu

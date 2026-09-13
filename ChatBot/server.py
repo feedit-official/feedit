@@ -157,6 +157,9 @@ def daily_ok(ip: str, plan: str) -> bool:
 #   지금은 RDS 에 붙을 수 없어 파일에 줄 단위로 쌓는다.
 #   ★ 버튼만 만들어 두고 아무 데도 안 보내면 "누르면 되는 척" 이 된다. 실제로 남긴다.
 REQ_LOG = Path(__file__).resolve().parent / "data" / "lexicon_requests.jsonl"
+# 답변 피드백 — 사용자가 "이 답 아쉬웠다" 고 알려 준 것만 쌓인다.
+# 무엇이 자주 틀리는지는 이 파일이 유일한 근거다(2026-09-13).
+FEEDBACK_LOG = Path(__file__).resolve().parent / "data" / "answer_feedback.jsonl"
 KST = timezone(timedelta(hours=9))
 _req_lock = threading.Lock()
 
@@ -421,10 +424,38 @@ class Handler(BaseHTTPRequestHandler):
         return self._json(200, {"ok": True, "surface": surface, "count": count,
                                 "message": f"'{surface}' 등록 요청을 받았습니다. 검토 후 사전에 추가됩니다."})
 
+    def _feedback(self):
+        """답변 하나에 대한 도움됨/아쉬움. 화면에서 누른 그대로만 적는다.
+
+        ★ 답변 본문을 통째로 저장하지 않는다. 무엇에 대한 피드백인지 알 정도만
+          남긴다 — 질문 앞부분, 의도, 사유, 사용자가 정정해 준 대상.
+        """
+        req = self._read_json()
+        if not req:
+            return self._json(400, {"ok": False, "error": "BAD_BODY"})
+        verdict = str(req.get("verdict") or "").strip()
+        if verdict not in ("up", "down"):
+            return self._json(400, {"ok": False, "error": "BAD_VERDICT"})
+        row = {
+            "verdict": verdict,
+            "reason": " ".join(str(req.get("reason") or "").split())[:40] or None,
+            "correction": " ".join(str(req.get("correction") or "").split())[:60] or None,
+            "question": " ".join(str(req.get("question") or "").split())[:300],
+            "intent": " ".join(str(req.get("intent") or "").split())[:40] or None,
+            "mode": "salmal" if str(req.get("mode")) == "salmal" else "general",
+            "at": datetime.now(KST).isoformat(timespec="seconds"),
+        }
+        with _req_lock:
+            FEEDBACK_LOG.parent.mkdir(parents=True, exist_ok=True)
+            with FEEDBACK_LOG.open("a", encoding="utf-8") as f:
+                f.write(json.dumps(row, ensure_ascii=False) + "\n")
+        return self._json(200, {"ok": True,
+                                "message": "의견 고맙습니다. 답변 품질을 고치는 데 씁니다."})
+
     def do_POST(self):
         path = urlparse(self.path).path
         if path not in ("/v1/chat", "/v1/chat/cancel", "/v1/lexicon/requests",
-                        "/v1/virtual-fitting"):
+                        "/v1/virtual-fitting", "/v1/fit-classify", "/v1/feedback"):
             return self._json(404, {"ok": False, "error": "NOT_FOUND"})
         # ★ 쓰는 길은 전부 여기를 지난다. 검사를 분기 뒤에 두면
         #   새 엔드포인트를 더할 때 조용히 빠뜨리게 된다.
@@ -432,6 +463,8 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == "/v1/lexicon/requests":
             return self._lexicon_request()
+        if path == "/v1/feedback":
+            return self._feedback()
         if path == "/v1/chat/cancel":
             req = self._read_json()
             request_id = _request_id((req or {}).get("request_id"))
@@ -442,6 +475,22 @@ class Handler(BaseHTTPRequestHandler):
                 if event:
                     event.set()
             return self._json(200, {"ok": True, "cancelled": bool(event)})
+        if path == "/v1/fit-classify":
+            # 사진이 상의인지 하의인지 아우터인지만 돌려준다. 화면은 이 값으로
+            # 첨부 사진을 알맞은 칸에 넣는다 — 사용자가 지웠다 다시 넣지 않게.
+            req = self._read_json()
+            if not req:
+                return self._json(400, {"ok": False, "error": "BAD_BODY"})
+            images = req.get("images")
+            if not isinstance(images, list) or not images:
+                return self._json(400, {"ok": False, "error": "NO_IMAGES"})
+            try:
+                cats = vton.classify([str(u or "") for u in images])
+            except Exception:  # noqa: BLE001
+                # 분류는 편의 기능이다. 실패해도 화면이 멈추면 안 된다 —
+                # 전부 '자동 분류' 로 돌려주면 예전과 같은 순서 배치가 된다.
+                cats = ["자동 분류"] * len(images[:6])
+            return self._json(200, {"ok": True, "categories": cats})
         if path == "/v1/virtual-fitting":
             req = self._read_json()
             if not req:

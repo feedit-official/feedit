@@ -108,3 +108,52 @@ def generate(*, model_id: str, items: list[dict] | None = None,
             "model_label": model["label"],
             "categories": [row["category"] for row in chosen],
             "item_count": len(chosen)}
+
+
+# ── 사진 → 착장 칸 자동 분류 (2026-09-13) ──────────────────────
+#   왜 서버가 하나 —
+#     화면은 사진을 순서대로 칸에 넣을 수밖에 없다. 스커트를 올렸는데 '상의' 칸이
+#     차 버리면 사용자가 지우고 다시 넣어야 했다. 어떤 옷인지 아는 것은 사진을
+#     볼 수 있는 쪽뿐이라, 판별은 여기서 한다.
+#   ★ 값을 지어내지 않는다. 확실하지 않으면 "자동 분류" 로 남긴다 —
+#     그러면 생성 프롬프트가 예전처럼 스스로 판별한다(위 prompt()).
+SLOTS = ["상의", "하의", "아우터", "원피스(셋업)", "신발", "양말"]
+
+_CLASSIFY_INSTRUCTIONS = (
+    "FEEDiT 착장 합성용 분류기입니다. 각 사진에 담긴 의류·잡화가 어느 칸에 들어가야 "
+    "하는지만 고르세요.\n"
+    "- 상의: 티셔츠·셔츠·니트·블라우스·후디 등 상체에 입는 옷\n"
+    "- 하의: 바지·스커트·반바지 등 하체에 입는 옷\n"
+    "- 아우터: 코트·재킷·점퍼·가디건 등 겉에 걸치는 옷\n"
+    "- 원피스(셋업): 원피스·점프수트·상하 세트\n"
+    "- 신발 / 양말: 각각 신발과 양말\n"
+    "- 어느 칸인지 확실하지 않거나 의류가 아니면 '자동 분류'\n"
+    "사진에 보이는 것만 보고 고르세요. 브랜드·가격·트렌드는 판단하지 마세요.\n"
+    "categories 배열은 입력한 사진과 같은 순서, 같은 개수로 돌려주세요."
+)
+
+
+def classify(images: list[str]) -> list[str]:
+    """사진 순서대로 칸 이름을 돌려준다. 실패하면 전부 '자동 분류'."""
+    from . import llm
+
+    rows = [u for u in (images or []) if isinstance(u, str) and u.strip()][:MAX_ITEMS]
+    fallback = ["자동 분류"] * len(rows)
+    if not rows or not llm.available():
+        return fallback
+    content: list[dict] = [{"type": "input_text",
+                            "text": "각 사진이 어느 칸인지 순서대로 골라 주세요."}]
+    for u in rows:
+        content.append({"type": "input_image", "image_url": u})
+    schema = llm.strict_schema("feedit_vton_slots", {
+        "categories": {"type": "array",
+                       "items": {"type": "string", "enum": SLOTS + ["자동 분류"]}},
+    }, ["categories"])
+    got = llm.respond(_CLASSIFY_INSTRUCTIONS, [{"role": "user", "content": content}],
+                      schema, timeout=20, **llm.role("vision"))
+    cats = (got or {}).get("categories")
+    if not isinstance(cats, list):
+        return fallback
+    out = [str(c) if str(c) in CATEGORIES else "자동 분류" for c in cats[:len(rows)]]
+    out += ["자동 분류"] * (len(rows) - len(out))
+    return out

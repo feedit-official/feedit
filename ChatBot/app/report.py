@@ -252,8 +252,48 @@ def _nfc_q(s: str) -> str:
     return unicodedata.normalize("NFC", str(s or ""))
 
 
+def strip_urls(question: str) -> str:
+    """주소를 걷어낸 질문. 주소 안의 조각(musinsa · products · 숫자)이
+    '혹시 이건가요' 후보나 등록 요청 단어로 새어 나가지 않게 한다."""
+    import re as _re
+    q = _re.sub(r"https?://\S+|\bwww\.[^\s]+", " ", str(question or ""), flags=_re.I)
+    return _re.sub(r"\s+", " ", q).strip()
+
+
+def link_not_identified(question: str, seen: dict | None = None) -> dict:
+    """링크는 받았는데 그 상품을 우리 사전의 말로 잇지 못했다.
+
+    ★ 여기서 **앞 대화의 다른 상품으로 대신 답하지 않는다** (2026-09-13).
+      링크를 붙였다는 것은 그 링크의 물건을 묻는다는 뜻이라, 다른 상품의
+      지표를 보여 주면 맞는 숫자로 틀린 답을 하게 된다.
+    """
+    label = " ".join(x for x in ((seen or {}).get("brand"),
+                                 (seen or {}).get("item_name")) if x)
+    if label:
+        head = (f"링크의 상품은 '{label}' 로 확인했습니다.\n\n"
+                "다만 이 상품을 FEEDiT 사전의 스타일 · 소재 · 아이템 · 브랜드로 "
+                "잇지 못해 트렌드 지표를 낼 수 없습니다.")
+    else:
+        head = ("링크에서 어떤 상품인지 확인하지 못했습니다.\n\n"
+                "FEEDiT 는 스타일 · 소재 · 아이템 · 브랜드 네 가지로만 트렌드를 셉니다.")
+    return {
+        "ok": False,
+        "reason": "LINK_NOT_IDENTIFIED",
+        "message": head + "\n\n어떤 아이템인지 한 단어로 알려 주시면 바로 찾아보겠습니다.",
+        "near_label": "",
+        "near": [],
+        "surface_guess": "",
+        "link": {"url": (seen or {}).get("url"),
+                 "item_name": (seen or {}).get("item_name"),
+                 "brand": (seen or {}).get("brand"),
+                 "price_krw": (seen or {}).get("price_krw")} if seen else None,
+        "generated_at": datetime.now(KST).isoformat(timespec="seconds"),
+    }
+
+
 def not_in_lexicon(gate, store, question: str) -> dict:
     """사전에 없는 말. 실패로 끝내지 않는다 — 가까운 말과 등록 요청을 준다."""
+    question = strip_urls(question) or question
     near = gate.near_candidates(question)
     fallback = not near
     if fallback:
