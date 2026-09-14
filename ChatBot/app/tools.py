@@ -283,7 +283,12 @@ SPECS: list[dict] = [
         "인사, 간단한 설명처럼 문장만으로 충분하면 호출하지 않는다. "
         "완성 템플릿을 고르는 도구가 아니다. 데이터 모듈의 표현 방식과 12열 폭, "
         "강조도를 조합해 필요한 요청에만 새 캔버스를 만든다. 호출한다면 최종 문장을 "
-        "쓰기 직전에 한 번만 부른다. kind 는 이미 호출한 도구 결과에 있는 "
+        "쓰기 직전에 한 번만 부른다. "
+        "★ 이 도구를 부르는 순간 그 모듈의 목록·수치는 **화면이 맡는다.** "
+        "카드에 실은 목록을 최종 답변 본문에 다시 나열하지 마라 — 사용자가 같은 "
+        "것을 두 번 읽게 된다. 본문은 맨 위 한둘만 짚고 무엇을 센 순위인지와 "
+        "어떻게 읽어야 하는지를 말하는 자리다. "
+        "kind 는 이미 호출한 도구 결과에 있는 "
         "것만 쓴다: rank_terms=ranking, 둘 이상 get_metric=comparison, get_metric=metric, "
         "모멘텀=direction, 출처별=sources, 연관어=associations, 긍부정=sentiment, "
         "similar_terms=recommendations, get_user_taste=taste, season_fit=context, "
@@ -891,6 +896,11 @@ class Toolbox:
         return self.taste.of(uid)
 
     # ── 출력 디자인 스킬 ─────────────────────────────────
+    # 여러 줄이 늘어서는 모듈 — 본문이 되풀이하면 같은 것을 두 번 읽게 되는 것들.
+    #   (2026-09-14: "트렌드 TOP 10 알려줘" 에서 본문과 카드가 같은 10줄을 그렸다.)
+    LIST_KINDS = {"ranking", "comparison", "recommendations", "associations",
+                  "sources", "links", "evidence"}
+
     def t_compose_report(self, title: str, accent: str, surface: str,
                          density: str, modules: Any) -> dict:
         """모델의 UI 결정을 기록한다. 데이터는 여기서 만들지 않는다.
@@ -932,8 +942,18 @@ class Toolbox:
             "density": density if density in allowed["densities"] else "balanced",
             "modules": clean,
         }
-        return {"ok": True, "skill": "generative-report-v1", "spec": spec,
-                "note": "실제 조회 결과와 일치하는 모듈만 화면에 결합됩니다."}
+        # ★ 답을 쓰기 직전에 모델이 마지막으로 읽는 줄이다 (2026-09-14).
+        #   "본문에 다시 쓰지 마라" 는 지침을 프롬프트 맨 위에만 두면, 조회를
+        #   여러 바퀴 돈 뒤에는 멀어져 잊힌다. 무엇이 이미 화면에 올라갔는지를
+        #   **도구가 직접 알려 준다** — 되풀이를 막는 재료를 손에 쥐여 주는 쪽이
+        #   프롬프트로 부탁하는 것보다 확실하다(AGENTS.md §1-②).
+        listed = sorted({m["kind"] for m in clean if m["kind"] in self.LIST_KINDS})
+        note = "실제 조회 결과와 일치하는 모듈만 화면에 결합됩니다."
+        if listed:
+            note += (" 화면이 " + " · ".join(listed) + " 목록을 이미 보여 줍니다 — "
+                     "최종 답변 본문에 같은 목록을 다시 나열하지 마세요. 맨 위 한둘만 "
+                     "이름으로 짚고, 무엇을 센 것인지와 어떻게 읽어야 하는지를 쓰세요.")
+        return {"ok": True, "skill": "generative-report-v1", "spec": spec, "note": note}
 
     # ── 밖 ──────────────────────────────────────────────
     def t_inspect_product_link(self, url: str) -> dict:

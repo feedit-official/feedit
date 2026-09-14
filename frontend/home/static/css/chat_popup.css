@@ -247,12 +247,21 @@
 .cpDel.armed i{font-size:11.5px;font-weight:600}
 
 /* 다시 묻기 — 내 말풍선 아래 작은 글씨. 평소엔 옅고, 줄에 올리면 또렷해진다. */
-.cpAgain{
-  align-self:flex-end;margin-top:-2px;padding:2px 4px;font-size:11.5px;
-  color:var(--pink-2);opacity:.75;transition:opacity .18s,color .18s;
+/* 내 말풍선 아래 아이콘 줄 — 재전송 · 수정 · 복사 (2026-09-14).
+   평소에는 흐리게 두고 말풍선에 손을 올리면 또렷해진다. 내가 쓴 말이 주인공이지
+   버튼이 주인공이 아니다. */
+.cpMeActs{
+  align-self:flex-end;display:flex;align-items:center;gap:2px;margin-top:1px;
+  opacity:.5;transition:opacity .18s;
 }
-.msg.me:hover .cpAgain{opacity:1;color:var(--pink-0)}
-.cpAgain:hover{text-decoration:underline;text-underline-offset:2px}
+.msg.me:hover .cpMeActs,.cpMeActs:focus-within{opacity:1}
+.cpMeAct{
+  width:26px;height:26px;display:grid;place-items:center;border-radius:7px;
+  color:var(--pink-2);transition:color .18s,background .18s;
+}
+.cpMeAct svg{width:15px;height:15px}
+.cpMeAct:hover{color:var(--pink-0);background:var(--pink-3)}
+.cpMeAct.done{color:var(--coral);background:rgba(255,107,74,.14)}
 .cpDropped{font-size:11px;color:var(--pink-2)}
 
 /* 답변 피드백 — 답 아래 한 줄. 카드와 경쟁하지 않게 작고 조용히. */
@@ -318,3 +327,61 @@
   box-shadow:inset 0 0 0 1px var(--pink-3);font-size:11.5px;
 }
 .cpFitRetry:hover{box-shadow:inset 0 0 0 1px var(--pink-1)}
+
+/* ══════════════════════════════════════════════════════
+   2026-09-14 추가 — 착장 칸 드롭다운, 합성 옵션, 결과 저장, 알림 한 줄
+   ══════════════════════════════════════════════════════ */
+
+/* 칸 종류 드롭다운 — 사진 아래. 자동 분류가 틀렸을 때 지웠다 다시 넣지 않고
+   바로 고칠 수 있어야 한다. 칸이 9개라 글자를 키우지 않는다. */
+.cpFitCat{
+  width:100%;margin-top:4px;padding:4px 3px;border:1px solid var(--pink-3);
+  border-radius:7px;background:#fff;font:inherit;font-size:10px;color:var(--pink-0);
+  text-align:center;text-align-last:center;cursor:pointer;
+}
+.cpFitCat:hover{border-color:var(--pink-2)}
+.cpFitCat:focus{outline:none;border-color:var(--coral)}
+
+/* 합성 옵션 서랍 — 결과 이미지 왼쪽 위. 접으면 켠 개수만 남는다. */
+.cpFitOpts{position:absolute;z-index:3;left:10px;top:10px;max-width:calc(100% - 62px)}
+.cpFitOptsBtn{
+  display:inline-flex;align-items:center;gap:5px;padding:5px 11px;border-radius:999px;
+  background:rgba(20,18,17,.62);color:#fff;font-size:11px;letter-spacing:-.01em;
+  backdrop-filter:blur(6px);transition:background .18s;
+}
+.cpFitOptsBtn:hover{background:rgba(20,18,17,.82)}
+.cpFitOpts.on .cpFitOptsBtn{background:var(--coral)}
+.cpFitOptsBtn b{
+  min-width:15px;height:15px;padding:0 4px;border-radius:999px;display:grid;place-items:center;
+  background:rgba(255,255,255,.22);font-size:9.5px;font-weight:600;
+}
+.cpFitOptsBody{
+  margin-top:6px;padding:9px;border-radius:11px;display:flex;flex-wrap:wrap;gap:5px;
+  background:rgba(255,255,255,.94);box-shadow:0 8px 22px rgba(0,0,0,.2);backdrop-filter:blur(8px);
+}
+.cpFitOpt{
+  padding:5px 10px;border-radius:999px;background:var(--paper);color:var(--pink-1);
+  box-shadow:inset 0 0 0 1px var(--pink-3);font-size:10.5px;white-space:nowrap;
+  transition:background .18s,color .18s,box-shadow .18s;
+}
+.cpFitOpt:hover{color:var(--pink-0);box-shadow:inset 0 0 0 1px var(--pink-1)}
+.cpFitOpt.on{background:var(--coral);color:#fff;box-shadow:none}
+.cpFitOptsHint{width:100%;margin:1px 0 0;font-size:9.5px;color:var(--pink-2)}
+
+/* 결과 저장 — 오른쪽 위. 결과가 있을 때만 나타난다. */
+.cpFitDl{
+  position:absolute;z-index:3;right:10px;top:10px;width:32px;height:32px;
+  display:grid;place-items:center;border-radius:50%;
+  background:rgba(20,18,17,.62);color:#fff;backdrop-filter:blur(6px);transition:background .18s;
+}
+.cpFitDl:hover{background:var(--coral)}
+.cpFitDl svg{width:17px;height:17px}
+
+/* 알림 한 줄 — 복사·저장처럼 화면이 바뀌지 않는 동작의 결과를 말한다. */
+.cpToast{
+  position:absolute;z-index:40;left:50%;bottom:26px;transform:translate(-50%,10px);
+  padding:9px 16px;border-radius:999px;background:rgba(20,18,17,.9);color:#fff;
+  font-size:12px;letter-spacing:-.01em;pointer-events:none;opacity:0;
+  transition:opacity .22s,transform .22s;
+}
+.cpToast.on{opacity:1;transform:translate(-50%,0)}

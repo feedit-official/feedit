@@ -167,6 +167,25 @@ export async function askStream(payload, on, options={}){
    ★ 모르는 블록 타입은 조용히 건너뛴다.
      서버가 먼저 새 블록을 내보내도 화면이 깨지지 않게. */
 
+/* 리포트 머리줄의 저장·공유 (2026-09-14).
+   ★ 카드 안에 둔다 — 답변 아래 따로 떠 있으면 무엇을 저장하는 버튼인지 모른다.
+     누른 뒤의 처리는 chat_popup.js(cpReportSave·cpReportShare)가 맡는다.
+   ★ 이 버튼 자체는 저장한 그림에 들어가지 않는다(rpTools 를 캡처에서 뺀다). */
+const RP_ICON = d => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
+  'stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + d + '</svg>';
+const RP_TOOLS =
+  '<div class="rpTools">' +
+  '<button type="button" class="rpTool" data-rp-share="1" title="공유" aria-label="리포트 공유">' +
+  RP_ICON('<circle cx="17.5" cy="5.5" r="2.5"/><circle cx="6.5" cy="12" r="2.5"/>' +
+          '<circle cx="17.5" cy="18.5" r="2.5"/><path d="M8.8 10.8l6.4-4"/><path d="M8.8 13.2l6.4 4"/>') +
+  '</button>' +
+  '<button type="button" class="rpTool" data-rp-save="1" title="이미지로 저장" aria-label="리포트 이미지로 저장">' +
+  RP_ICON('<path d="M12 4v11"/><polyline points="7.5 10.5 12 15 16.5 10.5"/><path d="M5 19.5h14"/>') +
+  '</button></div>';
+const reportHead = count =>
+  '<div class="skillReportHead"><span>FEEDiT / LIVE REPORT</span><em>' +
+  String(count).padStart(2, '0') + ' SIGNALS</em>' + RP_TOOLS + '</div>';
+
 const H = (title, meta) => (title || meta)
   ? '<div class="ansH">' + (title ? '<h3>' + esc(title) + '</h3>' : '') +
     (meta ? '<em>' + esc(meta) + '</em>' : '') + '</div>' : '';
@@ -279,8 +298,7 @@ const BLOCK = {
     if(!modules) return '';
     return '<div class="skillReport skillReport--' + surface + ' skillReport--' + accent +
       ' skillReport--' + density + '" data-layout="' + esc(b.fingerprint || '') + '">' +
-      '<div class="skillReportHead"><span>FEEDiT / LIVE REPORT</span><em>' +
-      String((b.modules || []).length).padStart(2,'0') + ' SIGNALS</em></div>' +
+      reportHead((b.modules || []).length) +
       '<div class="skillReportTitle">' + esc(b.title || 'FEEDiT 트렌드 브리프') + '</div>' +
       '<div class="skillCanvas">' + modules + '</div></div>';
   },
@@ -367,8 +385,7 @@ export function reportHTML(rep){
      다시 나타나지 않게 한다. */
   if(blocks.length === 1 && blocks[0].type === 'generative_report') return full;
   return '<div class="skillReport skillReport--legacy">' +
-    '<div class="skillReportHead"><span>FEEDiT / LIVE REPORT</span><em>' +
-    String(blocks.length).padStart(2,'0') + ' SIGNALS</em></div>' +
+    reportHead(blocks.length) +
     '<div class="skillLegacyCanvas">' + content + '</div></div>';
 }
 

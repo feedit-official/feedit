@@ -317,7 +317,30 @@ function cpWhoHTML(stage){
   return '<div class="who"><i class="cpStar">✧</i>FEEDiT' +
          '<span class="cpStage">' + (stage ? cpEsc(stage) : '') + '</span></div>';
 }
-const VF_CATEGORIES=['상의','하의','아우터','원피스(셋업)','신발','양말'];
+/* 착장 칸 (2026-09-14: 모자·벨트·안경 추가).
+   ★ 서버 vton.SLOT_ORDER 와 같은 순서·같은 이름이어야 한다 — 한쪽만 늘리면
+     화면의 드롭다운과 서버가 아는 칸이 어긋난다. */
+const VF_CATEGORIES=['상의','하의','아우터','원피스(셋업)','신발','양말','모자','벨트','안경'];
+const VF_AUTO='자동 분류';
+/* 착장 옵션 — 켠 것만 프롬프트에 문장이 붙는다(서버 vton.OPTION_LINES).
+   전부 꺼 두면 예전 동작 그대로다. pair 가 같은 것끼리는 하나만 켜진다 —
+   "열어 입기" 와 "여며 입기" 를 동시에 보내면 모델에게 모순된 지시가 된다. */
+const VF_OPTIONS=[
+  {key:'outer_layered', label:'아우터 레이어드', pair:''},
+  {key:'outer_open',    label:'아우터 열기',     pair:'outer'},
+  {key:'outer_closed',  label:'아우터 닫기',     pair:'outer'},
+  {key:'top_open',      label:'상의 열기',       pair:'top'},
+  {key:'top_closed',    label:'상의 닫기',       pair:'top'},
+];
+/* 내 말풍선 아래 아이콘 줄에 쓰는 그림 (2026-09-14).
+   글자 버튼('다시 묻기') 하나로는 되돌리기밖에 못 했다 — 같은 질문을 그대로
+   다시 보내거나 문장만 복사할 방법이 없었다. */
+const CP_SVG=(d)=>'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" '+
+  'stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+d+'</svg>';
+const CP_IC_RESEND=CP_SVG('<path d="M3.5 9.5h10a5.5 5.5 0 1 1 0 11H8"/><polyline points="7.5 5.5 3.5 9.5 7.5 13.5"/>');
+const CP_IC_EDIT=CP_SVG('<path d="M4.5 19.5h4L19.6 8.4a2.05 2.05 0 0 0-2.9-2.9L5.5 16.6z"/><path d="M15.2 7l2.8 2.8"/>');
+const CP_IC_COPY=CP_SVG('<rect x="9.5" y="9.5" width="10.5" height="10.5" rx="2.2"/><path d="M5.5 14.5V6a2 2 0 0 1 2-2h7"/>');
+const CP_IC_DOWN=CP_SVG('<path d="M12 4v11"/><polyline points="7.5 10.5 12 15 16.5 10.5"/><path d="M5 19.5h14"/>');
 function cpFitModel(text){
   return /(남자|남성|맨즈|male)/i.test(String(text||''))?'man':'woman';
 }
@@ -326,6 +349,9 @@ function cpNewFit(images,text){
   return {key:String(Date.now()),
     items:VF_CATEGORIES.map((category,index)=>({category,image:attached[index]||'',auto:Boolean(attached[index])})),
     model:cpFitModel(text),status:'',result:'',loading:false,
+    /* 옵션은 전부 꺼진 채로 시작한다 — 끈 상태가 예전 동작이다. 켜지 않은
+       연출이 프롬프트에 실리면 사용자가 고르지 않은 사진이 나온다. */
+    options:cpFitOptions(null),optsOpen:false,
     /* 붙인 사진이 있으면 곧바로 종류를 확인한다(cpFitAutoSort). 그 전까지는
        예전처럼 순서대로 놓아 둔다 — 기다리는 동안 빈 화면을 보여주지 않는다. */
     sorting:attached.length>0};
@@ -366,19 +392,45 @@ async function cpFitSortNow(m,f){
   }
   if(cpActiveConvo()&&cpActiveConvo().messages.includes(m))cpRenderThread();
 }
+/* 칸 목록을 항상 같은 길이·같은 모양으로 되돌린다.
+   ★ 같은 축이 둘 있어도 막지 않는다 (2026-09-14). 아우터 두 벌을 겹쳐 입히려면
+     '아우터' 칸이 둘 필요하다 — 축마다 하나씩으로 강제하면 레이어드를 만들 수
+     없다. 칸 수(=VF_CATEGORIES.length)만 서버 MAX_ITEMS 와 맞춰 둔다. */
 function cpFitItems(f){
-  if(Array.isArray(f.items)){
-    const rows=f.items.slice(0,VF_CATEGORIES.length);
-    VF_CATEGORIES.forEach(category=>{
-      if(!rows.some(item=>item&&item.category===category)&&rows.length<VF_CATEGORIES.length)
-        rows.push({category,image:''});
-    });
-    f.items=rows;
-    return f.items;
-  }
-  f.items=VF_CATEGORIES.map(category=>({category,image:'',auto:false}));
-  if(f.image)f.items[0].image=f.image;
+  const had=Array.isArray(f.items);
+  const rows=had?f.items:[];
+  f.items=VF_CATEGORIES.map((category,i)=>{
+    const row=(rows[i]&&typeof rows[i]==='object')?rows[i]:{};
+    return {category:VF_CATEGORIES.includes(row.category)?row.category:category,
+            image:String(row.image||''),auto:Boolean(row.auto)};
+  });
+  if(!had&&f.image)f.items[0].image=f.image;
   return f.items;
+}
+/* 옵션 상태 — 모르는 이름은 버리고 없는 것은 false 로 채운다. */
+function cpFitOptions(saved){
+  const out={};
+  VF_OPTIONS.forEach(o=>{ out[o.key]=Boolean(saved&&saved[o.key]) });
+  return out;
+}
+function cpFitOptionsOf(f){
+  if(!f.options)f.options=cpFitOptions(null);
+  return f.options;
+}
+/* 합성 화면 왼쪽 위 옵션 서랍 (2026-09-14).
+   ★ 접을 수 있게 둔다 — 결과 이미지를 가리는 자리라, 펼친 채로 두면 정작
+     봐야 할 사진이 반쯤 덮인다. 켠 개수는 접혀 있을 때도 보여 준다. */
+function cpFitOptsHTML(f){
+  const on=cpFitOptionsOf(f);
+  const count=VF_OPTIONS.filter(o=>on[o.key]).length;
+  const body=f.optsOpen
+    ?'<div class="cpFitOptsBody">'+VF_OPTIONS.map(o=>
+        '<button type="button" class="cpFitOpt'+(on[o.key]?' on':'')+'" data-vf-opt="'+cpEsc(o.key)+'"'+
+        ' aria-pressed="'+(on[o.key]?'true':'false')+'">'+cpEsc(o.label)+'</button>').join('')+
+      '<p class="cpFitOptsHint">켠 것만 합성에 반영됩니다.</p></div>':'';
+  return '<div class="cpFitOpts'+(f.optsOpen?' on':'')+'">'+
+    '<button type="button" class="cpFitOptsBtn" data-vf-opts="1" aria-expanded="'+(f.optsOpen?'true':'false')+'">'+
+    '옵션'+(count?'<b>'+count+'</b>':'')+'</button>'+body+'</div>';
 }
 function cpFitHTML(m){
   const f=m.fit; if(!f)return '';
@@ -389,23 +441,35 @@ function cpFitHTML(m){
   const state=(!f.loading&&f.stateKind==='error')
     ?'<p class="cpFitState error">'+cpEsc(f.status||'')+
      '<button type="button" class="cpFitRetry" data-vf-retry="1">다시 시도</button></p>':'';
+  /* 결과 저장 — data URL 을 그대로 내려받는다. 서버를 한 번 더 부르지 않는다. */
+  const save=(f.result&&!f.loading)
+    ?'<a class="cpFitDl" href="'+cpEsc(f.result)+'" download="feedit-fitting-'+cpEsc(f.key)+'.png"'+
+     ' title="이미지 저장" aria-label="착용 이미지 저장">'+CP_IC_DOWN+'</a>':'';
   return '<section class="cpFit" data-fit-key="'+cpEsc(f.key)+'">'+
     '<div class="cpFitHead"><span>GPT IMAGE 2.5 SUNBURST</span><b>코디 입혀보기</b></div>'+
     '<div class="cpFitGrid"><div class="cpFitSetup">'+
       '<p class="cpFitGuide">'+(f.sorting?'사진이 어느 칸인지 확인하는 중입니다…'
         :'종류별 사진을 넣으면 선택한 옷을 한 장의 코디로 합칩니다.')+'</p>'+
-      '<div class="cpFitItems">'+items.map((item,index)=>
-        '<div class="cpFitSlot">'+(item.image?'<button type="button" class="cpFitRemove" data-vf-remove="'+index+'" aria-label="'+cpEsc(item.category)+' 이미지 삭제">×</button>':'')+
+      '<div class="cpFitItems">'+items.map((item,index)=>{
+        /* 축은 드롭다운으로 직접 고른다 (2026-09-14). 자동 분류가 틀렸을 때
+           사진을 지웠다 다시 넣는 것 말고는 고칠 방법이 없었다. */
+        const picked=item.auto?VF_AUTO:item.category;
+        const select='<select class="cpFitCat" data-vf-cat="'+index+'" aria-label="'+(index+1)+'번 칸 종류">'+
+          VF_CATEGORIES.concat([VF_AUTO]).map(c=>
+            '<option value="'+cpEsc(c)+'"'+(c===picked?' selected':'')+'>'+cpEsc(c)+'</option>').join('')+
+          '</select>';
+        return '<div class="cpFitSlot">'+(item.image?'<button type="button" class="cpFitRemove" data-vf-remove="'+index+'" aria-label="'+cpEsc(item.category)+' 이미지 삭제">×</button>':'')+
         '<button type="button" class="cpFitItem" data-vf-pick="'+index+'">'+
         (item.image?'<img class="cpFitItemImg" src="'+cpEsc(item.image)+'" alt="'+cpEsc(item.category)+'">':
-          '<span class="cpFitPlus">＋</span>')+'<small>'+cpEsc(item.auto?'자동 분류':item.category)+'</small></button>'+
-        '<input type="file" data-vf-file="'+index+'" accept="image/png,image/jpeg,image/webp" hidden></div>').join('')+
+          '<span class="cpFitPlus">＋</span>')+'</button>'+select+
+        '<input type="file" data-vf-file="'+index+'" accept="image/png,image/jpeg,image/webp" hidden></div>';
+      }).join('')+
       '</div>'+
       '<div class="cpFitModels">'+
         '<label><input type="radio" data-vf-model value="woman" name="vf-'+cpEsc(f.key)+'"'+(f.model==='woman'?' checked':'')+'><img src="/assets/vton-models/woman.png" alt="여성 AI 모델"><span>여성 모델</span></label>'+
         '<label><input type="radio" data-vf-model value="man" name="vf-'+cpEsc(f.key)+'"'+(f.model==='man'?' checked':'')+'><img src="/assets/vton-models/man.png" alt="남성 AI 모델"><span>남성 모델</span></label>'+
       '</div><div class="cpFitAction"><button type="button" class="pill cpFitGo" data-vf-generate'+(f.loading?' disabled':'')+'>입혀보기</button></div>'+
-    '</div><div class="cpFitOutput">'+result+state+'</div></div></section>';
+    '</div><div class="cpFitOutput">'+cpFitOptsHTML(f)+save+result+state+'</div></div></section>';
 }
 /* 사용자가 친 문장을 상품명 자리에 쓸 수 있는지. 주소가 섞여 있으면 쓰지 않는다 —
    "https://… 이거 사도 될까?" 에서 주소를 떼어 내도 남는 말은 상품명이 아니다. */
@@ -431,11 +495,17 @@ export function cpRenderThread(opts){
       const imgs=(m.images&&m.images.length)
         ?'<div class="bubImgs">'+m.images.map(u=>'<img src="'+u+'" alt="">').join('')+'</div>':'';
       const bub=m.text?('<div class="bub">'+cpEsc(m.text)+'</div>'):'';
-      /* 다시 묻기 — 같은 질문과 사진을 입력창에 그대로 되돌려 놓는다. 조금만
-         고쳐 다시 묻고 싶을 때 링크와 사진을 처음부터 다시 올리지 않아도 된다.
-         사진이 저장 한도 때문에 빠진 대화는 글만 되돌린다. (2026-09-13) */
+      /* 말풍선 아래 아이콘 줄 (2026-09-14) — 재전송 · 수정 · 복사.
+         재전송: 같은 질문과 사진을 그대로 한 번 더 보낸다.
+         수정  : 입력창으로 되돌려 고쳐서 다시 묻는다(예전 '다시 묻기').
+         복사  : 질문 문장만 클립보드로.
+         사진이 저장 한도 때문에 빠진 대화는 글만 되돌린다(2026-09-13). */
       const again=(m.text||(m.images&&m.images.length))
-        ?'<button type="button" class="cpAgain" data-again="'+idx+'">다시 묻기</button>':'';
+        ?'<div class="cpMeActs">'+
+          '<button type="button" class="cpMeAct" data-resend="'+idx+'" title="재전송" aria-label="같은 질문 다시 보내기">'+CP_IC_RESEND+'</button>'+
+          '<button type="button" class="cpMeAct" data-again="'+idx+'" title="수정" aria-label="질문 고쳐서 다시 묻기">'+CP_IC_EDIT+'</button>'+
+          (m.text?'<button type="button" class="cpMeAct" data-copy="'+idx+'" title="복사" aria-label="질문 복사">'+CP_IC_COPY+'</button>':'')+
+        '</div>':'';
       const dropped=m.imagesDropped&&!(m.images&&m.images.length)
         ?'<div class="cpDropped">첨부 사진은 저장 한도로 남기지 못했습니다.</div>':'';
       return '<div class="msg me">'+imgs+dropped+bub+again+'</div>';
@@ -802,7 +872,28 @@ document.addEventListener('click', e=>{
   /* 예시 질문 칩 — 빈 화면에서 바로 묻는다 */
   const ask=e.target.closest('#cpEmpty [data-ask]');
   if(ask){ cpAsk(ask.dataset.ask, cpKeyFor(ask.dataset.ask)); return; }
-  /* 다시 묻기 — 질문과 사진을 입력창으로 되돌린다 */
+  /* 재전송 — 같은 질문과 사진을 그대로 한 번 더 보낸다 (2026-09-14).
+     답이 중간에 끊기거나 마음에 안 들 때, 같은 문장을 다시 치게 하지 않는다. */
+  const resend=e.target.closest('#cpThread [data-resend]');
+  if(resend){
+    if(cpActiveRun)return;                 /* 답이 도는 중에는 겹쳐 보내지 않는다 */
+    const c=cpActiveConvo(); if(!c)return;
+    const m=c.messages[Number(resend.dataset.resend)]; if(!m)return;
+    cpAsk(m.text||'', cpKeyFor(m.text||''), {images:(m.images||[]).slice()});
+    return;
+  }
+  /* 복사 — 질문 문장만. 성공·실패를 버튼이 스스로 말한다(조용히 실패하지 않는다). */
+  const copy=e.target.closest('#cpThread [data-copy]');
+  if(copy){
+    const c=cpActiveConvo(); if(!c)return;
+    const m=c.messages[Number(copy.dataset.copy)]; if(!m||!m.text)return;
+    cpCopyText(m.text).then(ok=>{
+      if(ok)cpFlashBtn(copy);
+      cpToast(ok?'질문을 복사했습니다.':'복사하지 못했습니다.');
+    });
+    return;
+  }
+  /* 수정 — 질문과 사진을 입력창으로 되돌린다 */
   const again=e.target.closest('#cpThread [data-again]');
   if(again){
     const c=cpActiveConvo(); if(!c)return;
@@ -847,6 +938,22 @@ document.addEventListener('click', e=>{
     }
     return;
   }
+  /* 옵션 서랍 열고 닫기 */
+  const optsBtn=e.target.closest('#cpThread [data-vf-opts]');
+  if(optsBtn){ const m=cpAIMessageFor(optsBtn); if(m&&m.fit){ m.fit.optsOpen=!m.fit.optsOpen; cpRenderThread(); } return; }
+  /* 옵션 하나 켜고 끄기. 맞서는 짝(열기/닫기)은 하나만 남는다 —
+     둘 다 보내면 프롬프트에 모순된 지시가 실린다(서버도 그때는 둘 다 버린다). */
+  const opt=e.target.closest('#cpThread [data-vf-opt]');
+  if(opt){
+    const m=cpAIMessageFor(opt); if(!m||!m.fit)return;
+    const key=opt.dataset.vfOpt, spec=VF_OPTIONS.find(o=>o.key===key); if(!spec)return;
+    const on=cpFitOptionsOf(m.fit);
+    const next=!on[key];
+    if(next&&spec.pair)VF_OPTIONS.forEach(o=>{ if(o.pair===spec.pair)on[o.key]=false });
+    on[key]=next;
+    cpRenderThread();
+    return;
+  }
   const remove=e.target.closest('#cpThread [data-vf-remove]');
   if(remove){
     const m=cpAIMessageFor(remove), index=Number(remove.dataset.vfRemove);
@@ -860,6 +967,11 @@ document.addEventListener('click', e=>{
   if(pick){ const input=pick.closest('.cpFit').querySelector('[data-vf-file="'+pick.dataset.vfPick+'"]'); if(input)input.click(); return; }
   const generate=e.target.closest('#cpThread [data-vf-generate]');
   if(generate){ cpGenerateFit(generate); return; }
+  /* 리포트 저장(PNG) · 공유 (2026-09-14) */
+  const rpSave=e.target.closest('#cpThread [data-rp-save]');
+  if(rpSave){ cpReportSave(rpSave); return; }
+  const rpShare=e.target.closest('#cpThread [data-rp-share]');
+  if(rpShare){ cpReportShare(rpShare); return; }
   /* 탭 리포트(구조안 02) — 서버 왕복 없이 그 카드 안에서만 전환한다. */
   const tb=e.target.closest('#cpThread [data-tab]');
   if(tb){
@@ -871,6 +983,16 @@ document.addEventListener('click', e=>{
   }
 });
 document.addEventListener('change',async e=>{
+  const cat=e.target.closest('#cpThread [data-vf-cat]');
+  if(cat){
+    const m=cpAIMessageFor(cat); if(!m||!m.fit)return;
+    const item=cpFitItems(m.fit)[Number(cat.dataset.vfCat)]; if(!item)return;
+    /* 사용자가 직접 고른 축은 자동 분류가 아니다 — auto 를 내려 두어야
+       생성할 때 '자동 분류' 대신 고른 이름이 프롬프트에 실린다. */
+    if(cat.value===VF_AUTO){ item.auto=true; }
+    else if(VF_CATEGORIES.includes(cat.value)){ item.category=cat.value; item.auto=false; }
+    return;
+  }
   const model=e.target.closest('#cpThread [data-vf-model]');
   if(model){ const m=cpAIMessageFor(model); if(m&&m.fit)m.fit.model=model.value; return; }
   const file=e.target.closest('#cpThread [data-vf-file]');
@@ -893,12 +1015,12 @@ async function cpGenerateFitMessage(m){
   if(m.fit._sort){ try{ await m.fit._sort }catch(e){ /* 분류 실패는 넘어간다 */ } }
   if(!m.fit||m.fit.loading)return;
   const items=cpFitItems(m.fit).filter(item=>item.image)
-    .map(item=>({image:item.image,category:item.auto?'자동 분류':item.category}));
+    .map(item=>({image:item.image,category:item.auto?VF_AUTO:item.category}));
   if(!items.length){ m.fit.status='아이템 사진이 하나 이상 필요합니다.'; m.fit.stateKind='error'; cpRenderThread(); return; }
   m.fit.loading=true; m.fit.status=''; m.fit.stateKind='loading'; cpRenderThread();
   try{
     const res=await fetch(API_BASE+'/v1/virtual-fitting',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({items,model_id:m.fit.model})});
+      body:JSON.stringify({items,model_id:m.fit.model,options:cpFitOptionsOf(m.fit)})});
     const raw=await res.text();
     let data;
     try{ data=JSON.parse(raw); }
@@ -935,4 +1057,102 @@ async function cpSendLexiconRequest(btn){
     btn.textContent='요청 실패 — 잠시 후 다시 시도해 주세요';
     btn.disabled=false;
   }
+}
+
+/* ══════════════════════════════════════════════════════
+   2026-09-14 추가 — 복사 · 알림 한 줄 · 리포트 저장/공유
+   ══════════════════════════════════════════════════════ */
+
+/* 클립보드. 보안 컨텍스트가 아니면(예: http 로 연 로컬 화면) Clipboard API 가
+   없으므로 옛 방식으로 한 번 더 시도한다. 성공 여부를 그대로 돌려준다 —
+   부르는 쪽이 "복사했습니다" 를 거짓으로 말하지 않게. */
+async function cpCopyText(text){
+  const value=String(text||'');
+  if(!value)return false;
+  try{
+    if(navigator.clipboard&&window.isSecureContext){ await navigator.clipboard.writeText(value); return true }
+  }catch(_e){ /* 아래 옛 방식으로 */ }
+  try{
+    const ta=document.createElement('textarea');
+    ta.value=value; ta.setAttribute('readonly','');
+    ta.style.cssText='position:fixed;top:-1000px;opacity:0';
+    document.body.appendChild(ta); ta.select();
+    const ok=document.execCommand('copy'); ta.remove(); return ok;
+  }catch(_e){ return false }
+}
+/* 눌린 버튼이 스스로 "됐다" 고 말한다 — 화면을 다시 그리지 않는다(누른 자리가
+   사라지면 무엇이 일어났는지 알 수 없다). */
+function cpFlashBtn(btn){
+  if(!btn)return;
+  btn.classList.add('done');
+  setTimeout(()=>btn.classList.remove('done'),1300);
+}
+let cpToastT=0;
+function cpToast(text){
+  const ov=$('#cpOverlay'); if(!ov)return;
+  let box=$('#cpToast');
+  if(!box){ box=document.createElement('div'); box.id='cpToast'; box.className='cpToast'; ov.appendChild(box); }
+  box.textContent=String(text||'');
+  box.classList.add('on');
+  clearTimeout(cpToastT);
+  cpToastT=setTimeout(()=>box.classList.remove('on'),2200);
+}
+/* 답변 본문(서버가 보낸 HTML)에서 글만 꺼낸다 — 공유는 태그가 아니라 말이다. */
+function cpPlainText(html){
+  const box=document.createElement('div');
+  box.innerHTML=String(html||'');
+  return (box.textContent||'').replace(/\n{3,}/g,'\n\n').trim();
+}
+/* 리포트 카드를 그림으로. html2canvas 는 누를 때 처음 불러온다 —
+   쓰지 않는 사용자에게까지 번들을 지우지 않기 위해서다. */
+async function cpReportCanvas(card){
+  const mod=await import('html2canvas');
+  const html2canvas=mod.default||mod;
+  return html2canvas(card,{
+    backgroundColor:'#ffffff',
+    scale:Math.min(2,window.devicePixelRatio||1),
+    useCORS:true,
+    /* 저장·공유 버튼 자체는 그림에 넣지 않는다 */
+    ignoreElements:el=>!!(el&&el.classList&&el.classList.contains('rpTools')),
+  });
+}
+async function cpReportSave(btn){
+  const card=btn.closest('.skillReport'); if(!card||btn.disabled)return;
+  btn.disabled=true;
+  try{
+    const canvas=await cpReportCanvas(card);
+    const a=document.createElement('a');
+    a.href=canvas.toDataURL('image/png');
+    a.download='feedit-report-'+Date.now().toString(36)+'.png';
+    document.body.appendChild(a); a.click(); a.remove();
+    cpFlashBtn(btn); cpToast('리포트를 이미지로 저장했습니다.');
+  }catch(_e){ cpToast('리포트 이미지를 만들지 못했습니다.'); }
+  btn.disabled=false;
+}
+/* 공유 — 기기가 지원하면 이미지째 넘기고(모바일 공유 시트), 없으면 답변 글과
+   주소를 클립보드에 넣는다. 조용히 아무 일도 안 일어나는 경우를 만들지 않는다. */
+async function cpReportShare(btn){
+  const card=btn.closest('.skillReport');
+  const m=cpAIMessageFor(btn);
+  const text=cpPlainText(m&&m.html);
+  const url=location.href;
+  try{
+    if(card&&navigator.share&&navigator.canShare){
+      const canvas=await cpReportCanvas(card);
+      const blob=await new Promise(done=>canvas.toBlob(done,'image/png'));
+      if(blob){
+        const file=new File([blob],'feedit-report.png',{type:'image/png'});
+        if(navigator.canShare({files:[file]})){
+          await navigator.share({files:[file],title:'FEEDiT 리포트',text});
+          return;
+        }
+      }
+    }
+    if(navigator.share){ await navigator.share({title:'FEEDiT 리포트',text,url}); return; }
+  }catch(err){
+    if(err&&err.name==='AbortError')return;      /* 사용자가 공유 시트를 닫았다 */
+  }
+  const ok=await cpCopyText((text?text+'\n\n':'')+url);
+  if(ok)cpFlashBtn(btn);
+  cpToast(ok?'리포트 내용을 클립보드에 복사했습니다.':'공유하지 못했습니다.');
 }

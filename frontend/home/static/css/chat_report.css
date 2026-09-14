@@ -313,3 +313,20 @@
   .skillReport--airy .skillCanvas{gap:12px;padding:16px}
   .skillReport--airy .skillModule{padding:17px}
 }
+
+/* ── 리포트 저장 · 공유 (2026-09-14) ─────────────────────────
+   머리줄 오른쪽 끝, 'NN SIGNALS' 옆. 평소에는 조용히 있다가 카드에 손을 올리면
+   또렷해진다 — 리포트를 읽는 동안 버튼이 먼저 눈에 띄면 안 된다. */
+.skillReportHead em{margin-left:auto}
+.rpTools{display:flex;align-items:center;gap:2px;margin-left:10px}
+.rpTool{
+  width:26px;height:26px;display:grid;place-items:center;border-radius:7px;
+  color:var(--pink-2);opacity:.6;transition:opacity .18s,color .18s,background .18s;
+}
+.rpTool svg{width:15px;height:15px}
+.skillReport:hover .rpTool{opacity:1}
+.rpTool:hover{color:var(--coral);background:rgba(255,107,74,.1)}
+.rpTool:disabled{opacity:.35;cursor:wait}
+.rpTool.done{color:var(--coral);background:rgba(255,107,74,.14);opacity:1}
+.skillReport--contrast .rpTool{color:#bbb}
+.skillReport--contrast .rpTool:hover{color:#fff;background:rgba(255,255,255,.12)}

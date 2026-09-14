@@ -489,7 +489,7 @@ class Handler(BaseHTTPRequestHandler):
             except Exception:  # noqa: BLE001
                 # 분류는 편의 기능이다. 실패해도 화면이 멈추면 안 된다 —
                 # 전부 '자동 분류' 로 돌려주면 예전과 같은 순서 배치가 된다.
-                cats = ["자동 분류"] * len(images[:6])
+                cats = [vton.AUTO] * len(images[:vton.MAX_ITEMS])
             return self._json(200, {"ok": True, "categories": cats})
         if path == "/v1/virtual-fitting":
             req = self._read_json()
@@ -501,6 +501,8 @@ class Handler(BaseHTTPRequestHandler):
                     image_data_url=str(req.get("image") or ""),
                     model_id=str(req.get("model_id") or "woman"),
                     category=str(req.get("category") or "상의"),
+                    # 착장 옵션(아우터 레이어드·열림/닫힘). 없으면 예전과 같다.
+                    options=req.get("options") if isinstance(req.get("options"), dict) else None,
                 )
             except (ValueError, RuntimeError) as exc:
                 return self._json(400, {"ok": False, "error": type(exc).__name__,

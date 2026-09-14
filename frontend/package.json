@@ -7,13 +7,14 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node --experimental-loader=./tests/fake_pg/loader.mjs tests/api.test.mjs && node tests/chart_live.test.mjs && node tests/trend_wiring.test.mjs && node tests/trend_empty.test.mjs && node tests/search_bar.test.mjs && node tests/search_live.test.mjs && node tests/search_sequence.test.mjs && node tests/search_dictionary.test.mjs && node tests/error_messages.test.mjs && node tests/router_signup.test.mjs"
+    "test": "node --experimental-loader=./tests/fake_pg/loader.mjs tests/api.test.mjs && node tests/chart_live.test.mjs && node tests/trend_wiring.test.mjs && node tests/trend_empty.test.mjs && node tests/search_bar.test.mjs && node tests/search_live.test.mjs && node tests/search_sequence.test.mjs && node tests/search_dictionary.test.mjs && node tests/error_messages.test.mjs && node tests/router_signup.test.mjs && node tests/chat_popup_ui.test.mjs"
   },
   "devDependencies": {
-    "vite": "^7.1.3",
-    "jsdom": "^25.0.0"
+    "jsdom": "^25.0.0",
+    "vite": "^7.1.3"
   },
   "dependencies": {
+    "html2canvas": "^1.4.1",
     "pg": "^8.13.1"
   }
 }
