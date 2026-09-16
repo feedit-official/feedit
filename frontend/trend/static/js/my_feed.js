@@ -1,5 +1,5 @@
 import { $, $$, HAS_A, aAnimate, aStagger } from '../../../core/static/js/dom.js';
-import { IMG } from '../../../home/static/js/chat.js';
+import { IMG, STYLES } from '../../../home/static/js/chat.js';
 
 /* ── 금주의 리포트 데이터 ──
    실제로 셀 수 없는 것(판단 적중률 · 아낀 돈 · 재고 변화 · 내 결정이 옳았는지)은
@@ -9,9 +9,11 @@ export const WK={
   range:'2026.08 · W2 · 8/13 – 8/19',
   updateDay:'금요일',                 /* 지표는 매주 이 요일에 갱신된다 */
   /* 이번 주 가장 많이 검색·투표한 스타일 — 리포트 전체가 이 스타일을 중심으로 짜인다 */
-  topStyle:'ballet',
+  topStyle:'block',
   topSearchN:14, topVoteN:5,
-  search:34, searchD:11, fav:5, favTotal:23, vote:12, voteD:4, read:18, readMin:4.2,
+  search:34, searchD:11, fav:5, favTotal:23, vote:12, voteD:4,
+  /* 트렌드 분석 — 이번 주 챗봇 사용 시간(분) 합계와 1회 평균(분) */
+  chatMin:76, chatAvgMin:4.2,
   days:[6,11,9,14,21,17,8], today:'수', bestDay:'금', peak:'21시 – 23시',
   taste:[['발레코어',42,6],['아메카지',28,-3],['워크웨어',18,2],['고프코어',12,5]],
   newTaste:'고프코어',
@@ -26,28 +28,64 @@ export const WK={
 
 /* ── 내 피드 · 살!말? 취향 매칭 큐레이션 ────────────────────────
    살!말? 페이지의 VOTES는 salmalBoot() 함수 안에 갇힌 지역 변수라 다른
-   곳에서 참조할 수 없다 — 여기서는 그 "내 취향" 탭(취향 매칭도 순
-   정렬) 기준 상위 4개와 정확히 같은 값을 옮겨 적었다. 이렇게 해야 내
-   피드에서 본 카드를 살!말?에서 다시 검색할 필요 없이 그대로 찾을 수
-   있다. VOTES 쪽 데이터가 바뀌면 이 배열도 같이 맞춰야 한다. */
-export const FEED_SM_PICKS=[
-  {t:'삼바 OG', b:'ADIDAS', p:139000, votes:2210, hours:3, a:88, tone:['#2f2b2b','#726358'],
-   seg:94,itemTag:'블록코어 · 스니커',
-   title:'삼바 OG',
-   tags:['#블록코어','#스니커','#스트릿']},
-  {t:'스웨이드 블루종 (버건디)', b:'ANDERSSON BELL', p:329000, votes:842, hours:6, a:81, tone:['#3a332f','#6b5c52'],
-   seg:90,itemTag:'워크웨어 · 아우터',
-   title:'스웨이드 블루종 (버건디)',
-   tags:['#워크웨어','#아우터','#올드머니']},
-  {t:'스퀘어 토 로퍼', b:'RANDOM IDENTITIES', p:268000, votes:1104, hours:24, a:73, tone:['#2b2b2b','#585858'],
-   seg:89,itemTag:'아메카지 · 로퍼',
-   title:'스퀘어 토 로퍼',
-   tags:['#아메카지','#로퍼','#캐주얼']},
-  {t:'캐시미어 머플러', b:'LE 17 SEPTEMBRE', p:98000, votes:602, hours:5, a:71, tone:['#2e2a2c','#5c5459'],
-   seg:87,itemTag:'워크웨어 · 아메카지',
-   title:'캐시미어 머플러',
-   tags:['#워크웨어','#아메카지','#머플러']}
+   곳에서 참조할 수 없다 — 진행 중(마감 전)인 카드의 값을 여기에 옮겨 적었다.
+   VOTES 쪽 데이터가 바뀌면 이 배열도 같이 맞춰야 한다.
+
+   ★ 2026-09-16 · 고정 4장(블록코어 · 아메카지 · 워크웨어 태그)을 걷어냈다.
+     카드마다 어울리는 스타일(st, 스타일 페이지 10종 id)을 달아 두고,
+     사용자가 고른 즐겨입는 스타일(최대 3개)에 맞는 카드만 골라 4장을 채운다. */
+const FEED_SM_POOL=[
+  {t:'삼바 OG',                  b:'ADIDAS',            p:139000, votes:2210, hours:3,  a:88, tone:['#2f2b2b','#726358'], st:['block','street'],  cat:'스니커'},
+  {t:'셀비지 와이드 데님',        b:'MUSINSA STANDARD',  p:89000,  votes:1930, hours:48, a:64, tone:['#2f3336','#5a6166'], st:['ameka','street'],  cat:'데님'},
+  {t:'스퀘어 토 로퍼',            b:'RANDOM IDENTITIES', p:268000, votes:1104, hours:24, a:73, tone:['#2b2b2b','#585858'], st:['classic','ameka'], cat:'로퍼'},
+  {t:'스웨이드 블루종 (버건디)',  b:'ANDERSSON BELL',    p:329000, votes:842,  hours:6,  a:81, tone:['#3a332f','#6b5c52'], st:['classic','bike'],  cat:'아우터'},
+  {t:'니트 집업 카디건',          b:'INSILENCE',         p:119000, votes:764,  hours:8,  a:69, tone:['#302d2b','#6e6660'], st:['norm','classic'],  cat:'니트'},
+  {t:'베이직 옥스포드 셔츠',      b:'MUSINSA STANDARD',  p:39900,  votes:733,  hours:14, a:62, tone:['#302f2c','#6a655c'], st:['norm','ameka'],    cat:'셔츠'},
+  {t:'캐시미어 머플러',           b:'LE 17 SEPTEMBRE',   p:98000,  votes:602,  hours:5,  a:71, tone:['#2e2a2c','#5c5459'], st:['classic','norm'],  cat:'머플러'},
+  {t:'원턱 와이드 슬랙스',        b:'UNIFORM BRIDGE',    p:79000,  votes:521,  hours:9,  a:66, tone:['#2b2c2d','#585d60'], st:['norm','classic'],  cat:'슬랙스'},
+  {t:'퀼팅 다운 베스트',          b:'NAUTICA',           p:149000, votes:512,  hours:11, a:47, tone:['#33302c','#7a7267'], st:['gorp','ath'],      cat:'아우터'},
+  {t:'오버핏 울 블레이저',        b:'AMOMENTO',          p:298000, votes:410,  hours:20, a:55, tone:['#332f2b','#6f6255'], st:['classic','grunge'],cat:'아우터'},
+  {t:'와이드 코듀로이 팬츠',      b:'SOLEW',             p:139000, votes:391,  hours:15, a:58, tone:['#332e2a','#75695c'], st:['ameka','grunge'],  cat:'팬츠'},
+  {t:'레더 크로스 백',            b:'MATIN KIM',         p:168000, votes:305,  hours:30, a:44, tone:['#2c2c2e','#5f5f63'], st:['bike','y2k'],      cat:'가방'},
+  {t:'워시드 후드 집업',          b:'THISISNEVERTHAT',   p:129000, votes:288,  hours:40, a:49, tone:['#2b2d2e','#565b5d'], st:['street','ath'],    cat:'후디'},
+  {t:'울 발마칸 코트',            b:'SOLEW',             p:398000, votes:226,  hours:40, a:38, tone:['#37312c','#8c7f6e'], st:['classic'],         cat:'코트'},
+  {t:'헤비 코튼 크루넥',          b:'COS',               p:59000,  votes:190,  hours:36, a:35, tone:['#2c2b29','#6b665e'], st:['norm','ath'],      cat:'티셔츠'},
+  {t:'레이어드 체인 목걸이',      b:'CENTIME',           p:68000,  votes:167,  hours:45, a:41, tone:['#2d2d2f','#5e6165'], st:['y2k','grunge'],    cat:'액세서리'}
 ];
+/* 고른 스타일 순서대로 한 장씩 돌아가며 뽑는다 — 한 스타일이 4장을 독차지하지 않게.
+   각 스타일 안에서는 투표가 많은 카드부터. 맞는 카드가 모자라면 인기순으로 채우되
+   그 카드에는 '일치' 표시를 붙이지 않는다(맞지 않는 것을 맞는다고 쓰지 않는다). */
+export function feedSmPicks(styleIds){
+  const ids=STYLES.map(s=>s.id).filter(id=>styleIds.has(id)).slice(0,3);
+  const nameOf=id=>(STYLES.find(s=>s.id===id)||{}).n||id;
+  const byVotes=FEED_SM_POOL.slice().sort((x,y)=>y.votes-x.votes);
+  const used=new Set(), out=[];
+  for(let round=0; out.length<4 && round<FEED_SM_POOL.length; round++){
+    let added=false;
+    for(const id of ids){
+      if(out.length>=4)break;
+      const c=byVotes.find(o=>!used.has(o)&&o.st.indexOf(id)>=0);
+      if(c){ used.add(c); out.push({o:c,hit:c.st.filter(x=>ids.indexOf(x)>=0)}); added=true }
+    }
+    if(!added)break;
+  }
+  for(const o of byVotes){ if(out.length>=4)break; if(!used.has(o)){ used.add(o); out.push({o,hit:[]}) } }
+  return out.map((x,i)=>{
+    const o=x.o, main=x.hit[0]||o.st[0];
+    const tags=[
+      {tx:'#'+nameOf(main), hit:!!x.hit.length},
+      {tx:'#'+o.cat, hit:!!x.hit.length},
+      {tx:'#'+nameOf(x.hit[1]||o.st.find(s=>s!==main)||o.b), hit:x.hit.length>1}
+    ];
+    return Object.assign({},o,{
+      title:o.t,
+      seg:x.hit.length?Math.max(70,94-i*2-(x.hit.length>1?0:3)):62,
+      itemTag:nameOf(main)+' · '+o.cat,
+      matched:!!x.hit.length,
+      tags
+    });
+  });
+}
 
 /* ── 내 피드 추천 풀 ──
    태그는 필터 칩과 같은 말을 쓴다. risk 는 0(무난) ~ 100(실험). */

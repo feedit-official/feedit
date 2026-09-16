@@ -107,6 +107,18 @@ export const FS_COLS=[
 const FS_ATTR=['소재','색','디테일','TPO'];
 /* 구체적인 것부터 — 지표를 물을 때 무엇을 대표로 삼을지의 순서다 */
 export const FS_ORDER=['아이템명','브랜드','종류','스타일'].concat(FS_ATTR);
+/* 탭마다 걸 수 있는 축 — null 이면 전부.
+   ★ 수명주기는 사전에 있는 키워드(스타일 · 종류 · 브랜드)까지만 받는다.
+     아이템명(개별 상품)과 속성(소재 · 색 · 디테일 · TPO)은 유행 곡선이 붙는 단위가 아니다. */
+const FS_TAB_AXES={life:['스타일','종류','브랜드']};
+export function fsAxesFor(id){ return FS_TAB_AXES[id]||null }
+export function fsAxOk(ax){ const a=fsAxesFor(FS.id); return !a||a.indexOf(ax)>=0 }
+/* 탭을 옮겼을 때 그 탭에서 못 쓰는 조건은 뗀다 — 보이지 않는 조건이 결과에 남으면 안 된다 */
+export function fsDropDisallowed(){
+  let n=0;
+  for(const ax of Object.keys(FS.pick)){ if(!fsAxOk(ax)){ n+=FS.pick[ax].length; delete FS.pick[ax] } }
+  return n;
+}
 /* 서버 사전(facet) → 화면 축 */
 const FS_FACET_MAP={'아이템':'종류'};
 const fsAxisOf=f=>FS_FACET_MAP[f]||f;
@@ -179,6 +191,7 @@ export function fsMatch(q,limit){
   const al=FALIAS[q.trim()]||FALIAS[n]; const an=al?fsNorm(al):null;
   const hit=[];
   FIDX.forEach(o=>{
+    if(!fsAxOk(o.f))return;           /* 이 탭에서 못 거는 축은 후보에도 안 띄운다 */
     let i=o.key.indexOf(n);
     if(i<0&&an)i=o.key.indexOf(fsNorm(an));
     if(i<0)return;
@@ -267,9 +280,11 @@ function fsPaintSug(){
   if(!q){ box.hidden=true; box.innerHTML=''; FS.sug=[]; FS.cur=-1; return }
   FS.sug=fsMatch(q,8); FS.cur=FS.sug.length?0:-1;
   if(!FS.sug.length){
-    const near=FIDX.filter(o=>o.key[0]===fsNorm(q)[0]).slice(0,3);
-    box.innerHTML='<div class="none">패션 어휘로 인식하지 못했습니다.<br>'+
-      '이 검색은 소재 · 아이템 · 스타일 · 브랜드만 다룹니다.'+
+    const near=FIDX.filter(o=>fsAxOk(o.f)&&o.key[0]===fsNorm(q)[0]).slice(0,3);
+    const axes=fsAxesFor(FS.id);
+    box.innerHTML='<div class="none">'+(axes?'이 탭에서 찾을 수 있는 키워드가 아닙니다.':'패션 어휘로 인식하지 못했습니다.')+'<br>'+
+      (axes?'수명주기는 사전에 있는 '+axes.join(' · ')+'만 다룹니다.<br>아이템명은 검색할 수 없습니다.'
+           :'이 검색은 소재 · 아이템 · 스타일 · 브랜드만 다룹니다.')+
       (near.length?'<br><br>혹시 <b>'+near.map(o=>fsEsc(o.label)).join('</b>, <b>')+'</b> 인가요?':'')+'</div>';
     box.hidden=false; return;
   }
@@ -372,7 +387,7 @@ function fsOptsFor(ax){
 let fsSeq=0, fsFacetT=null;
 function fsFacetURL(){
   const p=new URLSearchParams();
-  FS_COLS.forEach(c=>fsPickedOf(c.ax).forEach(v=>p.append(c.param,v)));
+  FS_COLS.forEach(c=>{ if(fsAxOk(c.ax))fsPickedOf(c.ax).forEach(v=>p.append(c.param,v)) });
   p.set('limit',String(FS_POP_CAP));
   return '/api/facets?'+p.toString();
 }
@@ -489,8 +504,16 @@ function fsColHTML(col){
 }
 
 function fsPaintPop(){
+  /* 못 쓰는 축의 칸은 접는다 — 남은 칸이 가로를 나눠 갖는다 */
+  const cols=$('.fsCols'); let shown=0;
   FS_COLS.forEach((c,lv)=>{
-    const host=$('#fsC'+lv); if(!host)return;
+    const col=$('.fsCol[data-lv="'+lv+'"]'), ok=fsAxOk(c.ax);
+    if(col)col.hidden=!ok;
+    if(ok)shown++;
+  });
+  if(cols)cols.style.setProperty('--fsN',shown);
+  FS_COLS.forEach((c,lv)=>{
+    const host=$('#fsC'+lv); if(!host||!fsAxOk(c.ax))return;
     host.innerHTML=fsColHTML(c);
     host.classList.toggle('isLoading',!!FS.loading);
   });
@@ -539,7 +562,7 @@ function fsDrop(key){
   const i=String(key).indexOf('|'); if(i<0)return;
   fsToggle(String(key).slice(0,i),String(key).slice(i+1));
 }
-function fsChipsPaint(){
+export function fsChipsPaint(){
   const box=$('#fsChips'); if(!box)return;
   const chips=fsChipList();
   if(!chips.length){ box.hidden=true; box.innerHTML=''; return }

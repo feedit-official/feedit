@@ -6,15 +6,19 @@ import { SV, svWon } from '../../../trend/static/js/discount_resale.js';
 import { goView } from '../../../app_shell/static/js/router.js';
 import { rkLevelOf, rkPaintAll, rkPaintAv, xpPaint } from './rank.js';
 import { trRender } from '../../../trend/static/js/dispatch.js';
+import { JOB_REVIEW_DEMO, jobFieldApply, jobFieldBind, jobFieldCheck, jobFieldReset, jobReviewBind, jobReviewRender } from './job.js';
 
 /* 내 계정 — 운영자라 최고 등급 고정 */
 export const ME={name:'혁진',mail:'hyeokjin@feedit.co.kr',initial:'혁',xp:9400,   /* 누적 경험치. rank 는 여기서 계산된다 */
           height:'',weight:'',   /* 체형 — 가입·정보수정에서 받는다 */
-          plan:'ADMIN · 서울',saved:128,votes:42,hit:94,
+          plan:'ADMIN · 서울',saved:128,
+          role:'admin',      /* 운영자 계정 — 직업 배지 대신 ADMIN 을 유지한다. 새로 가입하면 'user' */
+          job:'',            /* 승인된 직업(job.js JOBS id). 비어 있거나 승인 전이면 Basic 으로 보인다 */
+          major:'',          /* Student 전공 */votes:42,hit:94,
           bio:'',            /* 비어 있으면 예시 문구가 흐리게 대신 선다 */
           birth:'',          /* 가입·정보수정에서 채운다 */
           ava:0,             /* 프로필 아이콘 색 (AVA 인덱스) */
-          styles:new Set(['ballet','block','ameka'])};  /* 즐겨입는 스타일 (가입 시 선택) */
+          styles:new Set(['block','ameka','street'])};  /* 즐겨입는 스타일 (가입 시 선택) */
 /* rank 는 저장하지 않는다 — 경험치에서 항상 다시 센다.
    이렇게 두면 XP 만 올려도 링·문구·바가 한꺼번에 따라온다. */
 Object.defineProperty(ME,'rank',{get(){ return rkLevelOf(ME.xp) }, enumerable:true});
@@ -131,6 +135,8 @@ function authPaint(){
       'stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
       '<path d="M2.5 4.5L6 8l3.5-3.5"/></svg>';
     avaPaint();
+    const mj = $('#menuJobReview');
+    if(mj) mj.hidden = !(ME.role === 'admin' || JOB_REVIEW_DEMO);
   }else{
     b.className = 'pill';
     b.dataset.v = 'login';
@@ -178,7 +184,8 @@ function acctToast(msg){
   acctToastT = setTimeout(() => t.classList.remove('on'), 2200);
 }
 
-/* 스타일 칩 — 가입·마이페이지가 같은 14종을 쓴다 */
+/* 스타일 칩 — 가입·마이페이지가 스타일 페이지와 같은 10종(STYLES)을 쓴다 */
+const STYLE_MAX = 3;
 function acctChips(host, sel){
   if(!host) return;
   host.innerHTML = STYLES.map(s =>
@@ -188,9 +195,17 @@ function acctChips(host, sel){
     const b = e.target.closest('[data-style-pick]');
     if(!b) return;
     const id = b.dataset.stylePick;
+    /* 가입 팝업과 같은 규칙 — 즐겨입는 스타일은 최대 3개 */
+    if(!sel.has(id) && sel.size >= STYLE_MAX){
+      acctToast('즐겨입는 스타일은 ' + STYLE_MAX + '개까지 고를 수 있어요. 하나를 먼저 빼 주세요.');
+      return;
+    }
     sel.has(id) ? sel.delete(id) : sel.add(id);
     b.classList.toggle('on', sel.has(id));
-    if(host.id === 'styleWrap') myRender();   /* 마이페이지는 고르는 즉시 추천이 바뀐다 */
+    if(host.id === 'styleWrap'){
+      myRender();   /* 마이페이지는 고르는 즉시 추천이 바뀐다 */
+      try{ document.dispatchEvent(new CustomEvent('feedit:styles')) }catch(e){}
+    }
   };
 }
 
@@ -217,7 +232,7 @@ function styleSelectBind(){
         ME.styles.delete(id); b.classList.remove('on');
         styleSelOrder = styleSelOrder.filter(x => x !== id);
       }else{
-        if(ME.styles.size >= 3){
+        if(ME.styles.size >= STYLE_MAX){
           const last = styleSelOrder.pop();   /* 가장 최근 선택을 밀어낸다 */
           if(last){
             ME.styles.delete(last);
@@ -349,6 +364,7 @@ export function resetSignupForm(){
   if(idMsg){ idMsg.textContent = ''; idMsg.className = 'fieldMsg'; }
   if(pwMsg){ pwMsg.textContent = ''; pwMsg.className = 'fieldMsg'; }
   if(bodyMsg){ bodyMsg.textContent = ''; bodyMsg.className = 'fieldMsg'; }
+  jobFieldReset('su', null);   /* form.reset() 은 파일 버튼 글자까지는 못 되돌린다 */
 }
 
 export function acctBoot(){
@@ -366,6 +382,11 @@ export function acctBoot(){
   });
   const gl = $('#googleLoginBtn');
   if(gl) gl.addEventListener('click', authLogin);
+
+  /* ── 직업 선택 · 서류 첨부 (가입 · 회원정보 수정 공통) ── */
+  jobFieldBind('su');
+  jobFieldBind('edit');
+  jobReviewBind(ok => acctToast(ok ? '승인했어요. 배지가 바로 반영됩니다.' : '반려했어요.'));
 
   /* ── 회원가입 ── */
   const sf = $('#signupForm');
@@ -394,6 +415,7 @@ export function acctBoot(){
         if(b) msg = b;
       }
     }
+    if(!msg) msg = jobFieldCheck('su', null);
     if(msg){ err.textContent = msg; err.style.display = 'block'; return; }
     err.style.display = 'none';
     ME.name = nick; ME.initial = nick[0];
@@ -401,7 +423,11 @@ export function acctBoot(){
     ME.birth = $('#suBirth').value || ME.birth;
     ME.height = $('#suHeight').value || '';
     ME.weight = $('#suWeight').value || '';
+    /* 새 가입자는 운영자가 아니다 — 사이드바 직위도 ADMIN 대신 직업으로 선다 */
+    ME.role = 'user'; ME.job = ''; ME.major = '';
+    const req = jobFieldApply('su', ME);
     signupComplete();
+    if(req) setTimeout(() => acctToast(req.job + ' 인증 서류가 접수됐어요. 관리자 승인 후 배지가 달립니다.'), 400);
   });
   /* 구글로 계속하기 — 목업이라 실제 구글 인증은 없지만, 흐름은 그대로 흉내낸다.
      같은 회원가입 폼 위에서 아이디/비밀번호 입력만 막고 닉네임·생년월일·체형을 마저 받는다. */
@@ -496,6 +522,14 @@ if(suW) suW.addEventListener('input', bodyHint);
     $('#editHeight').value = ME.height || '';
     $('#editWeight').value = ME.weight || '';
     $('#editModalErr').style.display = 'none';
+    jobFieldReset('edit', ME);
+    /* 운영자 계정은 직업을 바꾸지 않는다 — 칸은 보이되 잠가 둔다 */
+    const ej = $('#editJob'), ejb = $('#editJobFileBtn'), ejm = $('#editJobMsg');
+    if(ej) ej.disabled = (ME.role === 'admin');
+    if(ME.role === 'admin'){
+      if(ejb) ejb.disabled = true;
+      if(ejm){ ejm.textContent = '운영자 계정은 직업 대신 ADMIN 으로 표시됩니다.'; ejm.className = 'fieldMsg'; }
+    }
     acctModal('editModal', true);
   });
   const ef = $('#editProfileForm');
@@ -509,11 +543,15 @@ if(suW) suW.addEventListener('input', bodyHint);
     else if(pw && pw.length < 8) msg = '새 비밀번호는 8자 이상이어야 합니다.';
     else if(pw !== pw2) msg = '새 비밀번호가 서로 다릅니다.';
     else msg = bodyCheck($('#editHeight').value, $('#editWeight').value) || '';
+    if(!msg && ME.role !== 'admin') msg = jobFieldCheck('edit', ME);
     if(msg){ err.textContent = msg; err.style.display = 'block'; return; }
     ME.name = nick; ME.initial = nick[0];
     ME.birth = $('#editBirth').value || ME.birth;
     ME.height = $('#editHeight').value || '';
     ME.weight = $('#editWeight').value || '';
+    /* 직업 — Basic 은 바로, 패션 직종은 관리자 승인 뒤에 바뀐다 */
+    const jreq = (ME.role !== 'admin') ? jobFieldApply('edit', ME) : null;
+    if(jreq) acctToast(jreq.job + ' 인증 서류가 접수됐어요. 관리자 승인 후 반영됩니다.');
     acctModal('editModal', false);
     myRender(); authPaint();
     if(typeof trRender === 'function' && document.body.dataset.view === 'trend') trRender('myfeed');
@@ -594,6 +632,8 @@ if(suW) suW.addEventListener('input', bodyHint);
   });
   const mm = $('#menuMypage');
   if(mm) mm.addEventListener('click', () => { acctMenu(false); goView('mypage') });
+  const mj = $('#menuJobReview');
+  if(mj) mj.addEventListener('click', () => { acctMenu(false); jobReviewRender(); acctModal('jobReviewModal', true) });
   const ml = $('#menuLogout');
   if(ml) ml.addEventListener('click', () => { acctMenu(false); authLogout() });
   document.addEventListener('click', e => {

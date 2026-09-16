@@ -321,7 +321,8 @@
   flex-shrink:0;padding:16px 24px 22px;border-top:1px solid var(--pink-3);
   display:flex;flex-direction:column;gap:10px;background:var(--paper);
 }
-.commentInputRow{display:flex;gap:8px;align-items:flex-end}
+/* 등록 버튼은 입력창 높이의 한가운데에 선다 (예전엔 아래에 붙어 있었다) */
+.commentInputRow{display:flex;gap:8px;align-items:center}
 .commentInputRow textarea{
   flex:1;resize:none;min-height:44px;max-height:100px;border-radius:14px;
   padding:11px 14px;font-family:inherit;font-size:13px;background:#fff;

@@ -18,11 +18,12 @@ export function stBuild(){
   const tile=s=>'<div class="stTile" data-style="'+s.id+'">'+
     '<img src="'+SIMG(s)+'" alt="'+s.n+'" loading="lazy">'+
     '<b>'+s.n+'</b><span class="stEn">'+s.en+'</span></div>';
-  const band=(t,n,d)=>'<div class="stBand"><b>'+t+'</b><em>'+n+'</em><span>'+d+'</span></div>';
+  /* 개수(N종) 표시는 뺐다 — 설명 문구가 그 자리, 제목 바로 오른쪽에 선다 */
+  const band=(t,d)=>'<div class="stBand"><b>'+t+'</b><span>'+d+'</span></div>';
   const core=STYLES.filter(s=>s.g==='코어'), root=STYLES.filter(s=>s.g==='원형');
   $('#stGrid').innerHTML=
-    band('코어',core.length+'종','지금 이름이 붙어 도는 흐름')+core.map(tile).join('')+
-    band('원형',root.length+'종','코어들이 갈라져 나온 뿌리')+root.map(tile).join('');
+    band('코어','지금 이름이 붙어 도는 흐름')+core.map(tile).join('')+
+    band('원형','코어들이 갈라져 나온 뿌리')+root.map(tile).join('');
   setInterval(()=>{
     const sl=$$('#stShow .sl'), dt=$$('#stShow .dots i');
     if(!sl.length)return;
@@ -85,7 +86,7 @@ export function stOpen(id){
   const s=STYLES.find(x=>x.id===id)||STYLES[0];
   stCur=s; stItemPage=0;
   $('#styleHome').style.display='none'; $('#styleDetail').style.display='';
-  $$('#stCats .stCat').forEach(b=>b.classList.toggle('on',b.dataset.style===id));
+  $$('#stCats .stCat').forEach(b=>b.classList.toggle('on',b.dataset.style===s.id));
   $('#stHero').innerHTML='<img src="'+SIMG(s)+'" alt="'+s.n+'"><div class="vg"></div>'+
     '<div class="in"><em>'+s.en.toUpperCase()+'</em><h2>'+s.n+'</h2><div class="mt">'+
     '<div><b>'+s.st+'</b><span>시작</span></div>'+

@@ -1,6 +1,7 @@
 import { HAS_A, aAnimate, aSpring, aStagger, aUtils } from '../../../core/static/js/dom.js';
 import { ME, requireAuth } from '../../../account/static/js/profile.js';
 import { rkClamp, rkRingHTML } from '../../../account/static/js/rank.js';
+import { jobBadgeHTML, jobShown } from '../../../account/static/js/job.js';
 import { smBarFill, smBarLabels } from '../../../trend/static/js/discount_resale.js';
 
 /* ══════════════ 살!말? (feedit-salmal_2 이식) ══════════════
@@ -56,16 +57,17 @@ const simA=v=>clamp(v.a+Math.round((v.taste-70)/4),3,97);
 const satisfaction=v=>clamp(v.taste+Math.round((v.base-70)/5),30,99);
 
 /* ── 댓글 시드 데이터 ─────────────────────────────────── */
-/* rk: 작성자 등급(0~4) — 아바타 링(rkPaintAv)이 여기서 색을 가져온다 */
+/* rk: 작성자 등급(0~4) — 아바타 링(rkPaintAv)이 여기서 색을 가져온다
+   job: 관리자 승인이 끝난 직업 — 닉네임 오른쪽 배지. 없으면 Basic(검정) */
 const COMMENT_SEED=[
- {name:'민지', tag:0, rk:1, text:'실물이 훨씬 예뻐요, 색감도 안 뜨고 좋았어요.', time:'2시간 전'},
- {name:'현우', tag:1, rk:3, text:'핏이 생각보다 커요. 한 사이즈 다운 추천드려요.', time:'4시간 전'},
- {name:'소은', tag:0, rk:0, text:'가격 대비 소재가 꽤 괜찮은 편이에요.', time:'6시간 전'},
- {name:'재훈', tag:null, rk:2, text:'구매 전에 후기 더 보고 싶어요, 다들 어떠세요?', time:'9시간 전'},
- {name:'다인', tag:0, rk:4, text:'재구매 의사 있어요! 세탁 후에도 변형 없었어요.', time:'11시간 전'},
- {name:'유진', tag:1, rk:1, text:'다음 시즌엔 색상이 더 다양하게 나왔으면 좋겠어요.', time:'1일 전'},
- {name:'태윤', tag:0, rk:2, text:'매장에서 직접 보고 왔는데 사진보다 훨씬 낫습니다.', time:'1일 전'},
- {name:'하은', tag:1, rk:0, text:'배송이 좀 느렸어요, 아이템 자체는 무난해요.', time:'2일 전'}
+ {name:'민지', tag:0, rk:1, job:'Basic', text:'실물이 훨씬 예뻐요, 색감도 안 뜨고 좋았어요.', time:'2시간 전'},
+ {name:'현우', tag:1, rk:3, job:'MD', text:'핏이 생각보다 커요. 한 사이즈 다운 추천드려요.', time:'4시간 전'},
+ {name:'소은', tag:0, rk:0, job:'Student', text:'가격 대비 소재가 꽤 괜찮은 편이에요.', time:'6시간 전'},
+ {name:'재훈', tag:null, rk:2, job:'Basic', text:'구매 전에 후기 더 보고 싶어요, 다들 어떠세요?', time:'9시간 전'},
+ {name:'다인', tag:0, rk:4, job:'Stylist', text:'재구매 의사 있어요! 세탁 후에도 변형 없었어요.', time:'11시간 전'},
+ {name:'유진', tag:1, rk:1, job:'Creator', text:'다음 시즌엔 색상이 더 다양하게 나왔으면 좋겠어요.', time:'1일 전'},
+ {name:'태윤', tag:0, rk:2, job:'Buyer', text:'매장에서 직접 보고 왔는데 사진보다 훨씬 낫습니다.', time:'1일 전'},
+ {name:'하은', tag:1, rk:0, job:'Basic', text:'배송이 좀 느렸어요, 아이템 자체는 무난해요.', time:'2일 전'}
 ];
 function seedComments(i){
   const out=[];
@@ -134,7 +136,7 @@ function cardHTML(i){
     ? `<div class="closedNote">투표가 종료됐어요</div>`
     : `<div class="smBtns">
         <button class="buy${buyOn?' picked':''}" data-vote="0">살!</button>
-        <button class="${noOn?'picked':''}" data-vote="1">말래요</button>
+        <button class="${noOn?'picked':''}" data-vote="1">말?</button>
       </div>`;
   return `
   <div class="voteCard" data-i="${i}">
@@ -487,7 +489,7 @@ function renderComments(){
       <div class="cAvatar rkAv rk${rk+1}">${rkRingHTML(rk)}${rk>=3?'<b class="rkGloss"></b>':''}<span>${c.name[0]}</span></div>
       <div class="cBody">
         <div class="cHead">
-          <b>${c.name}</b>
+          <b>${c.name}</b>${c.me ? (jobShown(ME) ? jobBadgeHTML(jobShown(ME)) : '') : jobBadgeHTML(c.job)}
           <span class="cTime">${c.time}</span>
           <button class="cMenuBtn" data-comment-id="${c.id}" aria-label="더보기">⋯</button>
         </div>
@@ -502,7 +504,7 @@ function sendComment(){
   const ta=$('#commentInput');
   const text=ta.value.trim();
   if(!text)return;
-  VOTES[i].comments.unshift({name:'나', rk:ME.rank, text, time:'방금 전', id:nextCommentId()});
+  VOTES[i].comments.unshift({name:'나', rk:ME.rank, me:true, text, time:'방금 전', id:nextCommentId()});
   ta.value='';
   renderComments();
   $('#commentsList').scrollTop=0;

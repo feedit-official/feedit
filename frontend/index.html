@@ -178,6 +178,7 @@
         <button class="pill" id="mAuthBtn" data-v="login">로그인</button>
         <div class="acctMenu" id="acctMenu">
           <button type="button" id="menuMypage"><i>◧</i>내 정보</button>
+          <button type="button" id="menuJobReview" hidden><i>✓</i>직업 인증 심사</button>
           <hr>
           <button type="button" class="out" id="menuLogout"><i>→</i>로그아웃</button>
         </div>
@@ -740,6 +741,19 @@
           </div>
           <p class="fieldMsg" id="suBodyMsg"></p>
         </div>
+        <!-- 직업 — 선택 입력. 서류를 올리면 관리자 승인 후 배지가 달린다 (account/static/js/job.js) -->
+        <div class="cField jobField">
+          <label class="cLabel" for="suJob">직업 <span>선택 · 승인 후 배지로 표시돼요</span></label>
+          <div class="jobRow">
+            <input type="file" id="suJobFile" accept="image/*,.pdf" hidden>
+            <button type="button" class="jobFileBtn" id="suJobFileBtn" disabled><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.5 6.5l-5.8 5.8a1.6 1.6 0 002.3 2.3l6-6a3.2 3.2 0 00-4.5-4.5l-6 6a4.8 4.8 0 006.8 6.8l5.2-5.2"/></svg><span>서류 첨부</span></button>
+            <select class="cInput" id="suJob"><option value="">직업 선택</option></select>
+          </div>
+          <div class="jobMajor" id="suMajorWrap" hidden>
+            <input class="cInput" id="suMajor" type="text" maxlength="20" placeholder="전공 (예: 패션디자인)">
+          </div>
+          <p class="fieldMsg" id="suJobMsg"></p>
+        </div>
         <p class="fieldMsg err" id="signupErr" style="display:none;margin-top:14px"></p>
         <button type="submit" class="pill authSubmit">가입하기</button>
       </form>
@@ -848,12 +862,34 @@
             min="30" max="200" placeholder="몸무게"><em>kg</em></span>
         </div>
       </div>
+        <!-- 직업 — 선택 입력. 서류를 올리면 관리자 승인 후 배지가 달린다 (account/static/js/job.js) -->
+      <div class="cField jobField" style="margin:16px 0 0">
+        <label class="cLabel" for="editJob">직업 <span>선택 · 승인 후 배지로 표시돼요</span></label>
+        <div class="jobRow">
+          <input type="file" id="editJobFile" accept="image/*,.pdf" hidden>
+          <button type="button" class="jobFileBtn" id="editJobFileBtn" disabled><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.5 6.5l-5.8 5.8a1.6 1.6 0 002.3 2.3l6-6a3.2 3.2 0 00-4.5-4.5l-6 6a4.8 4.8 0 006.8 6.8l5.2-5.2"/></svg><span>서류 첨부</span></button>
+          <select class="cInput" id="editJob"><option value="">직업 선택</option></select>
+        </div>
+        <div class="jobMajor" id="editMajorWrap" hidden>
+          <input class="cInput" id="editMajor" type="text" maxlength="20" placeholder="전공 (예: 패션디자인)">
+        </div>
+        <p class="fieldMsg" id="editJobMsg"></p>
+      </div>
       <p class="fieldMsg err" id="editModalErr" style="display:none;margin-top:12px"></p>
       <div class="modalBtns">
         <button type="button" class="pill ghost" id="editModalCancel">취소</button>
         <button type="submit" class="pill">저장하기</button>
       </div>
     </form>
+  </div>
+</div>
+<!-- 직업 인증 심사 — 관리자용 (목업) -->
+<div class="acctModal" id="jobReviewModal">
+  <div class="modalCard wide">
+    <div class="modalHead"><h3>직업 인증 심사</h3>
+      <button type="button" class="modalClose" data-close-modal aria-label="닫기"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+    <p class="jrLead">올라온 서류를 확인하고 승인하면<br>그때 배지와 사이드바 직위가 바뀝니다.</p>
+    <div class="jrList" id="jobReviewList"></div>
   </div>
 </div>
 <div class="acctModal" id="savedModal">

@@ -155,6 +155,8 @@
 .kpi .dl{margin-top:7px;font-family:var(--num);font-size:11px;font-feature-settings:'tnum' 1,'zero' 0}
 .kpi .dl.up{color:var(--coral)} .kpi .dl.dn{color:var(--pink-2)}
 .trGrid{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:12px}
+/* 카드가 한 장뿐인 줄 — 가로 전체를 쓴다 (수명주기 '언급량 · 판매량') */
+.trGrid.one{grid-template-columns:minmax(0,1fr)}
 .panelC{background:#fff;border:1px solid var(--pink-3);border-radius:9px;padding:18px 20px}
 .panelC .ph{display:flex;align-items:baseline;justify-content:space-between;gap:14px;margin-bottom:16px}
 .panelC .ph h3{font-size:14px;font-weight:500;letter-spacing:-.025em}

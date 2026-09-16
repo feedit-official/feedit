@@ -1,9 +1,9 @@
 import { $, $$, HAS_A, aAnimate, aSpring, aStagger, aUtils } from '../../../core/static/js/dom.js';
 import { ASSOC_BALLET, PLATFORM_TEMP, SENT_NEG, SENT_POS, TEMP_KW } from './data.js';
-import { FEED_SM_PICKS, WK } from './my_feed.js';
+import { WK, feedSmPicks } from './my_feed.js';
 import { STYLES } from '../../../home/static/js/chat.js';
 import { SIMG } from '../../../style/static/js/style_page.js';
-import { FS, fsBuild, fsHideSug, fsLoadDictionary, fsReset } from '../../../style/static/js/search.js';
+import { FS, fsBuild, fsChipsPaint, fsDropDisallowed, fsHideSug, fsLoadDictionary, fsReset } from '../../../style/static/js/search.js';
 import { G_CFG, KW, fsItem, fsItemFull, gMount, josa, trEmpty, trFillBars } from './render_helpers.js';
 import { ME, bioPaint } from '../../../account/static/js/profile.js';
 import { S_EDIT, S_FEED, TR_META } from './nav_meta.js';
@@ -12,6 +12,7 @@ import { prime, stateOf, summaryOf, unavailableHTML } from './live_data.js';
 import { gChart, gDraw, gSeed } from './chart_engine.js';
 import { kwWire } from './saved_keywords.js';
 import { rkChip, rkPaintAv } from '../../../account/static/js/rank.js';
+import { jobPlanText } from '../../../account/static/js/job.js';
 import { smBarFill, svRender } from './discount_resale.js';
 import { trCountUp } from './count_up.js';
 import { trDial, wkAnimate } from './weekly_report.js';
@@ -69,8 +70,95 @@ const TR_TRIED={};   /* 용어 → 마지막으로 물어본 때 */
    선반입이 **같은 것을 또 묻지 않는다.** (한 번 눌렀는데 두 번 나가던 자리) */
 export function markTried(kw){ if(kw) TR_TRIED[kw]=Date.now(); }
 
+/* ── 내 피드 · 내 관심 코어의 시장 화제성 ──
+   '즐겨입는 스타일'(ME.styles, 가입 팝업 · 마이페이지에서 고른 것)만 버튼으로 세우고,
+   누른 한 개의 화제성만 보여 준다. 다른 스타일은 섞지 않는다.
+   숫자는 목업이다 — 스타일 id 로 고정 시드를 뽑아 새로고침해도 같은 값이 나온다. */
+let TP_PICK=null;
+function tpHeroHTML(){
+  const mine=STYLES.filter(s=>ME.styles.has(s.id));
+  if(!mine.length){
+    return '<div class="tpPulseTop"><span class="tpTag">TREND ALIGNMENT</span></div>'+
+      '<div class="tpPulseCopy"><strong>내 관심 코어의 시장 화제성</strong>'+
+        '<p>아직 고른 즐겨입는 스타일이 없습니다.<br>마이페이지에서 스타일을 고르면 여기서 하나씩 확인할 수 있어요.</p>'+
+        '<div class="tpTasteTags"><button type="button" data-v="mypage">스타일 고르러 가기 →</button></div>'+
+      '</div>';
+  }
+  if(!mine.some(s=>s.id===TP_PICK))TP_PICK=mine[0].id;
+  const cur=mine.find(s=>s.id===TP_PICK);
+  const deg=tpDeg(cur);
+  const dlt=(TP_RISE.includes(cur.pk)?1:-1)*(1+Math.round(gSeed(cur.id+'pd')*8));
+  const up=dlt>0;
+  return '<div class="tpPulseTop"><span class="tpTag">TREND ALIGNMENT · '+cur.en.toUpperCase()+'</span>'+
+      '<span class="tpDelta">'+(up?'▲ ':'▼ ')+Math.abs(dlt)+'° 이번 주</span></div>'+
+    '<div class="tpBigDeg">'+deg+'<em>°</em></div>'+
+    '<div class="tpPulseCopy"><strong>내 관심 코어의 시장 화제성</strong>'+
+      '<p><b>'+cur.n+'</b>'+tpJosa(cur.n,'은','는')+' 지금 <b>'+cur.pk+'</b> 구간입니다. '+
+        cur.kw.slice(0,2).join(' · ')+' 쪽에서 반응이 '+(up?'빠르게 붙고 있어요.':'조금씩 식고 있어요.')+'</p>'+
+      '<div class="tpTasteTags" role="tablist">'+mine.map(s=>
+        '<button type="button" role="tab" data-tp-style="'+s.id+'" aria-selected="'+(s.id===TP_PICK)+'"'+
+        (s.id===TP_PICK?' class="on"':'')+'>'+s.n+'</button>').join('')+'</div>'+
+    '</div>';
+}
+/* ── 신규 신호 · 오늘의 취향 브리핑 ──
+   화제성 카드와 같은 출처(ME.styles)를 쓴다. 고정 문구(블록코어 · 아메카지)는 걷어냈다.
+   신호 수도 스타일 id 시드 목업이다 — 화제성 카드의 숫자와 같은 시드를 써서 서로 어긋나지 않는다. */
+const TP_RISE=['확산','재상승','재점화'];   /* 정점 통과는 이미 꼭짓점을 넘었으니 상승으로 세지 않는다 */
+/* 화제성 — 상승 구간이면 높게, 아니면 낮게 나오게 해 문구와 숫자가 어긋나지 않게 한다 */
+const tpDeg=s=>Math.round((TP_RISE.includes(s.pk)?70:38)+gSeed(s.id+'pulse')*26);
+/* 받침 조사 — 영문 이름(Y2K)은 끝 글자를 읽는 소리로 고른다 (L·M·N·R 은 받침) */
+const tpJosa=(w,a,b)=>/[A-Za-z0-9]$/.test(w)?(/[LMNRlmnr1368]$/.test(w)?a:b):josa(w,a,b);
+const tpSig=s=>1+Math.round(gSeed(s.id+'sig')*7);
+function tpMine(){ return STYLES.filter(s=>ME.styles.has(s.id)) }
+function tpSignalHTML(){
+  const mine=tpMine();
+  const rows=mine.map(s=>[s.n,tpSig(s)]);
+  /* 고른 스타일이 적으면 대표 키워드로 줄을 채운다 — 여전히 내 스타일에서만 나온 말이다 */
+  mine.forEach(s=>{ if(rows.length<4)rows.push([s.kw[0],Math.max(1,Math.round(tpSig(s)/3))]) });
+  const total=rows.reduce((a,r)=>a+r[1],0);
+  return '<div class="tpSignalHead"><span>NEW SIGNALS DETECTED</span><i class="tpLiveDot"></i></div>'+
+    '<div class="tpSignalNum">'+total+'<em>signals</em></div>'+
+    '<div><h4>내 관심 키워드 관련 신규 신호</h4>'+
+      '<p>'+(mine.length?'최근 수집 데이터 중 내 취향 태그와 직접 연결되는 변화만 추렸습니다.'
+        :'즐겨입는 스타일을 고르면 그 스타일과 연결된 신호만 모아 보여 드립니다.')+'</p>'+
+      '<div class="tpSignalList">'+rows.slice(0,4).map(r=>'<span>'+r[0]+' <b>+'+r[1]+'</b></span>').join('')+'</div>'+
+    '</div>';
+}
+function tpBriefHTML(){
+  const mine=tpMine();
+  const rise=mine.filter(s=>TP_RISE.includes(s.pk));
+  let tx;
+  if(!mine.length){
+    tx='아직 고른 즐겨입는 스타일이 없습니다. 스타일을 고르면 매일 이 자리에서 취향 브리핑을 드립니다.';
+  }else{
+    tx=mine.map(s=>s.n+tpJosa(s.n,'은','는')+' 화제성 '+tpDeg(s)+'°로 '+s.pk+' 구간').join(', ')+'입니다. '+
+      (rise.length
+        ? '지금은 '+rise.map(s=>s.n).join(' · ')+' 쪽에서 "완전 유행 전" 아이템을 고르기 좋은 타이밍이에요.'
+        : '고른 스타일이 모두 상승 구간은 아니라, 새로 사기보다 가진 옷을 활용하기 좋은 시기예요.');
+  }
+  return '<div class="tpBriefNo">01</div>'+
+    '<div class="tpBriefText"><b>오늘의 취향 브리핑</b><p>'+tx+'</p></div>'+
+    '<div class="tpBriefScore"><b>'+rise.length+'</b> CORE RISING</div>';
+}
+/* 즐겨입는 스타일이 바뀌면(가입 팝업 · 마이페이지) 내 피드 카드 세 장을 다시 채운다 */
+document.addEventListener('feedit:styles',()=>{
+  /* 내 피드가 열려 있으면 맞춤 살!말? 카드까지 통째로 다시 고른다 */
+  if($('#tpSalGrid')){ trRender('myfeed'); return }
+  const h=$('#tpHero'); if(h)h.innerHTML=tpHeroHTML();
+  const g=$('#tpSignal'); if(g)g.innerHTML=tpSignalHTML();
+  const b=$('#tpBrief'); if(b)b.innerHTML=tpBriefHTML();
+});
+
+/* 버튼을 누르면 카드 안만 갈아 끼운다 — 본문 전체를 다시 그리면 등장 애니메이션이 또 돈다 */
+document.addEventListener('click',e=>{
+  const b=e.target.closest('#tpHero [data-tp-style]'); if(!b)return;
+  TP_PICK=b.dataset.tpStyle;
+  const h=$('#tpHero'); if(h)h.innerHTML=tpHeroHTML();
+});
+
 export function trRender(id){
   TR_CUR=id;
+  sFootPaint();   /* 가입·정보수정·인증 승인 뒤에 들어와도 이름·직위가 최신이게 */
   if(typeof assocClosePop==='function')assocClosePop();
 
   /* ★ 그리기 **전에** 지표를 받아 둔다.
@@ -130,6 +218,10 @@ export function trRender(id){
     if(!useSearch){ fsReset(); fsHideSug();
       const cb=$('#fsChips'); if(cb){cb.hidden=true;cb.innerHTML=''} }
     FS.id=useSearch?id:null;
+    /* 수명주기는 스타일 · 종류 · 브랜드까지만 — 다른 탭에서 걸어 온 아이템명 조건은 뗀다 */
+    if(useSearch&&fsDropDisallowed())fsChipsPaint();
+    const fi=$('#fsInput');
+    if(fi)fi.placeholder=(id==='life')?'스타일 · 종류 · 브랜드로 검색':'소재 · 아이템 · 스타일 · 브랜드로 검색';
   }
   const body=$('#trBody'); if(!body)return;
 
@@ -197,42 +289,22 @@ export function trRender(id){
         '<div class="tpReason">'+
           '<div class="tpReasonLine"><span class="tpCheck">✓</span>'+
             '<span><strong>세그먼트 일치</strong> · 체형/스타일 유사도 '+p.seg+'%</span></div>'+
-          '<div class="tpReasonLine"><span class="tpCheck">✓</span>'+
-            '<span><strong>아이템 취향 일치</strong> · '+p.itemTag+'</span></div>'+
+          (p.matched
+            ? '<div class="tpReasonLine"><span class="tpCheck">✓</span>'+
+                '<span><strong>아이템 취향 일치</strong> · '+p.itemTag+'</span></div>'
+            : '<div class="tpReasonLine"><span class="tpCheck">·</span>'+
+                '<span><strong>인기 카드</strong> · 내 스타일과 겹치는 카드가 모자라 채웠습니다</span></div>')+
         '</div>'+
-        '<div class="tpTags">'+p.tags.map((t,i)=>'<span'+(i<2?' class="hit"':'')+'>'+t+'</span>').join('')+'</div>'+
+        '<div class="tpTags">'+p.tags.map(t=>'<span'+(t.hit?' class="hit"':'')+'>'+t.tx+'</span>').join('')+'</div>'+
       '</div>';
     body.innerHTML=
       '<div class="tpSection">'+
         '<div class="tpSecLabel"><h3>내 취향 브리핑</h3><span>TASTE PULSE / LIVE</span></div>'+
         '<div class="tpPulseGrid">'+
-          '<article class="tpCard tpHero">'+
-            '<div class="tpPulseTop"><span class="tpTag">TREND ALIGNMENT</span>'+
-              '<span class="tpDelta">▲ 6° 이번 주</span></div>'+
-            '<div class="tpBigDeg">84<em>°</em></div>'+
-            '<div class="tpPulseCopy"><strong>내 관심 코어의 시장 화제성</strong>'+
-              '<p>블록코어와 아메카지가 동시에 상승 중입니다. 특히 스니커 · 워크 재킷 카테고리에서 반응이 빠르게 붙고 있어요.</p>'+
-              '<div class="tpTasteTags"><span class="on">블록코어</span><span class="on">아메카지</span>'+
-                '<span>워크웨어</span><span>스트릿</span></div>'+
-            '</div>'+
-          '</article>'+
-          '<article class="tpCard tpSignal">'+
-            '<div class="tpSignalHead"><span>NEW SIGNALS DETECTED</span><i class="tpLiveDot"></i></div>'+
-            '<div class="tpSignalNum">14<em>signals</em></div>'+
-            '<div><h4>내 관심 키워드 관련 신규 신호</h4>'+
-              '<p>최근 수집 데이터 중 내 취향 태그와 직접 연결되는 변화만 추렸습니다.</p>'+
-              '<div class="tpSignalList"><span>블록코어 <b>+6</b></span><span>아메카지 <b>+4</b></span>'+
-                '<span>워크웨어 <b>+3</b></span><span>삼바 <b>+1</b></span></div>'+
-            '</div>'+
-          '</article>'+
+          '<article class="tpCard tpHero" id="tpHero">'+tpHeroHTML()+'</article>'+
+          '<article class="tpCard tpSignal" id="tpSignal">'+tpSignalHTML()+'</article>'+
         '</div>'+
-        '<article class="tpCard tpBrief">'+
-          '<div class="tpBriefNo">01</div>'+
-          '<div class="tpBriefText"><b>오늘의 취향 브리핑</b>'+
-            '<p>블록코어는 화제성 84°로 확산 구간, 아메카지는 커머스 반응이 강해지는 중입니다. '+
-            '지금은 "완전 유행 전" 아이템을 고르기 좋은 타이밍이에요.</p></div>'+
-          '<div class="tpBriefScore"><b>2</b> CORE RISING</div>'+
-        '</article>'+
+        '<article class="tpCard tpBrief" id="tpBrief">'+tpBriefHTML()+'</article>'+
       '</div>'+
       '<div class="tpSection" style="padding-top:0">'+
         '<div class="tpSalHead"><div><h3>내 취향 맞춤 <em>살!말?</em></h3>'+
@@ -240,8 +312,10 @@ export function trRender(id){
           '동시에 고민 중인 아이템도 내 취향 태그와 겹치는 글만 선별했습니다.</p></div>'+
           '<div class="tpFilterLogic"><span class="tpLogicChip">TOP 4</span></div>'+
         '</div>'+
-        '<div class="tpSalGrid">'+FEED_SM_PICKS.map(salCard).join('')+'</div>'+
-        '<div class="tpEmptyMore">취향 조건을 동시에 만족한 고민 4건만 표시 중</div>'+
+        '<div class="tpSalGrid" id="tpSalGrid">'+feedSmPicks(ME.styles).map(salCard).join('')+'</div>'+
+        '<div class="tpEmptyMore">'+(ME.styles.size
+          ? STYLES.filter(s=>ME.styles.has(s.id)).map(s=>s.n).join(' · ')+' 기준으로 고른 고민 4건만 표시 중'
+          : '즐겨입는 스타일이 없어 인기 고민 4건을 표시 중')+'</div>'+
       '</div>';
     /* 버튼을 눌러도 여기서 투표를 완결시키지 않는다 — 살!/말! 버튼은
        data-v="salmal" 을 달아 살!말? 페이지로 보내고, 실제 투표는
@@ -263,7 +337,7 @@ export function trRender(id){
       smBarFill($$('#trBody .smBar i'),
         {duration:920,step:44,start:Math.max(300,780-since)});
       /* 취향 태그 · 로직 칩도 순서대로 */
-      aAnimate($$('#trBody .tpTasteTags span, #trBody .tpSignalList span'),
+      aAnimate($$('#trBody .tpTasteTags button, #trBody .tpSignalList span'),
         {opacity:[0,1],scale:[.9,1],duration:520,delay:aStagger(36,{start:420}),
          ease:aSpring({stiffness:120,damping:14})});
     }
@@ -281,16 +355,15 @@ export function trRender(id){
     body.innerHTML='<div class="wkReport" id="wkReport">'+
       /* ── 한 줄 요약 — 이번 주 가장 많이 검색·투표한 스타일이 리포트의 축이다 ── */
       '<div class="wkLine">'+
-        '<h2>이번 주 가장 관심 있었던 스타일은 <em>'+top.n+'</em>입니다.</h2>'+
+        '<h2>이번 주 가장 관심 있었던 키워드는 <em>'+top.n+'</em>입니다.</h2>'+
         '<span>'+WK.range+' · 매주 '+WK.updateDay+' 갱신</span>'+
       '</div>'+
       /* ── 관심 스타일 히어로 ── */
       '<section class="wkHero">'+
         '<div class="wkHeroImg"><img src="'+SIMG(top)+'" alt="'+top.n+'" loading="lazy"></div>'+
         '<div class="wkCopy">'+
-          '<div class="wkState">THIS WEEK · '+top.g+'</div>'+
+          '<div class="wkState">THIS WEEK</div>'+
           '<h3>'+top.n+' <em>'+top.en+'</em></h3>'+
-          '<p>'+top.ab2+'</p>'+
           '<div class="wkLedger c3">'+
             '<div class="ac"><span>이 스타일 검색</span><b>'+WK.topSearchN+'회</b></div>'+
             '<div><span>이 스타일 투표</span><b>'+WK.topVoteN+'표</b></div>'+
@@ -304,7 +377,7 @@ export function trRender(id){
         [['검색한 키워드',WK.search,'개','+'+WK.searchD+' · 지난주 대비',1],
          ['새로 찜한 것',WK.fav,'개','총 '+WK.favTotal+'개 추적 중',0],
          ['살!말? 투표',WK.vote,'표','+'+WK.voteD+' · 지난주 대비',1],
-         ['읽은 분석',WK.read,'건','평균 '+WK.readMin+'분 열람',0]]
+         ['트렌드 분석',WK.chatMin,'분','평균 사용 시간 '+WK.chatAvgMin+'분',0]]
         .map((m,i)=>'<div class="wkMetric'+(m[4]?' hot':'')+'">'+
           '<span class="idx">'+String(i+1).padStart(2,'0')+'</span>'+
           '<span class="lb">'+m[0]+'</span>'+
@@ -814,14 +887,6 @@ export function trRender(id){
       ['가장 안전한 구간입니다','올라가는 중이라 앞으로 '+weeks+'주는 더 입을 수 있습니다. 물량도 충분해 고르기 좋습니다.'],
       ['지금이 마지막입니다','정점입니다. 사도 되지만 오래 못 갑니다. 오래 입을 옷이라면 다음 것을 보세요.'],
       ['이미 지났습니다','내려온 지 꽤 됐습니다. 싸게 나와도 올해 안에 안 입게 될 확률이 높습니다.']][si];
-    /* 검색 여정 브릿지 — SNS·커머스 "언급"이 아니라 FEEDIT 자체 검색 로그에서
-       이 키워드 조회 직후 실제로 이어진 검색어. 행동 로그 기반이라 나머지
-       지표들과 데이터 소스 자체가 다르다. */
-    const BRIDGE=[['무신사 스탠다드',Math.round(48+sd*30)],
-                  ['비슷한 코디',Math.round(20+sd*22)],
-                  ['다른 사이즈',Math.round(10+sd*14)],
-                  ['가격 비교',Math.round(6+sd*10)],
-                  ['재입고 알림',Math.round(3+sd*7)]].sort((a,b)=>b[1]-a[1]);
     body.innerHTML=
       '<div class="verdict" style="--sc:'+SC+'">'+
         '<div class="dial"><svg viewBox="0 0 120 120">'+
@@ -860,22 +925,19 @@ export function trRender(id){
             '<td class="n">'+r[1]+'%</td></tr>').join('')+
           '</table><div class="note"><i>◆</i>같은 카테고리 아이템들의 실제 착용 로그로 계산한 값입니다.</div></div>'+
       '</div>'+
-      '<div class="trGrid" style="margin-top:12px">'+
-        '<div class="panelC"><div class="gHead"><h3>언급량 · 실착 비율</h3></div>'+
+      /* '검색 여정 브릿지' 카드는 걷어냈다 — 남은 한 장이 가로 전체를 채운다 */
+      '<div class="trGrid one" style="margin-top:12px">'+
+        '<div class="panelC"><div class="gHead"><h3>언급량 · 판매량</h3></div>'+
           '<div data-chart="lifeGap"></div>'+
-          '<div class="note"><i>◆</i>말만 많고 실제로 안 입는 구간은 거품입니다. '+
+          '<div class="note"><i>◆</i>언급량만 많고 실제로 구매하지 않는 구간은 거품입니다. '+
             '두 선이 붙어 갈수록 진짜 유행입니다.</div></div>'+
-        '<div class="panelC"><div class="ph"><h3>검색 여정 브릿지</h3><em>이 검색어 조회 직후 이어진 검색어</em></div>'+
-          '<div class="flow">'+BRIDGE.map(x=>'<div class="st"><span>'+x[0]+'</span>'+
-            '<u><i data-w="'+x[1]+'" '+(x[1]>=50?'class="c"':'')+'></i></u>'+
-            '<em>'+x[1]+'%</em></div>').join('')+'</div>'+
-          '<div class="note"><i>◆</i>FEEDIT 자체 검색 행동 로그 기준입니다.</div></div>'+
       '</div>';
     G_CFG.lifeMain=item=>({key:item+'life',band:[si*.25,si*.25+.25],
       sets:[{id:'l',name:'언급량 지수',shape:['rise','rise','peak','fall'][si],lo:8,hi:96,unit:''}]});
-    G_CFG.lifeGap=item=>({key:item+'gap',
+    G_CFG.lifeGap=item=>({key:item+'gap',wide:true,   /* 가로 전체 카드 — 높이·글씨는 원래대로, 가로로만 */
       sets:[{id:'m',name:'언급량',shape:['rise','rise','peak','fall'][si],lo:10,hi:94,unit:''},
-            {id:'w',name:'실착 비율 (%)',shape:['rise','rise','rise','fall'][si],lo:6,hi:62,unit:'%',accent:1}]});
+            /* 리뷰 수를 가져올 수 없어 실착 비율 대신 판매량을 쓴다 (언급량과 같은 0~100 지수 눈금) */
+            {id:'w',name:'판매량',shape:['rise','rise','rise','fall'][si],lo:6,hi:62,unit:'',accent:1}]});
     gMount(); trFillBars(); trDial();
   }
   if(HAS_A)aAnimate($$('#trBody .kpi, #trBody .panelC, #trBody .concl, #trBody .verdict, #trBody .cheapest, #trBody .svAlso'),
@@ -937,6 +999,19 @@ window.addEventListener('resize',()=>{
 });
 var TR_TAB='통합';
 
+/* 사이드바 하단 프로필 — [아바타] [닉네임 / 직위] [등급 뱃지]
+   직위 줄: 운영자 계정은 'ADMIN · 서울' 그대로, 일반 가입자는 승인된 직업(없으면 Basic).
+   승인 대기 중이면 ' · 인증 대기' 가 붙는다 (account/static/js/job.js). */
+function sFootPaint(){
+  const sf=$('#sFoot'); if(!sf)return;
+  const sav=sf.querySelector('.av');
+  if(sav){ sav.textContent=ME.initial; rkPaintAv(sav, ME.rank) }   /* 링은 rkPaintAv 가 다시 얹는다 */
+  const nb=sf.querySelector('.who b'); if(nb)nb.textContent=ME.name;
+  const plan=$('#sFootPlan'); if(plan)plan.textContent=jobPlanText(ME);
+  const rk=$('#sFootRk');   if(rk)rk.innerHTML=rkChip(ME.rank);   /* 뱃지는 오른쪽 끝에 따로 선다 */
+}
+document.addEventListener('feedit:job',()=>sFootPaint());
+
 export function trBuild(){
   /* ★ 진짜 사전을 받아 둔다.
      이게 없으면 검색이 이 파일에 박힌 146개로만 돌아서, RDS 에 있는 말도
@@ -959,16 +1034,7 @@ export function trBuild(){
     TR_TAB=b.dataset.t; trRender('stock');   /* 탭이 바뀌면 본문을 다시 짠다 */
   });
   fsBuild();
-  /* 사이드바 하단 프로필 — 운영자 계정이라 최고 등급이 붙는다 */
-  const sf=$('#sFoot');
-  if(sf){
-    const sav=sf.querySelector('.av');
-    sav.textContent=ME.initial;          /* 링은 아래 rkPaintAv 가 다시 얹는다 */
-    rkPaintAv(sav, ME.rank);
-    sf.querySelector('.who b').textContent=ME.name;
-    const plan=$('#sFootPlan'); if(plan)plan.textContent=ME.plan;
-    const rk=$('#sFootRk');   if(rk)rk.innerHTML=rkChip(ME.rank);   /* 뱃지는 오른쪽 끝에 따로 선다 */
-  }
+  sFootPaint();
   /* 본문은 여기서 그리지 않는다. 숨어 있는 동안 그리면 등장 애니메이션이
      아무도 안 볼 때 다 끝나버려서, 탭을 열었을 땐 이미 정지 화면이 된다.
      실제로 여는 순간(goView) 에 처음 한 번 그린다. */

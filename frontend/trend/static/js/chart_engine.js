@@ -87,7 +87,12 @@ export function gChart(host,cfg){
 
 /* 좌표계에 실제로 그리는 부분. 값이 어디서 왔든 그리는 방법은 같다. */
 function gPaint(el,cfg,g,labels,sets){
-  const W=620,H=210,PL=34,PR=14,PT=14,PB=28;
+  const H=210,PL=34,PR=14,PT=14,PB=28;
+  /* cfg.wide — 가로 전체 카드(.trGrid.one)에 놓인 차트.
+     viewBox 가 620×210 로 고정이면 폭을 늘린 만큼 높이 · 글씨 · 선 굵기가 같이 커진다.
+     그래서 폭(W)만 늘린다 — 원래 자리(1.5fr 칸)보다 넓어진 비율만큼 W 를 키우면
+     높이와 글씨는 원래 크기 그대로, 가로로만 늘어난다. */
+  const W=cfg.wide?gWideW(el):620;
   const n=labels.length;
   const all=sets.reduce((a,s)=>a.concat(s.data),[]);
   const mn=cfg.min!=null?cfg.min:Math.min.apply(null,all), mx=cfg.max!=null?cfg.max:Math.max.apply(null,all);
@@ -149,6 +154,17 @@ function gPaint(el,cfg,g,labels,sets){
   });
   gDraw(el.querySelectorAll('.ln,.ln2'),1050,180);
   return el;
+}
+function gWideW(el){
+  const grid=el.closest('.trGrid'), panel=el.closest('.panelC');
+  const G=grid?grid.clientWidth:0;
+  if(!G||!panel)return Math.round(620*1.7);
+  const cs=getComputedStyle(panel);
+  const chrome=parseFloat(cs.paddingLeft)+parseFloat(cs.paddingRight)+
+               parseFloat(cs.borderLeftWidth)+parseFloat(cs.borderRightWidth);
+  const wide=G-chrome;                               /* 지금 카드 안쪽 폭 */
+  const base=(G-12)*1.5/2.5-chrome;                  /* 원래 두 칸일 때 왼쪽 카드 안쪽 폭 (.trGrid 1.5fr : 1fr, gap 12px) */
+  return Math.round(620*Math.max(1,wide/Math.max(1,base)));
 }
 /* 선이 그려지며 들어오는 연출.
    createDrawable 은 "엘리먼트"가 아니라 "프록시"를 돌려주고, 그 프록시를 타깃으로
