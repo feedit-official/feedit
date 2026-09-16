@@ -209,21 +209,21 @@ export function stateOf(term) {
  *
  * @param field 'mention' | 'score' | 'temp' …  (RDS 에 없으면 null)
  */
-export function seriesOf(term, { points = 30, step = 'd', field = 'mention', raw = false } = {}) {
+export function seriesOf(term, { points = 30, step = 'd', field = 'mention', raw = false, agg = 'avg', fill = true } = {}) {
   const e = CACHE.get(String(term || '').trim());
   if (!e || e.status !== 'ok' || !e.byDate) return null;
-  return resample(e.byDate, { points, step, field, raw });
+  return resample(e.byDate, { points, step, field, raw, agg, fill });
 }
 
 /**
  * 날짜별 행 배열 → 차트 계열. 할인률·리세일·수명주기처럼 용어 캐시 밖의 자료가 쓴다.
  * @param rows [{date:'YYYY-MM-DD', …}]
  */
-export function seriesFromRows(rows, { points = 30, step = 'd', field = 'value', raw = true } = {}) {
+export function seriesFromRows(rows, { points = 30, step = 'd', field = 'value', raw = true, agg = 'avg', fill = true } = {}) {
   if (!Array.isArray(rows) || !rows.length) return null;
   const byDate = new Map();
   for (const r of rows) if (r && r.date) byDate.set(String(r.date).slice(0, 10), r);
-  return resample(byDate, { points, step, field, raw });
+  return resample(byDate, { points, step, field, raw, agg, fill });
 }
 
 /** 가장 마지막 날짜 — 적재가 오늘보다 늦을 수 있으므로 눈금은 여기를 끝으로 잡는다. */
@@ -233,7 +233,10 @@ export function lastDateOf(byDateOrRows) {
   return keys.length ? keys.sort().pop() : null;
 }
 
-function resample(byDate, { points, step, field, raw }) {
+/* agg  — 주·월 구간을 한 값으로 줄이는 법. 'avg'(비율·온도) | 'sum'(건수)
+   fill — 빈 자리를 앞뒤 값으로 이을지. 건수 막대는 false:
+          없는 구간에 옆 막대를 복사해 세우면 없던 반응을 지어낸 그림이 된다. 빈 칸(null)으로 둔다. */
+function resample(byDate, { points, step, field, raw, agg = 'avg', fill = true }) {
   const out = [];
   const endIso = lastDateOf(byDate);
   const end = endIso ? new Date(endIso + 'T00:00:00Z') : new Date();
@@ -242,10 +245,11 @@ function resample(byDate, { points, step, field, raw }) {
     if (step === 'd') d.setUTCDate(d.getUTCDate() - i);
     else if (step === 'w') d.setUTCDate(d.getUTCDate() - i * 7);
     else d.setUTCMonth(d.getUTCMonth() - i);
-    out.push(pickNear(byDate, d, step, field));
+    out.push(pickNear(byDate, d, step, field, agg));
   }
   // 한 점도 못 찾았으면 그릴 게 없다.
   if (!out.some((v) => v !== null)) return null;
+  if (!fill) return out;
 
   // 빈 자리는 앞뒤 값으로 잇는다 — 없는 날을 0 으로 떨어뜨리면
   // 그래프가 바닥을 치는 것처럼 보여서 거짓말이 된다.
@@ -263,7 +267,7 @@ function resample(byDate, { points, step, field, raw }) {
 }
 
 /** 그 날짜(또는 그 구간)의 값. 주·월이면 구간 안 평균. */
-function pickNear(byDate, d, step, field) {
+function pickNear(byDate, d, step, field, agg = 'avg') {
   const iso = (x) => x.toISOString().slice(0, 10);
   if (step === 'd') {
     const p = byDate.get(iso(d));
@@ -278,7 +282,9 @@ function pickNear(byDate, d, step, field) {
     const v = p ? numOr(p[field]) : null;
     if (v !== null) vals.push(v);
   }
-  return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+  if (!vals.length) return null;
+  const total = vals.reduce((a, b) => a + b, 0);
+  return agg === 'sum' ? total : total / vals.length;
 }
 
 function numOr(v) {

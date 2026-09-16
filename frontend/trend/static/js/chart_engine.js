@@ -55,8 +55,8 @@ export function gChart(host,cfg){
      (언급량처럼 단위가 다른 값을 온도 0–100 축에 겹칠 때). */
   const toLive=(s,d)=>{
     if(!d)return null;
-    if(s.index){ const mx=Math.max.apply(null,d)||1; d=d.map(v=>v/mx*100); }
-    return Object.assign({},s,{data:d.map(v=>+(+v).toFixed(2))});
+    if(s.index){ const mx=Math.max.apply(null,d.filter(v=>v!=null))||1; d=d.map(v=>v==null?null:v/mx*100); }
+    return Object.assign({},s,{data:d.map(v=>v==null?null:+(+v).toFixed(2))});
   };
   /* ★ 실데이터가 먼저다.
        cfg.rows — 날짜별 행을 직접 받은 차트 (할인률·리세일·수명주기)
@@ -65,6 +65,9 @@ export function gChart(host,cfg){
        둘 다 없는 차트(장식용 미니 스파크 등)만 예전처럼 씨드 난수를 쓴다. */
   /* ★ 관측이 하루뿐이면 추이를 그리지 않는다.
        한 점을 앞뒤로 이어 30일짜리 평평한 선을 만들면, 없던 과거를 지어낸 그림이 된다. */
+  /* cfg.type==='bar' — 건수 막대. 주·월은 구간 합(agg:'sum'), 빈 구간은 잇지 않는다(fill:false). */
+  const isBar=cfg.type==='bar';
+  const opt=(s)=>({points:N,step:g,raw:true,agg:s.agg||(isBar?'sum':'avg'),fill:!isBar});
   const obsDays=(rows,field)=>new Set((rows||[]).filter(r=>r&&r[field]!=null&&r.date)
     .map(r=>String(r.date).slice(0,10))).size;
   const THIN='관측된 날짜가 하루뿐이라 추이를 그리지 않습니다. 적재가 쌓이면 자동으로 그려집니다.';
@@ -75,7 +78,7 @@ export function gChart(host,cfg){
       el.dataset.live='thin';
       return;
     }
-    const live=cfg.sets.map(s=>toLive(s,seriesFromRows(s.rows||cfg.rows,{points:N,step:g,field:s.field||'value',raw:true})));
+    const live=cfg.sets.map(s=>toLive(s,seriesFromRows(s.rows||cfg.rows,Object.assign(opt(s),{field:s.field||'value'}))));
     if(live.every(Boolean)){
       el.dataset.live='ok';
       return gPaint(el,cfg,g,gLabels(g,N,lastDateOf(cfg.rows)),live);
@@ -99,8 +102,7 @@ export function gChart(host,cfg){
         el.dataset.live='thin';
         return;
       }
-      const live=cfg.sets.map(s=>toLive(s,seriesOf(cfg.term,{points:N,step:g,
-                                   field:s.field||'mention',raw:true})));
+      const live=cfg.sets.map(s=>toLive(s,seriesOf(cfg.term,Object.assign(opt(s),{field:s.field||'mention'}))));
       if(live.every(Boolean)){
         el.dataset.live='ok';
         return gPaint(el,cfg,g,gLabels(g,N,lastDateOf(st.byDate)),live);
@@ -128,10 +130,17 @@ function gPaint(el,cfg,g,labels,sets){
      높이와 글씨는 원래 크기 그대로, 가로로만 늘어난다. */
   const W=cfg.wide?gWideW(el):620;
   const n=labels.length;
-  const all=sets.reduce((a,s)=>a.concat(s.data),[]);
+  const isBar=cfg.type==='bar';
+  const all=sets.reduce((a,s)=>a.concat(s.data),[]).filter(v=>v!=null);
   const mn=cfg.min!=null?cfg.min:Math.min.apply(null,all), mx=cfg.max!=null?cfg.max:Math.max.apply(null,all);
-  const pad=(mx-mn)*.16||1, LO=cfg.min!=null?mn:mn-pad, HI=cfg.max!=null?mx:mx+pad;
-  const X=i=>PL+(W-PL-PR)*(n===1?0:i/(n-1));
+  const pad=(mx-mn)*.16||1, LO=cfg.min!=null?mn:mn-pad;
+  /* 건수 막대는 눈금이 정수로 떨어지게 위쪽 끝을 '보기 좋은 수 × 4' 로 올린다 (5.8건 같은 눈금은 없다) */
+  const niceStep=v=>{ const e=Math.pow(10,Math.floor(Math.log10(v||1))), f=v/e;
+    return Math.max(1,([1,1.5,2,2.5,3,4,5,6,8,10].find(x=>f<=x+1e-9)||10)*e); };
+  const HI=cfg.max!=null?mx:isBar?LO+Math.ceil(niceStep((mx-LO)*1.08/4))*4:mx+pad;
+  /* 막대는 칸 가운데에 선다(선처럼 양 끝에 붙으면 첫·끝 막대가 반쪽이 된다) */
+  const slot=(W-PL-PR)/Math.max(1,n);
+  const X=isBar?(i=>PL+slot*(i+.5)):(i=>PL+(W-PL-PR)*(n===1?0:i/(n-1)));
   const Y=v=>PT+(H-PT-PB)*(1-(v-LO)/((HI-LO)||1));
   const line=d=>d.map((v,i)=>(i?'L':'M')+X(i).toFixed(1)+' '+Y(v).toFixed(1)).join(' ');
   const gridY=[0,.25,.5,.75,1].map(p=>{
@@ -143,8 +152,17 @@ function gPaint(el,cfg,g,labels,sets){
   const step=Math.max(1,Math.ceil(n/6));
   const gridX=labels.map((l,i)=>(i%step===0||i===n-1)
     ? '<text class="axl" x="'+X(i).toFixed(1)+'" y="'+(H-8)+'" text-anchor="middle">'+l+'</text>':'').join('');
-  const paths=sets.map(s=>'<path class="'+(s.accent?'ln2':'ln')+'" d="'+line(s.data)+'"/>').join('');
-  const heads=sets.map(s=>'<circle class="'+(s.accent?'hd2':'hd')+'" data-s="'+s.id+'" r="4.5" cx="0" cy="0"/>').join('');
+  const colorOf=s=>s.color||(s.accent?'var(--coral)':'var(--pink-0)');
+  /* 막대: 한 칸에 계열 수만큼 나란히. 값이 없는 칸(null)은 세우지 않는다 — 0 과 '측정 못 함'은 다른 말이다. */
+  const bw=slot*.74/Math.max(1,sets.length);
+  const bars=isBar?sets.map((s,k)=>s.data.map((v,i)=>{
+    if(v==null)return '';
+    const y=Y(v), h=Math.max(0,(H-PB)-y);
+    return '<rect class="gBar" data-s="'+s.id+'" x="'+(X(i)-slot*.37+bw*k).toFixed(1)+'" y="'+y.toFixed(1)+
+      '" width="'+Math.max(1,bw-1).toFixed(1)+'" height="'+h.toFixed(1)+'" rx="1.5" style="fill:'+colorOf(s)+'"/>';
+  }).join('')).join(''):'';
+  const paths=isBar?'':sets.map(s=>'<path class="'+(s.accent?'ln2':'ln')+'" d="'+line(s.data)+'"/>').join('');
+  const heads=isBar?'':sets.map(s=>'<circle class="'+(s.accent?'hd2':'hd')+'" data-s="'+s.id+'" r="4.5" cx="0" cy="0"/>').join('');
   el.innerHTML=
     '<div class="gSel">'+GRAN.map(x=>'<button type="button" data-g="'+x[0]+'"'+
       (x[0]===g?' class="on"':'')+'>'+x[1]+'</button>').join('')+'</div>'+
@@ -154,39 +172,47 @@ function gPaint(el,cfg,g,labels,sets){
           (X(Math.round(n*cfg.band[1]))-X(Math.round(n*cfg.band[0])))+'" height="'+(H-PT-PB)+'"/>':'')+
         gridY+gridX+
         '<line class="ax" x1="'+PL+'" y1="'+(H-PB)+'" x2="'+(W-PR)+'" y2="'+(H-PB)+'" stroke="var(--pink-3)"/>'+
-        paths+
-        '<line class="xh" x1="0" y1="'+PT+'" x2="0" y2="'+(H-PB)+'"/>'+heads+
+        (isBar?'<rect class="gCol" x="0" y="'+PT+'" width="'+slot.toFixed(1)+'" height="'+(H-PT-PB)+'"/>'+bars:paths)+
+        (isBar?'':'<line class="xh" x1="0" y1="'+PT+'" x2="0" y2="'+(H-PB)+'"/>')+heads+
         '<rect x="'+PL+'" y="0" width="'+(W-PL-PR)+'" height="'+H+'" fill="transparent" class="hit"/>'+
       '</svg>'+
       '<div class="gTip"></div>'+
     '</div>'+
     (cfg.sets.length>1?'<div class="gLegend">'+sets.map(s=>
-      '<span><i style="background:'+(s.accent?'var(--coral)':'var(--pink-0)')+'"></i>'+s.name+'</span>').join('')+'</div>':'');
+      '<span><i'+(isBar?' class="sq"':'')+' style="background:'+colorOf(s)+'"></i>'+s.name+'</span>').join('')+'</div>':'');
   /* 판독 — viewBox 가 늘어나므로 화면 좌표를 비율로 되돌려 인덱스를 찾는다 */
   const box=el.querySelector('.chartBox'), svg=el.querySelector('svg'), tip=el.querySelector('.gTip');
-  const xh=el.querySelector('.xh'), hds=[...el.querySelectorAll('.hd,.hd2')];
+  const xh=el.querySelector('.xh'), hds=[...el.querySelectorAll('.hd,.hd2')], col=el.querySelector('.gCol');
+  const fmt=(s,v)=>v==null?'–':(isBar?Math.round(v).toLocaleString():v.toFixed(1));
   const read=e=>{
     const r=svg.getBoundingClientRect(); if(!r.width)return;
     const px=(e.clientX-r.left)/r.width*W;
-    let i=Math.round((px-PL)/((W-PL-PR)/(n-1||1)));
+    let i=isBar?Math.floor((px-PL)/slot):Math.round((px-PL)/((W-PL-PR)/(n-1||1)));
     i=Math.max(0,Math.min(n-1,i));
     box.classList.add('hov');
-    xh.setAttribute('x1',X(i)); xh.setAttribute('x2',X(i));
-    hds.forEach((h,k)=>{ h.setAttribute('cx',X(i)); h.setAttribute('cy',Y(sets[k].data[i])) });
+    if(xh){ xh.setAttribute('x1',X(i)); xh.setAttribute('x2',X(i)); }
+    if(col) col.setAttribute('x',(X(i)-slot/2).toFixed(1));
+    hds.forEach((h,k)=>{ h.setAttribute('cx',X(i)); h.setAttribute('cy',Y(sets[k].data[i]??LO)) });
     tip.innerHTML='<span class="dt">'+labels[i]+'</span>'+sets.map(s=>
-      '<span class="vv"><i style="background:'+(s.accent?'var(--coral)':'var(--paper)')+'"></i>'+
-      '<b>'+s.data[i].toFixed(1)+'</b><span>'+(s.unit||'')+'</span></span>').join('');
+      '<span class="vv"><i style="background:'+(isBar&&colorOf(s)!=='var(--pink-0)'?colorOf(s):(s.accent?'var(--coral)':'var(--paper)'))  /* 검정 막대는 검정 말풍선 위에서 안 보여 종이색 점으로 */+'"></i>'+
+      (isBar?'<span>'+s.name.replace(/\s*\(.*\)$/,'')+'</span>':'')+
+      '<b>'+fmt(s,s.data[i])+'</b><span>'+(s.data[i]==null?'':(s.unit||''))+'</span></span>').join('');
     tip.style.left=(X(i)/W*100)+'%';
-    tip.style.top=(Math.min.apply(null,sets.map(s=>Y(s.data[i])))/H*100-4)+'%';
+    const ys=sets.map(s=>s.data[i]).filter(v=>v!=null).map(Y);
+    tip.style.top=((ys.length?Math.min.apply(null,ys):H-PB)/H*100-4)+'%';
   };
   svg.addEventListener('mousemove',read);
   svg.addEventListener('mouseleave',()=>box.classList.remove('hov'));
   el.querySelector('.gSel').addEventListener('click',ev=>{
     const b=ev.target.closest('button'); if(!b)return;
     el.dataset.g=b.dataset.g; gChart(el,cfg);
-    if(HAS_A)aAnimate(el.querySelectorAll('.ln,.ln2'),{opacity:[0,1],duration:420,ease:'out(2)'});
+    if(HAS_A)aAnimate(el.querySelectorAll('.ln,.ln2,.gBar'),{opacity:[0,1],duration:420,ease:'out(2)'});
   });
-  gDraw(el.querySelectorAll('.ln,.ln2'),1050,180);
+  if(isBar){
+    /* 막대는 바닥에서 솟아오르게 — anime.js 가 없으면 그냥 서 있는 채로 둔다 */
+    const bs=el.querySelectorAll('.gBar');
+    if(HAS_A&&bs.length){ try{ aAnimate(bs,{scaleY:[0,1],duration:620,delay:aStagger(6),ease:'out(3)'}); }catch(e){} }
+  } else gDraw(el.querySelectorAll('.ln,.ln2'),1050,180);
   return el;
 }
 function gWideW(el){

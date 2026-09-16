@@ -695,45 +695,80 @@ export function trRender(id){
     }
     const E=entryOf(kw), rows=((E&&E.data&&E.data.series)||[]);
     const last=rows[rows.length-1]||{};
-    if(last.intent==null && last.pos_rate==null){
-      body.innerHTML=unavailableHTML('‘'+kw+'’ 의 긍부정·구매의향 지표가 아직 계산되지 않았습니다.',
-        '반응 분류(긍정·부정·의도) 적재가 돌면 채워집니다.');
+    /* '계산이 안 됐다'와 '계산했는데 분류된 반응이 0건이다'는 다른 말이다.
+       행은 있는데 긍정·중립·부정·의도 건수가 전부 0 이면 그렇게 적는다. */
+    const CNT=['pos_n','neu_n','neg_n','question_n','purchase_n','experience_n','praise_n','critique_n','chitchat_n'];
+    const anyCount=rows.some(r=>CNT.some(f=>(+r[f]||0)>0));
+    if(last.intent==null && last.pos_rate==null && !anyCount){
+      const counted=rows.some(r=>CNT.some(f=>r[f]!=null));
+      body.innerHTML=counted
+        ? unavailableHTML('‘'+kw+'’ 에 분류된 반응이 아직 0건입니다.',
+            '지표 행('+trEsc(last.date)+' 기준)은 있지만 긍정·중립·부정, 질문·구매·경험·호평·비판·잡담이 모두 0 입니다.<br>'+
+            '댓글·리뷰 반응 분류가 이 용어에 붙으면 채워집니다.')
+        : unavailableHTML('‘'+kw+'’ 의 긍부정·구매의향 지표가 아직 계산되지 않았습니다.',
+            '반응 분류(긍정·부정·의도) 적재가 돌면 채워집니다.');
       return;
     }
     const recent=rows.filter(r=>trDayDiff(r.date,last.date)<28);
     const sum=f=>recent.reduce((a,r)=>a+(+r[f]||0),0);
-    /* [이름, 최근 28일 건수, 극성(1 긍정 · 0 중립 · -1 부정)] */
-    const SIG=[['구매 반응',sum('purchase_n'),1],['호평',sum('praise_n'),1],['경험 공유',sum('experience_n'),1],
-               ['질문',sum('question_n'),0],['비판',sum('critique_n'),-1],['부정 반응',sum('neg_n'),-1]]
-      .filter(x=>x[1]>0).sort((a,b)=>b[1]-a[1]);
+    /* 신호 유형 = analysis.term_metric_daily 의 의도(intent) 칸 6개 그대로.
+         question_count · purchase_count · experience_count · praise_count · critique_count · chitchat_count
+       순서는 DB 칸 순서로 고정한다(건수로 줄 세우면 날마다 자리가 바뀌어 비교가 안 된다).
+       0건도 지우지 않고 0 으로 보여 준다 — '없었다'도 결과다.
+       [이름, 최근 28일 건수, 극성(1 긍정 계열 · 0 중립 · -1 부정 계열)] */
+    const SIG_ALL=[['질문',sum('question_n'),0],['구매',sum('purchase_n'),1],['경험',sum('experience_n'),1],
+                   ['호평',sum('praise_n'),1],['비판',sum('critique_n'),-1],['잡담',sum('chitchat_n'),0]];
+    /* 응답에 의도 칸이 아예 없으면(예전 API) 0 으로 채워 보여 주지 않는다 */
+    const hasIntent=recent.some(r=>['question_n','purchase_n','experience_n','praise_n','critique_n','chitchat_n']
+      .some(f=>r[f]!=null));
+    const SIG=hasIntent&&SIG_ALL.some(x=>x[1]>0)?SIG_ALL:[];
     const total=sum('pos_n')+sum('neu_n')+sum('neg_n');
-    const topPos=SIG.find(x=>x[2]>0), topNeg=SIG.find(x=>x[2]<0);
-    const posPct=last.pos_rate!=null?Math.round(last.pos_rate):null;
-    const negPct=last.neg_rate!=null?Math.round(last.neg_rate):null;
+    const byCount=SIG.filter(x=>x[1]>0).slice().sort((a,b)=>b[1]-a[1]);
+    const topPos=byCount.find(x=>x[2]>0), topNeg=byCount.find(x=>x[2]<0);
+    /* ── 판정 기준 ──
+       ① 구매의향 지수(purchase_intent_index)가 있으면 그 값을 그대로 쓴다.
+       ② 없으면 '긍정 비율'로 대신하지 않는다.
+          긍정 비율은 중립까지 분모에 들어가서, 긍정 3 · 중립 3 · 부정 0 이 50% → '팽팽'으로 잘못 판정됐다.
+          대신 긍정과 부정만 맞대 본 '긍정 우위' = 긍정 ÷ (긍정+부정) × 100 (최근 28일 합)을 쓴다.
+       ③ 최근 28일 반응이 SENT_MIN_N 건 미만이면 판정하지 않는다. 몇 건으로 '강한 신호'라 말하지 않는다. */
+    const SENT_MIN_N=20;
+    const posS=sum('pos_n'), neuS=sum('neu_n'), negS=sum('neg_n');
+    const pct=(v)=>total>0?Math.round(v/total*100):null;
+    const posPct=total>0?pct(posS):(last.pos_rate!=null?Math.round(last.pos_rate):null);
+    const negPct=total>0?pct(negS):(last.neg_rate!=null?Math.round(last.neg_rate):null);
     const score=last.intent!=null?Math.round(last.intent):null;
-    const dialV=score!=null?score:(posPct||0);
-    const band=dialV>=75?0:dialV>=55?1:dialV>=35?2:3;
-    const RAMP=['#b23b3b','#c98a1b','#3d7fd6','#1f9e6e'].slice(0,4-band);
-    const BAND=[['#1f9e6e','강한 구매 신호','긍정 신호가 압도적입니다. 지금 재고·물량을 걱정할 시점입니다.'],
-                ['#3d7fd6','구매 신호 우세','긍정 쪽이 앞서 있습니다. 부정 신호가 늘지 않는지만 함께 지켜보세요.'],
-                ['#c98a1b','팽팽한 신호','긍정과 부정이 비슷하게 맞섭니다. 부정 신호의 종류를 먼저 확인해야 합니다.'],
-                ['#b23b3b','구매 저해 신호 우세','부정 신호가 앞섭니다. 가격·실물 관련 이슈부터 해소돼야 반등합니다.']][band];
-    const maxSig=SIG.length?SIG[0][1]:1;
+    const lead=(posS+negS)>0?Math.round(posS/(posS+negS)*100):null;
+    const thin=score==null&&(total<SENT_MIN_N||lead==null);
+    const dialV=score!=null?score:(lead!=null?lead:0);
+    const band=thin?-1:dialV>=75?0:dialV>=55?1:dialV>=35?2:3;
+    const RAMP=thin?['#9a968f']:['#b23b3b','#c98a1b','#3d7fd6','#1f9e6e'].slice(0,4-band);
+    const BAND=thin
+      ? ['#9a968f','판단 보류',
+         '최근 28일 반응이 '+total.toLocaleString()+'건뿐이라 판정하기엔 자료가 적습니다.<br>'+
+         '긍정 '+posS+' · 중립 '+neuS+' · 부정 '+negS+'건입니다. '+SENT_MIN_N+'건 이상 모이면 판정합니다.']
+      : [['#1f9e6e','강한 구매 신호','긍정 신호가 압도적입니다. 지금 재고·물량을 걱정할 시점입니다.'],
+         ['#3d7fd6','구매 신호 우세','긍정 쪽이 앞서 있습니다. 부정 신호가 늘지 않는지만 함께 지켜보세요.'],
+         ['#c98a1b','팽팽한 신호','긍정과 부정이 비슷하게 맞섭니다. 부정 신호의 종류를 먼저 확인해야 합니다.'],
+         ['#b23b3b','구매 저해 신호 우세','부정 신호가 앞섭니다. 가격·실물 관련 이슈부터 해소돼야 반등합니다.']][band];
+    const dialLabel=score!=null?'구매의향 지수':'긍정 우위 %';
+    const maxSig=Math.max(1,...SIG.map(x=>x[1]));
     body.innerHTML=
       '<div class="verdict" style="--sc:'+BAND[0]+'">'+
         '<div class="dial"><svg viewBox="0 0 120 120">'+
           '<circle class="trk" cx="60" cy="60" r="50"/>'+
           '<circle class="val" cx="60" cy="60" r="50" data-ramp="'+RAMP.join(',')+'" data-score="'+dialV+'" '+
             'stroke-dasharray="314.16" stroke-dashoffset="314.16"/></svg>'+
-          '<span class="num"><b data-count="'+dialV+'">0</b><small>'+(score!=null?'구매의향 지수':'긍정 비율 %')+'</small></span></div>'+
+          '<span class="num"><b data-count="'+dialV+'">0</b><small>'+(dialV===0&&lead==null&&score==null?'–':dialLabel)+'</small></span></div>'+
         '<div class="vdTx">'+
-          '<h4><b>'+trEsc(kw)+'</b>'+josa(kw,'은','는')+' 지금 <em>'+BAND[1]+'</em>입니다.</h4>'+
+          (thin
+            ? '<h4><b>'+trEsc(kw)+'</b>'+josa(kw,'은','는')+' 아직 <em>'+BAND[1]+'</em>입니다.</h4>'
+            : '<h4><b>'+trEsc(kw)+'</b>'+josa(kw,'은','는')+' 지금 <em>'+BAND[1]+'</em>입니다.</h4>')+
           '<p>'+BAND[2]+'</p>'+
-          '<div class="vdBand">'+['저해우세','팽팽','우세','강한신호'].map((s,i)=>'<div'+(i===(3-band)?' class="on"':'')+
+          '<div class="vdBand">'+['저해우세','팽팽','우세','강한신호'].map((s,i)=>'<div'+(!thin&&i===(3-band)?' class="on"':'')+
             '><span>'+s+'</span></div>').join('')+'</div>'+
           '<div class="vdMeta">'+
-            '<div><b>'+(posPct==null?'–':posPct+'%')+'</b><span>긍정 반응 비율</span></div>'+
-            '<div><b>'+(negPct==null?'–':negPct+'%')+'</b><span>부정 반응 비율</span></div>'+
+            '<div><b>'+(posPct==null?'–':posPct+'%')+'</b><span>긍정 반응 비율 · 28일</span></div>'+
+            '<div><b>'+(negPct==null?'–':negPct+'%')+'</b><span>부정 반응 비율 · 28일</span></div>'+
             '<div><b>'+trEsc(last.date)+'</b><span>기준일</span></div>'+
           '</div>'+
         '</div></div>'+
@@ -742,22 +777,25 @@ export function trRender(id){
         kpi('최다 긍정 신호',topPos?topPos[0]:'–','',topPos?topPos[1].toLocaleString()+'건':'아직 없음',1)+
         kpi('최다 부정 신호',topNeg?topNeg[0]:'–','',topNeg?topNeg[1].toLocaleString()+'건':'아직 없음',0)+'</div>'+
       '<div class="trGrid" style="align-items:start">'+
-        '<div class="panelC" id="sentChartCard"><div class="gHead"><h3>긍정 · 부정 비율 추이</h3></div>'+
+        '<div class="panelC" id="sentChartCard"><div class="gHead"><h3>긍정 · 중립 · 부정 반응 건수 추이</h3></div>'+
           '<div data-chart="sentMain"></div>'+
-          '<div class="note"><i>◆</i>두 선이 벌어질수록 구매 의향이 뚜렷해지는 구간이고, 좁아지면 망설임이 커지는 구간입니다.</div></div>'+
+          '<div class="note"><i>◆</i>막대 하나가 그 날(주별·월별은 그 구간 합계)의 반응 건수입니다.<br>'+
+            '긍정 막대가 부정보다 꾸준히 높으면 구매 쪽으로 기운 구간입니다. 빈 칸은 적재가 없던 날입니다.</div></div>'+
         '<div class="panelC" id="sentSigCard"><div class="ph"><h3>신호 유형별 건수</h3><em>최근 28일</em></div>'+
           '<div class="sigWrap" id="sigWrap">'+(SIG.length
           ? '<table class="mTable"><tr><th>신호</th><th></th><th>건수</th></tr>'+
-            SIG.map(p=>'<tr><td>'+p[0]+'</td>'+
+            SIG.map(p=>'<tr data-sig="'+p[0]+'"><td>'+p[0]+'</td>'+
               '<td><span class="bar" style="display:block"><i class="'+(p[2]>0?'c':'')+'" style="width:'+Math.round(p[1]/maxSig*100)+'%"></i></span></td>'+
-              '<td class="n '+(p[2]>0?'up':'dn')+'">'+p[1].toLocaleString()+'</td></tr>').join('')+'</table>'
-          : unavailableHTML('반응 유형(구매·호평·비판 등) 건수가 아직 없습니다.',''))+'</div>'+
+              '<td class="n '+(p[2]>0?'up':p[2]<0?'dn':'')+'">'+p[1].toLocaleString()+'</td></tr>').join('')+'</table>'
+          : unavailableHTML('반응 유형(질문·구매·경험·호평·비판·잡담) 건수가 아직 없습니다.',''))+'</div>'+
           '<button class="sigMore" id="sigMoreBtn" type="button" hidden>+ 더보기</button>'+
-          '<div class="note"><i>◆</i>주황이 긍정 계열(구매·호평·경험), 검정이 중립·부정 계열입니다.</div></div>'+
+          '<div class="note"><i>◆</i>주황이 긍정 계열(구매·경험·호평), 검정이 중립(질문·잡담)·부정(비판) 계열입니다.</div></div>'+
       '</div>';
-    G_CFG.sentMain={key:kw+'sent',term:kw,min:0,max:100,
-      sets:[{id:'p',name:'긍정 비율 (%)',field:'pos_rate',unit:'%',accent:1},
-            {id:'n',name:'부정 비율 (%)',field:'neg_rate',unit:'%'}]};
+    /* 비율(%) 선 → 건수 막대. 주·월은 구간 합계(agg:'sum'), 빈 날은 막대를 세우지 않는다. */
+    G_CFG.sentMain={key:kw+'sent',term:kw,type:'bar',min:0,
+      sets:[{id:'p',name:'긍정',field:'pos_n',unit:'건',agg:'sum',color:'var(--coral)',accent:1},
+            {id:'u',name:'중립',field:'neu_n',unit:'건',agg:'sum',color:'#c9c7c2'},
+            {id:'n',name:'부정',field:'neg_n',unit:'건',agg:'sum',color:'var(--pink-0)'}]};
     gChart('[data-chart="sentMain"]',G_CFG.sentMain); trDial(); trFillBars();
     sentFitSignals();   /* 왼쪽 차트 카드 높이에 맞춰 넘치는 신호 목록을 접고 '+더보기' 로 연다 */
   }
