@@ -1254,6 +1254,50 @@ def products(request):
     })
 
 
+@require_GET
+def price_history(request):
+    """GET /api/price-history?ids=17,18,19 — 찜한 상품들의 가격 기록 요약.
+
+    트렌드 분석 › 찜한 키워드 화면이 '최저가'를 실값으로 그리려고 부른다.
+    ids 는 commerce.product_source.id (스타일 페이지 상품 카드의 product_source_id).
+    가격은 판매가, 없으면 정가를 쓴다. 스냅샷이 없는 상품은 결과에서 빠진다 —
+    0원이나 추정값으로 채우지 않는다.
+    """
+    raw = (request.GET.get("ids") or "").replace(" ", "")
+    ids = []
+    for x in raw.split(","):
+        if x.isdigit() and int(x) not in ids:
+            ids.append(int(x))
+    ids = ids[:100]
+    if not ids:
+        return _empty("ids 가 비어 있습니다 (예: ?ids=17,18).")
+
+    out = {}
+    rows = (ProductSourceSnapshot.objects.filter(product_source_id__in=ids)
+            .order_by("product_source_id", "observed_at")
+            .values("product_source_id", "list_price", "sale_price", "observed_at"))
+    for r in rows:
+        price = _num(r["sale_price"]) if r["sale_price"] is not None else _num(r["list_price"])
+        if price is None:
+            continue
+        d = out.setdefault(str(r["product_source_id"]), {
+            "points": 0, "min": price, "max": price, "min_at": r["observed_at"],
+            "first_at": r["observed_at"], "current": price, "current_at": r["observed_at"],
+            "previous": None, "list": None,
+        })
+        d["points"] += 1
+        if price < d["min"]:
+            d["min"], d["min_at"] = price, r["observed_at"]
+        d["max"] = max(d["max"], price)
+        if d["points"] > 1:
+            d["previous"] = d["current"]
+        d["current"], d["current_at"] = price, r["observed_at"]
+        d["list"] = _num(r["list_price"])
+    if not out:
+        return _empty("요청한 상품들에 가격 스냅샷이 아직 없습니다.", ids=ids)
+    return _ok({"count": len(out), "items": out})
+
+
 def _salmal_card_payload(card):
     product = card.product
     ballots = VoteBallot.objects.filter(card_id=card.id)

@@ -1,6 +1,7 @@
 import { $, $$, HAS_A, aAnimate, aSpring, aStagger, aUtils } from '../../../core/static/js/dom.js';
-import { IMG } from '../../../home/static/js/chat.js';
+import { LIKED } from '../../../home/static/js/chat.js';
 import { trRender } from './dispatch.js';
+import { entryOf, prime, primeUrl, stateOf, stateOfUrl } from './live_data.js';
 
 /* ══════════════════════════════════════════════════════════════
    찜한 키워드
@@ -11,99 +12,224 @@ import { trRender } from './dispatch.js';
    ══════════════════════════════════════════════════════════════ */
 /* 이슈 유형 — [배지 문구, 큰 제목, 색] */
 const SV_KIND={
-  surge:['급등',     '트렌드 지수 <em>폭등</em>',   '#ff6b4a'],
-  low  :['최저가',   '역대 <em>최저가</em> 경신',   '#1f9e6e'],
-  drop :['급락',     '열기가 <em>빠지는 중</em>',   '#3d7fd6'],
-  calm :['잠잠',     '한 달째 <em>조용함</em>',     '#8a8781']
+  surge:['급등',     '트렌드 온도 <em>상승</em>',     '#ff6b4a'],
+  low  :['최저가',   '기록 중 <em>최저가</em>',       '#1f9e6e'],
+  drop :['급락',     '열기가 <em>빠지는 중</em>',     '#3d7fd6'],
+  calm :['잠잠',     '지난주와 <em>비슷함</em>',      '#8a8781'],
+  none :['측정 전',  '지표 <em>측정 전</em>',         '#b5b1aa']
 };
-/* 찜해둔 것들. 위에서부터 오늘 시끄러운 순서다. */
-export const SV=[
-  {n:'모노 테일러드 자켓',b:'ETCE',      p:189000,lo:174000,img:20,d:9, idx:91,was:62,k:'surge',
-   why:'미니멀 셋업',
-   note:'셋업 재킷 언급이 사흘 만에 <b>2.4배</b>가 됐습니다. 같은 걸 찜해둔 사람도 하루 사이 <b>412명</b> 늘었습니다. 지금 사도 되는 구간입니다.'},
-  {n:'스웨이드 블루종', b:'ANDERSSON',p:329000,lo:298000,img:21, d:23,idx:74,was:71,k:'low',
-   why:'클래식',
-   note:'298,000원 — 찜한 뒤 가장 낮습니다. 지난 최저가보다 9% 아래.'},
-  {n:'와이드 셀비지',   b:'MUSINSA',  p:159000,lo:159000,img:19, d:14,idx:68,was:58,k:'surge',
-   why:'아메카지',
-   note:'아메카지 검색량이 사흘 새 크게 늘었습니다. 같은 걸 찜해둔 사람도 함께 늘고 있습니다.'},
-  {n:'후디 집업',       b:'OFF-WHITE',p:429000,lo:398000,img:18, d:31,idx:38,was:59,k:'drop',
-   why:'스트릿',
-   note:'2주 연속 내려오는 중입니다. 서두를 이유가 없어졌습니다.'},
-  {n:'발레 플랫',       b:'REPETTO',  p:298000,lo:279000,img:28,d:6, idx:86,was:78,k:'surge',
-   why:'발레코어',
-   note:'발레코어가 다시 올라오면서 같이 붙었습니다.'},
-  {n:'클래식 볼캡',     b:'POLO',     p:69000, lo:59000, img:16,d:47,idx:44,was:45,k:'calm',
-   why:'프레피',
-   note:'한 달 넘게 변화가 없습니다.'},
-  {n:'에어 포스 1 · 07',b:'NIKE',     p:139000,lo:119000,img:11,d:52,idx:57,was:56,k:'calm',
-   why:'스트릿',
-   note:'스테디셀러라 지표가 거의 움직이지 않습니다.'},
-  {n:'케이블 니트',     b:'COS',      p:119000,lo:98000, img:25, d:18,idx:72,was:60,k:'surge',
-   why:'놈코어',
-   note:'가을 초입 검색이 붙기 시작했습니다.'},
-  {n:'카고 팬츠',       b:'STUSSY',   p:179000,lo:161000,img:30, d:38,idx:41,was:63,k:'drop',
-   why:'고프코어',
-   note:'고프코어 전반이 식는 흐름을 그대로 따라갑니다.'}
-];
+/* ══════════════════════════════════════════════════════════════
+   ★ 데이터 출처 (2026-09)
+   --------------------------------------------------------------
+   찜 목록은 스타일 페이지 '이 스타일의 아이템'(실데이터 상품)에서 하트를 눌러 쌓인
+   chat.js 의 LIKED(localStorage) 를 읽는다. 로그인·사용자 테이블이 아직 없어서
+   찜 저장만 브라우저에 두는 목업이다.
+
+   실데이터
+   - 상품 정보 : 상품명 · 브랜드 · 이미지 · 가격 · 카테고리 · 링크 (/api/products)
+   - 트렌드 온도 : 찜한 스타일의 trend_temperature — 최신값과 7일 전 값 (/api/trend)
+                  ※ 상품 단위 지표는 없어서 '상품이 속한 스타일'의 온도다.
+   - 최저가   : 상품 가격 스냅샷의 최저·최고·현재가 (/api/price-history)
+   - 이슈 유형 : 위 두 실값으로 판정한다 (최저가 → 온도 ±5 이상 → 잠잠)
+
+   목업
+   - 같은 걸 찜한 사람 수 : 사용자 데이터가 없어 상품 id 고정 난수로 채운다.
+
+   값이 없으면 지어내지 않고 '측정 전' · '—' 로 둔다.
+   ══════════════════════════════════════════════════════════════ */
+const svEsc=v=>String(v==null?'':v).replace(/[&<>"']/g,c=>({
+  '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+/* 상품 id → 고정 난수 (같은 걸 찜한 사람 수 목업 전용) */
+function svSeed(id){
+  let h=2166136261;
+  for(const ch of String(id)){ h^=ch.charCodeAt(0); h=Math.imul(h,16777619); }
+  h^=h>>>13; h=Math.imul(h,3266489917); h^=h>>>16;
+  return (h>>>0)/4294967296;
+}
+/* '189,000원' 같은 문자열에서도 숫자를 되찾는다 (예전에 저장된 찜 · 추천 카드) */
+const svNum=v=>{ if(typeof v==='number')return Number.isFinite(v)?v:null;
+  const n=Number(String(v||'').replace(/[^0-9]/g,'')); return n>0?n:null; };
+/* 'db-17' → 17 (product_source_id). 실데이터 상품이 아니면 null */
+const svSrcId=id=>{ const m=/^db-(\d+)$/.exec(String(id)); return m?m[1]:null; };
+
+/* ── 실데이터 받아 두기 ─────────────────────────────────
+   svRender 는 동기로 그린다. 그래서 여기서 받아 두고, 도착하면
+   찜한 키워드 화면이 아직 열려 있을 때만 다시 그린다. */
+const SV_TRIED={};
+const svPriceUrl=ids=>'/api/price-history?ids='+ids.slice().sort((x,y)=>x-y).join(',');
+function svLoad(items){
+  const now=Date.now(), jobs=[];
+  const styles=[...new Set(items.map(([,d])=>d.styleName).filter(Boolean))];
+  styles.forEach(st=>{
+    if(stateOf(st).status==='unknown'&&now-(SV_TRIED['t:'+st]||0)>3000){
+      SV_TRIED['t:'+st]=now; jobs.push(prime(st));
+    }
+  });
+  const ids=items.map(([id])=>svSrcId(id)).filter(Boolean);
+  if(ids.length){
+    const url=svPriceUrl(ids);
+    if(stateOfUrl(url).status==='unknown'&&now-(SV_TRIED[url]||0)>3000){
+      SV_TRIED[url]=now; jobs.push(primeUrl(url));
+    }
+  }
+  if(!jobs.length)return false;
+  Promise.all(jobs.map(j=>Promise.resolve(j).catch(()=>{}))).then(()=>{
+    if($('#trBody [data-sv-root]'))trRender('saved');
+  });
+  return true;
+}
+
+/* 스타일 온도 — 최신값과 7일 전(가장 가까운 이전 날) 값 */
+function svTemp(style){
+  if(!style)return {state:'none',reason:'어느 스타일에서 찜했는지 기록이 없습니다.'};
+  const st=stateOf(style);
+  if(st.status==='unknown')return {state:'loading',reason:'트렌드 온도를 불러오는 중입니다.'};
+  if(st.status!=='ok')return {state:'none',reason:st.reason||'측정된 지표가 없습니다.'};
+  const e=entryOf(style);
+  const rows=(e&&e.data&&e.data.series||[]).filter(r=>r&&r.temp!=null);
+  if(!rows.length)return {state:'none',reason:'‘'+style+'’ 의 트렌드 온도 값이 비어 있습니다.'};
+  const last=rows[rows.length-1];
+  const lastT=new Date(last.date+'T00:00:00Z').getTime();
+  let prev=null;
+  for(let i=rows.length-2;i>=0;i--){
+    const t=new Date(rows[i].date+'T00:00:00Z').getTime();
+    if(lastT-t>=7*86400000){ prev=rows[i]; break; }
+  }
+  return {state:'ok', idx:Math.round(last.temp), was:prev?Math.round(prev.temp):null,
+          asOf:last.date, wasDate:prev&&prev.date};
+}
+
+/* 가격 기록 — /api/price-history 응답에서 이 상품 몫 */
+function svPrice(id){
+  const src=svSrcId(id); if(!src)return null;
+  const ids=[...LIKED.keys()].map(svSrcId).filter(Boolean);
+  const st=stateOfUrl(svPriceUrl(ids));
+  if(st.status!=='ok'||!st.data||!st.data.items)return null;
+  return st.data.items[src]||null;
+}
+
+function svBuild(id,d){
+  const why=d.styleName||d.cat||'찜한 아이템';
+  const t=svTemp(d.styleName);
+  const ph=svPrice(id);
+  const p=(ph&&ph.current)||svNum(d.price)||svNum(d.pr)||0;
+  const lo=ph?ph.min:null, hi=ph?ph.max:null;
+  const idx=t.state==='ok'?t.idx:null, was=t.state==='ok'?t.was:null;
+  const dl=idx!=null&&was!=null?idx-was:null;
+  /* 최저가 판정: 가격 기록이 두 번 이상이고, 지금 가격이 기록 최저이며, 더 비쌌던 적이 있다 */
+  const atLow=!!(ph&&ph.points>=2&&p<=lo&&hi>lo);
+  let kind;
+  if(atLow)kind='low';
+  else if(dl!=null)kind=dl>=5?'surge':dl<=-5?'drop':'calm';
+  else kind='none';
+
+  const likedAt=d.likedAt||Date.now();
+  const days=Math.max(0,Math.floor((Date.now()-likedAt)/86400000));
+  const W=svEsc(why);
+  const tempLine=dl!=null?'<b>'+W+'</b> 트렌드 온도 지난주 <b>'+was+'</b> → 이번 주 <b>'+idx+'</b>.':'';
+  const note={
+    surge:tempLine+' 스타일 전체가 올라오는 중입니다.',
+    drop :tempLine+' 열기가 내려오는 중이라 서두를 이유가 없습니다.',
+    calm :tempLine+' 지난주와 거의 같습니다.',
+    low  :svWon(p)+' — 기록된 가격 중 가장 낮습니다'+
+          (hi?' (최고 '+svWon(hi)+' 대비 <b>'+Math.round((1-p/hi)*100)+'%</b> 아래)':'')+'.'+
+          (dl!=null?' '+tempLine:''),
+    none :svEsc(t.reason||'지표가 아직 없습니다.')
+  }[kind];
+  return { id, n:d.nm||'상품명 없음', b:d.br||'', img:d.img||'', url:d.url||'',
+           p, lo, hi, atLow, d:days, idx, was, dl, k:kind, why, note, asOf:t.asOf||null,
+           same:Math.round(120+svSeed(id)*2400) };   /* ← 유일한 목업 값 */
+}
+
+/* 찜 목록 → 화면 데이터. 위에서부터 오늘 시끄러운 순서(최저가 → 온도 변화 폭 → 잠잠 → 측정 전). */
+function svList(){
+  const w={low:4,surge:3,drop:2,calm:1,none:0};
+  return [...LIKED.entries()].map(([id,d])=>svBuild(id,d))
+    .sort((a,b)=>(w[b.k]-w[a.k])||(Math.abs(b.dl||0)-Math.abs(a.dl||0)));
+}
+var SV=[];
 const SV_TABS=[['all','전체'],['surge','급등'],['low','최저가'],
-               ['drop','급락'],['calm','잠잠']];
+               ['drop','급락'],['calm','잠잠'],['none','측정 전']];
 var SV_F='all';
 
-export const svWon=v=>v.toLocaleString('ko-KR')+'원';
+export const svWon=v=>Number(v||0).toLocaleString('ko-KR')+'원';
+const svAge=n=>n<=0?'오늘':n+'일 전';
+const svPic=s=>s.img?'<img src="'+svEsc(s.img)+'" alt="" loading="lazy">':'';
+const svV=v=>v==null?'—':String(v);
 
 export function svRender(body){
+  const entries=[...LIKED.entries()];
+  const loading=svLoad(entries);
+  SV=svList();
   /* kpi() 는 trRender 안쪽 지역 함수라 여기선 보이지 않는다. 같은 모양으로 하나 둔다. */
   const kpi=(l,v,u,d,up)=>'<div class="kpi"><span>'+l+'</span><b>'+v+(u?'<u>'+u+'</u>':'')+
     '</b><div class="dl '+(up?'up':'dn')+'">'+d+'</div></div>';
-  const h=SV[0], hk=SV_KIND[h.k], dl=h.idx-h.was;
+
+  /* 아직 찜한 게 없으면 — 스타일 페이지로 안내한다 */
+  if(!SV.length){
+    body.innerHTML=
+      '<section class="panelC svList" data-sv-root>'+
+        '<div class="ph"><h3>찜한 것 전체</h3><em>WATCHLIST</em></div>'+
+        '<div class="svEmpty">아직 찜한 아이템이 없습니다.<br>'+
+          '스타일 페이지의 ‘이 스타일의 아이템’에서 하트를 눌러 찜하면 이곳에서 지표를 지켜볼 수 있습니다.'+
+          '<div style="margin-top:14px"><button type="button" class="pill" data-v="style"><i>→</i> 스타일 보러 가기</button></div>'+
+        '</div>'+
+      '</section>';
+    return;
+  }
+
+  const h=SV[0], hk=SV_KIND[h.k];
   const also=SV.slice(1,4);
-  const moved=SV.filter(s=>s.k!=='calm').length;
-  const lows =SV.filter(s=>s.p<=s.lo*1.02).length;
+  const moved=SV.filter(s=>s.k==='surge'||s.k==='drop'||s.k==='low').length;
+  const lows =SV.filter(s=>s.atLow).length;
   const quiet=SV.filter(s=>s.k==='calm').length;
+  const none =SV.filter(s=>s.k==='none').length;
+  const week =SV.filter(s=>s.d<7).length;
+  const styles=new Set(SV.map(s=>s.why)).size;
 
   body.innerHTML=
+    '<div data-sv-root>'+
     /* ── 오늘의 이슈 ─────────────────────────────────
        금주의 리포트 히어로와 같은 틀 — 사진은 카드 가장자리까지 꽉 차고,
-       문구 칸은 wkCopy/wkLedger/.pill 을 그대로 재사용해 두 히어로가
-       같은 가문의 카드처럼 읽힌다. */
+       문구 칸은 wkCopy/wkLedger/.pill 을 그대로 재사용한다. */
     '<section class="svHero">'+
-      '<div class="svShot">'+
-        '<img src="'+IMG(h.img)+'" alt="" loading="lazy">'+
-      '</div>'+
+      '<div class="svShot"'+(h.url?' data-product-url="'+svEsc(h.url)+'" role="link" tabindex="0" style="cursor:pointer"':'')+'>'+svPic(h)+'</div>'+
       '<div class="wkCopy">'+
-        '<div class="wkState">찜한 것 중에서 · 오늘 · '+h.why+'</div>'+
-        '<h3>'+hk[1]+'</h3>'+
-        '<p class="svLead">'+h.note+'</p>'+
+        '<div class="wkState">'+(h.asOf?h.asOf+' 기준':'오늘')+' · '+svEsc(h.why)+'</div>'+
+        /* 제목 자리엔 브랜드, 그 아래엔 상품명 — 어떤 상품 이야기인지가 먼저다 */
+        '<h3 class="svBrand">'+svEsc(h.b||'브랜드 정보 없음')+'</h3>'+
+        '<p class="svLead svProd">'+svEsc(h.n)+'</p>'+
         '<div class="wkLedger c3">'+
-          '<div class="ac"><span>트렌드 지수</span><b>'+h.idx+'</b></div>'+
-          '<div><span>지난주 지수</span><b>'+h.was+'</b></div>'+
-          '<div><span>지난주 대비</span><b>'+(dl>=0?'+':'')+dl+'</b></div>'+
+          '<div class="ac"><span>스타일 온도</span><b>'+svV(h.idx)+'</b></div>'+
+          '<div><span>지난주 온도</span><b>'+svV(h.was)+'</b></div>'+
+          '<div><span>지난주 대비</span><b>'+(h.dl==null?'—':(h.dl>=0?'+':'')+h.dl)+'</b></div>'+
         '</div>'+
-        '<div class="svMeta">'+h.b+' '+h.n+' · '+svWon(h.p)+' · '+h.d+'일 전 찜 · 같은 걸 찜한 사람 1,284명 · 오늘 04:12 감지</div>'+
-        '<button type="button" class="pill" style="margin-top:16px" data-v="salmal"><i>→</i> 살!말?에 올리기</button>'+
+        '<div class="svMeta">'+[h.p?svWon(h.p):'', h.lo!=null?'기록 최저 '+svWon(h.lo):'',
+          '같은 걸 찜한 사람 '+h.same.toLocaleString('ko-KR')+'명'].filter(Boolean).join(' · ')+'</div>'+
+        '<button type="button" class="pill" style="margin-top:16px" id="svToSalmal"><i>→</i> 살!말?에 올리기</button>'+
       '</div>'+
     '</section>'+
 
     /* ── 오늘 더 있었던 일 ── */
+    (also.length?
     '<section class="svAlso">'+
       '<div class="svAlsoH"><h3>오늘 더 있었던 일</h3><em>'+also.length+' MORE</em></div>'+
       '<div class="svAlsoGrid">'+also.map(s=>{
         const k=SV_KIND[s.k];
         return '<div class="svAlsoCard" style="--k:'+k[2]+'">'+
           '<div class="svAlsoTop"><span class="svTag">'+k[0]+'</span>'+
-            '<u><img src="'+IMG(s.img)+'" alt="" loading="lazy"></u></div>'+
-          '<b>'+s.n+'</b><span class="svAlsoB">'+s.b+'</span>'+
+            '<u>'+svPic(s)+'</u></div>'+
+          '<b>'+svEsc(s.n)+'</b><span class="svAlsoB">'+svEsc(s.b)+'</span>'+
           '<p>'+s.note.replace(/<\/?b>/g,'')+'</p></div>'}).join('')+
       '</div>'+
-    '</section>'+
+    '</section>':'')+
 
     /* ── 요약 ── */
     '<div class="kpis" style="margin-top:16px">'+
-      kpi('찜해둔 것',String(SV.length),'개','이번 주 +2',1)+
-      kpi('오늘 움직인 것',String(moved),'건','어제 3건',1)+
-      kpi('최저가 도달',String(lows),'건','알림 받음',1)+
-      kpi('한 달째 조용한 것',String(quiet),'건','정리 후보',0)+
+      kpi('찜해둔 것',String(SV.length),'개','이번 주 +'+week,1)+
+      kpi('움직인 것',String(moved),'건',styles+'개 스타일에서',1)+
+      kpi('최저가 도달',String(lows),'건','가격 기록 기준',1)+
+      kpi('조용한 것',String(quiet),'건',none?'측정 전 '+none+'건':'정리 후보',0)+
     '</div>'+
 
     /* ── 전체 목록 ── */
@@ -111,12 +237,26 @@ export function svRender(body){
       '<div class="ph"><h3>찜한 것 전체</h3><em>WATCHLIST</em></div>'+
       '<div class="svFilter">'+SV_TABS.map(t=>{
         const c=t[0]==='all'?SV.length:SV.filter(s=>s.k===t[0]).length;
+        if(t[0]==='none'&&!c)return '';
         return '<button type="button" class="svChip'+(t[0]===SV_F?' on':'')+'" data-sv="'+t[0]+'">'+
           t[1]+'<i>'+c+'</i></button>'}).join('')+'</div>'+
       '<div class="svRows" id="svRows">'+svRows()+'</div>'+
-      '<div class="wkNote"><i>◆</i><span>'+quiet+'개는 한 달 넘게 아무 일도 없었습니다. '+
-        '지켜볼 게 많아지면 정작 움직인 것을 놓칩니다. <b>정리를 권합니다.</b></span></div>'+
-    '</section>';
+      '<div class="wkNote"><i>◆</i><span>'+
+        (loading?'실데이터를 불러오는 중입니다. ':'')+
+        '온도는 상품이 속한 <b>스타일의 트렌드 온도</b>(지난 7일 비교), 최저가는 <b>수집된 가격 기록</b> 기준입니다. '+
+        '같은 걸 찜한 사람 수는 사용자 데이터 연동 전 <b>목업 값</b>입니다.</span></div>'+
+    '</section>'+
+    '</div>';
+
+  /* 살!말?에 올리기 — 등록 카드에 상품명 · 브랜드 · 가격(· 이미지)을 한 번에 채워 연다.
+     챗봇의 '살말에 올리기'와 같은 길(window.__salmalDraft → smOpenCreate)을 쓴다. */
+  const toSm=$('#svToSalmal');
+  if(toSm)toSm.addEventListener('click',()=>{
+    window.__salmalDraft={title:h.n||'', brand:h.b||'', price:h.p||'', image:h.img||''};
+    const nav=document.querySelector('#mNav [data-v="salmal"]');
+    if(nav)nav.click();
+    setTimeout(()=>{ if(window.smOpenCreate)window.smOpenCreate(window.__salmalDraft) },320);
+  });
 
   const fl=$('#trBody .svFilter');
   if(fl)fl.addEventListener('click',e=>{
@@ -133,16 +273,16 @@ function svRows(){
   const list=SV_F==='all'?SV:SV.filter(s=>s.k===SV_F);
   if(!list.length)return '<div class="svEmpty">이 상태인 것이 없습니다.</div>';
   return list.map(s=>{
-    const k=SV_KIND[s.k], d=s.idx-s.was, atLow=s.p<=s.lo*1.02;
-    return '<div class="svRow" style="--k:'+k[2]+'">'+
-      '<u class="svTh"><img src="'+IMG(s.img)+'" alt="" loading="lazy"></u>'+
-      '<div class="svName"><b>'+s.n+'</b><span>'+s.b+' · '+s.why+'</span></div>'+
-      '<div class="svAge">'+s.d+'일 전</div>'+
-      '<div class="svIdx"><div class="svMini"><i data-w="'+s.idx+'"></i></div>'+
-        '<b>'+s.idx+'</b><em class="'+(d>0?'up':d<0?'dn':'')+'">'+
-        (d>0?'+':'')+(d||'—')+'</em></div>'+
-      '<div class="svPrice"><b>'+svWon(s.p)+'</b>'+
-        '<span>'+(atLow?'최저가':'최저 '+svWon(s.lo))+'</span></div>'+
+    const k=SV_KIND[s.k], d=s.dl;
+    return '<div class="svRow" style="--k:'+k[2]+(s.url?';cursor:pointer" data-product-url="'+svEsc(s.url)+'" role="link" tabindex="0':'')+'">'+
+      '<u class="svTh">'+svPic(s)+'</u>'+
+      '<div class="svName"><b>'+svEsc(s.n)+'</b><span>'+svEsc(s.b)+' · '+svEsc(s.why)+'</span></div>'+
+      '<div class="svAge">'+svAge(s.d)+'</div>'+
+      '<div class="svIdx"><div class="svMini"><i data-w="'+Math.max(0,Math.min(100,s.idx||0))+'"></i></div>'+
+        '<b>'+svV(s.idx)+'</b><em class="'+(d>0?'up':d<0?'dn':'')+'">'+
+        (d==null?'—':(d>0?'+':'')+(d||'±0'))+'</em></div>'+
+      '<div class="svPrice"><b>'+(s.p?svWon(s.p):'가격 정보 없음')+'</b>'+
+        '<span>'+(s.atLow?'기록 최저가':s.lo!=null?'최저 '+svWon(s.lo):'가격 기록 없음')+'</span></div>'+
       '<span class="svBadge">'+k[0]+'</span></div>'}).join('');
 }
 

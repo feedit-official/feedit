@@ -28,6 +28,7 @@ urlpatterns = [
     path("resale", views.resale, name="resale"),         # 리세일 시세 지수
     path("lifecycle", views.lifecycle, name="lifecycle"),  # 수명주기
     path("products", views.products, name="products"),
+    path("price-history", views.price_history, name="price-history"),  # 찜한 상품 가격 기록
     path("salmal/card", views.salmal_card, name="salmal-card"),
     path("salmal/search", views.salmal_search, name="salmal-search"),
 

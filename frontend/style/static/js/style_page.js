@@ -145,7 +145,7 @@ export async function stMoreItems(requestSeq=stRequestSeq){
     }
 
     const frag=document.createElement('div');
-    frag.innerHTML=items.map(item=>itemCard(styleProductCard(item))).join('');
+    frag.innerHTML=items.map(item=>itemCard(styleProductCard(item,styleName))).join('');
     const els=[...frag.children]; els.forEach(el=>host.appendChild(el));
     stItemPage++;
     stItemsDone=json.data.has_more===false||items.length<ST_ITEM_PAGE_SIZE;

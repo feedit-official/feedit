@@ -20,11 +20,13 @@ t('DB 상품의 이미지·브랜드·가격·링크를 카드로 옮긴다',()=
   const card=styleProductCard({
     id:3,product_source_id:17,image:'https://img.example/17.jpg',
     brand:'테스트 브랜드',name:'셋 자켓',url:'https://shop.example/17',
-    price:{list:199000,sale:129000}
-  });
+    price:{list:199000,sale:129000},category:'자켓'
+  },'고프코어');
   assert.deepEqual(card,{
     id:'db-17',img:'https://img.example/17.jpg',br:'테스트 브랜드',
-    nm:'셋 자켓',pr:'129,000원',url:'https://shop.example/17'
+    nm:'셋 자켓',pr:'129,000원',url:'https://shop.example/17',
+    /* 찜한 키워드 화면용 부가 정보 */
+    styleName:'고프코어',cat:'자켓',price:129000,listPrice:199000
   });
 });
 

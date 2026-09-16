@@ -1,4 +1,4 @@
-/* GET /api/discount · /api/resale · /api/lifecycle
+/* GET /api/discount · /api/resale · /api/lifecycle · /api/price-history
  *
  * 트렌드 분석의 할인률 변화 · 리세일 시세 지수 · 수명주기 탭이 부르는 창구.
  * 세 주소를 **함수 하나**로 받는다 — 버셀 Hobby 요금제는 함수 개수가 12개로 묶여 있어
@@ -16,7 +16,7 @@
 import { viaBackend } from './_lib/db.js';
 import { failed } from './_lib/reply.js';
 
-const ALLOWED = new Set(['discount', 'resale', 'lifecycle']);
+const ALLOWED = new Set(['discount', 'resale', 'lifecycle', 'price-history']);   // price-history: 찜한 상품 가격 기록
 
 export default async function handler(req, res) {
   const url = new URL(req.url, 'http://x');

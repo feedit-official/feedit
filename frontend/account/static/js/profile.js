@@ -2,7 +2,6 @@ import { $, $$, HAS_A, aAnimate, aStagger } from '../../../core/static/js/dom.js
 import { BADGES, bgDetail, bgRender } from './badges.js';
 import { IMG, itemCard, LIKED, STYLES, toggleLike } from '../../../home/static/js/chat.js';
 import { SIMG } from '../../../style/static/js/style_page.js';
-import { SV, svWon } from '../../../trend/static/js/discount_resale.js';
 import { goView } from '../../../app_shell/static/js/router.js';
 import { rkLevelOf, rkPaintAll, rkPaintAv, xpPaint } from './rank.js';
 import { trRender } from '../../../trend/static/js/dispatch.js';
@@ -117,11 +116,9 @@ function runPendingAuth(){
 }
 /* 회원가입 진행 중 구글 모드 여부 — 가입 폼을 벗어나면 반드시 초기화된다 */
 let signupGoogleMode = false;
-/* 찜(위시리스트) 데모 시드 — 트렌드의 SV 데이터를 그대로 '찜' 목록 초기값으로 쓴다.
-   이후로는 카드의 하트를 눌러 오가는 것이 유일한 출처다. */
-SV.forEach((s, i) => {
-  LIKED.set('sv-' + i, { img: IMG(s.img), tag: s.d + '일 전', br: s.b, nm: s.n, pr: svWon(s.p) });
-});
+/* 찜(위시리스트) — 실제 사용자 데이터가 없으므로 localStorage 목업(chat.js)이 출처다.
+   예전에는 트렌드의 SV 예시 9개를 시드로 넣었지만, 이제 찜한 키워드 화면이
+   '내가 실제로 찜한 상품'으로 그려지므로 가짜 시드는 넣지 않는다. */
 
 /* 헤더 오른쪽 — 로그인 전에는 [로그인], 후에는 [혁진] 버튼이 마이페이지로 */
 function authPaint(){

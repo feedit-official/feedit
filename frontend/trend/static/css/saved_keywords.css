@@ -17,6 +17,12 @@
 .svShot img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
 
 .svLead{max-width:none;white-space:nowrap}
+/* 히어로 제목 = 브랜드, 그 아래 = 상품명 — 기본 h3(22~32px)보다 조금 작게 */
+.svHero .wkCopy h3.svBrand{font-size:clamp(19px,2vw,26px)}
+.svHero .svProd{font-size:12.5px;white-space:normal;overflow-wrap:anywhere}
+/* 스타일 온도 · 지난주 온도 · 지난주 대비 — 이 카드에서만 조금 크게 */
+.svHero .wkLedger span{font-size:12px}
+.svHero .wkLedger b{font-size:24px}
 .svMeta{
   margin-top:16px;font-family:var(--num);font-size:11px;letter-spacing:.05em;
   color:var(--pink-2);font-feature-settings:'tnum' 1,'zero' 0;

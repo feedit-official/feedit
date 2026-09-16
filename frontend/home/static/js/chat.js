@@ -104,14 +104,35 @@ const cardEsc=v=>String(v==null?'':v).replace(/[&<>"']/g,c=>({
 }[c]));
 const cardImage=v=>/^(https?:\/\/|\/|assets\/)/i.test(String(v||''))?String(v):'';
 const cardLink=v=>/^https?:\/\//i.test(String(v||''))?String(v):'';
+/* ★ 찜 목업 저장 — 실제 로그인·사용자 테이블이 백엔드에 아직 없어서
+   브라우저 localStorage 에 찜 목록을 둔다. 새로고침해도 찜이 남고,
+   트렌드 분석 › 찜한 키워드 화면이 이 목록을 그대로 읽는다.
+   백엔드에 사용자 찜 API 가 생기면 likedLoad/likedSave 두 함수만 바꾸면 된다. */
+const LIKED_KEY='feedit.liked.v1';
+function likedSave(){
+  try{ localStorage.setItem(LIKED_KEY, JSON.stringify([...LIKED.entries()])); }
+  catch(e){ /* 저장소를 못 쓰는 환경(시크릿 창 등)은 이번 세션 메모리로만 유지한다 */ }
+}
+function likedLoad(){
+  try{
+    const arr=JSON.parse(localStorage.getItem(LIKED_KEY)||'null');
+    if(!Array.isArray(arr)) return false;
+    arr.forEach(e=>{ if(Array.isArray(e)&&e[0]&&e[1]) LIKED.set(e[0], e[1]); });
+    return true;
+  }catch(e){ return false; }
+}
+likedLoad();
 export function toggleLike(id){
-  if(LIKED.has(id)){ LIKED.delete(id); return false; }
+  if(LIKED.has(id)){ LIKED.delete(id); likedSave(); return false; }
   const d = ITEM_REGISTRY.get(id); if(!d) return false;
-  LIKED.set(id, d);
+  LIKED.set(id, { ...d, likedAt: Date.now() });   /* 찜한 시각 — 'n일 전 찜' 계산에 쓴다 */
+  likedSave();
   return true;
 }
 export function itemCard(o){
-  if(o.id) ITEM_REGISTRY.set(o.id, { img: o.img, br: o.br, nm: o.nm, pr: o.pr, tag: o.tag, style: o.style, url: o.url });
+  if(o.id) ITEM_REGISTRY.set(o.id, { img: o.img, br: o.br, nm: o.nm, pr: o.pr, tag: o.tag, style: o.style, url: o.url,
+    /* 찜한 키워드 화면용 부가 정보 — 실데이터 상품 카드에서만 채워진다 */
+    styleName: o.styleName, cat: o.cat, price: o.price, listPrice: o.listPrice });
   const liked = !!(o.id && LIKED.has(o.id));
   const img=cardImage(o.img), url=cardLink(o.url);
   return '<div class="itemCard"' + (o.style ? ' data-style="' + cardEsc(o.style) + '"' : '') +
