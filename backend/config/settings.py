@@ -26,18 +26,15 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     "apps.core",
-    "apps.dashboard.apps.DashboardConfig",
+    "django.contrib.humanize",
+    "apps.dashboard.apps.AdminDashboardConfig",
     "apps.api.apps.ApiConfig",
+    "rest_framework",
 ]
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
-    # ★ gunicorn 은 정적 파일을 안 준다 — runserver 만 대신 해 주던 일이다.
-    #   이게 없으면 admin CSS 가 404 로 통째로 깨진다.
-    #   (2026-09-07 실측: gunicorn 단독 → /static/admin/css/base.css 404,
-    #    whitenoise 를 넣으니 200 · 22,120 bytes · text/css)
-    #   nginx 를 따로 세우는 대신 여기서 해결한다.
-    #   ⚠ 반드시 SecurityMiddleware **바로 다음** 이어야 한다.
+    # 정적 파일(관리자 화면 CSS)을 gunicorn 에서도 내보내기 위함 — SecurityMiddleware 바로 다음이어야 함
     'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -45,10 +42,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
-    # ★ /api/ 공유 토큰 검사. RDS 를 SSM 굴 없이 쓰려고 이 Django 를 EC2 에
-    #   올려 /api/ 를 열면, 주소를 아는 사람은 누구나 사전과 상품을 긁어 갈 수
-    #   있다. 챗봇(/v1/)이 쓰는 것과 같은 방식으로 막는다.
-    #   FEEDIT_API_TOKEN 이 비어 있으면 검사하지 않는다(로컬 개발 그대로).
+    # /api/ 공유 토큰 검사 (FEEDIT_API_TOKEN 이 비어 있으면 검사하지 않음)
     'apps.api.middleware.ApiTokenMiddleware',
 ]
 
@@ -80,6 +74,9 @@ DATABASES = {
         "PASSWORD": os.getenv("DB_PASSWORD"),
         "HOST": os.getenv("DB_HOST"),
         "PORT": os.getenv("DB_PORT", "5432"),
+        "OPTIONS": {
+            "options": '-c search_path=dictionary,"$user",public',
+        },
     }
 }
 
@@ -99,14 +96,15 @@ AUTH_PASSWORD_VALIDATORS = [
     },
 ]
 
-LLANGUAGE_CODE = "ko-kr"
+LANGUAGE_CODE = "ko-kr"
 TIME_ZONE = "Asia/Seoul"
 USE_I18N = True
 USE_TZ = True
 
 
 STATIC_URL = 'static/'
-STATICFILES_DIRS = [BASE_DIR / "static"]        # 원본 (이미 있는 폴더)
+# 원본 정적 폴더가 있을 때만 등록 (없으면 staticfiles.W004 경고가 뜸)
+STATICFILES_DIRS = [BASE_DIR / "static"] if (BASE_DIR / "static").exists() else []
 STATIC_ROOT = BASE_DIR / "staticfiles"    
 
 MAILERS = {
@@ -147,38 +145,39 @@ YOUTUBE_API_KEY = os.getenv(
     "YOUTUBE_API_KEY"
 )
 
+# KURE candidates remain review-only unless both values are configured from a
+# calibrated benchmark.  Environment variables keep deployment tuning out of
+# the pipeline code.
+KURE_HIGH_CONFIDENCE_THRESHOLD = (
+    float(os.getenv("KURE_HIGH_CONFIDENCE_THRESHOLD"))
+    if os.getenv("KURE_HIGH_CONFIDENCE_THRESHOLD")
+    else None
+)
+KURE_HIGH_CONFIDENCE_MARGIN_THRESHOLD = (
+    float(os.getenv("KURE_HIGH_CONFIDENCE_MARGIN_THRESHOLD"))
+    if os.getenv("KURE_HIGH_CONFIDENCE_MARGIN_THRESHOLD")
+    else None
+)
+
 
 # ══════════════════════════════════════════════════════════════
-#  배포 설정 (2026-09-07)
+#  배포 설정 (feedit 프론트 연동용)
 # ══════════════════════════════════════════════════════════════
 
 # 정적 파일 — whitenoise 가 압축·해시해서 내보낸다.
-#   배포 전에 반드시 한 번:  python manage.py collectstatic --noinput
+#   배포 전에 한 번: python manage.py collectstatic --noinput
 STORAGES = {
-    "default": {
-        "BACKEND": "django.core.files.storage.FileSystemStorage",
-    },
-    "staticfiles": {
-        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
-    },
+    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+    "staticfiles": {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"},
 }
 
-# ★ 앞에 Caddy(또는 ALB)가 서면 Django 는 자기가 HTTP 로 불린 줄 안다.
-#   그러면 request.is_secure() 가 False 라서 CSRF 검사와 리다이렉트가 엉킨다.
-#   앞단이 붙여 주는 머리글을 믿으라고 알려 준다.
-#
-#   ⚠ 앞단이 **반드시 있을 때만** 켠다.
-#     앞단 없이 켜면 누구나 이 머리글을 위조해 https 인 척할 수 있다.
+# 앞단 프록시(Caddy/nginx)가 있을 때만 켠다.
 if os.getenv("DJANGO_BEHIND_PROXY", "False").lower() == "true":
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
     USE_X_FORWARDED_HOST = True
 
-# admin 로그인 폼이 https 로 뜰 때 CSRF 를 통과시키려면 필요하다.
 CSRF_TRUSTED_ORIGINS = [
     o.strip()
-    for o in os.getenv(
-        "DJANGO_CSRF_TRUSTED_ORIGINS",
-        "https://feedit-official.duckdns.org",
-    ).split(",")
+    for o in os.getenv("DJANGO_CSRF_TRUSTED_ORIGINS", "https://feedit-official.duckdns.org").split(",")
     if o.strip()
 ]

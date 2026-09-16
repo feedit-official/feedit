@@ -65,3 +65,10 @@ prompt_toolkit==3.0.53
 wcwidth==0.8.3
 python-dateutil==2.9.0.post0
 six==1.17.0
+
+# ── SKN31-FINAL-4Team/backend 최신 스키마 동기화 (2026-09-16) ──
+#   DictionaryTerm.embedding 이 pgvector 의 VectorField 라 import 에 필요하다.
+#   apps/api/crawl_views.py · dashboard 가 DRF 와 humanize 를 쓴다.
+pgvector==0.5.0
+numpy
+djangorestframework==3.18.1

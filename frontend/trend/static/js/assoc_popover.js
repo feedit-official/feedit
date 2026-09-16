@@ -5,12 +5,18 @@ export function assocOpenPop(triggerEl,cat,item){
   triggerEl.classList.add('on');
   const pop=$('#assocPop');
   $('#apWord').textContent=item.n; $('#apCat').textContent=cat;
-  const pts=item.spark, max=Math.max.apply(null,pts), min=Math.min.apply(null,pts), span=(max-min)||1;
-  const xs=[10,73,136,190];
-  const coords=pts.map((v,i)=>xs[i]+','+(40-((v-min)/span)*32).toFixed(1));
-  $('#apSparkLine').setAttribute('points',coords.join(' '));
-  $('#apSrc').innerHTML=item.src.map(s=>
-    '<div class="apSrcItem"><span class="apSrcTag">'+s.tag+'</span><span class="apSrcText">'+s.text+'</span></div>'
+  /* 스파크라인 — 연관어별 추이가 없으면(실데이터) 선을 비운다. 지어낸 곡선을 그리지 않는다. */
+  const pts=Array.isArray(item.spark)?item.spark:[];
+  const line=$('#apSparkLine');
+  if(pts.length>1){
+    const max=Math.max.apply(null,pts), min=Math.min.apply(null,pts), span=(max-min)||1;
+    const step=180/(pts.length-1);
+    line.setAttribute('points',pts.map((v,i)=>(10+i*step).toFixed(1)+','+(40-((v-min)/span)*32).toFixed(1)).join(' '));
+  } else line.setAttribute('points','');
+  const esc=v=>String(v==null?'':v).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+  const src=Array.isArray(item.src)?item.src:[];
+  $('#apSrc').innerHTML=(src.length?src:[{tag:'근거',text:'이 연관어의 근거 문장이 아직 적재되지 않았습니다.'}]).map(s=>
+    '<div class="apSrcItem"><span class="apSrcTag">'+esc(s.tag)+'</span><span class="apSrcText">'+esc(s.text)+'</span></div>'
   ).join('');
   pop.classList.add('on');
   const r=triggerEl.getBoundingClientRect();

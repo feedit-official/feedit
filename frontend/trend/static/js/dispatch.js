@@ -1,14 +1,13 @@
 import { $, $$, HAS_A, aAnimate, aSpring, aStagger, aUtils } from '../../../core/static/js/dom.js';
-import { ASSOC_BALLET, PLATFORM_TEMP, SENT_NEG, SENT_POS, TEMP_KW } from './data.js';
 import { WK, feedSmPicks } from './my_feed.js';
 import { STYLES } from '../../../home/static/js/chat.js';
 import { SIMG } from '../../../style/static/js/style_page.js';
-import { FS, fsBuild, fsChipsPaint, fsDropDisallowed, fsHideSug, fsLoadDictionary, fsReset } from '../../../style/static/js/search.js';
+import { FS, FS_COLS, fsBuild, fsChipsPaint, fsDropDisallowed, fsHideSug, fsLoadDictionary, fsReset } from '../../../style/static/js/search.js';
 import { G_CFG, KW, fsItem, fsItemFull, gMount, josa, trEmpty, trFillBars } from './render_helpers.js';
 import { ME, bioPaint } from '../../../account/static/js/profile.js';
 import { S_EDIT, S_FEED, TR_META } from './nav_meta.js';
 import { assocClosePop, assocOpenPop } from './assoc_popover.js';
-import { prime, stateOf, summaryOf, unavailableHTML } from './live_data.js';
+import { entryOf, prime, primeUrl, stateOf, stateOfUrl, summaryOf, unavailableHTML } from './live_data.js';
 import { gChart, gDraw, gSeed } from './chart_engine.js';
 import { kwWire } from './saved_keywords.js';
 import { rkChip, rkPaintAv } from '../../../account/static/js/rank.js';
@@ -156,6 +155,58 @@ document.addEventListener('click',e=>{
   const h=$('#tpHero'); if(h)h.innerHTML=tpHeroHTML();
 });
 
+/* ══════════════════════════════════════════════════════
+   실데이터 공용 도우미 — 할인률 · 리세일 · 수명주기 · 연관어
+   ══════════════════════════════════════════════════════ */
+/* DB 에서 온 글자는 반드시 이스케이프해서 넣는다 */
+function trEsc(v){ return String(v==null?'':v).replace(/[&<>"']/g,m=>(
+  {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])) }
+function trWon(v){ return v==null?'–':Math.round(v).toLocaleString('ko-KR')+'원' }
+function trDayDiff(a,b){ return Math.round((new Date(b)-new Date(a))/864e5) }
+function trLoading(what){
+  return '<div class="note" data-live="loading"><i>◆</i><span>'+what+' 불러오는 중입니다…</span></div>';
+}
+/* 날짜별 행 두 묶음을 날짜 기준으로 합친다 (차트에 두 계열을 겹칠 때) */
+function trMergeRows(a,b){
+  const m=new Map();
+  (a||[]).concat(b||[]).forEach(r=>{ if(!r||!r.date)return;
+    const k=String(r.date).slice(0,10); m.set(k,Object.assign(m.get(k)||{date:k},r)); });
+  return [...m.values()].sort((x,y)=>x.date<y.date?-1:1);
+}
+/* 지표(온도)를 물을 대표 용어 — 상품명에는 지표가 없으므로 브랜드 › 종류 › 스타일 › 속성 순 */
+function fsTerm(){
+  const p=FS.pick||{};
+  for(const ax of ['브랜드','종류','스타일','소재','색','디테일','TPO']){ const a=p[ax]; if(a&&a.length)return a[0]; }
+  return '';
+}
+/* 세부 검색에서 고른 조건을 그대로 API 주소로 옮긴다 */
+const EDIT_API={stock:'/api/discount',resale:'/api/resale',life:'/api/lifecycle'};
+function editUrl(id){
+  const p=new URLSearchParams();
+  FS_COLS.forEach(c=>(FS.pick[c.ax]||[]).forEach(v=>p.append(c.param,v)));
+  const t=fsTerm(); if(t)p.set('term',t);
+  return EDIT_API[id]+'?'+p.toString();
+}
+/* 받아 둔 값이 있으면 data 를, 아니면 '불러오는 중' / '측정 불가' 를 그리고 null 을 준다 */
+function editGate(body,url,what){
+  const st=stateOfUrl(url);
+  if(st.status==='unknown'){ body.innerHTML=trLoading(what); return null; }
+  if(st.status!=='ok'){
+    body.innerHTML=unavailableHTML(st.reason,
+      st.detail || (st.status==='error'?'연결이 되면 자동으로 실제 값이 뜹니다.':''));
+    return null;
+  }
+  return st.data;
+}
+/* 한 번만 묻고, 도착하면 그 탭이 아직 열려 있을 때만 다시 그린다 */
+function primeOnce(id,url){
+  const now=Date.now();
+  if(stateOfUrl(url).status==='unknown' && now-(TR_TRIED[url]||0)>3000){
+    TR_TRIED[url]=now;
+    primeUrl(url).then(()=>{ if(TR_CUR===id) trRender(id); });
+  }
+}
+
 export function trRender(id){
   TR_CUR=id;
   sFootPaint();   /* 가입·정보수정·인증 승인 뒤에 들어와도 이름·직위가 최신이게 */
@@ -185,6 +236,9 @@ export function trRender(id){
       });
     }
   }
+  /* 연관어 · 할인률 · 리세일 · 수명주기는 URL 단위로 받는다 */
+  if(id==='assoc'&&KW.q) primeOnce(id,'/api/assoc?term='+encodeURIComponent(KW.q));
+  if(EDIT_API[id]&&fsItem()) primeOnce(id,editUrl(id));
   const m=TR_META[id]||TR_META.myfeed;
   $('#trTitle').textContent=m[0];
   $('#trDesc').textContent=m[1]; $('#trDesc').hidden=!m[1];
@@ -448,15 +502,14 @@ export function trRender(id){
   }
   else if(id==='saved'){ svRender(body) }
   /* ══════════════ 언급량 · 온도 ══════════════
-     결론(지금 얼마나 뜨거운가)을 맨 위에 놓고 근거를 아래에 깐다 — 할인률 변화 페이지와 같은 구성. */
+     결론(지금 얼마나 뜨거운가)을 맨 위에 놓고 근거를 아래에 깐다.
+     값: /api/trend → analysis.term_metric_daily (전체 합산 행 · 플랫폼별 행) */
   else if(id==='temp'){
     const kw=KW.q;
-    const sd=gSeed(kw+'temp');
 
-    /* ★ 실값이 있으면 그걸 쓴다. 없으면 화면을 채우지 않고 사유를 적는다.
-       예전에는 여기서 gSeed 로 온도·점유율·전년비를 만들어 냈다.
-       그럴듯해 보이지만 전부 지어낸 수였다. */
+    /* ★ 실값만 그린다. 받아 오는 동안에는 숫자를 지어내지 않고 '불러오는 중'을 적는다. */
     const st=stateOf(kw), S=summaryOf(kw);
+    if(st.status==='unknown'){ body.innerHTML=trLoading('‘'+trEsc(kw)+'’ 의 지표를'); return; }
     if(st.status==='empty'||st.status==='error'){
       body.innerHTML=unavailableHTML(st.reason,
         st.detail || (st.status==='error'?'연결이 되면 자동으로 실제 값이 뜹니다.':''));
@@ -469,14 +522,14 @@ export function trRender(id){
       return;
     }
 
-    /* 아직 안 받아 온 동안(status==='unknown')은 예전처럼 그린다 —
-       prime() 이 끝나면 trRender 가 다시 불려 실값으로 바뀐다. */
-    const temp=S?Math.round(S.temp):Math.round(26+sd*70);
-    const share=S&&S.share!=null?+S.share.toFixed(1):(S?null:+(2.2+sd*6.4).toFixed(1));
-    const yoy=S?(S.yoy===null?null:Math.round(S.yoy)):Math.round(40+sd*180);
-    const wk=S?(S.wk===null?null:Math.round(S.wk)):Math.round((gSeed(kw+'twk')-.35)*20);
-    const LIVE=!!S;                      /* 실값으로 그리는 중인가 */
+    const E=entryOf(kw), ED=(E&&E.data)||{};
+    const temp=S?Math.round(S.temp):0;
+    const share=S&&S.share!=null?+S.share.toFixed(1):null;
+    const yoy=S?(S.yoyPct===null?null:Math.round(S.yoyPct)):null;
+    const wk=S?(S.tempWk===null?null:Math.round(S.tempWk)):null;
     const nOr=v=>v===null||v===undefined?'–':v;   /* 없는 값은 대시로 */
+    const newKw=(ED.new_terms||[]).filter(x=>x.term!==kw)[0]||null;
+    const plats=(ED.platforms||[]).filter(p=>p.temp!=null);
     const band=temp>=85?0:temp>=65?1:temp>=40?2:3;
     /* 색은 가장 낮은 구간에서 시작해 최종 구간까지 걸어 올라간다 */
     const RAMP=['#3d7fd6','#c98a1b','#1f9e6e','#b23b3b'].slice(0,4-band);
@@ -492,69 +545,77 @@ export function trRender(id){
             'stroke-dasharray="314.16" stroke-dashoffset="314.16"/></svg>'+
           '<span class="num"><b data-count="'+temp+'">0</b><small>트렌드 온도 °</small></span></div>'+
         '<div class="vdTx">'+
-          '<h4><b>'+kw+'</b>'+josa(kw,'은','는')+' 지금 <em>'+BAND[1]+'</em> 구간 — 온도 '+temp+'°</h4>'+
+          '<h4><b>'+trEsc(kw)+'</b>'+josa(kw,'은','는')+' 지금 <em>'+BAND[1]+'</em> 구간 — 온도 '+temp+'°</h4>'+
           '<p>'+BAND[2]+'</p>'+
           '<div class="vdBand">'+['차가움','미지근','따뜻함','과열'].map((s,i)=>'<div'+(i===(3-band)?' class="on"':'')+
             '><span>'+s+'</span></div>').join('')+'</div>'+
           '<div class="vdMeta">'+
             '<div><b>'+(wk===null?'–':(wk>0?'+':'')+wk)+(wk===null?'':'°')+'</b>'+
               '<span>이번 주 온도 변화'+(wk===null?' (자료 부족)':'')+'</span></div>'+
+            '<div><b>'+(S.level==null?'–':Math.round(S.level))+'</b><span>화제성 레벨</span></div>'+
+            '<div><b>'+(S.momentum==null?'–':Math.round(S.momentum))+'</b><span>성장 모멘텀 (50=보합)</span></div>'+
           '</div>'+
         '</div></div>'+
-      (LIVE?'<div class="note" style="margin:0 0 12px"><i>◆</i>'+
+      '<div class="note" style="margin:0 0 12px"><i>◆</i>'+
           S.asOf+' 기준 · 관측 '+S.points+'일'+
-          (S.thin?' — 자료가 짧아 변화값은 참고만 하세요':'')+'</div>':'')+
+          (S.thin?' — 자료가 짧아 변화값은 참고만 하세요':'')+'</div>'+
       '<div class="kpis" style="grid-template-columns:repeat(3,minmax(0,1fr))">'+kpi('플랫폼 점유율',nOr(share),share===null?'':'%',
-              share===null?'아직 계산 전':'전주 대비',1)+
+              share===null?'아직 계산 전':'같은 날 전체 언급 중 비중',1)+
         kpi('전년 동기 대비',yoy===null?'–':(yoy>0?'+':'')+yoy,yoy===null?'':'%',
-              yoy===null?'1년치가 모여야 나옵니다':'같은 기간 언급량 차이',1)+
-        kpi('신규 진입 키워드',TEMP_KW[TEMP_KW.length-1].k,'','이번 주 새로 감지',1)+'</div>'+
+              yoy===null?'1년치가 모여야 나옵니다':'같은 날 언급량 차이',yoy===null||yoy>=0?1:0)+
+        kpi('신규 진입 키워드',newKw?trEsc(newKw.term):'–','',newKw?'최근 7일 새로 감지 · '+Math.round(newKw.temp||0)+'°':'최근 7일 새로 잡힌 말 없음',1)+'</div>'+
       '<div class="trGrid">'+
         '<div class="panelC"><div class="gHead"><h3>언급량 · 온도 추이</h3></div>'+
           '<div data-chart="tempMain"></div>'+
-          '<div class="note"><i>◆</i>정규화된 언급량과 트렌드 온도를 나란히 겹쳐 계절성을 걷어내고 봅니다.</div></div>'+
+          '<div class="note"><i>◆</i>언급량(최대=100 지수)과 트렌드 온도를 나란히 겹쳐 봅니다.</div></div>'+
         '<div class="panelC"><div class="ph"><h3>플랫폼별 온도</h3><em>0–100</em></div>'+
-          '<table class="mTable"><tr><th>플랫폼</th><th></th><th>온도</th></tr>'+
-          PLATFORM_TEMP.map(t=>'<tr><td>'+(t.v>=85?'<b>'+t.k+'</b>':t.k)+'</td>'+
-            '<td><span class="bar" style="display:block"><i class="'+(t.v>=85?'c':'')+'" style="width:'+t.v+'%"></i></span></td>'+
-            '<td class="n '+(t.v>=65?'up':'dn')+'">'+t.v+'°</td></tr>').join('')+
-          '</table><div class="note"><i>◆</i>플랫폼마다 온도차가 있다면 아직 확산 초반 구간입니다.</div></div>'+
+          (plats.length
+            ? '<table class="mTable"><tr><th>플랫폼</th><th></th><th>온도</th></tr>'+
+              plats.map(t=>{const v=Math.round(t.temp);
+                return '<tr><td>'+(v>=85?'<b>'+trEsc(t.name)+'</b>':trEsc(t.name))+'</td>'+
+                '<td><span class="bar" style="display:block"><i class="'+(v>=85?'c':'')+'" style="width:'+v+'%"></i></span></td>'+
+                '<td class="n '+(v>=65?'up':'dn')+'">'+v+'°</td></tr>'}).join('')+
+              '</table><div class="note"><i>◆</i>플랫폼마다 온도차가 있다면 아직 확산 초반 구간입니다.</div>'
+            : unavailableHTML('플랫폼별 지표 행이 아직 없습니다.','전체 합산 행만 적재돼 있습니다.'))+
+        '</div>'+
       '</div>';
-    /* ★ term 을 넘겨야 실데이터를 본다.
-       안 넘기면 chart_engine 이 예전처럼 씨드 난수로 그린다(el.dataset.live='seeded').
-       field 는 API 가 돌려주는 열 이름이다 — mention(언급량) · temp(온도). */
+    /* ★ term 을 넘겨야 실데이터를 본다. field 는 API 가 돌려주는 열 이름이다 — mention(언급량) · temp(온도). */
     G_CFG.tempMain={key:kw+'temp',term:kw,min:0,max:100,
-      sets:[{id:'m',name:'언급량 지수',field:'mention',shape:temp>=65?'rise':temp>=40?'peak':'late',lo:8,hi:96,unit:''},
-            {id:'t',name:'트렌드 온도 (°)',field:'temp',shape:temp>=65?'rise':'peak',lo:Math.max(6,temp-30),hi:Math.min(100,temp+12),unit:'°',accent:1}]};
+      sets:[{id:'m',name:'언급량 지수',field:'mention',index:true,unit:''},
+            {id:'t',name:'트렌드 온도 (°)',field:'temp',unit:'°',accent:1}]};
     gChart('[data-chart="tempMain"]',G_CFG.tempMain); trDial(); trFillBars();
   }
   /* ══════════════ 연관어 ══════════════
-     "지금 무엇과 함께 언급되나 · 얼마나 빠르게 번지고 있나"를 결론 카드로 먼저 답한다. */
+     값: /api/assoc → analysis.term_assoc_daily (lift · PMI · 백분위 · 순위) + 근거 문장 */
   else if(id==='assoc'){
     const kw=KW.q;
-    /* 값이 없거나 못 붙으면 지어내지 않고 사유를 적는다. */
-    {
-      const st=stateOf(kw);
-      if(st.status==='empty'||st.status==='error'){
-        body.innerHTML=unavailableHTML(st.reason,
-          st.detail || (st.status==='error'?'연결이 되면 자동으로 실제 값이 뜹니다.':''));
-        return;
-      }
+    const A=editGate(body,'/api/assoc?term='+encodeURIComponent(kw),'‘'+trEsc(kw)+'’ 의 연관어를');
+    if(!A)return;
+    const AX_ORDER=['아이템','소재','색','디테일','TPO','스타일','브랜드','인물'];
+    const groups={};
+    (A.items||[]).forEach(it=>{ const c=it.facet_ko||it.facet; (groups[c]=groups[c]||[]).push(it) });
+    const cats=AX_ORDER.filter(c=>groups[c]).concat(Object.keys(groups).filter(c=>AX_ORDER.indexOf(c)<0));
+    cats.forEach(c=>{ groups[c]=groups[c].slice(0,10) });
+    const ALL=cats.reduce((a,c)=>a.concat(groups[c]),[]);
+    if(!ALL.length){
+      body.innerHTML=unavailableHTML('‘'+kw+'’ 의 연관어가 아직 없습니다.','함께 언급된 문서가 모자랍니다.');
+      return;
     }
-    const ALL_TAGS=Object.keys(ASSOC_BALLET).reduce((a,cat)=>a.concat(ASSOC_BALLET[cat]),[]);
     const MAX_TAGS=50; /* 축 5개 × 축당 최대 10개 */
-    const density=Math.round(ALL_TAGS.length/MAX_TAGS*100);
-    const topTag=ALL_TAGS.slice().sort((a,b)=>b.v-a.v)[0];
-    const catTotals=Object.keys(ASSOC_BALLET).map(cat=>[cat,ASSOC_BALLET[cat].reduce((s,a)=>s+a.v,0)]);
+    const density=Math.min(100,Math.round(ALL.length/MAX_TAGS*100));
+    const strength=a=>a.percentile!=null?a.percentile:(a.lift!=null?a.lift*10:a.cooccurrence);
+    const topTag=ALL.slice().sort((a,b)=>strength(b)-strength(a))[0];
+    const catTotals=cats.map(c=>[c,groups[c].reduce((s,a)=>s+(a.cooccurrence||0),0)]);
     const topCat=catTotals.slice().sort((a,b)=>b[1]-a[1])[0][0];
-    const band=ALL_TAGS.length>=38?0:ALL_TAGS.length>=25?1:ALL_TAGS.length>=13?2:3;
+    const newCnt=ALL.filter(a=>a.change==='new').length;
+    const band=ALL.length>=38?0:ALL.length>=25?1:ALL.length>=13?2:3;
     const RAMP=['#b23b3b','#c98a1b','#3d7fd6','#1f9e6e'].slice(0,4-band);
-    const BAND=[['#1f9e6e','폭발적 확산','5개 축 전반에 걸쳐 연관어가 최대치에 가깝게 쌓였습니다. 소비자 언어가 이미 풍부하게 형성된 상태입니다.'],
+    const BAND=[['#1f9e6e','폭발적 확산','여러 축에 걸쳐 연관어가 최대치에 가깝게 쌓였습니다. 소비자 언어가 이미 풍부하게 형성된 상태입니다.'],
                 ['#3d7fd6','활발한 확산','연관어가 절반 이상 채워졌습니다. 축마다 고르게 늘고 있는지 확인해볼 때입니다.'],
                 ['#c98a1b','완만한 확산','연관어가 서서히 쌓이고 있지만 아직 절반에 못 미칩니다. 확산 초반 구간입니다.'],
                 ['#b23b3b','정체','연관어 수가 아직 적어 판단하기엔 이릅니다. 소재가 한정적으로 소비되고 있을 가능성이 있습니다.']][band];
-    const badgeHtml=ch=>ch==='new'?'':
-      ch>0?'<span class="axChg up">▲'+ch+'</span>':ch<0?'<span class="axChg">▼'+Math.abs(ch)+'</span>':
+    const badgeHtml=ch=>ch==='new'?'<span class="axChg up">NEW</span>':
+      ch==null?'':ch>0?'<span class="axChg up">▲'+ch+'</span>':ch<0?'<span class="axChg">▼'+Math.abs(ch)+'</span>':
       '<span class="axChg">–</span>';
     body.innerHTML=
       '<div class="verdict" style="--sc:'+BAND[0]+'">'+
@@ -564,254 +625,286 @@ export function trRender(id){
             'stroke-dasharray="314.16" stroke-dashoffset="314.16"/></svg>'+
           '<span class="num"><b data-count="'+density+'">0</b><small>연관어 포화도 %</small></span></div>'+
         '<div class="vdTx">'+
-          '<h4><b>'+kw+'</b>'+josa(kw,'은','는')+' 지금 <em>'+BAND[1]+'</em> 단계입니다.</h4>'+
+          '<h4><b>'+trEsc(kw)+'</b>'+josa(kw,'은','는')+' 지금 <em>'+BAND[1]+'</em> 단계입니다.</h4>'+
           '<p>'+BAND[2]+'</p>'+
           '<div class="vdBand">'+['정체','완만','활발','폭발'].map((s,i)=>'<div'+(i===(3-band)?' class="on"':'')+
             '><span>'+s+'</span></div>').join('')+'</div>'+
           '<div class="vdMeta">'+
-            '<div><b>'+ALL_TAGS.length+'건</b><span>연관어 총량</span></div>'+
+            '<div><b>'+ALL.length+'건</b><span>연관어 총량</span></div>'+
+            '<div><b>'+newCnt+'건</b><span>신규 연관어</span></div>'+
+            '<div><b>'+trEsc(A.as_of)+'</b><span>기준일</span></div>'+
           '</div>'+
         '</div></div>'+
       '<div class="kpis" style="grid-template-columns:repeat(3,minmax(0,1fr))">'+
-        kpi('최다 언급 연관어',topTag.n,'','현재 최고 언급량',1)+
-        kpi('가장 뜨거운 축',topCat,'','축별 언급량 합산 1위',1)+
-        kpi('축당 평균 다양성',(ALL_TAGS.length/Object.keys(ASSOC_BALLET).length).toFixed(1),'개','핵심 연관어 수',1)+'</div>'+
+        kpi('최다 연관어',trEsc(topTag.term),'',
+            topTag.lift!=null?'lift '+topTag.lift.toFixed(2)+(topTag.percentile!=null?' · 상위 '+Math.max(1,Math.round(100-topTag.percentile))+'%':''):'동시 언급 '+topTag.cooccurrence+'건',1)+
+        kpi('가장 뜨거운 축',trEsc(topCat),'','축별 동시 언급 문서 합산 1위',1)+
+        kpi('축당 평균 다양성',(ALL.length/cats.length).toFixed(1),'개','핵심 연관어 수',1)+'</div>'+
       '<div class="trGrid">'+
-        '<div class="panelC"><div class="gHead"><h3>연관어 총량 추이</h3></div>'+
+        '<div class="panelC"><div class="gHead"><h3>연관어 수 추이</h3></div>'+
           '<div data-chart="assocMain"></div>'+
-          '<div class="note"><i>◆</i>총량이 온도보다 먼저 꺾이면 화제성은 남았지만 다양성이 좁아지고 있다는 신호입니다.</div></div>'+
+          '<div class="note"><i>◆</i>연관어 수가 온도보다 먼저 꺾이면 화제성은 남았지만 다양성이 좁아지고 있다는 신호입니다.</div></div>'+
         '<div class="panelC"><div class="ph"><h3>축별 비중</h3><em>KEYWORDS</em></div>'+
           '<table class="mTable"><tr><th>축</th><th></th><th>키워드 수</th></tr>'+
-          catTotals.map(c=>{const cnt=ASSOC_BALLET[c[0]].length;
-            const pct=Math.round(cnt/ALL_TAGS.length*100);
-            return '<tr><td>'+(c[0]===topCat?'<b>'+c[0]+'</b>':c[0])+'</td>'+
-              '<td><span class="bar" style="display:block"><i class="'+(c[0]===topCat?'c':'')+'" style="width:'+(pct*3)+'%"></i></span></td>'+
+          catTotals.map(c=>{const cnt=groups[c[0]].length;
+            const pct=Math.round(cnt/ALL.length*100);
+            return '<tr><td>'+(c[0]===topCat?'<b>'+trEsc(c[0])+'</b>':trEsc(c[0]))+'</td>'+
+              '<td><span class="bar" style="display:block"><i class="'+(c[0]===topCat?'c':'')+'" style="width:'+Math.min(100,pct*2)+'%"></i></span></td>'+
               '<td class="n">'+cnt+'개</td></tr>'}).join('')+
           '</table><div class="note"><i>◆</i>축 하나에 몰릴수록 유행이 아니라 단일 아이템 소비일 확률이 높습니다.</div></div>'+
       '</div>'+
       '<div class="assocGrid" style="margin-top:12px">'+
-      Object.keys(ASSOC_BALLET).map((cat,ci)=>{const arr=ASSOC_BALLET[cat];
-        const max=Math.max.apply(null,arr.map(a=>a.v));
-        return '<div class="panelC"><div class="axHead"><span class="dot"></span><h3>'+cat+'</h3></div>'+
-          '<div class="axList">'+arr.map((a,ai)=>{const pct=Math.round(a.v/max*100);
+      cats.map((cat,ci)=>{const arr=groups[cat];
+        const max=Math.max.apply(null,arr.map(a=>a.cooccurrence||0))||1;
+        return '<div class="panelC"><div class="axHead"><span class="dot"></span><h3>'+trEsc(cat)+'</h3></div>'+
+          '<div class="axList">'+arr.map((a,ai)=>{const pct=Math.round((a.cooccurrence||0)/max*100);
             return '<button class="axRow'+(ai===0?' top':'')+'" data-ci="'+ci+'" data-ai="'+ai+'">'+
               '<span class="axNum">'+(ai+1)+'</span>'+
-              '<span class="axName">'+a.n+'</span>'+
+              '<span class="axName">'+trEsc(a.term)+'</span>'+
               '<span class="axBar"><i class="'+(ai===0?'c':'')+'" style="width:'+pct+'%"></i></span>'+
-              badgeHtml(a.ch)+
+              badgeHtml(a.change)+
             '</button>'}).join('')+
           '</div></div>'}).join('')+'</div>';
-    G_CFG.assocMain={key:kw+'assoc',term:kw,
-      sets:[{id:'a',name:'연관어 총량',field:'document',shape:band<=1?'rise':'peak',lo:Math.max(6,ALL_TAGS.length*30-200),hi:ALL_TAGS.length*30+120,unit:'건'}]};
+    G_CFG.assocMain={key:kw+'assoc',term:kw,rows:A.history||[],
+      emptyReason:'연관어 적재 이력이 아직 없습니다.',
+      sets:[{id:'a',name:'연관어 수',field:'count',unit:'개'}]};
     gChart('[data-chart="assocMain"]',G_CFG.assocMain); trDial();
     $$('#trBody .axList .axRow').forEach(btn=>{
       btn.addEventListener('click',e=>{
         e.stopPropagation();
-        const cat=Object.keys(ASSOC_BALLET)[+btn.dataset.ci];
-        const item=ASSOC_BALLET[cat][+btn.dataset.ai];
-        assocOpenPop(btn,cat,item);
+        const cat=cats[+btn.dataset.ci];
+        const a=groups[cat][+btn.dataset.ai];
+        const stat=[a.lift!=null?'lift '+a.lift.toFixed(2):'', a.pmi!=null?'PMI '+a.pmi.toFixed(2):'',
+                    '동시 언급 '+(a.cooccurrence||0)+'건'].filter(Boolean).join(' · ');
+        assocOpenPop(btn,cat,{n:a.term,spark:null,
+          src:[{tag:'지표',text:stat}].concat(a.evidence||[])});
       });
     });
   }
   /* ══════════════ 긍부정 ══════════════
-     "사려는 사람이 많은가 · 망설이게 하는 게 뭔가"를 결론 카드로 먼저 답한다. */
+     "사려는 사람이 많은가 · 망설이게 하는 게 뭔가"를 결론 카드로 먼저 답한다.
+     값: /api/trend 의 긍정·부정 비율, 반응 유형 건수, 구매의향 지수(purchase_intent_index) */
   else if(id==='sentiment'){
     const kw=KW.q;
-    /* 값이 없거나 못 붙으면 지어내지 않고 사유를 적는다. */
-    {
-      const st=stateOf(kw);
-      if(st.status==='empty'||st.status==='error'){
-        body.innerHTML=unavailableHTML(st.reason,
-          st.detail || (st.status==='error'?'연결이 되면 자동으로 실제 값이 뜹니다.':''));
-        return;
-      }
+    const st=stateOf(kw);
+    if(st.status==='unknown'){ body.innerHTML=trLoading('‘'+trEsc(kw)+'’ 의 긍부정 지표를'); return; }
+    if(st.status==='empty'||st.status==='error'){
+      body.innerHTML=unavailableHTML(st.reason,
+        st.detail || (st.status==='error'?'연결이 되면 자동으로 실제 값이 뜹니다.':''));
+      return;
     }
-    const posSum=SENT_POS.reduce((s,p)=>s+p[1],0), negSum=SENT_NEG.reduce((s,p)=>s+p[1],0);
-    const score=68, posPct=82, negPct=18;
-    const restock=640, wow=5;
-    const band=score>=75?0:score>=55?1:score>=35?2:3;
+    const E=entryOf(kw), rows=((E&&E.data&&E.data.series)||[]);
+    const last=rows[rows.length-1]||{};
+    if(last.intent==null && last.pos_rate==null){
+      body.innerHTML=unavailableHTML('‘'+kw+'’ 의 긍부정·구매의향 지표가 아직 계산되지 않았습니다.',
+        '반응 분류(긍정·부정·의도) 적재가 돌면 채워집니다.');
+      return;
+    }
+    const recent=rows.filter(r=>trDayDiff(r.date,last.date)<28);
+    const sum=f=>recent.reduce((a,r)=>a+(+r[f]||0),0);
+    /* [이름, 최근 28일 건수, 극성(1 긍정 · 0 중립 · -1 부정)] */
+    const SIG=[['구매 반응',sum('purchase_n'),1],['호평',sum('praise_n'),1],['경험 공유',sum('experience_n'),1],
+               ['질문',sum('question_n'),0],['비판',sum('critique_n'),-1],['부정 반응',sum('neg_n'),-1]]
+      .filter(x=>x[1]>0).sort((a,b)=>b[1]-a[1]);
+    const total=sum('pos_n')+sum('neu_n')+sum('neg_n');
+    const topPos=SIG.find(x=>x[2]>0), topNeg=SIG.find(x=>x[2]<0);
+    const posPct=last.pos_rate!=null?Math.round(last.pos_rate):null;
+    const negPct=last.neg_rate!=null?Math.round(last.neg_rate):null;
+    const score=last.intent!=null?Math.round(last.intent):null;
+    const dialV=score!=null?score:(posPct||0);
+    const band=dialV>=75?0:dialV>=55?1:dialV>=35?2:3;
     const RAMP=['#b23b3b','#c98a1b','#3d7fd6','#1f9e6e'].slice(0,4-band);
     const BAND=[['#1f9e6e','강한 구매 신호','긍정 신호가 압도적입니다. 지금 재고·물량을 걱정할 시점입니다.'],
                 ['#3d7fd6','구매 신호 우세','긍정 쪽이 앞서 있습니다. 부정 신호가 늘지 않는지만 함께 지켜보세요.'],
                 ['#c98a1b','팽팽한 신호','긍정과 부정이 비슷하게 맞섭니다. 부정 신호의 종류를 먼저 확인해야 합니다.'],
                 ['#b23b3b','구매 저해 신호 우세','부정 신호가 앞섭니다. 가격·실물 관련 이슈부터 해소돼야 반등합니다.']][band];
+    const maxSig=SIG.length?SIG[0][1]:1;
     body.innerHTML=
       '<div class="verdict" style="--sc:'+BAND[0]+'">'+
         '<div class="dial"><svg viewBox="0 0 120 120">'+
           '<circle class="trk" cx="60" cy="60" r="50"/>'+
-          '<circle class="val" cx="60" cy="60" r="50" data-ramp="'+RAMP.join(',')+'" data-score="'+score+'" '+
+          '<circle class="val" cx="60" cy="60" r="50" data-ramp="'+RAMP.join(',')+'" data-score="'+dialV+'" '+
             'stroke-dasharray="314.16" stroke-dashoffset="314.16"/></svg>'+
-          '<span class="num"><b data-count="'+score+'">0</b><small>구매의향 지수</small></span></div>'+
+          '<span class="num"><b data-count="'+dialV+'">0</b><small>'+(score!=null?'구매의향 지수':'긍정 비율 %')+'</small></span></div>'+
         '<div class="vdTx">'+
-          '<h4><b>'+kw+'</b>'+josa(kw,'은','는')+' 지금 <em>'+BAND[1]+'</em>입니다.</h4>'+
+          '<h4><b>'+trEsc(kw)+'</b>'+josa(kw,'은','는')+' 지금 <em>'+BAND[1]+'</em>입니다.</h4>'+
           '<p>'+BAND[2]+'</p>'+
           '<div class="vdBand">'+['저해우세','팽팽','우세','강한신호'].map((s,i)=>'<div'+(i===(3-band)?' class="on"':'')+
             '><span>'+s+'</span></div>').join('')+'</div>'+
           '<div class="vdMeta">'+
-            '<div><b>'+posPct+'%</b><span>긍정 신호 비중</span></div>'+
-            '<div><b>'+negPct+'%</b><span>부정 신호 비중</span></div>'+
+            '<div><b>'+(posPct==null?'–':posPct+'%')+'</b><span>긍정 반응 비율</span></div>'+
+            '<div><b>'+(negPct==null?'–':negPct+'%')+'</b><span>부정 반응 비율</span></div>'+
+            '<div><b>'+trEsc(last.date)+'</b><span>기준일</span></div>'+
           '</div>'+
         '</div></div>'+
       '<div class="kpis" style="grid-template-columns:repeat(3,minmax(0,1fr))">'+
-        kpi('총 신호량',(posSum+negSum).toLocaleString(),'건','긍정+부정 합산',1)+
-        kpi('최다 긍정 신호',SENT_POS[0][0],'',SENT_POS[0][1].toLocaleString()+'건',1)+
-        kpi('최다 부정 신호',SENT_NEG[0][0],'',SENT_NEG[0][1].toLocaleString()+'건',0)+'</div>'+
+        kpi('총 반응 수',total.toLocaleString(),'건','최근 28일 · 긍정+중립+부정',1)+
+        kpi('최다 긍정 신호',topPos?topPos[0]:'–','',topPos?topPos[1].toLocaleString()+'건':'아직 없음',1)+
+        kpi('최다 부정 신호',topNeg?topNeg[0]:'–','',topNeg?topNeg[1].toLocaleString()+'건':'아직 없음',0)+'</div>'+
       '<div class="trGrid" style="align-items:start">'+
-        '<div class="panelC" id="sentChartCard"><div class="gHead"><h3>구매의향 지수 추이</h3></div>'+
+        '<div class="panelC" id="sentChartCard"><div class="gHead"><h3>긍정 · 부정 비율 추이</h3></div>'+
           '<div data-chart="sentMain"></div>'+
           '<div class="note"><i>◆</i>두 선이 벌어질수록 구매 의향이 뚜렷해지는 구간이고, 좁아지면 망설임이 커지는 구간입니다.</div></div>'+
-        '<div class="panelC" id="sentSigCard"><div class="ph"><h3>신호 유형별 건수</h3><em>POS · NEG</em></div>'+
-          '<div class="sigWrap" id="sigWrap"><table class="mTable"><tr><th>신호</th><th></th><th>건수</th></tr>'+
-          SENT_POS.concat(SENT_NEG).sort((a,b)=>b[1]-a[1]).map(p=>{const isPos=SENT_POS.indexOf(p)>=0;
-            return '<tr><td>'+p[0]+'</td>'+
-              '<td><span class="bar" style="display:block"><i class="'+(isPos?'c':'')+'" style="width:'+Math.round(p[1]/1240*100)+'%"></i></span></td>'+
-              '<td class="n '+(isPos?'up':'dn')+'">'+p[1].toLocaleString()+'</td></tr>'}).join('')+
-          '</table></div>'+
+        '<div class="panelC" id="sentSigCard"><div class="ph"><h3>신호 유형별 건수</h3><em>최근 28일</em></div>'+
+          '<div class="sigWrap" id="sigWrap">'+(SIG.length
+          ? '<table class="mTable"><tr><th>신호</th><th></th><th>건수</th></tr>'+
+            SIG.map(p=>'<tr><td>'+p[0]+'</td>'+
+              '<td><span class="bar" style="display:block"><i class="'+(p[2]>0?'c':'')+'" style="width:'+Math.round(p[1]/maxSig*100)+'%"></i></span></td>'+
+              '<td class="n '+(p[2]>0?'up':'dn')+'">'+p[1].toLocaleString()+'</td></tr>').join('')+'</table>'
+          : unavailableHTML('반응 유형(구매·호평·비판 등) 건수가 아직 없습니다.',''))+'</div>'+
           '<button class="sigMore" id="sigMoreBtn" type="button" hidden>+ 더보기</button>'+
-          '<div class="note"><i>◆</i>주황이 긍정, 검정이 부정 신호입니다.</div></div>'+
+          '<div class="note"><i>◆</i>주황이 긍정 계열(구매·호평·경험), 검정이 중립·부정 계열입니다.</div></div>'+
       '</div>';
     G_CFG.sentMain={key:kw+'sent',term:kw,min:0,max:100,
-      sets:[{id:'p',name:'긍정 신호 비중 (%)',field:'sentiment',shape:'rise',lo:Math.max(10,posPct-30),hi:posPct+8,unit:'%',accent:1},
-            {id:'n',name:'부정 신호 비중 (%)',shape:'fall',lo:Math.max(4,negPct-6),hi:negPct+22,unit:'%'}]};
+      sets:[{id:'p',name:'긍정 비율 (%)',field:'pos_rate',unit:'%',accent:1},
+            {id:'n',name:'부정 비율 (%)',field:'neg_rate',unit:'%'}]};
     gChart('[data-chart="sentMain"]',G_CFG.sentMain); trDial(); trFillBars();
     sentFitSignals();   /* 왼쪽 차트 카드 높이에 맞춰 넘치는 신호 목록을 접고 '+더보기' 로 연다 */
   }
+  /* ══════════════ 할인률 변화 ══════════════
+     값: /api/discount → snapshot.product_source_snapshot (세부 검색 조건에 걸린 상품) + 대표 용어 온도 */
   else if(id==='stock'){
-    const it=fsItem(), full=fsItemFull(), sd=gSeed(it);
-    const disc=Math.round(12+sd*38);                 /* 현재 할인률 */
-    const temp=Math.round(24+gSeed(it+'t')*72);      /* 트렌드 온도 0~100 */
-    const dUp=Math.round((gSeed(it+'d')-.35)*26);    /* 최근 2주 변화 %p */
-    const rising=dUp>0;
-    /* 점수 = 싸게 사는 정도(할인률) − 식어가는 정도(온도 낮음).
-       할인이 커도 온도가 죽었으면 좋은 매수가 아니다. */
-    const score=Math.max(4,Math.min(98,Math.round(disc*0.9+temp*0.45-(rising?dUp*1.1:0))));
-    const band=score>=75?0:score>=55?1:score>=35?2:3;
+    const D=editGate(body,editUrl('stock'),'할인률 지표를'); if(!D)return;
+    const full=D.label||fsItemFull();
+    const O=D.overall||{}, TB=D.temperature||{}, TL=TB.latest||{};
+    const disc=O.avg_discount!=null?Math.round(O.avg_discount):null;
+    const temp=TL.temp!=null?Math.round(TL.temp):null;
+    const dUp=D.change_2w;
+    const rising=(dUp||0)>0;
+    /* 점수 = 싸게 사는 정도(할인률) − 식어가는 정도(온도 낮음). 할인이 커도 온도가 죽었으면 좋은 매수가 아니다.
+       두 값 중 하나라도 없으면 점수를 만들지 않는다. */
+    const score=(disc==null||temp==null)?null:
+      Math.max(4,Math.min(98,Math.round(disc*0.9+temp*0.45-(rising?dUp*1.1:0))));
+    const dialV=score!=null?score:(disc||0);
+    const band=dialV>=75?0:dialV>=55?1:dialV>=35?2:3;
     const RAMP=['#b23b3b','#e0642f','#c98a1b','#1f9e6e'].slice(0,4-band);
     const BAND=[['#1f9e6e','지금이 적기','할인이 충분히 붙었는데 트렌드 온도는 아직 살아 있습니다. 가격과 수요가 겹치는 구간입니다.'],
                 ['#c98a1b','사도 괜찮음','나쁘지 않은 시점입니다. 다만 조금 더 기다리면 할인폭이 커질 여지가 남아 있습니다.'],
                 ['#e0642f','조금 더 대기','할인은 시작됐지만 아직 초반입니다. 2~3주 뒤 재확인을 권합니다.'],
                 ['#b23b3b','지금은 비추천','트렌드가 이미 식은 뒤에 붙는 할인입니다. 싸 보여도 오래 입지 못할 확률이 높습니다.']][band];
-    const SITES=[['무신사',Math.round(disc+3+sd*6)],['지그재그',Math.round(disc-2+sd*4)],
-                 ['에이블리',Math.round(disc+1+sd*5)]].sort((x,y)=>y[1]-x[1]);
-    const best=SITES[0];
-    const price=Math.round((69000+sd*180000)/1000)*1000;
-    const now=Math.round(price*(1-best[1]/100)/100)*100;
+    const C=D.cheapest;
+    const tempRows=(TB.series||[]).map(p=>({date:p.date,temp:p.temp}));
+    const PCODE={'무신사':'musinsa','지그재그':'zigzag','에이블리':'ably'};
 
     if(TR_TAB==='통합'){
-      /* 검색바 바로 아래 한 줄 — 별도 장치 없이 문구로만, 강조는 확실히 */
       body.innerHTML=
-        '<p class="cheapest"><b>'+full+'</b>'+josa(full,'은','는')+' 지금 <u>'+best[0]+'</u>가 가장 저렴합니다 '+
-          '<s>'+price.toLocaleString()+'원 → '+now.toLocaleString()+'원 · '+best[1]+'% 할인</s></p>'+
-        /* ── 결론 카드 ── */
+        (C?'<p class="cheapest"><b>'+trEsc(full)+'</b>'+josa(full,'은','는')+' 지금 <u>'+trEsc(C.name)+'</u>'+josa(C.name,'이','가')+' 가장 저렴합니다 '+
+          '<s>'+trWon(C.min_list_price)+' → '+trWon(C.min_sale_price)+(C.min_discount!=null?' · '+C.min_discount+'% 할인':'')+'</s></p>':'')+
         '<div class="verdict" style="--sc:'+BAND[0]+'">'+
           '<div class="dial"><svg viewBox="0 0 120 120">'+
             '<circle class="trk" cx="60" cy="60" r="50"/>'+
-            '<circle class="val" cx="60" cy="60" r="50" data-ramp="'+RAMP.join(',')+'" data-score="'+score+'" '+
+            '<circle class="val" cx="60" cy="60" r="50" data-ramp="'+RAMP.join(',')+'" data-score="'+dialV+'" '+
               'stroke-dasharray="314.16" stroke-dashoffset="314.16"/></svg>'+
-            '<span class="num"><b data-count="'+score+'">0</b><small>구매 점수</small></span></div>'+
+            '<span class="num"><b data-count="'+dialV+'">0</b><small>'+(score!=null?'구매 점수':'평균 할인률 %')+'</small></span></div>'+
           '<div class="vdTx">'+
-            '<h4><b>'+full+'</b>'+josa(full,'은','는')+' 현재 <em>'+(rising?'할인 상승세':'할인 하락세')+'</em>입니다.<br>'+
-              '트렌드 지수 '+temp+'°와 비교하면 — <em>'+BAND[1]+'</em>.</h4>'+
-            '<p>'+BAND[2]+'</p>'+
-            '<div class="vdBand">'+[0,1,2,3].map(i=>'<div'+(i===band?' class="on"':'')+'>'+
-              '<span>'+['적기','양호','대기','비추천'][i]+'</span></div>').join('')+'</div>'+
+            '<h4><b>'+trEsc(full)+'</b>'+josa(full,'은','는')+' 현재 <em>'+(dUp==null?'할인 추이 확인 중':rising?'할인 상승세':'할인 하락세')+'</em>입니다.<br>'+
+              (score!=null?'트렌드 온도 '+temp+'°와 비교하면 — <em>'+BAND[1]+'</em>.':'대표 용어의 트렌드 온도가 없어 구매 점수는 계산하지 않았습니다.')+'</h4>'+
+            '<p>'+(score!=null?BAND[2]:trEsc(TB.reason||''))+'</p>'+
+            (score!=null?'<div class="vdBand">'+[0,1,2,3].map(i=>'<div'+(i===band?' class="on"':'')+'>'+
+              '<span>'+['적기','양호','대기','비추천'][i]+'</span></div>').join('')+'</div>':'')+
             '<div class="vdMeta">'+
-              '<div><b>'+disc+'%</b><span>현재 할인률</span></div>'+
-              '<div><b>'+temp+'°</b><span>트렌드 온도</span></div>'+
-              '<div><b>'+(dUp>0?'+':'')+dUp+'%p</b><span>최근 2주</span></div>'+
-              '<div><b>'+now.toLocaleString()+'원</b><span>최저가</span></div>'+
+              '<div><b>'+(disc==null?'–':disc+'%')+'</b><span>현재 평균 할인률</span></div>'+
+              '<div><b>'+(temp==null?'–':temp+'°')+'</b><span>트렌드 온도'+(TB.term?' · '+trEsc(TB.term):'')+'</span></div>'+
+              '<div><b>'+(dUp==null?'–':(dUp>0?'+':'')+dUp+'%p')+'</b><span>최근 2주</span></div>'+
+              '<div><b>'+trWon(O.min_sale_price)+'</b><span>최저가</span></div>'+
             '</div>'+
           '</div></div>'+
-        '<div class="kpis">'+kpi('할인 시작','D+'+Math.round(6+sd*40),'','처음 감지된 시점',0)+
-          kpi('정가 유지 비율',Math.round(64-disc)+'','%','판매처 기준',0)+
-          kpi('최대 할인폭',Math.round(disc+8+sd*12)+'','%','기간 내 최고',0)+
-          kpi('재입고 횟수',Math.round(1+sd*5)+'','회','최근 8주',1)+'</div>'+
+        '<div class="note" style="margin:0 0 12px"><i>◆</i>'+trEsc(String(D.as_of).slice(0,10))+' 기준 · 상품 '+O.products+'개 · 최근 '+D.days+'일 스냅샷</div>'+
+        '<div class="kpis">'+kpi('할인 시작',D.first_discount_days==null?'–':'D+'+D.first_discount_days,'',
+              D.first_discount_at?D.first_discount_at+' 처음 감지':'기간 내 할인 없음',0)+
+          kpi('정가 유지 비율',O.full_price_pct==null?'–':Math.round(O.full_price_pct),O.full_price_pct==null?'':'%','할인 없이 파는 상품 비중',0)+
+          kpi('최대 할인폭',D.max_discount_period==null?'–':Math.round(D.max_discount_period),D.max_discount_period==null?'':'%','최근 '+D.days+'일 최고',0)+
+          kpi('재입고 횟수',D.restock_count,'회','품절 → 판매 전환 · 최근 '+D.days+'일',1)+'</div>'+
         '<div class="trGrid">'+
           '<div class="panelC"><div class="gHead"><h3>할인률 · 트렌드 온도</h3></div>'+
             '<div data-chart="stockMain"></div>'+
             '<div class="note"><i>◆</i>두 선이 벌어질수록 "식은 뒤 붙는 할인"입니다. '+
               '겹쳐 움직이면 아직 수요가 남아 있는 정상 세일입니다.</div></div>'+
-          '<div class="panelC"><div class="ph"><h3>판매처별 최저가</h3><em>실시간</em></div>'+
-            '<table class="mTable xl"><tr><th>판매처</th><th>할인률</th><th>최저가</th></tr>'+
-            SITES.map((s,i)=>{const pv=Math.round(price*(1-s[1]/100)/100)*100;
-              const bw=Math.round(s[1]/SITES[0][1]*100);
-              return '<tr><td>'+(i===0?'<b>'+s[0]+'</b>':s[0])+'</td>'+
-                '<td class="n '+(i===0?'up':'dn')+'">'+s[1]+'%'+
+          '<div class="panelC"><div class="ph"><h3>판매처별 최저가</h3><em>최신 스냅샷</em></div>'+
+            '<table class="mTable xl"><tr><th>판매처</th><th>평균 할인률</th><th>최저가</th></tr>'+
+            D.platforms.map((s,i)=>{const top=Math.max.apply(null,D.platforms.map(x=>x.avg_discount||0))||1;
+              const bw=Math.round((s.avg_discount||0)/top*100);
+              return '<tr><td>'+(i===0?'<b>'+trEsc(s.name)+'</b>':trEsc(s.name))+'</td>'+
+                '<td class="n '+(i===0?'up':'dn')+'">'+(s.avg_discount==null?'–':s.avg_discount+'%')+
                   '<span class="bar" style="display:block;margin-top:7px"><i class="'+(i===0?'c':'')+'" style="width:'+bw+'%"></i></span></td>'+
-                '<td class="n">'+pv.toLocaleString()+'원</td></tr>'}).join('')+'</table>'+
-            '<div class="note"><i>◆</i>같은 상품이라도 판매처별 할인률이 '+
-              (SITES[0][1]-SITES[SITES.length-1][1])+'%p 차이 납니다.</div></div>'+
+                '<td class="n">'+trWon(s.min_sale_price)+'</td></tr>'}).join('')+'</table>'+
+            '<div class="note"><i>◆</i>판매처마다 수집된 상품 수가 달라 평균 할인률은 참고용입니다.</div></div>'+
         '</div>';
+      const rows=trMergeRows(D.series,tempRows);
+      G_CFG.stockMain={key:full+'stock',rows,min:0,max:100,
+        emptyReason:'할인률 또는 온도 시계열이 비어 있습니다.',
+        sets:[{id:'d',name:'평균 할인률 (%)',field:'discount',unit:'%'}].concat(tempRows.length
+          ?[{id:'t',name:'트렌드 온도 (°)',field:'temp',unit:'°',accent:1}]:[])};
     } else {
       /* ── 플랫폼별 세부 분석 ── */
-      const ps=gSeed(it+TR_TAB);
-      const pd=Math.round(disc+(ps-.5)*14), cnt=Math.round(120+ps*1400);
-      const sizes=['XS','S','M','L','XL'].map((z,i)=>[z,Math.round(4+gSeed(it+TR_TAB+z)*92)]);
-      const soldout=sizes.filter(z=>z[1]<18);
+      const P=D.platforms.find(p=>p.code===PCODE[TR_TAB]||p.name===TR_TAB);
+      if(!P){
+        body.innerHTML=unavailableHTML(TR_TAB+' 에서 이 조건의 상품이 수집되지 않았습니다.',
+          '수집된 판매처: '+(D.platforms.map(p=>p.name).join(' · ')||'없음'));
+        return;
+      }
+      const stock=Object.entries(P.stock||{});
+      const stockMax=Math.max.apply(null,stock.map(x=>x[1]))||1;
       body.innerHTML=
-        '<div class="kpis">'+kpi(TR_TAB+' 할인률',pd+'','%',(pd>disc?'통합 평균보다 높음':'통합 평균보다 낮음'),pd>disc?1:0)+
-          kpi('판매 상품 수',cnt.toLocaleString(),'개','이 키워드 기준',1)+
-          kpi('품절 사이즈',soldout.length+'','개',soldout.length?soldout.map(z=>z[0]).join(' · '):'없음',0)+
-          kpi('쿠폰 중복',(ps>.5?'가능':'불가'),'',(ps>.5?'카드 할인 별도':'단독 적용만'),ps>.5?1:0)+'</div>'+
+        '<div class="kpis">'+kpi(TR_TAB+' 평균 할인률',P.avg_discount==null?'–':P.avg_discount,P.avg_discount==null?'':'%',
+              (P.avg_discount!=null&&O.avg_discount!=null)?(P.avg_discount>O.avg_discount?'통합 평균보다 높음':'통합 평균보다 낮음'):'비교 불가',
+              (P.avg_discount||0)>(O.avg_discount||0)?1:0)+
+          kpi('판매 상품 수',P.products.toLocaleString(),'개','이 조건 기준',1)+
+          kpi('품절 상품',P.sold_out,'개','최신 스냅샷 기준',0)+
+          kpi('평균 평점',P.rating==null?'–':P.rating.toFixed(1),P.rating==null?'':'/5','리뷰 '+(P.reviews||0).toLocaleString()+'건',1)+'</div>'+
         '<div class="trGrid">'+
           '<div class="panelC"><div class="gHead"><h3>'+TR_TAB+' 할인률 추이</h3></div>'+
             '<div data-chart="stockPlat"></div>'+
             '<div class="note"><i>◆</i>주황 선이 '+TR_TAB+', 검정 선이 전체 평균입니다.</div></div>'+
-          '<div class="panelC"><div class="ph"><h3>사이즈별 재고</h3><em>'+TR_TAB+'</em></div>'+
-            '<table class="mTable"><tr><th>사이즈</th><th>재고</th><th>상태</th></tr>'+
-            sizes.map(z=>'<tr><td><b>'+z[0]+'</b></td>'+
-              '<td><span class="bar" style="display:block"><i class="'+(z[1]<18?'c':'')+'" style="width:'+z[1]+'%"></i></span></td>'+
-              '<td class="n '+(z[1]<18?'up':'dn')+'">'+(z[1]<18?'품절 임박':z[1]<50?'보통':'여유')+'</td></tr>').join('')+
+          '<div class="panelC"><div class="ph"><h3>재고 상태</h3><em>'+TR_TAB+'</em></div>'+
+            '<table class="mTable"><tr><th>상태</th><th>상품 수</th><th></th></tr>'+
+            stock.map(z=>'<tr><td><b>'+trEsc(z[0])+'</b></td>'+
+              '<td><span class="bar" style="display:block"><i class="'+(/SOLD/i.test(z[0])?'c':'')+'" style="width:'+Math.round(z[1]/stockMax*100)+'%"></i></span></td>'+
+              '<td class="n">'+z[1]+'개</td></tr>').join('')+
             '</table>'+
-            '<div class="note"><i>◆</i>재고가 빠질수록 할인이 멈출 확률이 올라갑니다.</div></div>'+
+            '<div class="note"><i>◆</i>품절이 늘수록 할인이 멈출 확률이 올라갑니다.</div></div>'+
         '</div>'+
         '<div class="panelC" style="margin-top:12px"><div class="ph"><h3>'+TR_TAB+' 세부 지표</h3>'+
-          '<em>통합 대비</em></div><div class="statRow">'+
-          [['평균 배송일',(1+Math.round(ps*3))+'<u>일</u>','주문에서 도착까지'],
-           ['리뷰 평점',(3.6+ps*1.3).toFixed(1)+'<u>/5</u>','최근 3개월 리뷰'],
-           ['반품률',Math.round(4+ps*14)+'<u>%</u>','사이즈 이슈 비중 높음']]
+          '<em>최신 스냅샷</em></div><div class="statRow">'+
+          [['최대 할인률',(P.max_discount==null?'–':P.max_discount)+'<u>%</u>','상품 중 최고'],
+           ['최저가',trWon(P.min_sale_price),'정가 '+trWon(P.min_list_price)],
+           ['좋아요',(P.likes||0).toLocaleString()+'<u>개</u>','상품 합계']]
           .map(x=>'<div class="bigStat"><b>'+x[1]+'</b><span>'+x[0]+' — '+x[2]+'</span></div>').join('')+
         '</div></div>';
+      const ps=(D.platform_series||{})[P.code]||[];
+      const rows=trMergeRows(D.series,ps.map(p=>({date:p.date,plat:p.discount})));
+      G_CFG.stockPlat={key:full+TR_TAB,rows,min:0,max:100,
+        emptyReason:TR_TAB+' 할인률 시계열이 비어 있습니다.',
+        sets:[{id:'a',name:'전체 평균 (%)',field:'discount',unit:'%'},
+              {id:'p',name:TR_TAB+' (%)',field:'plat',unit:'%',accent:1}]};
     }
-    G_CFG.stockMain=item=>({key:item+'stock',min:0,max:100,
-      sets:[{id:'d',name:'할인률 (%)',shape:'late',lo:6,hi:disc+6,unit:'%'},
-            {id:'t',name:'트렌드 온도 (°)',shape:'fall',lo:Math.max(10,temp-28),hi:temp+14,unit:'°',accent:1}]});
-    G_CFG.stockPlat=item=>({key:item+TR_TAB,min:0,max:100,
-      sets:[{id:'a',name:'전체 평균 (%)',shape:'late',lo:6,hi:disc+6,unit:'%'},
-            {id:'p',name:TR_TAB+' (%)',shape:'late',lo:8,hi:disc+12,unit:'%',accent:1}]});
     gMount(); trDial();
   }
 
   /* ══════════════ 리세일 시세 지수 ══════════════
-     "지금 팔면 얼마 받나 · 사면 손해인가"를 먼저 답한다. */
+     "지금 팔면 얼마 받나 · 사면 손해인가"를 먼저 답한다.
+     값: /api/resale → snapshot.resale_snapshot (중고·리셀 매물) ÷ 정가 */
   else if(id==='resale'){
-    const it=fsItem(), full=fsItemFull(), sd=gSeed(it+'r');
-    const idx=+(0.48+sd*0.95).toFixed(2);            /* 중고가 ÷ 정가 */
-    const wow=+((gSeed(it+'w')-.5)*0.22).toFixed(2); /* 전주 대비 */
-    const retail=Math.round((79000+sd*260000)/1000)*1000;
-    const used=Math.round(retail*idx/1000)*1000;
-    const keep=Math.round(idx*100);
-    const lead=Math.round(3+sd*11);                  /* 소셜보다 며칠 먼저 움직였나 */
-    const vol=Math.round(40+sd*760);
-    const days=Math.round(3+sd*26);                  /* 평균 거래 소요일 */
-    const prem=idx>=1;
-    const volChg=Math.round((gSeed(it+'volchg')-0.35)*66);          /* 거래량 증감률 — 최근 4주 */
-    const premDays=Math.round(6+sd*40);                              /* 프리미엄 지속 기간 */
-    const premRank=Math.max(1,Math.min(99,Math.round(58-keep/2)));   /* 프리미엄 순위 — 상위 N% */
-    const spreadPct=Math.round(6+sd*22);                             /* 호가-체결가 간격 % */
-    const listPrice=Math.round(used*(1+spreadPct/100)/1000)*1000;    /* 등록가 중앙값(이상치 제외) */
+    const D=editGate(body,editUrl('resale'),'리세일 시세를'); if(!D)return;
+    const full=D.label||fsItemFull();
+    if(D.keep_pct==null){
+      body.innerHTML=unavailableHTML('‘'+full+'’ 매물 '+D.listings+'건은 있지만 정가를 알 수 없어 가치 유지율을 계산하지 못했습니다.',
+        '매물의 정가(market_metrics.regular_price) 또는 같은 상품의 판매가 스냅샷이 필요합니다.');
+      return;
+    }
+    const TB=D.temperature||{};
+    const keep=Math.round(D.keep_pct), idx=keep/100, prem=!!D.premium;
     const RAMP=['#b23b3b','#c98a1b','#1f9e6e'].slice(0,(prem?3:idx>=.7?2:1));
-    const SZ=['XS','S','M','L','XL'].map(z=>[z,+(idx*(0.82+gSeed(it+z+'p')*0.42)).toFixed(2)]);
-    const best=SZ.slice().sort((a,b)=>b[1]-a[1])[0];
+    const volLabel=D.volume_basis==='observed_listings'?'관측 매물':'거래량';
     body.innerHTML=
       '<div class="verdict" style="--sc:'+(prem?'#1f9e6e':idx>=.7?'#c98a1b':'#b23b3b')+'">'+
         '<div class="dial"><svg viewBox="0 0 120 120">'+
           '<circle class="trk" cx="60" cy="60" r="50"/>'+
-          '<circle class="val" cx="60" cy="60" r="50" data-ramp="'+RAMP.join(',')+'" data-score="'+keep+'" '+
+          '<circle class="val" cx="60" cy="60" r="50" data-ramp="'+RAMP.join(',')+'" data-score="'+Math.min(100,keep)+'" '+
             'stroke-dasharray="314.16" stroke-dashoffset="314.16"/></svg>'+
           '<span class="num"><b data-count="'+keep+'">0</b><small>가치 유지율 %</small></span></div>'+
         '<div class="vdTx">'+
-          '<h4><b>'+full+'</b>'+josa(full,'을','를')+' 지금 되팔면 <em>정가의 '+keep+'%</em>'+
+          '<h4><b>'+trEsc(full)+'</b>'+josa(full,'을','를')+' 지금 되팔면 <em>정가의 '+keep+'%</em>'+
             (prem?' — <em>프리미엄</em>이 붙어 있습니다.':'를 받습니다.')+'</h4>'+
           '<p>'+(prem
             ? '발매가보다 비싸게 거래되는 상태입니다. 지금 사면 정가 이상을 지불하게 되고, 갖고 있다면 파는 쪽이 유리합니다.'
@@ -819,74 +912,82 @@ export function trRender(id){
               ? '중고 가치가 잘 버티고 있습니다. 몇 시즌 입고 되팔아도 손실이 크지 않은 구간입니다.'
               : '가치 하락이 빠른 구간입니다. 되팔 생각이라면 지금이 마지노선에 가깝습니다.')+'</p>'+
           '<div class="vdMeta">'+
-            '<div><b>'+retail.toLocaleString()+'원</b><span>정가</span></div>'+
-            '<div><b>'+used.toLocaleString()+'원</b><span>중고 시세</span></div>'+
-            '<div><b>'+(wow>0?'+':'')+(wow*100).toFixed(0)+'%p</b><span>전주 대비</span></div>'+
-            '<div><b>'+days+'일</b><span>평균 판매 소요</span></div>'+
+            '<div><b>'+trWon(D.regular_price)+'</b><span>정가 (중앙값)</span></div>'+
+            '<div><b>'+trWon(D.used_price)+'</b><span>중고 시세 (중앙값)</span></div>'+
+            '<div><b>'+(D.keep_change_pp==null?'–':(D.keep_change_pp>0?'+':'')+D.keep_change_pp+'%p')+'</b><span>전주 대비</span></div>'+
+            '<div><b>'+D.listings+'건</b><span>관측 매물</span></div>'+
           '</div>'+
         '</div></div>'+
+      '<div class="note" style="margin:0 0 12px"><i>◆</i>'+trEsc(String(D.as_of).slice(0,10))+' 기준 · 최근 '+D.days+'일 · '+
+        (D.platforms||[]).map(p=>trEsc(p.label)).join(' · ')+'</div>'+
       '<div class="kpis">'+
-        kpi('거래량',vol.toLocaleString(),'건','최근 4주',vol>300?1:0)+
-        kpi('거래량 증감률',(volChg>0?'+':'')+volChg,'%','최근 4주',volChg>=0?1:0)+
-        kpi('프리미엄 지속 기간',(prem?premDays:0)+'','일',
-            prem?('정가 '+keep+'% 이상 유지 중'):'프리미엄 미형성',prem?1:0)+
-        kpi('프리미엄 순위','상위 '+premRank,'%',it+' 전체 대비',premRank<=20?1:0)+'</div>'+
+        kpi(volLabel,D.volume_4w==null?'–':D.volume_4w.toLocaleString(),'건','최근 4주',1)+
+        kpi(volLabel+' 증감률',D.volume_change_pct==null?'–':(D.volume_change_pct>0?'+':'')+Math.round(D.volume_change_pct),
+            D.volume_change_pct==null?'':'%','직전 4주 대비',(D.volume_change_pct||0)>=0?1:0)+
+        kpi('프리미엄 지속 기간',D.premium_days,'일',prem?('정가 이상 연속 유지'):'프리미엄 미형성',prem?1:0)+
+        kpi('리셀 지수',D.resale_index==null?'–':D.resale_index,'',D.resale_index==null?'적재된 값 없음':'최근 1주 중앙값',1)+'</div>'+
       '<div class="trGrid">'+
-        '<div class="panelC"><div class="gHead"><h3>중고 시세 vs 언급 온도</h3></div>'+
+        '<div class="panelC"><div class="gHead"><h3>가치 유지율 vs 트렌드 온도</h3></div>'+
           '<div data-chart="resMain"></div>'+
-          '<div class="note"><i>◆</i>시세(검정)가 온도(주황)보다 <b>'+lead+'일</b> 먼저 꺾이는 패턴입니다. '+
-            '되팔 계획이라면 온도가 아니라 이 선을 보세요.</div></div>'+
+          '<div class="note"><i>◆</i>유지율(검정)이 온도(주황)보다 먼저 꺾이면, 되팔 계획이라면 온도가 아니라 이 선을 보세요.</div></div>'+
         '<div class="panelC"><div class="ph"><h3>사이즈별 시세 배수</h3><em>정가=1.00</em></div>'+
-          '<table class="mTable lg"><tr><th>사이즈</th><th>배수</th><th>실거래가</th></tr>'+
-          SZ.map(z=>'<tr><td>'+(z[0]===best[0]?'<b>'+z[0]+'</b>':z[0])+'</td>'+
-            '<td class="n '+(z[1]>=1?'up':'dn')+'">×'+z[1].toFixed(2)+'</td>'+
-            '<td class="n">'+(Math.round(retail*z[1]/1000)*1000).toLocaleString()+'원</td></tr>').join('')+
-          '</table><div class="note"><i>◆</i>흔한 사이즈일수록 배수가 낮습니다.</div></div>'+
+          ((D.sizes||[]).length
+          ? '<table class="mTable lg"><tr><th>사이즈</th><th>배수</th><th>시세</th></tr>'+
+            D.sizes.map((z,i)=>'<tr><td>'+(i===0?'<b>'+trEsc(z.label)+'</b>':trEsc(z.label))+'</td>'+
+              '<td class="n '+((z.ratio||0)>=1?'up':'dn')+'">'+(z.ratio==null?'–':'×'+z.ratio.toFixed(2))+'</td>'+
+              '<td class="n">'+trWon(z.price)+'</td></tr>').join('')+
+            '</table><div class="note"><i>◆</i>매물이 많은 사이즈부터 보여 줍니다.</div>'
+          : unavailableHTML('매물에 사이즈 정보가 없습니다.',''))+'</div>'+
       '</div>'+
       '<div class="trGrid" style="margin-top:12px;align-items:start">'+
         '<div class="panelC"><div class="gHead"><h3>상태별 가격대</h3></div>'+
-          '<table class="mTable"><tr><th>상태</th><th>비중</th><th>시세</th></tr>'+
-          [['미착용 (택 포함)',1.14,18],['S급 (착용 3회 이하)',1.0,34],
-           ['A급 (생활 사용감)',0.84,31],['B급 (하자 있음)',0.62,17]]
-          .map(r=>'<tr><td>'+r[0]+'</td>'+
-            '<td><span class="bar" style="display:block"><i style="width:'+(r[2]*2.6)+'%"></i></span></td>'+
-            '<td class="n">'+(Math.round(used*r[1]/1000)*1000).toLocaleString()+'원</td></tr>').join('')+
-          '</table></div>'+
-        '<div class="panelC svSpread"><div class="svSpreadLabel">호가-체결가 스프레드</div>'+
-          '<div class="svSpreadHead">간격 <b>'+spreadPct+'%</b></div>'+
-          '<div class="svSpreadRow"><span>등록가(호가) 평균</span><b>'+listPrice.toLocaleString()+'<u>원</u></b></div>'+
-          '<div class="svSpreadBar"><i style="width:100%"></i></div>'+
-          '<div class="svSpreadRow"><span>실제 체결가</span><b>'+used.toLocaleString()+'<u>원</u></b></div>'+
-          '<div class="svSpreadBar"><i style="width:'+Math.min(100,Math.round(used/listPrice*100))+'%"></i></div>'+
-          '<div class="note"><i>◆</i>간격이 클수록 표면 시세 대비 실제 수요가 약할 수 있습니다.</div></div>'+
+          ((D.grades||[]).length
+          ? '<table class="mTable"><tr><th>상태</th><th>비중</th><th>시세</th></tr>'+
+            D.grades.map(r=>'<tr><td>'+trEsc(r.label)+'</td>'+
+              '<td><span class="bar" style="display:block"><i style="width:'+Math.round(r.share_pct)+'%"></i></span></td>'+
+              '<td class="n">'+trWon(r.price)+'</td></tr>').join('')+'</table>'
+          : unavailableHTML('매물에 상태 등급 정보가 없습니다.',''))+'</div>'+
+        (D.spread
+          ? '<div class="panelC svSpread"><div class="svSpreadLabel">호가-체결가 스프레드</div>'+
+              '<div class="svSpreadHead">간격 <b>'+(D.spread.gap_pct==null?'–':D.spread.gap_pct+'%')+'</b></div>'+
+              '<div class="svSpreadRow"><span>최저 호가 (중앙값)</span><b>'+Math.round(D.spread.ask).toLocaleString()+'<u>원</u></b></div>'+
+              '<div class="svSpreadBar"><i style="width:100%"></i></div>'+
+              '<div class="svSpreadRow"><span>실제 체결가 (중앙값)</span><b>'+Math.round(D.spread.trade).toLocaleString()+'<u>원</u></b></div>'+
+              '<div class="svSpreadBar"><i style="width:'+Math.min(100,Math.round(D.spread.trade/D.spread.ask*100))+'%"></i></div>'+
+              '<div class="note"><i>◆</i>간격이 클수록 표면 시세 대비 실제 수요가 약할 수 있습니다.</div></div>'
+          : '<div class="panelC">'+unavailableHTML('호가·체결가가 함께 적재된 매물이 없어 스프레드를 계산하지 못했습니다.','')+'</div>')+
       '</div>';
-    G_CFG.resMain=item=>({key:item+'res',
-      sets:[{id:'r',name:'중고 시세 배수',shape:'fall',lo:Math.max(.3,idx-.3),hi:idx+.35,unit:'배'},
-            {id:'t',name:'언급 온도 (°)',shape:'peak',lo:18,hi:92,unit:'°',accent:1}]});
+    const tempRows=(TB.series||[]).map(p=>({date:p.date,temp:p.temp}));
+    G_CFG.resMain={key:full+'res',rows:trMergeRows(D.series,tempRows),
+      emptyReason:'유지율 또는 온도 시계열이 비어 있습니다.',
+      sets:[{id:'r',name:'가치 유지율 (%)',field:'keep_pct',unit:'%'}].concat(tempRows.length
+        ?[{id:'t',name:'트렌드 온도 (°)',field:'temp',unit:'°',accent:1}]:[])};
     gMount(); trDial();
   }
 
   /* ══════════════ 수명주기 ══════════════
-     "지금 사도 되나 · 언제까지 입을 수 있나" 로만 답한다.
-     (구매 타이밍 / 신규 유입률 / 성장 모멘텀 / 시장 포화도 4개 KPI로 요약) */
+     "지금 사도 되나" 로만 답한다.
+     값: /api/lifecycle → 대표 용어의 level·ma28·momentum 으로 단계를 판정(규칙은 응답의 rule) */
   else{
-    const it=fsItem(), full=fsItemFull(), sd=gSeed(it+'l');
+    const D=editGate(body,editUrl('life'),'수명주기 지표를'); if(!D)return;
+    const full=D.label||fsItemFull();
     const stages=['태동','확산','정점','쇠퇴'];
-    const si=Math.min(3,Math.floor(sd*4));
-    const weeks=[Math.round(38+sd*40),Math.round(22+sd*30),Math.round(9+sd*14),Math.round(2+sd*6)][si];
-    const age=Math.round(6+sd*80);                    /* 이 유행이 시작된 지 몇 주 */
-    const wear=[Math.round(3+sd*2),Math.round(2+sd*2),Math.round(1+sd*2),1][si];  /* 몇 시즌 더 */
+    const si=stages.indexOf(D.stage);
+    if(si<0){
+      body.innerHTML=unavailableHTML('‘'+full+'’ 은 관측이 모자라 수명주기를 판정하지 않았습니다 (관측 '+D.points+'일).',D.rule);
+      return;
+    }
     const SC=['#3d7fd6','#1f9e6e','#c98a1b','#b23b3b'][si];
     const RAMP=['#3d7fd6','#1f9e6e','#c98a1b','#b23b3b'].slice(0,si+1);
-    const pct=[22,58,92,40][si];
+    const pct=D.progress==null?0:D.progress;
     const timing=['적기','적기','주의','비추천'][si];
-    const inflow=[Math.round(24+sd*56),Math.round(6+sd*28),-Math.round(4+sd*18),-Math.round(14+sd*36)][si];
-    const momentum=+((si<2?1:-1)*(4+sd*22)).toFixed(1);
+    const mom=D.momentum==null?null:Math.round(D.momentum-50);
     const MSG=[
       ['아직 아무도 모릅니다','지금 사면 남들보다 먼저 입는 구간입니다. 다만 물량이 적어 선택지가 좁고, 그대로 사라질 위험도 함께 있습니다.'],
-      ['가장 안전한 구간입니다','올라가는 중이라 앞으로 '+weeks+'주는 더 입을 수 있습니다. 물량도 충분해 고르기 좋습니다.'],
-      ['지금이 마지막입니다','정점입니다. 사도 되지만 오래 못 갑니다. 오래 입을 옷이라면 다음 것을 보세요.'],
-      ['이미 지났습니다','내려온 지 꽤 됐습니다. 싸게 나와도 올해 안에 안 입게 될 확률이 높습니다.']][si];
+      ['가장 안전한 구간입니다','화제성이 올라가는 중입니다. 물량도 충분해 고르기 좋습니다.'],
+      ['지금이 마지막입니다','정점 부근입니다. 사도 되지만 오래 못 갑니다. 오래 입을 옷이라면 다음 것을 보세요.'],
+      ['이미 지났습니다','최고점에서 내려오는 중입니다. 싸게 나와도 올해 안에 안 입게 될 확률이 높습니다.']][si];
+    const wkRows=(D.weekly_temp||[]).slice(0,8);
     body.innerHTML=
       '<div class="verdict" style="--sc:'+SC+'">'+
         '<div class="dial"><svg viewBox="0 0 120 120">'+
@@ -895,49 +996,53 @@ export function trRender(id){
             'stroke-dasharray="314.16" stroke-dashoffset="314.16"/></svg>'+
           '<span class="num"><b data-count="'+pct+'">0</b><small>유행 진행도 %</small></span></div>'+
         '<div class="vdTx">'+
-          '<h4><b>'+full+'</b>'+josa(full,'은','는')+' <em>'+stages[si]+'</em> 단계 — '+MSG[0]+'</h4>'+
+          '<h4><b>'+trEsc(full)+'</b>'+josa(full,'은','는')+' <em>'+stages[si]+'</em> 단계 — '+MSG[0]+'</h4>'+
           '<p>'+MSG[1]+'</p>'+
           '<div class="vdBand">'+stages.map((s,i)=>'<div'+(i===si?' class="on"':'')+
             '><span>'+s+'</span></div>').join('')+'</div>'+
           '<div class="vdMeta">'+
-            '<div><b>'+age+'주</b><span>유행 시작 후</span></div>'+
-            '<div><b>'+weeks+'주</b><span>남은 기간</span></div>'+
-            '<div><b>'+wear+'시즌</b><span>더 입을 수 있음</span></div>'+
-            '<div><b>'+(si<2?'상승':'하강')+'</b><span>현재 방향</span></div>'+
+            '<div><b>'+D.age_weeks+'주</b><span>화제성 시작 후</span></div>'+
+            '<div><b>'+trEsc(D.peak_date||'–')+'</b><span>최고점 (28일 평균)</span></div>'+
+            '<div><b>'+(D.temp==null?'–':Math.round(D.temp)+'°')+'</b><span>현재 온도</span></div>'+
+            '<div><b>'+(mom==null?'–':mom>=0?'상승':'하강')+'</b><span>현재 방향</span></div>'+
           '</div>'+
         '</div></div>'+
+      '<div class="note" style="margin:0 0 12px"><i>◆</i>'+trEsc(D.as_of)+' 기준 · ‘'+trEsc(D.term)+'’ 관측 '+D.points+'일</div>'+
       '<div class="kpis">'+
         kpi('구매 타이밍',timing,'',MSG[0],si<2?1:0)+
-        kpi('신규 유입률',(inflow>0?'+':'')+inflow,'%','최근 4주 신규 진입',inflow>0?1:0)+
-        kpi('성장 모멘텀',(momentum>0?'+':'')+momentum,'%','전월 대비 확산 속도',momentum>0?1:0)+
-        kpi('시장 포화도',pct+'','%','유행 진행도 기준',pct>=60?1:0)+'</div>'+
+        kpi('신규 유입률',D.inflow_pct==null?'–':(D.inflow_pct>0?'+':'')+Math.round(D.inflow_pct),D.inflow_pct==null?'':'%','최근 4주 언급 · 직전 4주 대비',(D.inflow_pct||0)>0?1:0)+
+        kpi('성장 모멘텀',mom==null?'–':(mom>0?'+':'')+mom,'','모멘텀 지수 50 = 보합',(mom||0)>0?1:0)+
+        kpi('시장 포화도',D.level==null?'–':Math.round(D.level),D.level==null?'':'%','화제성 레벨 기준',(D.level||0)>=60?1:0)+'</div>'+
       '<div class="trGrid">'+
         '<div class="panelC"><div class="gHead"><h3>유행 곡선 · 지금 위치</h3></div>'+
           '<div data-chart="lifeMain"></div>'+
-          '<div class="note"><i>◆</i>주황 구간이 <b>지금</b>입니다. '+
-            (si<2?'아직 올라가는 중이라 여유가 있습니다.':'꼭짓점을 지나면 회복하지 않습니다.')+'</div></div>'+
-        '<div class="panelC"><div class="ph"><h3>계절 · 착용 예측</h3></div>'+
-          '<table class="mTable lg"><tr><th>시기</th><th>착용 가능성</th><th></th></tr>'+
-          [['이번 시즌',[70,96,88,44][si]],['다음 시즌',[88,82,52,18][si]],
-           ['1년 뒤',[74,54,26,7][si]],['2년 뒤',[46,28,11,3][si]]]
-          .map(r=>'<tr><td>'+r[0]+'</td>'+
-            '<td><span class="bar" style="display:block"><i class="'+(r[1]>=60?'c':'')+'" style="width:'+r[1]+'%"></i></span></td>'+
-            '<td class="n">'+r[1]+'%</td></tr>').join('')+
-          '</table><div class="note"><i>◆</i>같은 카테고리 아이템들의 실제 착용 로그로 계산한 값입니다.</div></div>'+
+          '<div class="note"><i>◆</i>화제성 레벨의 흐름입니다. 오른쪽 끝 음영이 <b>지금</b>입니다. '+
+            (si<2?'아직 올라가는 중이라 여유가 있습니다.':'꼭짓점을 지나면 회복하지 않는 경우가 많습니다.')+'</div></div>'+
+        '<div class="panelC"><div class="ph"><h3>주별 온도</h3><em>최근 8주</em></div>'+
+          (wkRows.length
+          ? '<table class="mTable lg"><tr><th>시기</th><th>온도</th><th></th></tr>'+
+            wkRows.map(r=>'<tr><td>'+(r.weeks_ago===0?'이번 주':r.weeks_ago+'주 전')+'</td>'+
+              '<td><span class="bar" style="display:block"><i class="'+(r.temp>=60?'c':'')+'" style="width:'+Math.round(r.temp)+'%"></i></span></td>'+
+              '<td class="n">'+Math.round(r.temp)+'°</td></tr>').join('')+
+            '</table>'
+          : unavailableHTML('최근 8주 온도 값이 없습니다.',''))+
+          '<div class="note"><i>◆</i>'+trEsc(D.rule)+'</div></div>'+
       '</div>'+
-      /* '검색 여정 브릿지' 카드는 걷어냈다 — 남은 한 장이 가로 전체를 채운다 */
       '<div class="trGrid one" style="margin-top:12px">'+
         '<div class="panelC"><div class="gHead"><h3>언급량 · 판매량</h3></div>'+
           '<div data-chart="lifeGap"></div>'+
           '<div class="note"><i>◆</i>언급량만 많고 실제로 구매하지 않는 구간은 거품입니다. '+
-            '두 선이 붙어 갈수록 진짜 유행입니다.</div></div>'+
+            '두 선이 붙어 갈수록 진짜 유행입니다. (둘 다 최대=100 지수)</div></div>'+
       '</div>';
-    G_CFG.lifeMain=item=>({key:item+'life',band:[si*.25,si*.25+.25],
-      sets:[{id:'l',name:'언급량 지수',shape:['rise','rise','peak','fall'][si],lo:8,hi:96,unit:''}]});
-    G_CFG.lifeGap=item=>({key:item+'gap',wide:true,   /* 가로 전체 카드 — 높이·글씨는 원래대로, 가로로만 */
-      sets:[{id:'m',name:'언급량',shape:['rise','rise','peak','fall'][si],lo:10,hi:94,unit:''},
-            /* 리뷰 수를 가져올 수 없어 실착 비율 대신 판매량을 쓴다 (언급량과 같은 0~100 지수 눈금) */
-            {id:'w',name:'판매량',shape:['rise','rise','rise','fall'][si],lo:6,hi:62,unit:'',accent:1}]});
+    G_CFG.lifeMain={key:full+'life',rows:D.series,band:[.88,1],min:0,max:100,
+      emptyReason:'화제성 레벨 시계열이 비어 있습니다.',
+      sets:[{id:'l',name:'화제성 레벨',field:'level',unit:''}]};
+    const sales=D.sales_series||[];
+    G_CFG.lifeGap={key:full+'gap',wide:true,min:0,max:100,
+      rows:trMergeRows(D.series.map(p=>({date:p.date,mention:p.mention})),sales),
+      emptyReason:sales.length?'언급량 시계열이 비어 있습니다.':'선택한 조건 상품의 판매수 스냅샷(sales_count)이 없어 판매량을 그리지 못했습니다.',
+      sets:[{id:'m',name:'언급량',field:'mention',index:true,unit:''},
+            {id:'w',name:'판매량',field:'sales',index:true,unit:'',accent:1,rows:sales}]};
     gMount(); trFillBars(); trDial();
   }
   if(HAS_A)aAnimate($$('#trBody .kpi, #trBody .panelC, #trBody .concl, #trBody .verdict, #trBody .cheapest, #trBody .svAlso'),

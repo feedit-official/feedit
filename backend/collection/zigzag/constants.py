@@ -1,86 +1,94 @@
 from __future__ import annotations
 
-
-# ============================================================
-# BASE
-# ============================================================
-
 ZIGZAG_BASE_URL = "https://zigzag.kr"
+SEARCH_RESULT_API_URL = "https://api.zigzag.kr/api/2/graphql/GetSearchResult"
+SHOP_COMPONENT_API_URL = "https://api.zigzag.kr/api/2/graphql/GetComponentList"
+PRODUCT_BASE_URL = "https://store.zigzag.kr/app/catalog/products/{goods_id}?browsing_type=NATIVE_BROWSER"
 
-PRODUCT_PAGE_URL = (
-    ZIGZAG_BASE_URL
-    + "/catalog/products/{product_id}"
-)
-
-IMAGE_BASE_URL = ZIGZAG_BASE_URL
-
-
-# ============================================================
-# RANKING / CATEGORY
-# ============================================================
-
-DEFAULT_RANKING_URL = (
-    ZIGZAG_BASE_URL
-    + "/pages/srp-clp-category?category_id=474"
-)
-
-PRODUCT_CARD_SELECTOR = "div.product-card"
-
-PRODUCT_LINK_SELECTOR = (
-    "a.product-card-link"
-)
-
-PRODUCT_LINK_PATTERN = (
-    r"/catalog/products/(\d+)"
-)
-
-
-# ============================================================
-# REQUEST
-# ============================================================
-
+DEFAULT_PAGE_ID = "web_srp_clp_category"
+DEFAULT_SORT = "200"
+DEFAULT_LIMIT = 100
 REQUEST_TIMEOUT = 20
+GOODS_CARD_TYPE = "UX_GOODS_CARD_ITEM"
 
-DEFAULT_HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 "
-        "(Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 "
-        "(KHTML, like Gecko) "
-        "Chrome/151.0.0.0 Safari/537.36"
-    ),
-    "Accept": (
-        "text/html,application/xhtml+xml,"
-        "application/xml;q=0.9,"
-        "image/avif,image/webp,image/apng,"
-        "*/*;q=0.8"
-    ),
-    "Accept-Language": (
-        "ko-KR,ko;q=0.9,"
-        "en-US;q=0.8,en;q=0.7"
-    ),
+SEARCH_RESULT_QUERY = """
+query GetSearchResult($input: SearchResultInput!) {
+  search_result(input: $input) {
+    end_cursor
+    has_next
+    ui_item_list {
+      __typename
+      type
+      ... on UxGoodsCardItem {
+        goods_id
+        catalog_product_id
+        shop_id
+        shop_name
+        is_brand
+        title
+        product_url
+        image_url
+        price
+        final_price
+        discount_rate
+        review_score
+        display_review_count
+        sellable_status
+        is_ad
+        managed_category_list { id value key depth }
+      }
+    }
+  }
+}
+""".strip()
+
+SHOP_COMPONENT_QUERY = r"""
+fragment ShopUxProductCardItem on ShopUxProductCardItem {
+  product {
+    shop_product_no
+    catalog_product_id
+    shop_id
+    url
+    image_url
+    name
+    price
+    discount_rate
+  }
+  shop_name
+  final_price
+  ranking
+  review_count
+  review_score
+  fomo { text }
+  managed_category_list { id category_id value depth key }
 }
 
-
-# ============================================================
-# RENDER
-# ============================================================
-
-DEFAULT_RENDER_WAIT_MS = 3000
-
-DEFAULT_SCROLL_WAIT_MS = 1000
-
-DEFAULT_SCROLL_COUNT = 24
-
-DEFAULT_RANKING_LIMIT = 100
-
-
-# ============================================================
-# META
-# ============================================================
-
-PARSER_VERSION = "zigzag-pdp-v2"
-
-SCHEMA_VERSION = "1.0"
-
-SOURCE_CODE = "ZIGZAG"
+query GetComponentList(
+  $shop_id: ID!
+  $category_id: ID
+  $after_id: ID
+  $sorting_item_id: ID
+  $check_button_item_ids: [ID]
+  $sub_filter_id_list: [ID]
+) {
+  shop_ux_component_list(
+    shop_id: $shop_id
+    category_id: $category_id
+    after_id: $after_id
+    sorting_item_id: $sorting_item_id
+    check_button_item_ids: $check_button_item_ids
+    sub_filter_id_list: $sub_filter_id_list
+  ) {
+    after_id
+    has_next_page
+    category_list { id name }
+    item_list {
+      type
+      ... on ShopUxProductCarousel { component_list { ...ShopUxProductCardItem } }
+      ... on ShopUxProductGroup { product_carousel { component_list { ...ShopUxProductCardItem } } }
+      ... on ShopUxBestProductCarousel { category_group_list { item_list { ...ShopUxProductCardItem } } }
+      ...ShopUxProductCardItem
+    }
+  }
+}
+""".strip()

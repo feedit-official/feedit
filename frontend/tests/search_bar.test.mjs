@@ -60,16 +60,17 @@ t('조회 중에는 두 번 못 누르게 잠근다', () => {
 // ── 조회 중 표시 ─────────────────────────────────────────
 t('★ 조회하는 동안 busy 를 켜고, 실패해도 반드시 끈다', () => {
   const i = saved.indexOf('function kwGo(');
-  const seg = saved.slice(i, i + 900);
+  const seg = saved.slice(i, i + 1400);
   assert.match(seg, /kwBusy\(true\)/);
-  assert.match(seg, /\.catch\(\(\)=>\{\}\)\.then\(\(\)=>\{/, '실패해도 끝나야 한다');
+  assert.match(seg, /\.catch\(\(\)=>\{\}\)\)\)\.then\(\(\)=>\{/, '실패해도 끝나야 한다');
   assert.match(seg, /kwBusy\(false\)/);
 });
 
 t('조회 전에 지표를 받아 온다', () => {
-  assert.match(saved, /import \{ prime \} from '\.\/live_data\.js'/);
-  // 사람이 직접 누른 것이므로 캐시를 무시하고 새로 받는다.
-  assert.match(saved, /Promise\.resolve\(prime\(q,120,\{force:true\}\)\)/);
+  assert.match(saved, /import \{ prime, primeUrl \} from '\.\/live_data\.js'/);
+  // 사람이 직접 누른 것이므로 캐시를 무시하고 새로 받는다. (1년치 — 전년 대비를 위해 기본 기간)
+  assert.match(saved, /prime\(q,undefined,\{force:true\}\)/);
+  assert.match(saved, /primeUrl\(assocUrl,\{force:true\}\)/);
 });
 
 // ── 모션 ─────────────────────────────────────────────────

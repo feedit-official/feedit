@@ -41,7 +41,7 @@ export let AVAILABLE_TERMS = [];
  * 이 용어의 지표를 받아 둔다. 그리기 전에 한 번 부른다.
  * 같은 용어를 여러 번 불러도 요청은 한 번만 나간다.
  */
-export async function prime(term, days = 120, opts = {}) {
+export async function prime(term, days = 400, opts = {}) {
   const key = String(term || '').trim();
   if (!key) return null;
   const hit = CACHE.get(key);
@@ -132,8 +132,66 @@ function toEntry(j) {
     byDate,
     facet: j.data.facet,
     term: j.data.term,
+    asOf: j.data.as_of || null,
+    data: j.data,                          // platforms · new_terms 등 시계열 밖의 값
     unavailable: j.unavailable || null,   // temp·momentum 처럼 RDS 에 없는 값
   };
+}
+
+/** 용어 캐시 항목 그대로 (platforms · new_terms 를 꺼낼 때) */
+export function entryOf(term) {
+  return CACHE.get(String(term || '').trim()) || null;
+}
+
+/* ── URL 단위 캐시 ──────────────────────────────────────────
+ * 연관어(/api/assoc) · 할인률(/api/discount) · 리세일(/api/resale) · 수명주기(/api/lifecycle)
+ * 는 용어 하나의 시계열이 아니라 조건(스타일·종류·브랜드·아이템명)마다 다른 답이다.
+ * 같은 규칙(ok·empty 5분 / error 15초 / 동시 요청 한 번)으로 URL 을 키로 담는다. */
+const URL_CACHE = new Map();
+const URL_INFLIGHT = new Map();
+
+export function stateOfUrl(url) {
+  return URL_CACHE.get(url) || { status: 'unknown', reason: '아직 확인하지 않았습니다.' };
+}
+
+export async function primeUrl(url, opts = {}) {
+  const hit = URL_CACHE.get(url);
+  const ttl = hit && hit.status === 'error' ? TTL_ERR_MS : TTL_MS;
+  if (!opts.force && hit && Date.now() - (hit.at || 0) < ttl) return hit;
+  if (URL_INFLIGHT.has(url)) return URL_INFLIGHT.get(url);
+  const p = (async () => {
+    let out;
+    try {
+      const r = await fetch(url);
+      const text = await r.text();
+      if (!r.ok) {
+        out = { status: 'error', reason: `지표 API 가 ${r.status} 를 돌려줬습니다.`,
+                detail: r.status === 404 ? `${url.split('?')[0]} 주소가 없습니다. 백엔드를 최신으로 올렸는지 확인하세요.`
+                                         : '백엔드 로그를 확인하세요.' };
+      } else {
+        let j = null;
+        try { j = JSON.parse(text); } catch (_) {
+          out = { status: 'error', reason: '지표 API 가 JSON 이 아닌 것을 돌려줬습니다.',
+                  detail: `앞 40자: ${text.slice(0, 40).replace(/\s+/g, ' ')}` };
+        }
+        if (j) {
+          out = j.status === 'ok'
+            ? { status: 'ok', reason: '', data: j.data, extra: j }
+            : { status: j.status === 'empty' ? 'empty' : 'error',
+                reason: j.reason || '측정된 자료가 없습니다.' };
+        }
+      }
+    } catch (e) {
+      out = { status: 'error', reason: '지표 서버에 연결하지 못했습니다.',
+              detail: '백엔드(Django :8000)가 떠 있는지 확인하세요.' };
+    }
+    out.at = Date.now();
+    URL_CACHE.set(url, out);
+    URL_INFLIGHT.delete(url);
+    return out;
+  })();
+  URL_INFLIGHT.set(url, p);
+  return p;
 }
 
 /** 지금 이 용어가 어떤 상태인가 — 그리기 전에 확인한다. */
@@ -151,33 +209,56 @@ export function stateOf(term) {
  *
  * @param field 'mention' | 'score' | 'temp' …  (RDS 에 없으면 null)
  */
-export function seriesOf(term, { points = 30, step = 'd', field = 'mention' } = {}) {
+export function seriesOf(term, { points = 30, step = 'd', field = 'mention', raw = false } = {}) {
   const e = CACHE.get(String(term || '').trim());
   if (!e || e.status !== 'ok' || !e.byDate) return null;
+  return resample(e.byDate, { points, step, field, raw });
+}
 
-  const raw = [];
-  const today = new Date();
+/**
+ * 날짜별 행 배열 → 차트 계열. 할인률·리세일·수명주기처럼 용어 캐시 밖의 자료가 쓴다.
+ * @param rows [{date:'YYYY-MM-DD', …}]
+ */
+export function seriesFromRows(rows, { points = 30, step = 'd', field = 'value', raw = true } = {}) {
+  if (!Array.isArray(rows) || !rows.length) return null;
+  const byDate = new Map();
+  for (const r of rows) if (r && r.date) byDate.set(String(r.date).slice(0, 10), r);
+  return resample(byDate, { points, step, field, raw });
+}
+
+/** 가장 마지막 날짜 — 적재가 오늘보다 늦을 수 있으므로 눈금은 여기를 끝으로 잡는다. */
+export function lastDateOf(byDateOrRows) {
+  const keys = byDateOrRows instanceof Map ? [...byDateOrRows.keys()]
+    : (byDateOrRows || []).map((r) => String(r.date).slice(0, 10));
+  return keys.length ? keys.sort().pop() : null;
+}
+
+function resample(byDate, { points, step, field, raw }) {
+  const out = [];
+  const endIso = lastDateOf(byDate);
+  const end = endIso ? new Date(endIso + 'T00:00:00Z') : new Date();
   for (let i = points - 1; i >= 0; i--) {
-    const d = new Date(today);
-    if (step === 'd') d.setDate(d.getDate() - i);
-    else if (step === 'w') d.setDate(d.getDate() - i * 7);
-    else d.setMonth(d.getMonth() - i);
-    raw.push(pickNear(e.byDate, d, step, field));
+    const d = new Date(end);
+    if (step === 'd') d.setUTCDate(d.getUTCDate() - i);
+    else if (step === 'w') d.setUTCDate(d.getUTCDate() - i * 7);
+    else d.setUTCMonth(d.getUTCMonth() - i);
+    out.push(pickNear(byDate, d, step, field));
   }
   // 한 점도 못 찾았으면 그릴 게 없다.
-  if (!raw.some((v) => v !== null)) return null;
+  if (!out.some((v) => v !== null)) return null;
 
-  // 0~1 로 눕힌다. 차트 엔진이 그 범위를 기대한다.
-  const nums = raw.filter((v) => v !== null);
-  const lo = Math.min(...nums);
-  const hi = Math.max(...nums);
-  const span = hi - lo || 1;
   // 빈 자리는 앞뒤 값으로 잇는다 — 없는 날을 0 으로 떨어뜨리면
   // 그래프가 바닥을 치는 것처럼 보여서 거짓말이 된다.
   let last = null;
-  const filled = raw.map((v) => (v === null ? last : (last = v)));
+  const filled = out.map((v) => (v === null ? last : (last = v)));
+  const nums = out.filter((v) => v !== null);
+  const lo = Math.min(...nums);
   for (let i = filled.length - 1; i >= 0; i--) if (filled[i] === null) filled[i] = filled[i + 1] ?? lo;
+  if (raw) return filled;
 
+  // 0~1 로 눕힌다 (예전 호출부 호환).
+  const hi = Math.max(...nums);
+  const span = hi - lo || 1;
   return filled.map((v) => (v - lo) / span);
 }
 
@@ -192,7 +273,7 @@ function pickNear(byDate, d, step, field) {
   const vals = [];
   for (let k = 0; k < back; k++) {
     const t = new Date(d);
-    t.setDate(t.getDate() - k);
+    t.setUTCDate(t.getUTCDate() - k);
     const p = byDate.get(iso(t));
     const v = p ? numOr(p[field]) : null;
     if (v !== null) vals.push(v);
@@ -291,6 +372,7 @@ export function summaryOf(term) {
     wk: diff(7, 'mention'),          // 지난주 대비 언급량
     mo: diff(28, 'mention'),         // 4주 전 대비
     yoy: diff(365, 'mention'),       // 작년 대비 — 자료가 1년치 있어야 나온다
+    yoyPct: pctDiff(back(365), last, 'mention'),   // 같은 값의 % 표현
     tempWk: diff(7, 'temp'),
     missing,
     /* 시계열이 짧으면 비교값을 믿으면 안 된다.
@@ -301,4 +383,12 @@ export function summaryOf(term) {
 
 function num(v) {
   return v === null || v === undefined || Number.isNaN(Number(v)) ? null : Number(v);
+}
+
+/** 두 행의 같은 칸 사이 변화율(%). 기준이 없거나 0 이면 null. */
+function pctDiff(then, now, field) {
+  if (!then || !now) return null;
+  const a = num(then[field]);
+  const b = num(now[field]);
+  return a === null || b === null || a === 0 ? null : ((b - a) / a) * 100;
 }

@@ -1,5 +1,5 @@
 import { $, $$, HAS_A, aAnimate, aSpring, aTimeline } from '../../../core/static/js/dom.js';
-import { prime } from './live_data.js';
+import { prime, primeUrl } from './live_data.js';
 import { FIDX, fsMatch, fsNorm } from '../../../style/static/js/search.js';
 import { KW, trToast } from './render_helpers.js';
 import { markTried, trRender } from './dispatch.js';
@@ -94,9 +94,13 @@ function kwGo(v){
      실패했을 때를 대비해 반드시 되돌린다(finally). */
   kwBusy(true);
   KW.q=q; kwHideSug();
-  Promise.resolve(prime(q,120,{force:true})).catch(()=>{}).then(()=>{
+  /* 연관어 파트는 /api/assoc 도 새로 받는다 (사람이 직접 눌렀으니 캐시를 무시한다). */
+  const assocUrl=KW.part==='assoc'?'/api/assoc?term='+encodeURIComponent(q):null;
+  const jobs=[prime(q,undefined,{force:true})];
+  if(assocUrl)jobs.push(primeUrl(assocUrl,{force:true}));
+  Promise.all(jobs.map(j=>Promise.resolve(j).catch(()=>{}))).then(()=>{
     /* 내가 방금 물어봤다 — 이어서 도는 trRender 는 또 묻지 마라. */
-    markTried(q);
+    markTried(q); if(assocUrl)markTried(assocUrl);
     kwBusy(false);
     trRender(KW.part);
   });

@@ -26,6 +26,7 @@ globalThis.removeEventListener=dom.window.removeEventListener.bind(dom.window);
 globalThis.location=dom.window.location; globalThis.localStorage=dom.window.localStorage;
 globalThis.matchMedia=()=>({matches:false,addEventListener(){},addListener(){}});
 globalThis.scrollTo=()=>{};
+globalThis.innerWidth=1280; globalThis.innerHeight=800;
 globalThis.IntersectionObserver=class{observe(){}unobserve(){}disconnect(){}};
 globalThis.ResizeObserver=class{observe(){}unobserve(){}disconnect(){}};
 
@@ -114,8 +115,15 @@ await t('탭만 옮길 때는 다시 묻지 않는다 (캐시가 먹는다)', as
   mode='ok'; asked=[];
   trRender('assoc'); await wait(120);
   trRender('temp');  await wait(120);
+  /* 연관어 탭은 처음 열 때 /api/assoc 를 한 번 받는다(용어 지표와 다른 표). 지표는 다시 안 묻는다. */
+  assert.equal(asked.filter(u=>u.includes('나일론')&&u.includes('/api/trend')).length, 0,
+    '탭을 옮길 때마다 지표를 다시 부르면 안 된다');
+  assert.ok(asked.filter(u=>u.includes('/api/assoc')).length <= 1, '연관어는 한 번만');
+  asked=[];
+  trRender('assoc'); await wait(120);
+  trRender('temp');  await wait(120);
   assert.equal(asked.filter(u=>u.includes('나일론')).length, 0,
-    '탭을 옮길 때마다 서버를 부르면 안 된다');
+    '두 번째로 옮길 때는 아무것도 다시 묻지 않는다');
 });
 
 await t('탭을 옮겨도 검색창이 살아 있다', async () => {

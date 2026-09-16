@@ -1,5 +1,5 @@
 import { $, A, HAS_A, aAnimate, aStagger } from '../../../core/static/js/dom.js';
-import { stateOf, seriesOf, unavailableHTML } from './live_data.js';
+import { stateOf, seriesOf, seriesFromRows, lastDateOf, unavailableHTML } from './live_data.js';
 
 /* ══════════════════════════════════════════════════════
    차트 엔진 — 일 · 주 · 월 전환과 마우스오버 판독
@@ -14,8 +14,9 @@ function gRand(seed){ let x=seed*10000%1||0.137;
 const GRAN=[['d','일별',30],['w','주별',26],['m','월별',18]];
 const G_UNIT={d:'일',w:'주',I:'',m:'개월'};
 /* 오늘로부터 거슬러 올라가는 눈금 라벨 */
-function gLabels(g,n){
-  const now=new Date(2026,7,19), out=[];
+function gLabels(g,n,endIso){
+  /* 실데이터는 마지막 적재일을 끝 눈금으로 쓴다. 장식용(난수)은 예전 기준일 그대로. */
+  const now=endIso?new Date(endIso+'T00:00:00'):new Date(2026,7,19), out=[];
   for(let i=n-1;i>=0;i--){
     const t=new Date(now);
     if(g==='d')t.setDate(t.getDate()-i);
@@ -48,11 +49,42 @@ export function gChart(host,cfg){
   const el=(typeof host==='string')?$(host):host; if(!el)return;
   const W=620,H=210,PL=34,PR=14,PT=14,PB=28;
   const g=el.dataset.g||'w';
-  const labels=gLabels(g,GRAN.find(x=>x[0]===g)[2]);
+  const N=GRAN.find(x=>x[0]===g)[2];
+  const labels=gLabels(g,N);
+  /* 계열 하나를 실값으로 만든다. index:true 면 최대값을 100 으로 둔 지수로 바꾼다
+     (언급량처럼 단위가 다른 값을 온도 0–100 축에 겹칠 때). */
+  const toLive=(s,d)=>{
+    if(!d)return null;
+    if(s.index){ const mx=Math.max.apply(null,d)||1; d=d.map(v=>v/mx*100); }
+    return Object.assign({},s,{data:d.map(v=>+(+v).toFixed(2))});
+  };
   /* ★ 실데이터가 먼저다.
-       cfg.term 을 준 차트는 AWS RDS 값을 쓴다. 값이 없으면 난수로 채우지 않고
-       '측정 불가'를 적고 끝낸다 — 없는 걸 그럴듯하게 그리는 게 제일 나쁘다.
-       cfg.term 이 없는 차트(장식용 미니 스파크 등)는 예전처럼 씨드 난수를 쓴다. */
+       cfg.rows — 날짜별 행을 직접 받은 차트 (할인률·리세일·수명주기)
+       cfg.term — 용어 캐시(/api/trend)를 쓰는 차트
+       값이 없으면 난수로 채우지 않고 '측정 불가'를 적고 끝낸다.
+       둘 다 없는 차트(장식용 미니 스파크 등)만 예전처럼 씨드 난수를 쓴다. */
+  /* ★ 관측이 하루뿐이면 추이를 그리지 않는다.
+       한 점을 앞뒤로 이어 30일짜리 평평한 선을 만들면, 없던 과거를 지어낸 그림이 된다. */
+  const obsDays=(rows,field)=>new Set((rows||[]).filter(r=>r&&r[field]!=null&&r.date)
+    .map(r=>String(r.date).slice(0,10))).size;
+  const THIN='관측된 날짜가 하루뿐이라 추이를 그리지 않습니다. 적재가 쌓이면 자동으로 그려집니다.';
+  if(cfg.rows){
+    const thin=cfg.sets.every(s=>obsDays(s.rows||cfg.rows,s.field||'value')<2);
+    if(thin&&cfg.rows.length){
+      el.innerHTML=unavailableHTML(THIN,'');
+      el.dataset.live='thin';
+      return;
+    }
+    const live=cfg.sets.map(s=>toLive(s,seriesFromRows(s.rows||cfg.rows,{points:N,step:g,field:s.field||'value',raw:true})));
+    if(live.every(Boolean)){
+      el.dataset.live='ok';
+      return gPaint(el,cfg,g,gLabels(g,N,lastDateOf(cfg.rows)),live);
+    }
+    el.innerHTML=unavailableHTML(cfg.emptyReason||'이 차트에 쓸 값이 아직 없습니다.',
+      cfg.sets.filter((s,i)=>!live[i]).map(s=>s.name).join(' · ')+(live.some(Boolean)?' 계열이 비어 있어 섞어 그리지 않습니다.':''));
+    el.dataset.live=live.some(Boolean)?'partial':'unavailable';
+    return;
+  }
   if(cfg.term){
     const st=stateOf(cfg.term);
     if(st.status==='empty'||st.status==='error'){
@@ -62,14 +94,16 @@ export function gChart(host,cfg){
       return;
     }
     if(st.status==='ok'){
-      const live=cfg.sets.map(s=>{
-        const d=seriesOf(cfg.term,{points:GRAN.find(x=>x[0]===g)[2],step:g,
-                                   field:s.field||'mention'});
-        return d ? Object.assign({},s,{data:d}) : null;
-      });
+      if(st.byDate&&st.byDate.size<2){
+        el.innerHTML=unavailableHTML(THIN,'');
+        el.dataset.live='thin';
+        return;
+      }
+      const live=cfg.sets.map(s=>toLive(s,seriesOf(cfg.term,{points:N,step:g,
+                                   field:s.field||'mention',raw:true})));
       if(live.every(Boolean)){
         el.dataset.live='ok';
-        return gPaint(el,cfg,g,labels,live);
+        return gPaint(el,cfg,g,gLabels(g,N,lastDateOf(st.byDate)),live);
       }
       /* 계열 중 하나라도 값이 없으면 섞어 그리지 않는다.
          반은 진짜, 반은 난수인 그래프는 읽는 사람을 속인다. */

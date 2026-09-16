@@ -226,3 +226,4 @@ feedit-chat-bundle.tar.gz
 #   (2026-09-09: 7개가 추적 중이라 git pull 이 두 번 중지됐다)
 .DS_Store
 ._*
+_to_delete/

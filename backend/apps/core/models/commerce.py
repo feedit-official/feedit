@@ -2,9 +2,19 @@ from django.db import models
 
 
 class Product(models.Model):
+
     class Status(models.TextChoices):
         ACTIVE = "ACTIVE", "활성"
         INACTIVE = "INACTIVE", "비활성"
+
+    product_code = models.CharField(
+        max_length=255,
+        unique=True,
+        db_index=True,
+        null=True,
+        blank=True,
+        verbose_name="상품 코드",
+    )
 
     brand = models.ForeignKey(
         "core.Brand",
@@ -21,16 +31,16 @@ class Product(models.Model):
         null=True,
         blank=True,
         related_name="products",
-        verbose_name="카테고리",
+        verbose_name="표준 카테고리",
     )
 
-    item_term = models.ForeignKey(
-        "core.Item",
+    style = models.ForeignKey(
+        "core.Style",
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
         related_name="products",
-        verbose_name="아이템",
+        verbose_name="스타일",
     )
 
     canonical_name = models.CharField(
@@ -43,6 +53,13 @@ class Product(models.Model):
         verbose_name="검색용 상품명",
     )
 
+    english_name = models.CharField(
+        max_length=500,
+        null=True,
+        blank=True,
+        verbose_name="영문 상품명",
+    )
+
     gender_scope = models.CharField(
         max_length=30,
         null=True,
@@ -53,13 +70,14 @@ class Product(models.Model):
     attributes = models.JSONField(
         default=dict,
         blank=True,
-        verbose_name="상품 속성",
+        verbose_name="표준 상품 속성",
     )
 
     status = models.CharField(
         max_length=20,
         choices=Status.choices,
         default=Status.ACTIVE,
+        db_index=True,
         verbose_name="상태",
     )
 
@@ -88,15 +106,15 @@ class Product(models.Model):
                 name="idx_product_cat",
             ),
             models.Index(
-                fields=["item_term"],
-                name="idx_product_item",
+                fields=["style"],
+                name="idx_product_style",
             ),
         ]
 
     def __str__(self):
         return self.canonical_name
 
-
+    
 class ProductSource(models.Model):
     class MarketType(models.TextChoices):
         RETAIL = "RETAIL", "일반 판매"
@@ -106,12 +124,31 @@ class ProductSource(models.Model):
         ACTIVE = "ACTIVE", "활성"
         INACTIVE = "INACTIVE", "비활성"
 
+    class MappingStatus(models.TextChoices):
+        UNMAPPED = "UNMAPPED", "표준 상품 미매핑"
+        REVIEW = "REVIEW", "검토 중"
+        MAPPED = "MAPPED", "표준 상품 연결 완료"
+        REJECTED = "REJECTED", "제외"
+
+    # ============================================================
+    # FEEDIT 표준 상품
+    # - 초기 적재 시 NULL
+    # - 나중에 동일 상품 판별 후 연결
+    # ============================================================
+
     product = models.ForeignKey(
         Product,
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
         related_name="sources",
         verbose_name="표준 상품",
     )
+
+
+    # ============================================================
+    # 플랫폼
+    # ============================================================
 
     source = models.ForeignKey(
         "core.Source",
@@ -125,11 +162,66 @@ class ProductSource(models.Model):
         verbose_name="플랫폼 상품 ID",
     )
 
-    market_type = models.CharField(
-        max_length=20,
-        choices=MarketType.choices,
-        default=MarketType.RETAIL,
-        verbose_name="판매 유형",
+    source_name = models.CharField(
+        max_length=500,
+        null=True,
+        blank=True,
+        verbose_name="플랫폼 상품명",
+    )
+
+    normalized_name = models.CharField(
+        max_length=500,
+        null=True,
+        blank=True,
+        db_index=True,
+        verbose_name="정규화 상품명",
+    )
+
+    # ============================================================
+    # 플랫폼 원본 브랜드 / 카테고리
+    # ============================================================
+
+    source_brand = models.ForeignKey(
+        "core.BrandSource",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="product_sources",
+        verbose_name="플랫폼 브랜드",
+    )
+
+    source_category = models.ForeignKey(
+        "core.CategorySource",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="product_sources",
+        verbose_name="플랫폼 카테고리",
+    )
+
+    # ============================================================
+    # 상품 원본 정보
+    # ============================================================
+
+    style_no = models.CharField(
+        max_length=255,
+        null=True,
+        blank=True,
+        db_index=True,
+        verbose_name="스타일/모델 번호",
+    )
+
+    source_name_en = models.CharField(
+        max_length=500,
+        null=True,
+        blank=True,
+        verbose_name="플랫폼 영문 상품명",
+    )
+
+    thumbnail_url = models.TextField(
+        null=True,
+        blank=True,
+        verbose_name="대표 이미지 URL",
     )
 
     product_url = models.TextField(
@@ -137,6 +229,42 @@ class ProductSource(models.Model):
         blank=True,
         verbose_name="상품 URL",
     )
+
+    gender_scope = models.CharField(
+        max_length=50,
+        null=True,
+        blank=True,
+        verbose_name="성별 범위",
+    )
+
+    attributes = models.JSONField(
+        default=dict,
+        blank=True,
+        verbose_name="플랫폼 상품 속성",
+    )
+
+    # ============================================================
+    # 판매 유형 / 매핑 상태
+    # ============================================================
+
+    market_type = models.CharField(
+        max_length=20,
+        choices=MarketType.choices,
+        default=MarketType.RETAIL,
+        verbose_name="판매 유형",
+    )
+
+    mapping_status = models.CharField(
+        max_length=20,
+        choices=MappingStatus.choices,
+        default=MappingStatus.UNMAPPED,
+        db_index=True,
+        verbose_name="상품 매핑 상태",
+    )
+
+    # ============================================================
+    # 관측 정보
+    # ============================================================
 
     first_seen_at = models.DateTimeField(
         null=True,
@@ -150,10 +278,16 @@ class ProductSource(models.Model):
         verbose_name="최근 확인일시",
     )
 
+    detected_count = models.BigIntegerField(
+        default=1,
+        verbose_name="발견 횟수",
+    )
+
     status = models.CharField(
         max_length=20,
         choices=Status.choices,
         default=Status.ACTIVE,
+        db_index=True,
         verbose_name="상태",
     )
 
@@ -174,15 +308,44 @@ class ProductSource(models.Model):
 
         constraints = [
             models.UniqueConstraint(
-                fields=["source", "source_product_id"],
+                fields=[
+                    "source",
+                    "source_product_id",
+                ],
                 name="uq_product_src",
             ),
         ]
 
         indexes = [
             models.Index(
+                fields=[
+                    "source",
+                    "source_product_id",
+                ],
+                name="idx_prod_src_lookup",
+            ),
+            models.Index(
                 fields=["product"],
                 name="idx_prod_src_prod",
+            ),
+            models.Index(
+                fields=["source_brand"],
+                name="idx_prod_src_brand",
+            ),
+            models.Index(
+                fields=["source_category"],
+                name="idx_prod_src_cat",
+            ),
+            models.Index(
+                fields=[
+                    "source",
+                    "mapping_status",
+                ],
+                name="idx_prod_src_map_status",
+            ),
+            models.Index(
+                fields=["style_no"],
+                name="idx_prod_src_style",
             ),
             models.Index(
                 fields=["market_type"],
@@ -191,7 +354,15 @@ class ProductSource(models.Model):
         ]
 
     def __str__(self):
-        return f"{self.source.code} / {self.source_product_id}"
+        name = (
+            self.source_name
+            or self.source_product_id
+        )
+
+        return (
+            f"[{self.source.code}] "
+            f"{name}"
+        )
 
 
 class ProductSourceSnapshot(models.Model):
@@ -203,6 +374,7 @@ class ProductSourceSnapshot(models.Model):
     )
 
     observed_at = models.DateTimeField(
+        db_index=True,
         verbose_name="관측일시",
     )
 
@@ -231,7 +403,7 @@ class ProductSourceSnapshot(models.Model):
         verbose_name="할인율",
     )
 
-    # 랭킹
+
     rank_position = models.IntegerField(
         null=True,
         blank=True,
@@ -271,6 +443,16 @@ class ProductSourceSnapshot(models.Model):
         blank=True,
         verbose_name="좋아요 수",
     )
+    view_count = models.BigIntegerField(
+        null=True,
+        blank=True,
+        verbose_name="조회 수",
+    )
+    sales_count = models.BigIntegerField(
+        null=True,
+        blank=True,
+        verbose_name="판매 수",
+    )
 
     # 상태
     stock_status = models.CharField(
@@ -299,27 +481,43 @@ class ProductSourceSnapshot(models.Model):
 
         constraints = [
             models.UniqueConstraint(
-                fields=["product_source", "observed_at"],
-                name="uq_prod_snapshot",
+                fields=[
+                    "product_source",
+                    "observed_at",
+                    "ranking_scope",
+                ],
+                name="uq_prod_snapshot_scope",
             ),
         ]
-
         indexes = [
             models.Index(
                 fields=["-observed_at"],
                 name="idx_prod_snap_time",
             ),
             models.Index(
-                fields=["product_source", "rank_position"],
+                fields=[
+                    "product_source",
+                    "rank_position",
+                ],
                 name="idx_prod_snap_rank",
+            ),
+            models.Index(
+                fields=[
+                    "product_source",
+                    "-observed_at",
+                ],
+                name="idx_prod_snap_prod_time",
             ),
         ]
 
     def __str__(self):
-        return f"{self.product_source} / {self.observed_at}"
-
-
+        return (
+            f"{self.product_source} / "
+            f"{self.observed_at}"
+        )
+    
 class ResaleSnapshot(models.Model):
+
     product_source = models.ForeignKey(
         ProductSource,
         on_delete=models.CASCADE,
@@ -328,6 +526,7 @@ class ResaleSnapshot(models.Model):
     )
 
     observed_at = models.DateTimeField(
+        db_index=True,
         verbose_name="관측일시",
     )
 
@@ -445,14 +644,20 @@ class ResaleSnapshot(models.Model):
 
         constraints = [
             models.UniqueConstraint(
-                fields=["product_source", "observed_at"],
+                fields=[
+                    "product_source",
+                    "observed_at",
+                ],
                 name="uq_resale_snap",
             ),
         ]
 
         indexes = [
             models.Index(
-                fields=["-observed_at", "-resale_index"],
+                fields=[
+                    "-observed_at",
+                    "-resale_index",
+                ],
                 name="idx_resale_index",
             ),
             models.Index(
@@ -462,16 +667,19 @@ class ResaleSnapshot(models.Model):
         ]
 
     def __str__(self):
-        return f"{self.product_source} / {self.observed_at}"
-
-
+        return (
+            f"{self.product_source} / "
+            f"{self.observed_at}"
+        )
 
 class ProductTerm(models.Model):
-    product = models.ForeignKey(
-        Product,
+    product_source = models.ForeignKey(
+        "core.ProductSource",
         on_delete=models.CASCADE,
         related_name="product_terms",
-        verbose_name="상품",
+        verbose_name="소스 상품",
+        null=True,
+        blank=True,
     )
 
     term = models.ForeignKey(
@@ -488,15 +696,28 @@ class ProductTerm(models.Model):
 
     class Meta:
         db_table = '"commerce"."product_term"'
-        verbose_name = "상품 특성"
-        verbose_name_plural = "상품 특성"
 
         constraints = [
             models.UniqueConstraint(
-                fields=["product", "term"],
-                name="uq_product_term",
+                fields=[
+                    "product_source",
+                    "term",
+                ],
+                name="uq_prodsrc_term",
+            ),
+        ]
+
+        indexes = [
+            models.Index(
+                fields=[
+                    "product_source",
+                ],
+                name="idx_prod_term_source",
             ),
         ]
 
     def __str__(self):
-        return f"{self.product_id} / {self.term.term_code}"
+        return (
+            f"{self.product_source_id} / "
+            f"{self.term.term_code}"
+        )

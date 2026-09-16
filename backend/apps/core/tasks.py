@@ -9,7 +9,7 @@ from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 
-from apps.core.models import CrawlTarget
+from apps.core.models import CrawlTarget, RawDocument
 from apps.core.services import (
     create_crawl_run,
     create_raw_document,
@@ -84,10 +84,17 @@ def run_live_target(
             region_name=settings.AWS_REGION,
         )
 
+        params = dict(target.params or {})
+        if (
+            target.source.code == "musinsa_used"
+            and target.collection_mode == CrawlTarget.CollectionMode.LIVE
+        ):
+            params.setdefault("live", True)
+
         result = pipeline.run_target(
             target_type=target.target_type,
             target_url=target.target_url,
-            params=target.params,
+            params=params,
         )
 
         # ====================================================
@@ -118,40 +125,144 @@ def run_live_target(
             ),
         )
 
+        # create_raw_document()의 반환형에 의존하지 않고
+        # 방금 저장한 S3 key로 정확한 RawDocument를 다시 잡는다.
+        raw_document = (
+            RawDocument.objects
+            .select_related(
+                "source",
+                "crawl_run",
+            )
+            .get(
+                s3_bucket=result["s3"]["bucket"],
+                s3_key=result["s3"]["key"],
+            )
+        )
+
         # ====================================================
         # 3. SOURCE-SPECIFIC POST PROCESS
         #
-        # 현재:
+        # ZIGZAG RANKING
+        #   -> Source Ingestion
+        #   -> BrandSource / CategorySource / ProductSource
+        #
         # YOUTUBE CREATOR
         #   -> ContentProfile upsert
-        #
-        # 이후:
-        # VIDEO / PRODUCT / STORE 등 확장 가능
+        #   -> ContentItem(video) upsert
         # ====================================================
 
-        profile_id = None
+        source_code = target.source.code.upper()
+        entity_type = result["entity_type"].upper()
 
+        source_ingestion_result = None
+        profile_id = None
+        video_result = None
+
+        # ----------------------------------------------------
+        # ZIGZAG RANKING -> Source Ingestion
+        # ----------------------------------------------------
         if (
-            target.source.code.upper() == "YOUTUBE"
-            and result["entity_type"] == "CREATOR"
+            source_code == "ZIGZAG"
+            and entity_type == "RANKING"
         ):
-            platform_data = result.get(
-                "platform_data"
+            from apps.core.services.source_ingestion import (
+                ingest_zigzag_raw_document,
             )
 
-            if platform_data:
+            source_ingestion_result = (
+                ingest_zigzag_raw_document(
+                    raw_document_id=raw_document.id
+                )
+            )
+
+        # ----------------------------------------------------
+        # ABLY / MUSINSA_USED -> Source Ingestion
+        # ----------------------------------------------------
+        if source_code == "ABLY" and entity_type == "RANKING":
+            from apps.core.services.source_ingestion import (
+                ingest_ably_raw_document,
+            )
+
+            source_ingestion_result = ingest_ably_raw_document(
+                raw_document_id=raw_document.id,
+            )
+
+        if (
+            source_code == "MUSINSA_USED"
+            and entity_type in {"RANKING", "PRODUCT"}
+        ):
+            from apps.core.services.source_ingestion import (
+                ingest_musinsa_used_raw_document,
+            )
+
+            source_ingestion_result = ingest_musinsa_used_raw_document(
+                raw_document_id=raw_document.id,
+            )
+
+        # ----------------------------------------------------
+        # YOUTUBE CREATOR -> Profile + Videos
+        # ----------------------------------------------------
+        if (
+            source_code == "YOUTUBE"
+            and entity_type == "CREATOR"
+        ):
+            platform_data = (
+                result.get("platform_data")
+                or {}
+            )
+
+            # 구버전 payload는 profile dict 자체가
+            # platform_data로 들어온다.
+            profile_data = (
+                platform_data.get("profile")
+                or (
+                    platform_data
+                    if platform_data.get("channel_id")
+                    else None
+                )
+            )
+
+            videos = (
+                platform_data.get("videos")
+                or []
+            )
+
+            if profile_data:
                 from apps.core.services.content import (
+                    upsert_youtube_content_items,
                     upsert_youtube_content_profile,
                 )
 
                 profile = (
                     upsert_youtube_content_profile(
                         source=target.source,
-                        data=platform_data,
+                        data=profile_data,
                     )
                 )
 
                 profile_id = profile.id
+
+                if videos:
+                    video_result = (
+                        upsert_youtube_content_items(
+                            source=target.source,
+                            videos=videos,
+                            profile=profile,
+                            observed_at=(
+                                platform_data.get(
+                                    "collected_at"
+                                )
+                            ),
+                        )
+                    )
+
+                    if video_result["failure_count"]:
+                        logger.warning(
+                            "YouTube 영상 적재 일부 실패. "
+                            "target_id=%s failed=%s",
+                            target.id,
+                            video_result["failure_count"],
+                        )
 
         # ====================================================
         # 4. RUN SUCCESS
@@ -186,6 +297,7 @@ def run_live_target(
             "target_type": target.target_type,
             "source": target.source.code,
             "crawl_run_id": crawl_run.id,
+            "raw_document_id": raw_document.id,
             "entity_type": result[
                 "entity_type"
             ],
@@ -212,13 +324,31 @@ def run_live_target(
                 "failure_count",
                 0,
             ),
+            "source_ingestion": source_ingestion_result,
             "content_profile_id": profile_id,
+            "content_item_count": (
+                video_result["success_count"]
+                if video_result
+                else 0
+            ),
+            "content_item_failed": (
+                video_result["failure_count"]
+                if video_result
+                else 0
+            ),
         }
 
     except Exception as exc:
         # ====================================================
         # RUN FAILED
         # ====================================================
+
+        logger.exception(
+            "CrawlTarget failed. "
+            "target_id=%s source=%s",
+            target.id,
+            target.source.code,
+        )
 
         mark_crawl_run_failed(
             crawl_run,

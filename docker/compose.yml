@@ -5,6 +5,8 @@ services:
       dockerfile: ssm.Dockerfile
 
     container_name: feedit-ssm-tunnel
+    # RDS 직접 연결로 바꿨으므로 기본으로는 띄우지 않는다.
+    profiles: ["tunnel"]
 
     env_file:
       - ../.env
@@ -42,6 +44,8 @@ services:
     restart: unless-stopped
 
 
+  # ★ migrate 를 자동으로 돌리지 않는다. 스키마(마이그레이션)의 주인은
+  #   SKN31-FINAL-4Team/backend 이고, 이 저장소는 같은 RDS 를 읽기만 한다.
   web:
     build:
       context: ..
@@ -52,9 +56,12 @@ services:
     env_file:
       - ../.env
 
+    # RDS 에 직접 붙는다 — DB_HOST/DB_PORT 는 ../.env 값(RDS 주소:5432)을 그대로 쓴다.
+    #   예전처럼 SSM 터널로 가려면: docker compose --profile tunnel up 후
+    #   아래 두 줄의 주석을 풀 것.
+    #   DB_HOST: ssm-tunnel
+    #   DB_PORT: 5433
     environment:
-      DB_HOST: ssm-tunnel
-      DB_PORT: 5433
       REDIS_HOST: redis
       REDIS_PORT: 6379
 
@@ -65,14 +72,11 @@ services:
       - ../backend:/app
 
     depends_on:
-      ssm-tunnel:
-        condition: service_healthy
       redis:
         condition: service_started
 
     command: >
       sh -c "
-      python manage.py migrate --noinput &&
       python manage.py runserver 0.0.0.0:8000
       "
 

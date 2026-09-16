@@ -1,7 +1,20 @@
 from django.db import models
 
-
 class TextDocument(models.Model):
+    """
+    분석 가능한 원본 텍스트 단위.
+
+    예:
+    - YouTube 자막
+    - YouTube 댓글
+    - 상품 리뷰
+    - 콘텐츠 설명
+    - 기사 본문
+
+    분석 결과(term/sentiment/intent)는 이 테이블에 직접 저장하지 않고
+    TextTermMention에 저장한다.
+    """
+
     class DocumentType(models.TextChoices):
         TRANSCRIPT = "TRANSCRIPT", "자막"
         COMMENT = "COMMENT", "댓글"
@@ -54,32 +67,10 @@ class TextDocument(models.Model):
         verbose_name="언어",
     )
 
-    sentiment_score = models.DecimalField(
-        max_digits=6,
-        decimal_places=5,
-        null=True,
-        blank=True,
-        verbose_name="감성 점수",
-    )
-
-    intent_code = models.CharField(
-        max_length=50,
-        null=True,
-        blank=True,
-        verbose_name="의도 코드",
-    )
-
-    # 상세 분석 결과
-    extracted_terms = models.JSONField(
-        default=list,
-        blank=True,
-        verbose_name="추출 용어",
-    )
-
     analysis_metadata = models.JSONField(
         default=dict,
         blank=True,
-        verbose_name="분석 추가 정보",
+        verbose_name="분석 메타데이터",
     )
 
     analysis_status = models.CharField(
@@ -116,6 +107,10 @@ class TextDocument(models.Model):
                 name="idx_text_doc_content",
             ),
             models.Index(
+                fields=["source", "document_type"],
+                name="idx_text_doc_source_type",
+            ),
+            models.Index(
                 fields=["analysis_status"],
                 name="idx_text_doc_status",
             ),
@@ -127,31 +122,145 @@ class TextDocument(models.Model):
 
     def __str__(self):
         if self.content_item:
-            return f"{self.get_document_type_display()} / {self.content_item}"
+            return (
+                f"{self.get_document_type_display()} / "
+                f"{self.content_item}"
+            )
 
         return f"{self.get_document_type_display()} / {self.id}"
 
 
+# ============================================================
+# TEXT TERM MENTION
+# ============================================================
+
+class TextTermMention(models.Model):
+    """
+    TextDocument 안에서 DictionaryTerm이 실제 언급된 사실.
+
+    지표의 가장 중요한 Evidence Layer.
+
+    예:
+    document = 유튜브 자막
+    term = 스웨이드
+    mention_text = "올가을 스웨이드 자켓이..."
+    """
+
+    class MentionRole(models.TextChoices):
+        TARGET = "TARGET", "주요 대상"
+        CONTEXT = "CONTEXT", "문맥 언급"
+        COMPARISON = "COMPARISON", "비교 대상"
+
+    document = models.ForeignKey(
+        "TextDocument",
+        on_delete=models.CASCADE,
+        related_name="term_mentions",
+        verbose_name="분석 문서",
+    )
+
+    term = models.ForeignKey(
+        "core.DictionaryTerm",
+        on_delete=models.CASCADE,
+        related_name="text_mentions",
+        verbose_name="용어",
+    )
+
+    mention_text = models.TextField(
+        null=True,
+        blank=True,
+        verbose_name="언급 문맥",
+    )
+
+    mention_role = models.CharField(
+        max_length=20,
+        choices=MentionRole.choices,
+        default=MentionRole.CONTEXT,
+        verbose_name="언급 역할",
+    )
+
+    sentiment_score = models.DecimalField(
+        max_digits=6,
+        decimal_places=5,
+        null=True,
+        blank=True,
+        verbose_name="감성 점수",
+    )
+
+    intent_code = models.CharField(
+        max_length=50,
+        null=True,
+        blank=True,
+        verbose_name="구매 의도",
+    )
+
+    confidence = models.DecimalField(
+        max_digits=6,
+        decimal_places=5,
+        null=True,
+        blank=True,
+        verbose_name="추출 신뢰도",
+    )
+
+    start_seconds = models.DecimalField(
+        max_digits=10,
+        decimal_places=3,
+        null=True,
+        blank=True,
+        verbose_name="시작 시점",
+    )
+
+    end_seconds = models.DecimalField(
+        max_digits=10,
+        decimal_places=3,
+        null=True,
+        blank=True,
+        verbose_name="종료 시점",
+    )
+
+    analysis_metadata = models.JSONField(
+        default=dict,
+        blank=True,
+        verbose_name="추가 분석 정보",
+    )
+
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="생성일시",
+    )
+
+    class Meta:
+        db_table = '"analysis"."text_term_mention"'
+        verbose_name = "텍스트 용어 언급"
+        verbose_name_plural = "텍스트 용어 언급"
+
+        indexes = [
+            models.Index(
+                fields=["document", "term"],
+                name="idx_mention_doc_term",
+            ),
+            models.Index(
+                fields=["term"],
+                name="idx_mention_term",
+            ),
+            models.Index(
+                fields=["term", "mention_role"],
+                name="idx_mention_term_role",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.term} / {self.document_id}"
+
 class TermMetricDaily(models.Model):
     """
-    용어별 하루 단위 트렌드 지표.
+    용어별 일 단위 지표.
 
-    ── 2026-09-07 보강 ──────────────────────────────────────
-    크롤러가 이미 계산해 둔 값을 그대로 받을 수 있게 칸을 맞췄다.
-    지표 정의의 원본은 `FEEDiT_지표계산_설계서.md` 이고, 계산은 크롤러가 한다.
-    여기서 다시 계산하지 않는다 — 두 곳에서 계산하면 화면과 챗봇이
-    서로 다른 숫자를 말하게 된다.
+    source가 존재하면 플랫폼별 metric.
+    source=NULL이면 전체 플랫폼을 합친 종합 metric.
 
-    ★ 왜 JSON 이 아니라 컬럼인가
-      온도·모멘텀은 **정렬과 범위 조회에 쓰는 값**이다.
-        · 화면 첫 진입   ORDER BY temp DESC LIMIT 20
-        · 구간 필터      WHERE temp >= 75          (과열)
-        · 챗봇 "뜨는 것" ORDER BY momentum DESC
-      JSONB 도 표현식 인덱스로 가능하지만, 질의가 인덱스 표현식과 한 글자라도
-      다르면 조용히 전체 훑기로 떨어진다. 게다가 JSON 안 숫자는 타입이 없어서
-      "9" > "10" 같은 문자열 비교 사고가 난다 — 값이 틀려도 에러가 안 난다.
-      그래서 **자주 정렬·필터하는 여섯 개만 컬럼**으로 빼고,
-      나머지(raw_count·log_value·share_pct·실험값)는 `metrics` JSON 에 둔다.
+    예:
+    스웨이드 / 2026-09-14 / YouTube
+    스웨이드 / 2026-09-14 / NULL(ALL)
     """
 
     term = models.ForeignKey(
@@ -161,37 +270,28 @@ class TermMetricDaily(models.Model):
         verbose_name="용어",
     )
 
-    # ★★ 플랫폼별 지표를 담으려면 이 칸이 있어야 한다 ★★
-    #   크롤러는 이미 (용어 × 플랫폼 × 날짜) 로 계산해 둔다.
-    #   2026-09-07 실측: 12,484행 중 7,275행(58%)이 플랫폼별 행이다.
-    #   이 칸이 없으면 그 58% 가 통째로 들어오지 못한다.
-    #
-    #   NULL = 전 플랫폼 합산 (크롤러의 `__all__`)
-    #   값 있음 = 그 플랫폼만 (musinsa · youtube · naver · zigzag · ably · kream …)
     source = models.ForeignKey(
         "core.Source",
         on_delete=models.CASCADE,
         null=True,
         blank=True,
-        related_name="term_metrics",
+        related_name="term_daily_metrics",
         verbose_name="플랫폼",
-        help_text="비우면 전 플랫폼 합산",
     )
 
     metric_date = models.DateField(
         verbose_name="기준일",
     )
 
-    # ★ 공식이 바뀌면 값의 뜻도 바뀐다.
-    #   이 칸이 없으면 옛 공식으로 만든 행과 새 공식 행이 한 표에 섞여
-    #   그래프가 어느 날 갑자기 튀는데 원인을 찾을 수가 없다.
-    metric_version = models.CharField(
-        max_length=64,
-        default="",
-        blank=True,
-        db_index=True,
-        verbose_name="지표 버전",
-        help_text="예: feedit-l2-v2-shadow",
+    # --------------------------------------------------------
+    # RAW
+    # --------------------------------------------------------
+
+    raw_count = models.DecimalField(
+        max_digits=16,
+        decimal_places=4,
+        default=0,
+        verbose_name="원시 신호",
     )
 
     mention_count = models.BigIntegerField(
@@ -204,9 +304,78 @@ class TermMetricDaily(models.Model):
         verbose_name="문서 수",
     )
 
-    source_count = models.IntegerField(
+    content_count = models.BigIntegerField(
         default=0,
-        verbose_name="플랫폼 수",
+        verbose_name="콘텐츠 수",
+    )
+
+    creator_count = models.BigIntegerField(
+        default=0,
+        verbose_name="크리에이터 수",
+    )
+
+    # --------------------------------------------------------
+    # NORMALIZED
+    # --------------------------------------------------------
+
+    log_count = models.DecimalField(
+        max_digits=12,
+        decimal_places=6,
+        null=True,
+        blank=True,
+        verbose_name="로그 보정값",
+    )
+
+    percentile = models.DecimalField(
+        max_digits=7,
+        decimal_places=4,
+        null=True,
+        blank=True,
+        verbose_name="플랫폼 내 백분위",
+    )
+
+    # --------------------------------------------------------
+    # TREND
+    # --------------------------------------------------------
+
+    level = models.DecimalField(
+        max_digits=7,
+        decimal_places=4,
+        null=True,
+        blank=True,
+        verbose_name="화제성 레벨",
+    )
+
+    ma7 = models.DecimalField(
+        max_digits=10,
+        decimal_places=4,
+        null=True,
+        blank=True,
+        verbose_name="7일 이동평균",
+    )
+
+    ma28 = models.DecimalField(
+        max_digits=10,
+        decimal_places=4,
+        null=True,
+        blank=True,
+        verbose_name="28일 이동평균",
+    )
+
+    momentum = models.DecimalField(
+        max_digits=7,
+        decimal_places=4,
+        null=True,
+        blank=True,
+        verbose_name="성장 모멘텀",
+    )
+
+    trend_temperature = models.DecimalField(
+        max_digits=7,
+        decimal_places=4,
+        null=True,
+        blank=True,
+        verbose_name="트렌드 온도",
     )
 
     sentiment_avg = models.DecimalField(
@@ -217,68 +386,167 @@ class TermMetricDaily(models.Model):
         verbose_name="평균 감성",
     )
 
-    growth_rate = models.DecimalField(
-        max_digits=10,
+    # ========================================================
+    # POLARITY RAW
+    # ========================================================
+
+    positive_count = models.BigIntegerField(
+        default=0,
+        verbose_name="긍정 반응 수",
+    )
+
+    neutral_count = models.BigIntegerField(
+        default=0,
+        verbose_name="중립 반응 수",
+    )
+
+    negative_count = models.BigIntegerField(
+        default=0,
+        verbose_name="부정 반응 수",
+    )
+
+    # ========================================================
+    # INTENT RAW
+    # ========================================================
+
+    question_count = models.BigIntegerField(
+        default=0,
+        verbose_name="질문 반응 수",
+    )
+
+    purchase_count = models.BigIntegerField(
+        default=0,
+        verbose_name="구매 반응 수",
+    )
+
+    experience_count = models.BigIntegerField(
+        default=0,
+        verbose_name="경험 반응 수",
+    )
+
+    praise_count = models.BigIntegerField(
+        default=0,
+        verbose_name="호평 반응 수",
+    )
+
+    critique_count = models.BigIntegerField(
+        default=0,
+        verbose_name="비판 반응 수",
+    )
+
+    chitchat_count = models.BigIntegerField(
+        default=0,
+        verbose_name="잡담 반응 수",
+    )
+
+    # ========================================================
+    # POLARITY RATE
+    # 0 ~ 100 (%)
+    # ========================================================
+
+    positive_rate = models.DecimalField(
+        max_digits=7,
         decimal_places=4,
         null=True,
         blank=True,
-        verbose_name="증가율",
+        verbose_name="긍정 반응 비율",
     )
 
-    trend_score = models.DecimalField(
-        max_digits=10,
+    neutral_rate = models.DecimalField(
+        max_digits=7,
         decimal_places=4,
         null=True,
         blank=True,
-        verbose_name="트렌드 점수",
+        verbose_name="중립 반응 비율",
     )
 
-    # ── 설계서 §1 의 값들 ─────────────────────────────────
-    #   전부 크롤러가 계산해서 넘겨준다. 여기서 만들지 않는다.
-
-    level = models.DecimalField(
-        max_digits=5, decimal_places=2, null=True, blank=True,
-        verbose_name="수준(0~100)",
-        help_text="같은 축 안에서 이 용어가 어느 정도 위치인가",
+    negative_rate = models.DecimalField(
+        max_digits=7,
+        decimal_places=4,
+        null=True,
+        blank=True,
+        verbose_name="부정 반응 비율",
     )
 
-    momentum = models.DecimalField(
-        max_digits=8, decimal_places=4, null=True, blank=True,
-        verbose_name="가속(ma7/ma28)",
-        help_text="1보다 크면 최근 7일이 28일 평균보다 뜨겁다",
+    # ========================================================
+    # INTENT RATE
+    # 0 ~ 100 (%)
+    # ========================================================
+
+    question_rate = models.DecimalField(
+        max_digits=7,
+        decimal_places=4,
+        null=True,
+        blank=True,
+        verbose_name="질문 반응 비율",
     )
 
-    temp = models.DecimalField(
-        max_digits=5, decimal_places=2, null=True, blank=True,
-        verbose_name="트렌드 온도(0~100)",
-        help_text="수준 60% + 가속 40%. 구간: ~25 차가움 ~50 미지근 ~75 따뜻함 이상 과열",
+    purchase_rate = models.DecimalField(
+        max_digits=7,
+        decimal_places=4,
+        null=True,
+        blank=True,
+        verbose_name="구매 반응 비율",
     )
 
-    ma7 = models.DecimalField(
-        max_digits=14, decimal_places=4, null=True, blank=True,
-        verbose_name="7일 이동평균",
+    experience_rate = models.DecimalField(
+        max_digits=7,
+        decimal_places=4,
+        null=True,
+        blank=True,
+        verbose_name="경험 반응 비율",
     )
 
-    ma28 = models.DecimalField(
-        max_digits=14, decimal_places=4, null=True, blank=True,
-        verbose_name="28일 이동평균",
+    praise_rate = models.DecimalField(
+        max_digits=7,
+        decimal_places=4,
+        null=True,
+        blank=True,
+        verbose_name="호평 반응 비율",
     )
 
-    pct_rank = models.DecimalField(
-        max_digits=6, decimal_places=3, null=True, blank=True,
-        verbose_name="백분위(0~100)",
-        help_text="이름과 달리 0~1 이 아니라 0~100 이다. 크롤러 실측으로 확인했다.",
+    critique_rate = models.DecimalField(
+        max_digits=7,
+        decimal_places=4,
+        null=True,
+        blank=True,
+        verbose_name="비판 반응 비율",
+    )
+
+    # ========================================================
+    # DERIVED
+    # ========================================================
+
+    purchase_intent_index = models.DecimalField(
+        max_digits=7,
+        decimal_places=4,
+        null=True,
+        blank=True,
+        verbose_name="구매의도 지수",
+    )
+    # --------------------------------------------------------
+    # VERSION / META
+    # --------------------------------------------------------
+
+    metric_version = models.CharField(
+        max_length=50,
+        default="feedit-l2-v1",
+        verbose_name="지표 버전",
     )
 
     metrics = models.JSONField(
         default=dict,
         blank=True,
         verbose_name="추가 지표",
-        help_text="raw_count · log_value · share_pct 등 정렬에 안 쓰는 값",
     )
 
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+    )
+
+    updated_at = models.DateTimeField(
+        auto_now=True,
+    )
 
     class Meta:
         db_table = '"analysis"."term_metric_daily"'
@@ -286,55 +554,53 @@ class TermMetricDaily(models.Model):
         verbose_name_plural = "용어 일별 지표"
 
         constraints = [
-            # ★ 예전 제약은 (용어, 날짜) 뿐이었다.
-            #   그러면 플랫폼별 행이 서로 충돌한다 — 2026-09-07 실측으로
-            #   12,484행 중 7,275행(58%)이 그 이유로 못 들어간다.
-            #   플랫폼과 지표 버전까지 넣어야 한 칸씩 자리를 갖는다.
-            #
-            #   nulls_distinct=False 를 쓰는 이유: source 가 NULL(전체 합산)인
-            #   행이 여러 번 들어오면 PostgreSQL 은 기본적으로 NULL 끼리 다르다고
-            #   봐서 중복을 막지 못한다. 합산 행도 하루에 하나여야 한다.
             models.UniqueConstraint(
-                fields=["term", "source", "metric_date", "metric_version"],
-                name="uq_term_metric_day",
+                fields=[
+                    "term",
+                    "source",
+                    "metric_date",
+                    "metric_version",
+                ],
+                name="uq_term_metric_source_day_ver",
                 nulls_distinct=False,
             ),
         ]
 
         indexes = [
-            # 화면 첫 진입 — "오늘 온도 높은 순"
             models.Index(
-                fields=["metric_date", "-temp"],
-                name="idx_term_metric_temp",
+                fields=["metric_date", "-trend_temperature"],
+                name="idx_metric_temp_day",
             ),
-            # 챗봇 "요즘 뜨는 것" — 가속 높은 순
-            models.Index(
-                fields=["metric_date", "-momentum"],
-                name="idx_term_metric_mom",
-            ),
-            models.Index(
-                fields=["metric_date", "-trend_score"],
-                name="idx_term_metric_trend",
-            ),
-            # 용어 하나의 시계열
             models.Index(
                 fields=["term", "-metric_date"],
-                name="idx_term_metric_term",
+                name="idx_metric_term_day",
             ),
-            # 플랫폼별 온도 — "무신사에서는 뜨는데 지그재그에선 아직"
             models.Index(
                 fields=["source", "metric_date"],
-                name="idx_term_metric_source",
+                name="idx_metric_source_day",
             ),
         ]
 
     def __str__(self):
-        return f"{self.term} / {self.metric_date}"
+        source = self.source.code if self.source else "ALL"
 
+        return (
+            f"{self.term} / "
+            f"{source} / "
+            f"{self.metric_date}"
+        )
+
+
+# ============================================================
+# TERM ASSOCIATION DAILY
+# ============================================================
 
 class TermAssocDaily(models.Model):
     """
-    용어 ↔ 용어 일별 연관도.
+    용어 ↔ 용어 연관 지표.
+
+    최근 문서 단위 co-occurrence를 기반으로
+    Lift / PMI를 계산한다.
     """
 
     source_term = models.ForeignKey(
@@ -357,23 +623,48 @@ class TermAssocDaily(models.Model):
 
     cooccurrence_count = models.BigIntegerField(
         default=0,
-        verbose_name="동시 언급 수",
+        verbose_name="동시 언급 문서 수",
     )
 
-    association_score = models.DecimalField(
-        max_digits=10,
-        decimal_places=5,
+    lift = models.DecimalField(
+        max_digits=12,
+        decimal_places=6,
         null=True,
         blank=True,
-        verbose_name="연관도",
+        verbose_name="Lift",
     )
 
-    confidence = models.DecimalField(
-        max_digits=6,
-        decimal_places=5,
+    pmi = models.DecimalField(
+        max_digits=12,
+        decimal_places=6,
         null=True,
         blank=True,
-        verbose_name="신뢰도",
+        verbose_name="PMI",
+    )
+
+    association_percentile = models.DecimalField(
+        max_digits=7,
+        decimal_places=4,
+        null=True,
+        blank=True,
+        verbose_name="연관도 백분위",
+    )
+
+    association_rank = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        verbose_name="연관 순위",
+    )
+
+    is_new = models.BooleanField(
+        default=False,
+        verbose_name="신규 연관",
+    )
+
+    metric_version = models.CharField(
+        max_length=50,
+        default="feedit-l2-v1",
+        verbose_name="지표 버전",
     )
 
     metrics = models.JSONField(
@@ -382,8 +673,13 @@ class TermAssocDaily(models.Model):
         verbose_name="추가 지표",
     )
 
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+    )
+
+    updated_at = models.DateTimeField(
+        auto_now=True,
+    )
 
     class Meta:
         db_table = '"analysis"."term_assoc_daily"'
@@ -396,12 +692,14 @@ class TermAssocDaily(models.Model):
                     "source_term",
                     "target_term",
                     "metric_date",
+                    "metric_version",
                 ],
-                name="uq_term_assoc_day",
+                name="uq_term_assoc_day_ver",
             ),
+
             models.CheckConstraint(
                 condition=~models.Q(
-                    source_term=models.F("target_term")
+                    source_term=models.F("target_term"),
                 ),
                 name="ck_term_assoc_self",
             ),
@@ -413,8 +711,12 @@ class TermAssocDaily(models.Model):
                 name="idx_assoc_src_day",
             ),
             models.Index(
-                fields=["metric_date", "-association_score"],
-                name="idx_assoc_score",
+                fields=["metric_date", "-pmi"],
+                name="idx_assoc_pmi",
+            ),
+            models.Index(
+                fields=["source_term", "association_rank"],
+                name="idx_assoc_src_rank",
             ),
         ]
 
@@ -424,3 +726,91 @@ class TermAssocDaily(models.Model):
             f"{self.target_term} / "
             f"{self.metric_date}"
         )
+
+class TermSearchMetricMonthly(models.Model):
+    term = models.ForeignKey(
+        "core.DictionaryTerm",
+        on_delete=models.CASCADE,
+        related_name="search_metric_monthly",
+        verbose_name="용어",
+    )
+
+    source = models.ForeignKey(
+        "core.Source",
+        on_delete=models.CASCADE,
+        related_name="term_search_metric_monthly",
+        verbose_name="검색 플랫폼",
+    )
+
+    metric_month = models.DateField(
+        verbose_name="기준 월",
+    )
+
+    search_volume = models.BigIntegerField(
+        default=0,
+        verbose_name="월간 검색량",
+    )
+
+    log_volume = models.DecimalField(
+        max_digits=12,
+        decimal_places=6,
+        null=True,
+        blank=True,
+    )
+
+    percentile = models.DecimalField(
+        max_digits=7,
+        decimal_places=4,
+        null=True,
+        blank=True,
+    )
+
+    data_type = models.CharField(
+        max_length=50,
+        default="monthly_absolute",
+    )
+
+    metric_version = models.CharField(
+        max_length=50,
+        default="feedit-search-v1",
+    )
+
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+    )
+
+    updated_at = models.DateTimeField(
+        auto_now=True,
+    )
+
+    class Meta:
+        db_table = '"analysis"."term_search_metric_monthly"'
+
+        constraints = [
+            models.UniqueConstraint(
+                fields=[
+                    "term",
+                    "source",
+                    "metric_month",
+                    "metric_version",
+                ],
+                name="uq_term_search_month_ver",
+            ),
+        ]
+
+        indexes = [
+            models.Index(
+                fields=[
+                    "metric_month",
+                    "-search_volume",
+                ],
+                name="idx_search_month_volume",
+            ),
+            models.Index(
+                fields=[
+                    "term",
+                    "-metric_month",
+                ],
+                name="idx_search_term_month",
+            ),
+        ]

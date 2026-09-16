@@ -1,30 +1,38 @@
-"""프론트가 부르는 읽기 전용 API.
+"""프론트(트렌드 분석 페이지)가 부르는 읽기 전용 API.
 
-── 왜 이게 필요한가 ─────────────────────────────────────────
-프론트(Vercel)는 RDS 에 직접 못 붙는다. RDS 는 사설이고 SSM 굴로만 열린다.
-그래서 **RDS 를 인터넷에 여는 대신** 이미 RDS 에 닿는 이 Django 가
-읽기 전용 창구를 내주고, 프론트는 그걸 부른다.
+── 구조 ────────────────────────────────────────────────────
+    브라우저 ─▶ (Vercel 함수 또는 vite 프록시) ─▶ 이 API ─▶ AWS RDS
 
-    브라우저 ─▶ Vercel 함수 ─▶ 이 API ─▶ RDS
+스키마는 SKN31-FINAL-4Team/backend 의 모델(apps/core/models)이 원본이다.
+이 파일은 그 표를 **읽기만** 한다.
 
-── 지키는 것 ────────────────────────────────────────────────
-① **쓰지 않는다.** 전부 GET 이고 조회만 한다.
-② **지표를 계산하지 않는다.** 온도·모멘텀의 정의는
-   `FEEDiT_지표계산_설계서.md` 가 원본이고 계산은 수집·정제 쪽이 한다.
-   여기서 다시 계산하면 화면과 챗봇이 다른 숫자를 말하게 된다.
-③ **없는 값을 지어내지 않는다.** 값이 없으면 `status:"empty"` 와
-   **왜 없는지**를 함께 돌려준다. 화면은 그 자리를 '측정 불가'로 그린다.
+── 원칙 ────────────────────────────────────────────────────
+① 쓰지 않는다. 전부 GET.
+② 지표(온도·모멘텀·구매의향 지수·연관도)는 적재된 값을 그대로 쓴다.
+   여기서 하는 계산은 "읽은 값끼리의 집계"(평균·중앙값·기간 비교)뿐이다.
+   수명주기 단계처럼 저장된 칸이 없는 판정은 규칙을 응답(`rule`)에 함께 적는다.
+③ 값이 없으면 지어내지 않는다. `status:"empty"` 와 사유를 돌려주고,
+   칸 단위로 없는 값은 null 로 둔다. 화면은 그 자리를 '측정 불가'로 그린다.
 
-   ok    값이 있다
-   empty 붙었는데 값이 없다   ← 기다릴 일
-   (연결 실패는 프론트 쪽 Vercel 함수가 error 로 가른다)
+── 탭 ↔ 주소 ───────────────────────────────────────────────
+    언급량·온도   /api/trend?term=
+    연관어        /api/assoc?term=
+    긍부정        /api/trend?term=      (같은 표의 반응·의도 칸)
+    할인률 변화   /api/discount?style=&kind=&brand=&item=&term=
+    리세일 시세   /api/resale?…          (같은 조건)
+    수명주기      /api/lifecycle?…       (같은 조건)
 """
 
 from __future__ import annotations
 
+import os
+import statistics
+from collections import defaultdict
 from datetime import timedelta
 
-from django.db.models import Count, Max, Q
+from django.db import connection
+from django.db.models import Count, Max, Min, Q, Sum
+from django.db.models.functions import Coalesce
 from django.http import JsonResponse
 from django.utils import timezone
 from django.views.decorators.http import require_GET
@@ -33,27 +41,45 @@ from apps.core.models import (
     Brand,
     DictionaryTerm,
     Product,
+    ProductSource,
     ProductSourceSnapshot,
     ProductTerm,
+    ResaleSnapshot,
+    TermAlias,
     TermAssocDaily,
     TermMetricDaily,
+    TextTermMention,
     VoteBallot,
     VoteCard,
 )
 
-# 설계서 §1 의 값들. RDS 에 아직 안 들어왔으면 None 으로 나가고,
-# 화면은 그 자리를 '측정 불가'로 그린다.
-METRIC_FIELDS = ("temp", "momentum", "ma7", "ma28", "level", "pct_rank")
-
 MAX_LIMIT = 500
 
+# ★ 팀이 정한 핵심 스타일 10종 (2026-09-16).
+#   세부 검색 STYLE 칸에는 이 10개만, 이 순서를 기준으로 보여 준다.
+#   상품 태그가 0건이어도 칸에서 빼지 않고 0 으로 둔다 — 핵심인데 안 보이면
+#   "적재가 안 됐다" 는 사실이 가려진다.
+#   바꿔야 하면 코드 대신 .env 의 FEEDIT_CORE_STYLES=고프코어,블록코어,… 로 덮는다.
+DEFAULT_CORE_STYLES = (
+    "고프코어", "블록코어", "바이크코어", "놈코어", "애슬레저",
+    "클래식", "아메카지", "그런지", "페미닌", "스트릿웨어",
+)
 
-def _discount_pct(value):
-    value = _num(value)
-    if value is None:
-        return None
-    return round(value * 100 if 0 <= value <= 1 else value, 1)
 
+def _core_styles():
+    env = [x.strip() for x in (os.getenv("FEEDIT_CORE_STYLES") or "").split(",") if x.strip()]
+    return tuple(env) if env else DEFAULT_CORE_STYLES
+
+# 우리 term_type ↔ 화면이 쓰는 축 이름
+FACET_KO = {
+    "BRAND": "브랜드", "STYLE": "스타일", "ITEM": "아이템", "MATERIAL": "소재",
+    "DETAIL": "디테일", "COLOR": "색", "TPO": "TPO", "PERSON": "인물",
+}
+
+
+# ══════════════════════════════════════════════════════════════
+#  공용 도우미
+# ══════════════════════════════════════════════════════════════
 
 def _ok(data, **extra):
     return JsonResponse({"status": "ok", **extra, "data": data})
@@ -63,8 +89,22 @@ def _empty(reason, **extra):
     return JsonResponse({"status": "empty", "reason": reason, **extra, "data": None})
 
 
-def _num(v):
-    return None if v is None else float(v)
+def _num(v, nd=None):
+    if v is None:
+        return None
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return None
+    return round(f, nd) if nd is not None else f
+
+
+def _pct(v):
+    """할인율 — 0~1 로 들어온 값은 % 로 바꾼다."""
+    v = _num(v)
+    if v is None:
+        return None
+    return round(v * 100 if 0 < v <= 1 else v, 1)
 
 
 def _int(request, name, default, lo, hi):
@@ -74,628 +114,1115 @@ def _int(request, name, default, lo, hi):
         return default
 
 
+def _norm(s):
+    return "".join(str(s or "").split()).lower()
+
+
+def _median(xs):
+    xs = [x for x in xs if x is not None]
+    return statistics.median(xs) if xs else None
+
+
+def _mean(xs):
+    xs = [x for x in xs if x is not None]
+    return sum(xs) / len(xs) if xs else None
+
+
+def _resolve_term(name):
+    """화면에서 온 말 → DictionaryTerm. 표준명 › 정규화명 › 별칭 › 브랜드명 순."""
+    name = (name or "").strip()
+    if not name:
+        return None
+    base = DictionaryTerm.objects.exclude(status="INACTIVE")
+    t = base.filter(canonical_name=name).first()
+    if t:
+        return t
+    n = _norm(name)
+    t = base.filter(normalized_name=n).first()
+    if t:
+        return t
+    alias = (
+        TermAlias.objects.filter(Q(alias=name) | Q(normalized_alias=n))
+        .values_list("term_id", flat=True).first()
+    )
+    if alias:
+        return base.filter(id=alias).first()
+    return base.filter(
+        Q(brand__name=name) | Q(brand__english_name__iexact=name), term_type="BRAND"
+    ).first()
+
+
+def _metric_version(term_id=None):
+    """여러 지표 버전이 섞여 있을 수 있다 — 환경변수 › 가장 최근 적재 버전."""
+    env = (os.getenv("FEEDIT_METRIC_VERSION") or "").strip()
+    qs = TermMetricDaily.objects.all()
+    if term_id:
+        qs = qs.filter(term_id=term_id)
+    if env and qs.filter(metric_version=env).exists():
+        return env
+    row = qs.order_by("-metric_date", "-updated_at").values("metric_version").first()
+    return row["metric_version"] if row else None
+
+
+def _term_missing_reason(name, days=None):
+    as_brand = Brand.objects.filter(Q(name=name) | Q(english_name__iexact=name)).exists()
+    if as_brand:
+        return (f"‘{name}’ 은 브랜드 사전에는 있지만 지표 대상 용어(dictionary_term)로 "
+                "연결돼 있지 않아 지표가 없습니다.")
+    return f"‘{name}’ 을 사전에서 찾지 못했습니다."
+
+
+# ══════════════════════════════════════════════════════════════
+#  health · dictionary · terms
+# ══════════════════════════════════════════════════════════════
+
 def _column_mismatch():
-    """모델에는 있는데 실제 DB 표에는 없는 칸을 찾는다.
-
-    ★ 왜 이걸 보나
-      2026-09-07 에 `/api/trend` 가 통째로 500 이 났다:
-          column dictionary_term.normalized_name does not exist
-      모델·마이그레이션에는 있는데 실제 표에 없었다. Django 는
-      "No migrations to apply" 라고 하므로 **아무도 모른 채 지나간다.**
-      이런 어긋남은 쿼리를 날려 봐야 터지는데, 그때는 이미 화면이 깨진 뒤다.
-      여기서 먼저 알려 준다.
-
-    ★ 2026-09-09 — 이 진단 자체가 거짓 경보를 내고 있었다.
-      우리 표 이름은 스키마까지 붙은 `"dictionary"."dictionary_term"` 이다.
-      따옴표만 지우면 `dictionary.dictionary_term` 이라는 **한 덩어리 문자열**이
-      되고, Django 는 그걸 통째로 한 이름으로 인용해 물어본다:
-          SELECT * FROM "dictionary.dictionary_term" LIMIT 1
-          → relation "dictionary.dictionary_term" does not exist
-      표는 멀쩡히 있는데(같은 응답의 tables 가 407행을 세고 있었다)
-      "★ 모델과 실제 DB 가 어긋납니다" 가 떴다. 없는 문제를 쫓게 만든다.
-      그래서 스키마와 표 이름을 갈라서 information_schema 에 직접 묻는다.
-    """
-    from django.db import connection
-
+    """모델에는 있는데 실제 DB 표에는 없는 칸 — 스키마 어긋남을 먼저 알린다."""
     out = {}
+    models = (DictionaryTerm, TermMetricDaily, TermAssocDaily, Product,
+              ProductSource, ProductSourceSnapshot, ResaleSnapshot)
     with connection.cursor() as c:
-        for model in (DictionaryTerm, TermMetricDaily, TermAssocDaily, Product):
+        for model in models:
             raw = model._meta.db_table.replace('"', "")
             schema, _, tbl = raw.rpartition(".")
             try:
-                if schema:
-                    c.execute(
-                        """SELECT column_name FROM information_schema.columns
-                             WHERE table_schema = %s AND table_name = %s""",
-                        [schema, tbl],
-                    )
-                    have = {r[0] for r in c.fetchall()}
-                else:
-                    # 스키마가 없는 표는 예전 방식 그대로 (SQLite 에서도 돈다)
-                    have = {
-                        d.name
-                        for d in connection.introspection.get_table_description(c, raw)
-                    }
-            except Exception as exc:      # noqa: BLE001 - 진단이 실패해도 health 는 떠야 한다
+                c.execute(
+                    "SELECT column_name FROM information_schema.columns "
+                    "WHERE table_schema = %s AND table_name = %s", [schema or "public", tbl])
+                have = {r[0] for r in c.fetchall()}
+            except Exception as exc:  # noqa: BLE001
                 out[raw] = {"missing": ["(표를 못 읽음)"], "error": str(exc)[:120]}
                 continue
-            table = raw
             if not have:
-                out[table] = {"missing": ["(표 자체가 없음)"]}
+                out[raw] = {"missing": ["(표 자체가 없음)"]}
                 continue
             gap = sorted({f.column for f in model._meta.concrete_fields} - have)
             if gap:
-                out[table] = {"missing": gap}
+                out[raw] = {"missing": gap}
     return out
 
 
 @require_GET
 def health(request):
-    """붙었는지, 어느 표에 몇 행이 있는지, 모델과 어긋나지 않는지.
+    """붙었는지, 표마다 몇 행인지, 모델과 어긋나지 않는지."""
+    mismatch = _column_mismatch()
+    counts = {}
+    for label, model in (
+        ("dictionary.dictionary_term", DictionaryTerm),
+        ("commerce.product_source", ProductSource),
+        ("snapshot.product_source_snapshot", ProductSourceSnapshot),
+        ("snapshot.resale_snapshot", ResaleSnapshot),
+        ("analysis.term_metric_daily", TermMetricDaily),
+        ("analysis.term_assoc_daily", TermAssocDaily),
+    ):
+        try:
+            counts[label] = model.objects.count()
+        except Exception as exc:  # noqa: BLE001
+            counts[label] = f"error: {str(exc)[:80]}"
+    latest = None
+    try:
+        latest = TermMetricDaily.objects.aggregate(d=Max("metric_date"))["d"]
+    except Exception:  # noqa: BLE001
+        pass
+    # 지표 표가 어떤 모양으로 적재돼 있는지 — 합산 행(source 없음)·버전·용어당 날짜 수
+    metric_shape = None
+    try:
+        tm = TermMetricDaily.objects
+        per_term = (tm.values("term_id").annotate(n=Count("metric_date", distinct=True))
+                    .order_by("-n"))
+        metric_shape = {
+            "rows_all_sources": tm.filter(source__isnull=True).count(),
+            "rows_by_source": {(r["source__code"] or "ALL"): r["n"] for r in
+                               tm.values("source__code").annotate(n=Count("id"))},
+            "versions": {r["metric_version"]: r["n"] for r in
+                         tm.values("metric_version").annotate(n=Count("id"))},
+            "terms": per_term.count(),
+            "max_days_per_term": per_term[0]["n"] if per_term else 0,
+            "dates": list(tm.values_list("metric_date", flat=True).distinct().order_by("metric_date")[:40]),
+            "filled": {
+                "trend_temperature": tm.filter(trend_temperature__isnull=False).count(),
+                "level": tm.filter(level__isnull=False).count(),
+                "momentum": tm.filter(momentum__isnull=False).count(),
+                "purchase_intent_index": tm.filter(purchase_intent_index__isnull=False).count(),
+                "positive_rate": tm.filter(positive_rate__isnull=False).count(),
+            },
+            "sample_terms": list(per_term.values_list("term__canonical_name", "term__term_type", "n")[:10]),
+        }
+    except Exception as exc:  # noqa: BLE001
+        metric_shape = {"error": str(exc)[:200]}
 
-    배포한 뒤 이 주소를 열면 추측 없이 실상이 보인다.
-    """
-    counts = {
-        "dictionary.dictionary_term": DictionaryTerm.objects.count(),
-        "commerce.product": Product.objects.count(),
-        "analysis.term_metric_daily": TermMetricDaily.objects.count(),
-        "analysis.term_assoc_daily": TermAssocDaily.objects.count(),
-    }
-    latest = TermMetricDaily.objects.aggregate(d=Max("metric_date"))["d"]
+    # 핵심 스타일 10종이 사전·스타일 표·상품 태그에 실제로 있는지
+    core_styles = []
+    try:
+        from apps.core.models import Style
+        for name in _core_styles():
+            term = DictionaryTerm.objects.filter(term_type="STYLE", canonical_name=name).first()
+            style = Style.objects.filter(term=term).first() if term else None
+            core_styles.append({
+                "style": name,
+                "in_dictionary": term is not None,
+                "is_core_flag": (style.is_core if style else None),
+                "tagged_products": (ProductTerm.objects.filter(term=term)
+                                    .values("product_source_id").distinct().count() if term else 0),
+            })
+    except Exception as exc:  # noqa: BLE001
+        core_styles = [{"error": str(exc)[:200]}]
 
     bits = []
-    if not counts["analysis.term_metric_daily"]:
-        bits.append(
-            "트렌드 지표가 0행입니다. 수집·정제 쪽에서 analysis.term_metric_daily "
-            "적재가 아직 안 돌았습니다."
-        )
-    else:
-        bits.append(f"트렌드 지표 {counts['analysis.term_metric_daily']:,}행 (최신 {latest}).")
-
-    # 온도가 실제로 채워졌는지 — 행은 있는데 온도만 비는 경우를 잡는다.
-    if counts["analysis.term_metric_daily"]:
-        filled = TermMetricDaily.objects.filter(temp__isnull=False).count()
-        bits.append(
-            f"그중 온도가 채워진 행 {filled:,}건."
-            if filled
-            else "다만 temp 가 전부 비어 있습니다 — 적재 때 온도를 안 넣고 있습니다."
-        )
-
-    mismatch = _column_mismatch()
     if mismatch:
-        bits.insert(
-            0,
-            "★ 모델과 실제 DB 가 어긋납니다 — "
-            + " / ".join(
-                f"{tbl}: {', '.join(v.get('missing') or [v.get('error', '?')])}"
-                for tbl, v in mismatch.items()
-            )
-            + ". 이 상태로 조회하면 쓰지도 않는 칸 때문에 500 이 납니다. "
-            "migrate 를 다시 돌리거나, DB 를 손으로 고쳤다면 모델과 맞춰 주세요.",
-        )
-
-    return JsonResponse(
-        {
-            "ok": True,
-            "checked_at": timezone.now().isoformat(),
-            "tables": counts,
-            "latest_metric_date": latest,
-            "column_mismatch": mismatch or None,
-            "verdict": " ".join(bits),
-        }
-    )
+        bits.append("★ 모델과 실제 DB 가 어긋납니다: " + " / ".join(
+            f"{k}: {', '.join(v.get('missing') or [])}" for k, v in mismatch.items()))
+    bits.append(f"트렌드 지표 {counts.get('analysis.term_metric_daily')}행 (최신 {latest}).")
+    return JsonResponse({
+        "ok": True,
+        "checked_at": timezone.now().isoformat(),
+        "tables": counts,
+        "latest_metric_date": latest,
+        "metric_version": _metric_version(),
+        "column_mismatch": mismatch or None,
+        "core_styles": core_styles,
+        "metric_shape": metric_shape,
+        "verdict": " ".join(bits),
+    })
 
 
 @require_GET
 def terms(request):
     """지표가 실제로 있는 용어 목록 — 화면의 검색 후보."""
+    ver = _metric_version()
     qs = (
-        TermMetricDaily.objects.filter(source__isnull=True)  # 전체 합산 행만
+        TermMetricDaily.objects.filter(source__isnull=True, metric_version=ver)
         .values("term__canonical_name", "term__term_type")
         .annotate(points=Count("id"), last_date=Max("metric_date"))
-        .filter(points__gte=3)
-        .order_by("-points")[: _int(request, "limit", 300, 1, MAX_LIMIT)]
+        # 적재 초기에는 용어당 하루치뿐일 수 있다 — 하루라도 있으면 목록에 올린다.
+        .filter(points__gte=1)
+        .order_by("-points", "term__canonical_name")[: _int(request, "limit", 300, 1, MAX_LIMIT)]
     )
     rows = list(qs)
     if not rows:
-        return _empty(
-            "지표가 있는 용어가 아직 없습니다. "
-            "analysis.term_metric_daily 적재가 돌면 여기에 나타납니다."
-        )
-    return _ok(
-        [
-            {
-                "term": r["term__canonical_name"],
-                "facet": r["term__term_type"],
-                "points": r["points"],
-                "last_date": r["last_date"],
-            }
-            for r in rows
-        ]
-    )
-
-
-# 우리 term_type ↔ 화면이 쓰는 축 이름
-FACET_KO = {
-    "BRAND": "브랜드", "STYLE": "스타일", "ITEM": "아이템",
-    "MATERIAL": "소재", "DETAIL": "디테일", "COLOR": "색", "TPO": "TPO",
-}
+        return _empty("지표가 있는 용어가 아직 없습니다. analysis.term_metric_daily 적재를 확인하세요.")
+    return _ok([
+        {"term": r["term__canonical_name"], "facet": r["term__term_type"],
+         "points": r["points"], "last_date": r["last_date"]}
+        for r in rows
+    ])
 
 
 @require_GET
 def dictionary(request):
-    """GET /api/dictionary — 화면 검색이 쓸 사전 전체.
-
-    ★ 왜 필요한가
-      프론트는 지금 자기 파일에 박아 둔 146개로만 검색한다. 그래서
-      **RDS 사전에 있는 말도 "찾지 못했습니다"** 가 된다.
-      실제로 스투시·키르시·엄브로가 그랬다.
-
-    ★ 브랜드는 다른 표에 산다
-      `dictionary_term` 에는 스타일·아이템·소재·색·디테일·TPO 가 들어 있고,
-      **브랜드는 `dictionary.brand` 에 따로 있다**(2026-09-08 기준 term 395 · brand 2,775).
-      화면에서는 둘 다 '검색해서 지표를 볼 대상' 이므로 여기서 합쳐 준다.
-      어디서 왔는지는 `kind` 로 남겨, 나중에 지표가 없을 때 이유를 정확히 말할 수 있게 한다.
-    """
-    limit = _int(request, "limit", 4000, 1, 8000)
-
-    rows = [
-        {
-            "label": r["canonical_name"],
-            "facet": FACET_KO.get(r["term_type"], r["term_type"]),
-            "kind": "term",
-            "en": r["english_name"] or "",
-        }
-        for r in DictionaryTerm.objects.filter(status="ACTIVE").values(
-            "canonical_name", "term_type", "english_name"
-        )[:limit]
-    ]
-    # ★ Brand 는 `name` 을 쓴다. `canonical_name` 이 아니다 —
-    #   마이그레이션 0014 가 그 칸을 지웠다. 이름이 표마다 다르다.
-    rows += [
-        {"label": r["name"], "facet": "브랜드", "kind": "brand",
-         "en": r["english_name"] or ""}
-        for r in Brand.objects.filter(status="ACTIVE").values("name", "english_name")[:limit]
-        if r["name"]
-    ]
-
+    """GET /api/dictionary — 화면 검색이 쓸 사전 전체 (용어 + 브랜드)."""
+    limit = _int(request, "limit", 6000, 1, 12000)
+    rows, seen = [], set()
+    for r in DictionaryTerm.objects.filter(status="ACTIVE").values(
+            "canonical_name", "term_type", "english_name")[:limit]:
+        key = (r["canonical_name"], r["term_type"])
+        if not r["canonical_name"] or key in seen:
+            continue
+        seen.add(key)
+        rows.append({"label": r["canonical_name"],
+                     "facet": FACET_KO.get(r["term_type"], r["term_type"]),
+                     "kind": "brand" if r["term_type"] == "BRAND" else "term",
+                     "en": r["english_name"] or ""})
+    # 용어로 아직 연결 안 된 브랜드도 검색은 되게 한다.
+    for r in Brand.objects.filter(status="ACTIVE").values("name", "english_name")[:limit]:
+        if r["name"] and (r["name"], "BRAND") not in seen:
+            seen.add((r["name"], "BRAND"))
+            rows.append({"label": r["name"], "facet": "브랜드", "kind": "brand",
+                         "en": r["english_name"] or ""})
     if not rows:
         return _empty("사전이 비어 있습니다. dictionary_term·brand 적재를 확인하세요.")
-
-    by_facet = {}
+    by_facet = defaultdict(int)
     for r in rows:
-        by_facet[r["facet"]] = by_facet.get(r["facet"], 0) + 1
-    return _ok(rows, counts=by_facet, total=len(rows))
+        by_facet[r["facet"]] += 1
+    return _ok(rows, counts=dict(by_facet), total=len(rows))
+
+
+# ══════════════════════════════════════════════════════════════
+#  언급량·온도 / 긍부정  — analysis.term_metric_daily
+# ══════════════════════════════════════════════════════════════
+
+METRIC_VALUES = (
+    "metric_date", "raw_count", "mention_count", "document_count", "content_count",
+    "creator_count", "log_count", "percentile", "level", "ma7", "ma28", "momentum",
+    "trend_temperature", "sentiment_avg",
+    "positive_count", "neutral_count", "negative_count",
+    "question_count", "purchase_count", "experience_count", "praise_count",
+    "critique_count", "chitchat_count",
+    "positive_rate", "neutral_rate", "negative_rate",
+    "question_rate", "purchase_rate", "experience_rate", "praise_rate", "critique_rate",
+    "purchase_intent_index", "metrics",
+)
+
+
+def _metric_point(r, share=None):
+    """DB 한 행 → 화면이 쓰는 이름. (예전 화면이 쓰던 temp·mention 이름을 유지)"""
+    return {
+        "date": r["metric_date"].isoformat(),
+        "mention": r["mention_count"],
+        "document": r["document_count"],
+        "content": r["content_count"],
+        "creator": r["creator_count"],
+        "raw": _num(r["raw_count"]),
+        "log": _num(r["log_count"]),
+        "pct_rank": _num(r["percentile"]),
+        "level": _num(r["level"]),
+        "ma7": _num(r["ma7"]),
+        "ma28": _num(r["ma28"]),
+        "momentum": _num(r["momentum"]),
+        "temp": _num(r["trend_temperature"]),
+        "sentiment": _num(r["sentiment_avg"]),
+        "share_pct": share,
+        # 긍부정
+        "pos_n": r["positive_count"], "neu_n": r["neutral_count"], "neg_n": r["negative_count"],
+        "pos_rate": _num(r["positive_rate"]), "neu_rate": _num(r["neutral_rate"]),
+        "neg_rate": _num(r["negative_rate"]),
+        # 의도
+        "question_n": r["question_count"], "purchase_n": r["purchase_count"],
+        "experience_n": r["experience_count"], "praise_n": r["praise_count"],
+        "critique_n": r["critique_count"], "chitchat_n": r["chitchat_count"],
+        "intent": _num(r["purchase_intent_index"]),
+    }
+
+
+def _term_series(term, days, source=None, version=None):
+    """용어 하나의 일별 지표. source=None 이면 전체 합산 행."""
+    since = timezone.localdate() - timedelta(days=days)
+    version = version or _metric_version(term.id)
+    qs = TermMetricDaily.objects.filter(term=term, metric_version=version)
+    # 최신 적재일이 오늘보다 한참 전일 수 있다 → 기준을 '마지막 적재일'로 잡는다.
+    last = qs.filter(source__isnull=True).aggregate(d=Max("metric_date"))["d"]
+    if last:
+        since = min(since, last - timedelta(days=days))
+    qs = qs.filter(metric_date__gte=since)
+    qs = qs.filter(source__code=source) if source else qs.filter(source__isnull=True)
+    return list(qs.order_by("metric_date").values(*METRIC_VALUES)), version
 
 
 @require_GET
 def trend(request):
-    """GET /api/trend?term=발레코어&days=90&source=musinsa
+    """GET /api/trend?term=발레코어&days=120&source=musinsa
 
-    source 를 주면 그 플랫폼만, 안 주면 전 플랫폼 합산.
+    반환: series(일별), platforms(플랫폼별 최신 온도), new_terms(최근 새로 잡힌 용어)
     """
     name = (request.GET.get("term") or "").strip()
     if not name:
         return terms(request)
+    days = _int(request, "days", 120, 7, 730)
+    source = (request.GET.get("source") or "").strip() or None
 
-    days = _int(request, "days", 90, 7, 400)
-    source = (request.GET.get("source") or "").strip()
-    since = timezone.localdate() - timedelta(days=days)
+    term = _resolve_term(name)
+    if term is None:
+        return _empty(_term_missing_reason(name), term=name, known=False)
 
-    qs = TermMetricDaily.objects.filter(
-        term__canonical_name=name, metric_date__gte=since
-    )
-    qs = qs.filter(source__code=source) if source else qs.filter(source__isnull=True)
-    # ★ select_related 를 쓰지 않는다.
-    #   그러면 DictionaryTerm 의 **모든 칸**을 SELECT 하는데, 실제 DB 에
-    #   모델에만 있는 칸(예: normalized_name)이 없으면 통째로 500 이 난다.
-    #   2026-09-07 실제로 그랬다:
-    #     ProgrammingError: column dictionary_term.normalized_name does not exist
-    #   쓰지도 않는 칸 때문에 API 가 죽으면 안 된다. 필요한 것만 집어 온다.
-    rows = list(
-        qs.order_by("metric_date").values(
-            "metric_date", "mention_count", "document_count", "source_count",
-            "sentiment_avg", "growth_rate", "trend_score", "metrics",
-            "metric_version", "temp", "momentum", "ma7", "ma28", "level", "pct_rank",
-            "term__canonical_name", "term__term_type",
-        )
-    )
-
+    rows, version = _term_series(term, days, source)
     if not rows:
-        # ★ '사전에 없다' 를 함부로 말하지 않는다.
-        #   브랜드는 dictionary_term 이 아니라 brand 표에 산다. 거기만 보고
-        #   "사전에서 찾지 못했습니다" 라고 하면 거짓말이 된다 —
-        #   실제로 스투시가 그랬다(브랜드 표에는 있다).
-        as_term = DictionaryTerm.objects.filter(canonical_name=name).exists()
-        as_brand = Brand.objects.filter(name=name).exists()
-        if as_term:
-            reason = f"‘{name}’ 은 사전에 있지만 최근 {days}일 안에 측정된 지표가 없습니다."
-        elif as_brand:
-            reason = (
-                f"‘{name}’ 은 브랜드 사전에는 있지만, 아직 지표 대상 용어로 "
-                f"등록돼 있지 않습니다. 브랜드를 dictionary_term 에도 넣어야 "
-                f"온도를 잴 수 있습니다."
-            )
-        else:
-            reason = f"‘{name}’ 을 사전에서 찾지 못했습니다."
-        return _empty(reason, term=name, known=as_term or as_brand,
-                      found_in=("term" if as_term else "brand" if as_brand else None))
+        return _empty(
+            f"‘{term.canonical_name}’ 은 사전에 있지만 측정된 지표가 아직 없습니다.",
+            term=term.canonical_name, known=True)
 
-    series = [
-        {
-            "date": r["metric_date"],
-            "mention": r["mention_count"],
-            "document": r["document_count"],
-            "source": r["source_count"],
-            "sentiment": _num(r["sentiment_avg"]),
-            "growth": _num(r["growth_rate"]),
-            "score": _num(r["trend_score"]),
-            **{f: _num(r.get(f)) for f in METRIC_FIELDS},
-            # 크롤러가 metrics JSON 에 담아 보낸 값도 꺼내 준다.
-            **{k: _num(v) for k, v in (r.get("metrics") or {}).items()
-               if k in ("share_pct", "raw_count", "log_value")},
-        }
-        for r in rows
-    ]
+    # 점유율 — 같은 날 전체(합산 행) 언급량 중 이 용어의 몫
+    dates = [r["metric_date"] for r in rows]
+    totals = dict(
+        TermMetricDaily.objects.filter(
+            source__isnull=True, metric_version=version,
+            metric_date__gte=dates[0], metric_date__lte=dates[-1])
+        .values_list("metric_date").annotate(t=Sum("mention_count"))
+    )
+    series = []
+    for r in rows:
+        tot = totals.get(r["metric_date"]) or 0
+        share = round(r["mention_count"] / tot * 100, 2) if tot else None
+        series.append(_metric_point(r, share))
 
-    # 아직 안 들어온 값이 있으면 숨기지 않고 알려 준다.
+    last_date = rows[-1]["metric_date"]
+
+    # 플랫폼별 최신 온도
+    plat_rows = (
+        TermMetricDaily.objects.filter(term=term, metric_version=version,
+                                       source__isnull=False,
+                                       metric_date__gte=last_date - timedelta(days=14))
+        .order_by("source_id", "-metric_date")
+        .values("source__code", "source__name", "metric_date", "trend_temperature",
+                "level", "mention_count")
+    )
+    platforms, seen = [], set()
+    for p in plat_rows:
+        if p["source__code"] in seen:
+            continue
+        seen.add(p["source__code"])
+        platforms.append({"code": p["source__code"], "name": p["source__name"],
+                          "date": p["metric_date"].isoformat(),
+                          "temp": _num(p["trend_temperature"]), "level": _num(p["level"]),
+                          "mention": p["mention_count"]})
+    platforms.sort(key=lambda x: (x["temp"] is None, -(x["temp"] or 0)))
+
+    # 최근 7일 안에 처음 잡힌 용어 (같은 축) — 온도 높은 순
+    first_seen = (
+        TermMetricDaily.objects.filter(source__isnull=True, metric_version=version,
+                                       term__term_type=term.term_type)
+        .values("term_id").annotate(first=Min("metric_date"))
+        .filter(first__gte=last_date - timedelta(days=7))
+    )
+    new_ids = [x["term_id"] for x in first_seen[:200]]
+    new_terms = list(
+        TermMetricDaily.objects.filter(term_id__in=new_ids, source__isnull=True,
+                                       metric_version=version, metric_date=last_date)
+        .order_by("-trend_temperature")
+        .values("term__canonical_name", "trend_temperature")[:5]
+    )
+
     last = series[-1]
-    missing = [f for f in METRIC_FIELDS if last.get(f) is None]
+    missing = [f for f in ("temp", "momentum", "level", "intent") if last.get(f) is None]
     extra = {}
     if missing:
         extra["unavailable"] = {
             "fields": missing,
-            "reason": (
-                f"이 값들이 아직 비어 있습니다 ({'·'.join(missing)}). "
-                "적재할 때 크롤러가 계산해 둔 값을 그대로 넣어야 채워집니다."
-            ),
+            "reason": f"최신 행에 비어 있는 값이 있습니다 ({'·'.join(missing)}).",
         }
-
     return _ok(
         {
-            "term": rows[0]["term__canonical_name"],
-            "facet": rows[0]["term__term_type"],
-            "source": source or None,
+            "term": term.canonical_name,
+            "facet": term.term_type,
+            "source": source,
             "days": days,
             "points": len(series),
-            "metric_version": rows[-1]["metric_version"] or None,
+            "as_of": last_date.isoformat(),
+            "metric_version": version,
             "series": series,
+            "platforms": platforms,
+            "new_terms": [{"term": x["term__canonical_name"],
+                           "temp": _num(x["trend_temperature"])} for x in new_terms],
         },
         **extra,
     )
 
 
+# ══════════════════════════════════════════════════════════════
+#  연관어 — analysis.term_assoc_daily
+# ══════════════════════════════════════════════════════════════
+
 @require_GET
 def assoc(request):
-    """GET /api/assoc?term=발레코어&limit=20 — 연관어."""
+    """GET /api/assoc?term=발레코어&limit=60&days=90
+
+    items   최신 기준일의 연관어 (lift·PMI·백분위·순위·신규 여부·순위 변화·근거 문장)
+    history 기준일별 연관어 수와 동시언급 문서 합 — 추이 차트
+    """
     name = (request.GET.get("term") or "").strip()
     if not name:
         return _empty("term 을 지정해 주세요. 예: /api/assoc?term=발레코어")
+    term = _resolve_term(name)
+    if term is None:
+        return _empty(_term_missing_reason(name), term=name)
+    limit = _int(request, "limit", 60, 5, 200)
+    days = _int(request, "days", 120, 7, 730)
 
-    limit = _int(request, "limit", 20, 5, 100)
-    latest = (
-        TermAssocDaily.objects.filter(source_term__canonical_name=name)
-        .aggregate(d=Max("metric_date"))["d"]
-    )
-    if latest is None:
+    base = TermAssocDaily.objects.filter(source_term=term)
+    ver_row = base.order_by("-metric_date").values("metric_version").first()
+    if ver_row is None:
         total = TermAssocDaily.objects.count()
         return _empty(
-            (
-                "연관어 표가 통째로 비어 있습니다. 적재가 아직 안 돌았습니다."
-                if total == 0
-                else f"‘{name}’ 의 연관어가 아직 없습니다. 함께 나온 글이 모자랍니다."
-            ),
-            term=name,
-            total_rows=total,
-        )
+            "연관어 표가 비어 있습니다. 적재가 아직 돌지 않았습니다." if total == 0
+            else f"‘{term.canonical_name}’ 의 연관어가 아직 없습니다. 함께 언급된 문서가 모자랍니다.",
+            term=term.canonical_name, total_rows=total)
+    base = base.filter(metric_version=ver_row["metric_version"])
+    dates = list(base.values_list("metric_date", flat=True).distinct().order_by("-metric_date")[:2])
+    latest = dates[0]
+    prev = dates[1] if len(dates) > 1 else None
 
-    rows = (
-        TermAssocDaily.objects.filter(
-            source_term__canonical_name=name, metric_date=latest
-        )
-        .order_by("-association_score", "-cooccurrence_count")
-        .values(
-            "cooccurrence_count", "association_score", "confidence",
-            "target_term__canonical_name", "target_term__term_type",
-        )[:limit]
+    rows = list(
+        base.filter(metric_date=latest)
+        .order_by(Coalesce("association_rank", 999999), "-pmi", "-cooccurrence_count")
+        .values("target_term_id", "target_term__canonical_name", "target_term__term_type",
+                "cooccurrence_count", "lift", "pmi", "association_percentile",
+                "association_rank", "is_new")[:limit]
     )
-    return _ok(
-        {
-            "term": name,
-            "as_of": latest,
-            "items": [
-                {
-                    "term": r["target_term__canonical_name"],
-                    "facet": r["target_term__term_type"],
-                    "cooccurrence": r["cooccurrence_count"],
-                    "score": _num(r["association_score"]),
-                    "confidence": _num(r["confidence"]),
-                }
-                for r in rows
-            ],
-        }
-    )
+    prev_rank = {}
+    if prev:
+        prev_rank = dict(base.filter(metric_date=prev).values_list("target_term_id",
+                                                                     "association_rank"))
 
-
-@require_GET
-def products(request):
-    """GET /api/products?q=엄브로&brand=UMBRO&limit=40
-
-    가격은 가장 최근 스냅샷을 붙인다.
-    스냅샷이 없으면 0 으로 채우지 않는다 — 0 은 '공짜'라는 뜻이 되어 버린다.
-    """
-    kw = (request.GET.get("q") or "").strip()
-    brand = (request.GET.get("brand") or "").strip()
-    limit = _int(request, "limit", 40, 1, 200)
-
-    # select_related 는 Brand 의 모든 칸을 SELECT 한다 — trend 와 같은 이유로 피한다.
-    qs = Product.objects.prefetch_related("sources")
-    if kw:
-        qs = qs.filter(canonical_name__icontains=kw)
-    if brand:
-        # Brand 는 name / english_name 이다 (canonical_name 은 0014 에서 지워졌다).
-        qs = qs.filter(brand__name=brand) | qs.filter(brand__english_name=brand)
-
-    rows = list(qs.order_by("-id")[:limit])
-    if not rows:
-        return _empty(
-            f"조건에 맞는 상품이 없습니다 (검색어 ‘{kw or brand}’)."
-            if (kw or brand)
-            else "commerce.product 가 비어 있습니다."
-        )
-
-    # 브랜드 이름만 따로 한 번에 가져온다 (칸을 콕 집어서).
-    from apps.core.models import Brand
-    brand_names = dict(
-        Brand.objects.filter(id__in=[p.brand_id for p in rows if p.brand_id])
-        .values_list("id", "name")
-    )
+    # 근거 문장 — 기준 용어가 나온 문서 안에서 연관 용어가 언급된 문맥
+    target_ids = [r["target_term_id"] for r in rows]
+    evidence = defaultdict(list)
+    if target_ids:
+        doc_ids = TextTermMention.objects.filter(term=term).values("document_id")
+        for m in (TextTermMention.objects.filter(term_id__in=target_ids, document_id__in=doc_ids)
+                  .exclude(mention_text__isnull=True).exclude(mention_text="")
+                  .order_by("-created_at")
+                  .values("term_id", "mention_text", "document__document_type",
+                          "document__source__name")[:1500]):
+            lst = evidence[m["term_id"]]
+            if len(lst) < 2:
+                lst.append({"tag": m["document__source__name"] or m["document__document_type"],
+                            "text": m["mention_text"][:160]})
 
     items = []
-    no_price = 0
-    for p in rows:
-        ps = next(iter(p.sources.all()), None)
-        snap = (
-            ps.snapshots.order_by("-observed_at").first() if ps is not None else None
-        )
-        if snap is None:
-            no_price += 1
-        items.append(
-            {
-                "id": p.id,
-                "name": p.canonical_name,
-                "brand": brand_names.get(p.brand_id),
-                "source": ps.source.code if ps and ps.source_id else None,
-                "url": ps.product_url if ps else None,
-                "market": ps.market_type if ps else None,
-                "price": {
-                    "list": _num(snap.list_price) if snap else None,
-                    "sale": _num(snap.sale_price) if snap else None,
-                    "discount": _num(snap.discount_rate) if snap else None,
-                    "stock": snap.stock_status if snap else None,
-                    "as_of": snap.observed_at if snap else None,
-                    "unavailable": None if snap else "이 상품은 아직 가격 스냅샷이 없습니다.",
-                },
-            }
-        )
+    for r in rows:
+        rank, before = r["association_rank"], prev_rank.get(r["target_term_id"])
+        if r["is_new"] or (prev and r["target_term_id"] not in prev_rank):
+            change = "new"
+        elif rank is not None and before is not None:
+            change = before - rank          # 양수 = 순위 상승
+        else:
+            change = None
+        items.append({
+            "term": r["target_term__canonical_name"],
+            "facet": r["target_term__term_type"],
+            "facet_ko": FACET_KO.get(r["target_term__term_type"], r["target_term__term_type"]),
+            "cooccurrence": r["cooccurrence_count"],
+            "lift": _num(r["lift"], 4),
+            "pmi": _num(r["pmi"], 4),
+            "percentile": _num(r["association_percentile"], 2),
+            "rank": rank,
+            "change": change,
+            "evidence": evidence.get(r["target_term_id"], []),
+        })
 
-    extra = {"note": f"{no_price}건은 가격 기록이 아직 없습니다."} if no_price else {}
-    return _ok({"count": len(items), "items": items}, **extra)
+    hist = (
+        base.filter(metric_date__gte=latest - timedelta(days=days))
+        .values("metric_date")
+        .annotate(count=Count("id"), cooc=Sum("cooccurrence_count"))
+        .order_by("metric_date")
+    )
+    history = [{"date": h["metric_date"].isoformat(), "count": h["count"], "cooc": h["cooc"]}
+               for h in hist]
+
+    return _ok({
+        "term": term.canonical_name,
+        "as_of": latest.isoformat(),
+        "previous": prev.isoformat() if prev else None,
+        "metric_version": ver_row["metric_version"],
+        "items": items,
+        "history": history,
+    })
 
 
 # ══════════════════════════════════════════════════════════════
-#  세부 검색 — 축별 필터 후보 (2026-09-09)
+#  세부 검색 조건 → 상품(플랫폼 상품) 집합
 # ══════════════════════════════════════════════════════════════
-#  ★ 왜 새로 만들었나
-#    화면의 세부 검색은 스타일 › 종류 › 브랜드 › 아이템명 을 **위에서부터
-#    차례로 좁히는** 방식이었다. 그래서 브랜드만 알고 있어도 스타일부터
-#    골라야 했고, 그 계층은 프론트 파일에 손으로 박아 둔 것이라 RDS 와
-#    아무 상관이 없었다.
-#
-#    이제는 네 칸이 **서로 독립된 필터**다. 하나만 골라도 되고, 겹쳐 골라도
-#    된다. 겹쳐 고르면 교집합이다 — 스타일만 고르면 그 스타일 전부,
-#    브랜드까지 고르면 그 스타일의 그 브랜드만.
-#
-#  ★ 무엇을 세는가
-#    계층의 근거는 `commerce.product` 다. 상품 한 줄이 브랜드·종류(item_term)를
-#    들고 있고, `commerce.product_term` 이 그 상품에 붙은 스타일을 들고 있다.
-#    그래서 "이 스타일에 실제로 있는 브랜드" 를 지어내지 않고 셀 수 있다.
-#
-#  ★ 자기 축은 자기를 좁히지 않는다
-#    브랜드 후보를 셀 때 브랜드 선택은 빼고 센다. 그러지 않으면 브랜드를
-#    하나 고르는 순간 브랜드 칸에 그것 하나만 남아, 칩을 바꿔 낄 수가 없다.
-#    (패싯 검색의 기본 규칙이다.)
-#
-#  ★ 상품이 아직 없으면
-#    `commerce.product` 가 비어 있으면 교차 계산은 의미가 없다. 그때는
-#    사전(dictionary_term · brand)만 그대로 내려보내고 `narrowed:false` 로
-#    **좁히지 못했다는 사실을 밝힌다.** 화면은 그걸 그대로 적는다.
+#  네 칸(스타일·종류·브랜드·아이템명)은 서로 독립된 필터이고, 겹치면 교집합이다.
+#  스냅샷(가격·리셀)은 commerce.product_source 에 붙으므로 그 단위로 센다.
+#  (표준 상품 product 가 아직 연결 안 된 UNMAPPED 행도 빠지지 않게)
 
 FACET_PARAMS = ("style", "kind", "brand", "item")
-
-# ★ 상품이 이만큼은 있어야 "축끼리 좁혔다" 고 말할 수 있다.
-#   2026-09-09 실측: commerce.product 에 **1행**밖에 없었다. 그 상태로 교차
-#   계산을 하면 스타일 칸에도 브랜드 칸에도 한 개씩만 남는다. 틀린 답은
-#   아니지만, 화면에서는 "고를 게 없는 고장" 으로 보인다.
-#   상품이 이 수보다 적으면 좁히기를 포기하고 사전을 그대로 준다 —
-#   그리고 narrowed:false 로 **좁히지 못했다는 사실을 밝힌다.**
 MIN_PRODUCTS_FOR_FACETS = 20
+
+BRAND_EXPR = Coalesce("product__brand__name", "source_brand__brand__name", "source_brand__name")
+ITEM_EXPR = Coalesce("product__canonical_name", "source_name")
 
 
 def _list(request, name):
-    """?style=A&style=B → ['A','B'] (빈 값·중복 제거)"""
     out, seen = [], set()
     for v in request.GET.getlist(name):
         v = (v or "").strip()
-        if not v or v in seen:
-            continue
-        seen.add(v)
-        out.append(v)
+        if v and v not in seen:
+            seen.add(v)
+            out.append(v)
     return out
+
+
+def _selection(request):
+    return {k: _list(request, k) for k in FACET_PARAMS}
 
 
 def _apply(qs, sel, skip=None):
-    """고른 조건을 상품 목록에 건다. `skip` 축 하나는 뺀다(자기 축 제외)."""
+    """고른 조건을 ProductSource 목록에 건다. `skip` 축은 뺀다(자기 축 제외)."""
     if skip != "style" and sel["style"]:
         qs = qs.filter(
-            id__in=ProductTerm.objects.filter(
-                term__term_type="STYLE",
-                term__canonical_name__in=sel["style"],
-            ).values("product_id")
-        )
+            Q(id__in=ProductTerm.objects.filter(term__term_type="STYLE",
+                                                term__canonical_name__in=sel["style"])
+              .values("product_source_id"))
+            | Q(product__style__term__canonical_name__in=sel["style"]))
     if skip != "kind" and sel["kind"]:
-        qs = qs.filter(item_term__term__canonical_name__in=sel["kind"])
+        qs = qs.filter(
+            Q(id__in=ProductTerm.objects.filter(term__term_type="ITEM",
+                                                term__canonical_name__in=sel["kind"])
+              .values("product_source_id"))
+            | Q(product__category__name__in=sel["kind"])
+            | Q(source_category__category__name__in=sel["kind"]))
     if skip != "brand" and sel["brand"]:
-        qs = qs.filter(brand__name__in=sel["brand"])
+        qs = qs.filter(Q(product__brand__name__in=sel["brand"])
+                       | Q(product__brand__english_name__in=sel["brand"])
+                       | Q(source_brand__brand__name__in=sel["brand"])
+                       | Q(source_brand__name__in=sel["brand"]))
     if skip != "item" and sel["item"]:
-        qs = qs.filter(canonical_name__in=sel["item"])
+        qs = qs.filter(Q(product__canonical_name__in=sel["item"]) | Q(source_name__in=sel["item"]))
     return qs
 
 
-def _rows(qs, field, keep, limit):
-    """축 하나의 후보 — 값과 상품 수. 많이 걸리는 것부터."""
-    agg = (
-        qs.exclude(**{field + "__isnull": True})
-        .exclude(**{field: ""})
-        .values(field)
-        .annotate(n=Count("id"))
-        .order_by("-n", field)
-    )
-    out = []
-    for r in agg:
-        label = r[field]
-        if not label:
-            continue
-        out.append({"label": label, "count": r["n"]})
-        if len(out) >= limit:
-            break
-    # 이미 고른 것은 후보에서 밀려나도 남긴다 — 그래야 칩을 다시 뺄 수 있다.
+def _selected_sources(sel, market=None):
+    qs = _apply(ProductSource.objects.all(), sel)
+    if market:
+        qs = qs.filter(market_type=market)
+    return qs
+
+
+def _selection_label(sel):
+    b, i = (sel["brand"] or [None])[0], (sel["item"] or [None])[0]
+    if b and i:
+        return f"{b} {i}"
+    for k in ("item", "brand", "kind", "style"):
+        if sel[k]:
+            return sel[k][0]
+    return ""
+
+
+def _count_rows(qs, expr, keep, limit):
+    agg = (qs.annotate(_label=expr).exclude(_label__isnull=True).exclude(_label="")
+           .values("_label").annotate(n=Count("id", distinct=True)).order_by("-n", "_label"))
+    out = [{"label": r["_label"], "count": r["n"]} for r in agg[:limit]]
     have = {o["label"] for o in out}
-    for k in keep:
-        if k not in have:
-            out.append({"label": k, "count": 0, "picked_only": True})
+    out += [{"label": k, "count": 0, "picked_only": True} for k in keep if k not in have]
     return out
 
 
-def _style_rows(qs, keep, limit):
-    """스타일은 상품에 직접 안 붙어 있다 — product_term 을 거쳐 센다."""
-    agg = (
-        ProductTerm.objects.filter(
-            term__term_type="STYLE",
-            product_id__in=qs.values("id"),
-        )
-        .values("term__canonical_name")
-        .annotate(n=Count("product_id", distinct=True))
-        .order_by("-n", "term__canonical_name")
+def _core_style_rows(qs, keep):
+    """STYLE 칸 — 핵심 스타일만, 0건도 0 으로 남긴다. 많이 걸린 순, 같으면 핵심 목록 순."""
+    core = _core_styles()
+    counts = dict(
+        ProductTerm.objects.filter(term__term_type="STYLE", term__canonical_name__in=core,
+                                   product_source_id__in=qs.values("id"))
+        .values_list("term__canonical_name")
+        .annotate(n=Count("product_source_id", distinct=True))
     )
-    out = []
-    for r in agg:
-        label = r["term__canonical_name"]
-        if not label:
-            continue
-        out.append({"label": label, "count": r["n"]})
-        if len(out) >= limit:
-            break
-    have = {o["label"] for o in out}
-    for k in keep:
-        if k not in have:
-            out.append({"label": k, "count": 0, "picked_only": True})
+    out = [{"label": name, "count": counts.get(name, 0), "core": True} for name in core]
+    out.sort(key=lambda o: (-o["count"], core.index(o["label"])))
+    # 다른 경로(검색창 등)로 이미 걸린 비핵심 스타일은 칩을 뗄 수 있게 남긴다.
+    out += [{"label": k, "count": 0, "picked_only": True} for k in keep if k not in core]
     return out
 
 
-def _dictionary_only(sel, limit):
-    """상품이 없을 때 — 사전만 내려보낸다. 교차로 좁히지는 못한다."""
-
-    def terms(kind):
-        return [
-            {"label": r["canonical_name"], "count": None}
-            for r in DictionaryTerm.objects.filter(
-                status="ACTIVE", term_type=kind
-            ).values("canonical_name")[:limit]
-            if r["canonical_name"]
-        ]
-
-    return {
-        "style": terms("STYLE"),
-        "kind": terms("ITEM"),
-        "brand": [
-            {"label": r["name"], "count": None}
-            for r in Brand.objects.filter(status="ACTIVE").values("name")[:limit]
-            if r["name"]
-        ],
-        # 아이템명(상품명)은 상품이 있어야 나온다.
-        "item": [],
-    }
+def _term_rows(qs, term_type, keep, limit):
+    agg = (ProductTerm.objects.filter(term__term_type=term_type, product_source_id__in=qs.values("id"))
+           .values("term__canonical_name")
+           .annotate(n=Count("product_source_id", distinct=True))
+           .order_by("-n", "term__canonical_name"))
+    out = [{"label": r["term__canonical_name"], "count": r["n"]} for r in agg[:limit]
+           if r["term__canonical_name"]]
+    have = {o["label"] for o in out}
+    out += [{"label": k, "count": 0, "picked_only": True} for k in keep if k not in have]
+    return out
 
 
 @require_GET
 def facets(request):
-    """GET /api/facets?style=스트릿&brand=스투시&limit=200
-
-    세부 검색 네 칸(STYLE · 종류 · 브랜드 · 아이템명)의 후보를 한 번에 준다.
-    네 칸은 서로 독립이고, 겹쳐 고르면 교집합이다.
-
-    돌려주는 것
-        data.style / data.kind / data.brand / data.item
-            [{label, count}] — count 는 그 조건에서 걸리는 상품 수
-        matched   지금 조건에 걸리는 상품 수
-        narrowed  교차로 좁혔는가 (상품이 없으면 false)
-    """
+    """GET /api/facets?style=스트릿&brand=스투시&limit=200 — 세부 검색 네 칸의 후보."""
     limit = _int(request, "limit", 200, 1, 1000)
-    sel = {k: _list(request, k) for k in FACET_PARAMS}
-
-    base = Product.objects.filter(status="ACTIVE")
+    sel = _selection(request)
+    base = ProductSource.objects.filter(status="ACTIVE")
     n_products = base.count()
 
-    # 상품이 너무 적으면 교차 계산은 거짓말에 가깝다. 사전만 준다.
     if n_products < MIN_PRODUCTS_FOR_FACETS:
-        data = _dictionary_only(sel, limit)
+        def dict_terms(kind):
+            return [{"label": r, "count": None} for r in
+                    DictionaryTerm.objects.filter(status="ACTIVE", term_type=kind)
+                    .values_list("canonical_name", flat=True)[:limit] if r]
+        data = {
+            "style": [{"label": name, "count": None, "core": True} for name in _core_styles()],
+            "kind": dict_terms("ITEM"),
+            "brand": [{"label": r, "count": None} for r in
+                      Brand.objects.filter(status="ACTIVE").values_list("name", flat=True)[:limit] if r],
+            "item": [],
+        }
         if not any(data.values()):
-            return _empty(
-                "상품도 사전도 비어 있습니다. "
-                "commerce.product · dictionary_term · brand 적재를 확인하세요.",
-                narrowed=False,
-                products=n_products,
-            )
-        return _ok(
-            data,
-            matched=0,
-            narrowed=False,
-            products=n_products,
-            note=(
-                f"commerce.product 가 {n_products}개뿐이라 축끼리 좁히지 못했습니다 "
-                f"— 사전 목록을 그대로 보냅니다. 상품이 {MIN_PRODUCTS_FOR_FACETS}개를 "
-                "넘으면 자동으로 좁히기 시작합니다."
-            ),
-        )
+            return _empty("상품도 사전도 비어 있습니다.", narrowed=False, products=n_products)
+        return _ok(data, matched=0, narrowed=False, products=n_products,
+                   note=(f"commerce.product_source 가 {n_products}개뿐이라 축끼리 좁히지 못했습니다 "
+                         "— 사전 목록을 그대로 보냅니다."))
 
     matched = _apply(base, sel).count()
-
     data = {
-        "style": _style_rows(_apply(base, sel, skip="style"), sel["style"], limit),
-        "kind": _rows(
-            _apply(base, sel, skip="kind"),
-            "item_term__term__canonical_name",
-            sel["kind"],
-            limit,
-        ),
-        "brand": _rows(
-            _apply(base, sel, skip="brand"), "brand__name", sel["brand"], limit
-        ),
-        "item": _rows(
-            _apply(base, sel, skip="item"), "canonical_name", sel["item"], limit
-        ),
+        "style": _core_style_rows(_apply(base, sel, "style"), sel["style"]),
+        "kind": _term_rows(_apply(base, sel, "kind"), "ITEM", sel["kind"], limit),
+        "brand": _count_rows(_apply(base, sel, "brand"), BRAND_EXPR, sel["brand"], limit),
+        "item": _count_rows(_apply(base, sel, "item"), ITEM_EXPR, sel["item"], limit),
     }
-
     if not any(len(v) for v in data.values()):
-        return _empty(
-            "고른 조건에 맞는 상품이 없습니다. 조건을 하나 빼고 다시 보세요.",
-            matched=0,
-            narrowed=True,
-        )
+        return _empty("고른 조건에 맞는 상품이 없습니다. 조건을 하나 빼고 다시 보세요.",
+                      matched=0, narrowed=True)
+    return _ok(data, matched=matched, narrowed=True, selected=sel, products=n_products)
 
-    return _ok(data, matched=matched, narrowed=True, selected=sel,
-               products=n_products)
+
+def _temp_block(term_name, days):
+    """선택 대상의 대표 용어 온도 — 할인률·리세일·수명주기 탭이 함께 쓴다."""
+    term = _resolve_term(term_name) if term_name else None
+    if term is None:
+        return {"term": term_name or None, "status": "empty",
+                "reason": (_term_missing_reason(term_name) if term_name else "대표 용어가 없습니다."),
+                "series": []}
+    rows, _ = _term_series(term, days)
+    if not rows:
+        return {"term": term.canonical_name, "status": "empty",
+                "reason": f"‘{term.canonical_name}’ 의 트렌드 지표가 아직 없습니다.", "series": []}
+    series = [_metric_point(r) for r in rows]
+    return {"term": term.canonical_name, "facet": term.term_type, "status": "ok",
+            "as_of": series[-1]["date"], "latest": series[-1], "series": series}
+
+
+def _no_selection():
+    return _empty("세부 검색에서 스타일·종류·브랜드·아이템명 중 하나 이상을 골라 주세요.")
+
+
+# ══════════════════════════════════════════════════════════════
+#  할인률 변화 — snapshot.product_source_snapshot
+# ══════════════════════════════════════════════════════════════
+
+@require_GET
+def discount(request):
+    """GET /api/discount?brand=스투시&kind=후디&term=스투시&days=90"""
+    sel = _selection(request)
+    if not any(sel.values()):
+        return _no_selection()
+    days = _int(request, "days", 90, 14, 365)
+    label = _selection_label(sel)
+    term_name = (request.GET.get("term") or "").strip() or label
+
+    sources = _selected_sources(sel).exclude(market_type="RESALE")
+    ps_ids = list(sources.values_list("id", flat=True)[:5000])
+    if not ps_ids:
+        return _empty(f"‘{label}’ 조건에 맞는 판매 상품이 없습니다.", label=label)
+
+    snaps = ProductSourceSnapshot.objects.filter(product_source_id__in=ps_ids)
+    last_obs = snaps.aggregate(d=Max("observed_at"))["d"]
+    if last_obs is None:
+        return _empty(f"‘{label}’ 상품 {len(ps_ids)}개에 가격 스냅샷이 아직 없습니다.",
+                      label=label, products=len(ps_ids))
+    since = last_obs - timedelta(days=days)
+
+    rows = list(
+        snaps.filter(observed_at__gte=since)
+        .order_by("product_source_id", "observed_at")
+        .values("product_source_id", "product_source__source__code",
+                "product_source__source__name", "observed_at", "list_price", "sale_price",
+                "discount_rate", "stock_status", "rating", "review_count", "like_count",
+                "sales_count")[:60000]
+    )
+
+    # 상품별 최신 스냅샷 + 재입고(품절 → 판매 전환) 횟수
+    latest, restock, prev_stock = {}, 0, {}
+    first_disc = None
+    max_disc = None
+    for r in rows:
+        pid = r["product_source_id"]
+        d = _pct(r["discount_rate"])
+        r["_d"] = d
+        st = (r["stock_status"] or "").upper()
+        if prev_stock.get(pid) in ("SOLD_OUT", "OUT_OF_STOCK") and st and st not in ("SOLD_OUT", "OUT_OF_STOCK"):
+            restock += 1
+        if st:
+            prev_stock[pid] = st
+        if d and d > 0:
+            first_disc = r["observed_at"] if first_disc is None else min(first_disc, r["observed_at"])
+            max_disc = d if max_disc is None else max(max_disc, d)
+        latest[pid] = r
+
+    def plat_summary(items):
+        ds = [x["_d"] for x in items if x["_d"] is not None]
+        priced = [x for x in items if x["sale_price"] is not None]
+        cheapest = min(priced, key=lambda x: x["sale_price"]) if priced else None
+        sold = [x for x in items if (x["stock_status"] or "").upper() in ("SOLD_OUT", "OUT_OF_STOCK")]
+        return {
+            "products": len(items),
+            "avg_discount": round(_mean(ds), 1) if ds else None,
+            "max_discount": max(ds) if ds else None,
+            "full_price_pct": round(sum(1 for x in ds if x <= 0) / len(ds) * 100, 1) if ds else None,
+            "min_sale_price": _num(cheapest["sale_price"]) if cheapest else None,
+            "min_list_price": _num(cheapest["list_price"]) if cheapest else None,
+            "min_discount": cheapest["_d"] if cheapest else None,
+            "sold_out": len(sold),
+            "rating": round(_mean([_num(x["rating"]) for x in items]), 2)
+            if any(x["rating"] is not None for x in items) else None,
+            "reviews": sum(x["review_count"] or 0 for x in items),
+            "likes": sum(x["like_count"] or 0 for x in items),
+            "stock": dict(sorted(
+                {k: sum(1 for x in items if (x["stock_status"] or "미상") == k)
+                 for k in {(x["stock_status"] or "미상") for x in items}}.items(),
+                key=lambda kv: -kv[1])),
+        }
+
+    by_plat = defaultdict(list)
+    for r in latest.values():
+        by_plat[(r["product_source__source__code"], r["product_source__source__name"])].append(r)
+    platforms = []
+    for (code, pname), items in by_plat.items():
+        platforms.append({"code": code, "name": pname, **plat_summary(items)})
+    platforms.sort(key=lambda p: (p["min_sale_price"] is None, p["min_sale_price"] or 0))
+
+    # 일별 평균 할인율 — 전체 · 플랫폼별
+    daily = defaultdict(list)
+    daily_plat = defaultdict(lambda: defaultdict(list))
+    for r in rows:
+        if r["_d"] is None:
+            continue
+        day = timezone.localtime(r["observed_at"]).date().isoformat()
+        daily[day].append(r["_d"])
+        daily_plat[r["product_source__source__code"]][day].append(r["_d"])
+    series = [{"date": d, "discount": round(_mean(v), 2)} for d, v in sorted(daily.items())]
+    plat_series = {c: [{"date": d, "discount": round(_mean(v), 2)} for d, v in sorted(m.items())]
+                   for c, m in daily_plat.items()}
+
+    # 최근 2주 변화(%p)
+    change_2w = None
+    if series:
+        last_day = series[-1]["date"]
+        cut = (timezone.datetime.fromisoformat(last_day) - timedelta(days=14)).date().isoformat()
+        before = [s for s in series if s["date"] <= cut]
+        if before:
+            change_2w = round(series[-1]["discount"] - before[-1]["discount"], 1)
+
+    overall = plat_summary(list(latest.values()))
+    cheapest = platforms[0] if platforms and platforms[0]["min_sale_price"] is not None else None
+    return _ok({
+        "label": label,
+        "selected": sel,
+        "as_of": timezone.localtime(last_obs).isoformat(),
+        "days": days,
+        "overall": overall,
+        "cheapest": cheapest,
+        "platforms": platforms,
+        "change_2w": change_2w,
+        "first_discount_at": timezone.localtime(first_disc).date().isoformat() if first_disc else None,
+        "first_discount_days": (timezone.localtime(last_obs).date()
+                                - timezone.localtime(first_disc).date()).days if first_disc else None,
+        "max_discount_period": max_disc,
+        "restock_count": restock,
+        "series": series,
+        "platform_series": plat_series,
+        "temperature": _temp_block(term_name, days),
+    })
+
+
+# ══════════════════════════════════════════════════════════════
+#  리세일 시세 — snapshot.resale_snapshot
+# ══════════════════════════════════════════════════════════════
+
+def _resale_price(r):
+    for k in ("last_trade_price", "median_price", "avg_price", "min_price", "lowest_ask"):
+        v = _num(r.get(k))
+        if v:
+            return v
+    return None
+
+
+@require_GET
+def resale(request):
+    """GET /api/resale?brand=살로몬&kind=스니커즈&term=살로몬&days=90
+
+    가치 유지율 = 중고 거래가 ÷ 정가. 적재된 resale_price_ratio 가 있으면 그것을,
+    없으면 market_metrics.regular_price(없으면 같은 표준상품의 최신 정가)로 나눈다.
+    """
+    sel = _selection(request)
+    if not any(sel.values()):
+        return _no_selection()
+    days = _int(request, "days", 90, 14, 365)
+    label = _selection_label(sel)
+    term_name = (request.GET.get("term") or "").strip() or label
+
+    # 리셀 매물에는 스타일·종류 태그가 안 붙어 있는 경우가 많다 →
+    # 조건에 걸린 상품과 같은 표준 상품(product)으로 묶인 매물까지 함께 본다.
+    matched = _selected_sources(sel)
+    sources = ProductSource.objects.filter(
+        Q(id__in=matched.values("id"))
+        | Q(product_id__in=matched.exclude(product_id__isnull=True).values("product_id")))
+    resale_src = sources.filter(Q(market_type="RESALE") | Q(resale_snapshots__isnull=False)).distinct()
+    ps = list(resale_src.values("id", "product_id", "source__code", "source__name")[:5000])
+    if not ps:
+        return _empty(f"‘{label}’ 조건에 맞는 리셀·중고 매물이 없습니다.", label=label)
+    ps_by_id = {p["id"]: p for p in ps}
+
+    snaps = ResaleSnapshot.objects.filter(product_source_id__in=list(ps_by_id))
+    last_obs = snaps.aggregate(d=Max("observed_at"))["d"]
+    if last_obs is None:
+        return _empty(f"‘{label}’ 매물 {len(ps)}개에 시세 스냅샷이 아직 없습니다.", label=label)
+    since = last_obs - timedelta(days=max(days, 56))
+
+    # 정가 후보 — 같은 표준상품의 일반 판매 최신 정가
+    product_ids = {p["product_id"] for p in ps if p["product_id"]}
+    retail_price = {}
+    if product_ids:
+        for r in (ProductSourceSnapshot.objects
+                  .filter(product_source__product_id__in=product_ids, list_price__isnull=False)
+                  .exclude(product_source__market_type="RESALE")
+                  .order_by("product_source__product_id", "-observed_at")
+                  .values("product_source__product_id", "list_price")):
+            retail_price.setdefault(r["product_source__product_id"], _num(r["list_price"]))
+
+    rows = list(snaps.filter(observed_at__gte=since).order_by("observed_at").values(
+        "product_source_id", "observed_at", "listing_count", "available_count", "min_price",
+        "max_price", "avg_price", "median_price", "sold_count", "lowest_ask", "highest_bid",
+        "last_trade_price", "trade_volume", "resale_price_ratio", "resale_index",
+        "market_metrics")[:60000])
+
+    recs = []
+    for r in rows:
+        mm = r["market_metrics"] or {}
+        price = _resale_price(r)
+        regular = _num(mm.get("regular_price")) or retail_price.get(ps_by_id[r["product_source_id"]]["product_id"])
+        ratio = _num(r["resale_price_ratio"])
+        if ratio is None and price and regular:
+            ratio = price / regular
+        recs.append({
+            "pid": r["product_source_id"],
+            "day": timezone.localtime(r["observed_at"]).date(),
+            "price": price, "regular": regular, "ratio": ratio,
+            "index": _num(r["resale_index"]),
+            "ask": _num(r["lowest_ask"]), "bid": _num(r["highest_bid"]),
+            "trade": _num(r["last_trade_price"]),
+            "volume": r["trade_volume"] if r["trade_volume"] is not None else r["sold_count"],
+            "listings": r["listing_count"],
+            "size": mm.get("size"), "grade": mm.get("condition_grade") or mm.get("condition_grade_raw"),
+            "sold_out": mm.get("is_sold_out"),
+            "platform": ps_by_id[r["product_source_id"]]["source__name"],
+        })
+
+    last_day = timezone.localtime(last_obs).date()
+    win = [x for x in recs if x["day"] > last_day - timedelta(days=days)]
+    wk = [x for x in recs if x["day"] > last_day - timedelta(days=7)]
+    prev_wk = [x for x in recs if last_day - timedelta(days=14) < x["day"] <= last_day - timedelta(days=7)]
+    m4 = [x for x in recs if x["day"] > last_day - timedelta(days=28)]
+    p4 = [x for x in recs if last_day - timedelta(days=56) < x["day"] <= last_day - timedelta(days=28)]
+
+    ratio_now = _median([x["ratio"] for x in (wk or win)])
+    ratio_prev = _median([x["ratio"] for x in prev_wk])
+
+    def vol(xs):
+        v = [x["volume"] for x in xs if x["volume"] is not None]
+        return sum(v) if v else None
+
+    # 거래량이 적재되지 않으면 관측된 매물 수로 대신한다 — 어느 쪽인지 밝힌다.
+    vol_now, vol_prev = vol(m4), vol(p4)
+    vol_basis = "trade_volume/sold_count"
+    if vol_now is None:
+        vol_now, vol_prev, vol_basis = len({(x["pid"], x["day"]) for x in m4}), \
+            len({(x["pid"], x["day"]) for x in p4}), "observed_listings"
+
+    # 일별 중앙 유지율 → 프리미엄(≥1.0) 연속 일수
+    by_day = defaultdict(list)
+    for x in win:
+        if x["ratio"] is not None:
+            by_day[x["day"]].append(x["ratio"])
+    series = [{"date": d.isoformat(), "ratio": round(_median(v), 4),
+               "keep_pct": round(_median(v) * 100, 1)} for d, v in sorted(by_day.items())]
+    prem_days = 0
+    for s in reversed(series):
+        if s["ratio"] >= 1:
+            prem_days += 1
+        else:
+            break
+
+    def group(key):
+        g = defaultdict(list)
+        for x in win:
+            if x[key]:
+                g[str(x[key])].append(x)
+        total = sum(len(v) for v in g.values()) or 1
+        out = [{"label": k, "count": len(v), "share_pct": round(len(v) / total * 100, 1),
+                "ratio": _num(_median([y["ratio"] for y in v]), 3),
+                "price": _num(_median([y["price"] for y in v]), 0)} for k, v in g.items()]
+        return sorted(out, key=lambda o: -o["count"])[:12]
+
+    asks = [x["ask"] for x in win if x["ask"]]
+    trades = [x["trade"] or x["bid"] for x in win if (x["trade"] or x["bid"])]
+    spread = None
+    if asks and trades:
+        a, t = _median(asks), _median(trades)
+        spread = {"ask": round(a), "trade": round(t), "gap_pct": round((a - t) / t * 100, 1) if t else None}
+
+    return _ok({
+        "label": label,
+        "selected": sel,
+        "as_of": timezone.localtime(last_obs).isoformat(),
+        "days": days,
+        "listings": len({x["pid"] for x in win}),
+        "keep_pct": round(ratio_now * 100, 1) if ratio_now is not None else None,
+        "keep_change_pp": round((ratio_now - ratio_prev) * 100, 1)
+        if ratio_now is not None and ratio_prev is not None else None,
+        "premium": (ratio_now or 0) >= 1,
+        "premium_days": prem_days,
+        "used_price": _num(_median([x["price"] for x in (wk or win)]), 0),
+        "regular_price": _num(_median([x["regular"] for x in (wk or win)]), 0),
+        "resale_index": _num(_median([x["index"] for x in (wk or win)]), 3),
+        "volume_4w": vol_now,
+        "volume_change_pct": round((vol_now - vol_prev) / vol_prev * 100, 1) if vol_prev else None,
+        "volume_basis": vol_basis,
+        "sizes": group("size"),
+        "grades": group("grade"),
+        "platforms": group("platform"),
+        "spread": spread,
+        "series": series,
+        "temperature": _temp_block(term_name, days),
+    })
+
+
+# ══════════════════════════════════════════════════════════════
+#  수명주기 — term_metric_daily 의 level·momentum 으로 판정
+# ══════════════════════════════════════════════════════════════
+
+LIFECYCLE_RULE = (
+    "28일 이동평균(ma28)의 관측 기간 최고점 대비 현재 위치와 모멘텀(50=보합)으로 판정합니다. "
+    "모멘텀 ≥ 55: 현재 수준(level) < 35 이면 태동, 아니면 확산 / "
+    "45 ≤ 모멘텀 < 55 이고 ma28 이 최고점의 85% 이상이면 정점 / "
+    "그 밖(모멘텀 < 45 등)은 최고점을 지났으면 쇠퇴, 최고점 자체가 낮으면(level 최고 < 35) 태동. "
+    "관측 28일 미만이면 판단을 보류합니다."
+)
+
+
+def _lifecycle_stage(series):
+    pts = [p for p in series if p.get("level") is not None or p.get("ma28") is not None]
+    if len(pts) < 28:
+        return None, None, None
+    last = pts[-1]
+    lvl = last.get("level") or 0
+    mom = last.get("momentum")
+    ma = [p.get("ma28") for p in pts if p.get("ma28") is not None]
+    peak = max(ma) if ma else None
+    now = ma[-1] if ma else None
+    ratio = (now / peak) if (peak and now is not None) else None
+    peak_i = max(range(len(pts)), key=lambda i: pts[i].get("ma28") or -1)
+    after_peak = peak_i < len(pts) - 1 and ratio is not None and ratio < 0.999
+    max_level = max((p.get("level") or 0) for p in pts)
+
+    if mom is None:
+        stage = None
+    elif mom >= 55:
+        stage = "태동" if lvl < 35 else "확산"
+    elif mom >= 45 and ratio is not None and ratio >= 0.85:
+        stage = "정점"
+    elif max_level < 35:
+        stage = "태동"
+    else:
+        stage = "쇠퇴"
+
+    # 유행 진행도(0~100): 최고점 전에는 0~50, 지난 뒤에는 50~100
+    progress = None
+    if ratio is not None:
+        progress = round(ratio * 50) if (not after_peak or stage in ("태동", "확산")) \
+            else round(50 + (1 - ratio) * 50)
+    return stage, progress, pts[peak_i]["date"]
+
+
+@require_GET
+def lifecycle(request):
+    """GET /api/lifecycle?style=고프코어&term=고프코어"""
+    sel = _selection(request)
+    label = _selection_label(sel)
+    term_name = (request.GET.get("term") or "").strip() or label
+    if not term_name:
+        return _no_selection()
+    term = _resolve_term(term_name)
+    if term is None:
+        return _empty(_term_missing_reason(term_name), label=label or term_name)
+    rows, _ = _term_series(term, 365)
+    if not rows:
+        return _empty(f"‘{term.canonical_name}’ 의 트렌드 지표가 아직 없습니다.", label=label)
+    series = [_metric_point(r) for r in rows]
+    stage, progress, peak_date = _lifecycle_stage(series)
+
+    last = series[-1]
+    last_day = rows[-1]["metric_date"]
+
+    def sum_mention(a, b):
+        return sum(p["mention"] or 0 for p in series
+                   if last_day - timedelta(days=a) < timezone.datetime.fromisoformat(p["date"]).date()
+                   <= last_day - timedelta(days=b))
+
+    m_now, m_prev = sum_mention(28, 0), sum_mention(56, 28)
+    first_active = next((p["date"] for p in series if (p.get("level") or 0) >= 20), series[0]["date"])
+    age_weeks = (last_day - timezone.datetime.fromisoformat(first_active).date()).days // 7
+
+    # 주별 온도 (최근 12주)
+    weekly = defaultdict(list)
+    for p in series:
+        d = timezone.datetime.fromisoformat(p["date"]).date()
+        if d > last_day - timedelta(weeks=12) and p["temp"] is not None:
+            weekly[(last_day - d).days // 7].append(p["temp"])
+    weekly_temp = [{"weeks_ago": k, "temp": round(_mean(v), 1)} for k, v in sorted(weekly.items())]
+
+    # 판매 신호 — 선택 조건 상품의 일별 판매수 증가분 합
+    sales = []
+    if any(sel.values()):
+        ps_ids = list(_selected_sources(sel).values_list("id", flat=True)[:3000])
+        if ps_ids:
+            prev, daily = {}, defaultdict(int)
+            for r in (ProductSourceSnapshot.objects
+                      .filter(product_source_id__in=ps_ids, sales_count__isnull=False,
+                              observed_at__date__gte=last_day - timedelta(days=365))
+                      .order_by("product_source_id", "observed_at")
+                      .values("product_source_id", "observed_at", "sales_count")[:80000]):
+                pid, v = r["product_source_id"], r["sales_count"]
+                if pid in prev and v >= prev[pid]:
+                    daily[timezone.localtime(r["observed_at"]).date().isoformat()] += v - prev[pid]
+                prev[pid] = v
+            sales = [{"date": d, "sales": v} for d, v in sorted(daily.items())]
+
+    return _ok({
+        "label": label or term.canonical_name,
+        "term": term.canonical_name,
+        "facet": term.term_type,
+        "as_of": last["date"],
+        "points": len(series),
+        "stage": stage,
+        "progress": progress,
+        "peak_date": peak_date,
+        "age_weeks": age_weeks,
+        "level": last["level"],
+        "momentum": last["momentum"],
+        "temp": last["temp"],
+        "inflow_pct": round((m_now - m_prev) / m_prev * 100, 1) if m_prev else None,
+        "mention_28d": m_now,
+        "weekly_temp": weekly_temp,
+        "series": series,
+        "sales_series": sales,
+        "rule": LIFECYCLE_RULE,
+    })
+
+
+# ══════════════════════════════════════════════════════════════
+#  상품 · 살!말? (챗봇이 쓰는 창구 — 새 스키마에 맞춤)
+# ══════════════════════════════════════════════════════════════
+
+@require_GET
+def products(request):
+    """GET /api/products?q=엄브로&brand=UMBRO&limit=40 — 최신 가격 스냅샷 포함."""
+    kw = (request.GET.get("q") or "").strip()
+    brand = (request.GET.get("brand") or "").strip()
+    limit = _int(request, "limit", 40, 1, 200)
+    qs = ProductSource.objects.all()
+    if kw:
+        qs = qs.filter(Q(source_name__icontains=kw) | Q(product__canonical_name__icontains=kw))
+    if brand:
+        qs = qs.filter(Q(product__brand__name=brand) | Q(product__brand__english_name__iexact=brand)
+                       | Q(source_brand__name=brand) | Q(source_brand__brand__name=brand))
+    rows = list(qs.annotate(_brand=BRAND_EXPR, _name=ITEM_EXPR)
+                .values("id", "product_id", "_name", "_brand", "source__code", "product_url",
+                        "market_type").order_by("-id")[:limit])
+    if not rows:
+        return _empty(f"조건에 맞는 상품이 없습니다 (검색어 ‘{kw or brand}’)."
+                      if (kw or brand) else "commerce.product_source 가 비어 있습니다.")
+    snaps = {}
+    for s in (ProductSourceSnapshot.objects.filter(product_source_id__in=[r["id"] for r in rows])
+              .order_by("product_source_id", "-observed_at")
+              .values("product_source_id", "list_price", "sale_price", "discount_rate",
+                      "stock_status", "observed_at")):
+        snaps.setdefault(s["product_source_id"], s)
+    items = []
+    for r in rows:
+        s = snaps.get(r["id"])
+        items.append({
+            "id": r["product_id"] or r["id"], "product_source_id": r["id"],
+            "name": r["_name"], "brand": r["_brand"], "source": r["source__code"],
+            "url": r["product_url"], "market": r["market_type"],
+            "price": {
+                "list": _num(s["list_price"]) if s else None,
+                "sale": _num(s["sale_price"]) if s else None,
+                "discount": _pct(s["discount_rate"]) if s else None,
+                "stock": s["stock_status"] if s else None,
+                "as_of": s["observed_at"] if s else None,
+                "unavailable": None if s else "이 상품은 아직 가격 스냅샷이 없습니다.",
+            },
+        })
+    return _ok({"count": len(items), "items": items})
 
 
 def _salmal_card_payload(card):
@@ -704,44 +1231,31 @@ def _salmal_card_payload(card):
     total = ballots.count()
     buys = ballots.filter(choice=VoteBallot.Choice.BUY).count()
     tags = [str(x).strip() for x in (card.tags or []) if str(x).strip()]
-    product_tags = []
-    price = None
+    product_tags, price = [], None
     if product is not None:
-        product_tags = list(
-            ProductTerm.objects.filter(product_id=product.id)
-            .values_list("term__canonical_name", flat=True)[:20]
-        )
-        latest = (
-            ProductSourceSnapshot.objects.filter(product_source__product_id=product.id)
-            .order_by("-observed_at")
-            .values("list_price", "sale_price", "discount_rate", "stock_status", "observed_at")
-            .first()
-        )
+        product_tags = list(ProductTerm.objects.filter(product_source__product_id=product.id)
+                            .values_list("term__canonical_name", flat=True).distinct()[:20])
+        latest = (ProductSourceSnapshot.objects.filter(product_source__product_id=product.id)
+                  .order_by("-observed_at")
+                  .values("list_price", "sale_price", "discount_rate", "stock_status", "observed_at")
+                  .first())
         if latest:
-            price = {
-                "list_price": _num(latest["list_price"]),
-                "sale_price": _num(latest["sale_price"]),
-                "discount_rate": _discount_pct(latest["discount_rate"]),
-                "stock_status": latest["stock_status"],
-                "observed_at": latest["observed_at"],
-            }
+            price = {"list_price": _num(latest["list_price"]), "sale_price": _num(latest["sale_price"]),
+                     "discount_rate": _pct(latest["discount_rate"]),
+                     "stock_status": latest["stock_status"], "observed_at": latest["observed_at"]}
     return {
-        "card": {
-            "id": card.id, "title": card.title, "description": card.description,
-            "image_url": card.image_url, "tags": tags,
-            "status": card.status, "created_at": card.created_at,
-        },
+        "card": {"id": card.id, "title": card.title, "description": card.description,
+                 "image_url": card.image_url, "tags": tags, "status": card.status,
+                 "created_at": card.created_at},
         "product": (None if product is None else {
             "id": product.id, "name": product.canonical_name,
             "brand": product.brand.name if product.brand_id else None,
             "category": product.category.name if product.category_id else None,
             "tags": list(dict.fromkeys([*tags, *product_tags])),
         }),
-        "vote_summary": {
-            "total": total, "buy": buys, "pass": total - buys,
-            "buy_pct": (round(buys / total * 100, 1) if total else None),
-            "closed": card.status == VoteCard.Status.CLOSED,
-        },
+        "vote_summary": {"total": total, "buy": buys, "pass": total - buys,
+                         "buy_pct": (round(buys / total * 100, 1) if total else None),
+                         "closed": card.status == VoteCard.Status.CLOSED},
         "price_snapshot": price,
         "as_of": timezone.now().isoformat(),
     }
@@ -753,8 +1267,7 @@ def salmal_card(request):
     if not card_id:
         return _empty("card_id를 지정해 주세요.")
     card = VoteCard.objects.filter(id=card_id).select_related(
-        "product", "product__brand", "product__category"
-    ).first()
+        "product", "product__brand", "product__category").first()
     if card is None:
         return _empty("해당 살!말? 카드를 찾지 못했습니다.", card_id=card_id)
     return _ok(_salmal_card_payload(card))
@@ -766,16 +1279,12 @@ def salmal_search(request):
     if not term:
         return _empty("term을 지정해 주세요.")
     limit = _int(request, "limit", 5, 1, 10)
-    cards = (
-        VoteCard.objects.filter(
-            Q(title__icontains=term) |
-            Q(product__canonical_name__icontains=term) |
-            Q(product__brand__name__icontains=term)
-        )
-        .select_related("product", "product__brand", "product__category")
-        .order_by("-created_at")[:limit]
-    )
-    rows = [_salmal_card_payload(card) for card in cards]
+    cards = (VoteCard.objects.filter(Q(title__icontains=term)
+                                     | Q(product__canonical_name__icontains=term)
+                                     | Q(product__brand__name__icontains=term))
+             .select_related("product", "product__brand", "product__category")
+             .order_by("-created_at")[:limit])
+    rows = [_salmal_card_payload(c) for c in cards]
     if not rows:
         return _empty(f"‘{term}’과 연결된 살!말? 카드가 없습니다.", term=term)
     return _ok({"term": term, "items": rows, "count": len(rows)})
