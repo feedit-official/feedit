@@ -1184,22 +1184,43 @@ def lifecycle(request):
 
 @require_GET
 def products(request):
-    """GET /api/products?q=엄브로&brand=UMBRO&limit=40 — 최신 가격 스냅샷 포함."""
+    """GET /api/products?style=고프코어&limit=16&offset=0 — 태그된 상품 목록.
+
+    스타일은 자동 태깅 결과(`commerce.product_term`)와 표준 상품의
+    단일 스타일 FK(`commerce.product.style`) 둘 중 하나라도 일치하면 포함한다.
+    화면에서 쓸 수 있게 원본 상품 이미지와 최신 가격도 같이 돌려준다.
+    """
     kw = (request.GET.get("q") or "").strip()
     brand = (request.GET.get("brand") or "").strip()
     limit = _int(request, "limit", 40, 1, 200)
-    qs = ProductSource.objects.all()
+    offset = _int(request, "offset", 0, 0, 1_000_000)
+    sel = _selection(request)
+    # brand 는 기존 API 의 영문 대소문자 무시 동작을 유지하려고 아래에서 따로 건다.
+    product_sel = {**sel, "brand": []}
+    qs = _selected_sources(product_sel).filter(status="ACTIVE").distinct()
     if kw:
         qs = qs.filter(Q(source_name__icontains=kw) | Q(product__canonical_name__icontains=kw))
     if brand:
         qs = qs.filter(Q(product__brand__name=brand) | Q(product__brand__english_name__iexact=brand)
                        | Q(source_brand__name=brand) | Q(source_brand__brand__name=brand))
-    rows = list(qs.annotate(_brand=BRAND_EXPR, _name=ITEM_EXPR)
-                .values("id", "product_id", "_name", "_brand", "source__code", "product_url",
-                        "market_type").order_by("-id")[:limit])
+    rows = list(qs.annotate(
+        _brand=BRAND_EXPR,
+        _name=ITEM_EXPR,
+        _category=Coalesce(
+            "product__category__name",
+            "source_category__category__name",
+            "source_category__source_category_name",
+        ),
+    ).values(
+        "id", "product_id", "_name", "_brand", "_category", "source__code",
+        "product_url", "thumbnail_url", "market_type",
+    ).order_by("-last_seen_at", "-id")[offset:offset + limit + 1])
     if not rows:
-        return _empty(f"조건에 맞는 상품이 없습니다 (검색어 ‘{kw or brand}’)."
-                      if (kw or brand) else "commerce.product_source 가 비어 있습니다.")
+        label = kw or brand or (sel["style"] or [None])[0]
+        return _empty(f"조건에 맞는 상품이 없습니다 (검색어 ‘{label}’)."
+                      if label else "commerce.product_source 가 비어 있습니다.")
+    has_more = len(rows) > limit
+    rows = rows[:limit]
     snaps = {}
     for s in (ProductSourceSnapshot.objects.filter(product_source_id__in=[r["id"] for r in rows])
               .order_by("product_source_id", "-observed_at")
@@ -1212,7 +1233,8 @@ def products(request):
         items.append({
             "id": r["product_id"] or r["id"], "product_source_id": r["id"],
             "name": r["_name"], "brand": r["_brand"], "source": r["source__code"],
-            "url": r["product_url"], "market": r["market_type"],
+            "url": r["product_url"], "image": r["thumbnail_url"],
+            "category": r["_category"], "market": r["market_type"],
             "price": {
                 "list": _num(s["list_price"]) if s else None,
                 "sale": _num(s["sale_price"]) if s else None,
@@ -1222,7 +1244,14 @@ def products(request):
                 "unavailable": None if s else "이 상품은 아직 가격 스냅샷이 없습니다.",
             },
         })
-    return _ok({"count": len(items), "items": items})
+    return _ok({
+        "count": len(items),
+        "items": items,
+        "offset": offset,
+        "next_offset": offset + len(items),
+        "has_more": has_more,
+        "style": sel["style"],
+    })
 
 
 def _salmal_card_payload(card):

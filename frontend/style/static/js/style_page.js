@@ -1,8 +1,10 @@
 import { $, $$, HAS_A, aAnimate, aStagger } from '../../../core/static/js/dom.js';
-import { IMG, ITEM_BRANDS, itemCard, STYLES } from '../../../home/static/js/chat.js';
+import { IMG, itemCard, STYLES } from '../../../home/static/js/chat.js';
+import { ST_ITEM_PAGE_SIZE, styleProductCard, styleProductsURL } from './products.js';
 
 /* ── Style ──────────────────────────────────────────── */
 export var stShowI=0, stItemPage=0, stCur=null;
+let stItemsLoading=false, stItemsDone=false, stItemsError=false, stRequestSeq=0;
 /* 스타일 사진 — 전용 컷(ph)이 있으면 그걸 쓰고, 없으면 공용 라이브러리로 떨어진다 */
 export const SIMG=s=>s.ph||IMG(s.img);
 export function stBuild(){
@@ -36,6 +38,10 @@ export function stBuild(){
   $('#stFitClose')&&$('#stFitClose').addEventListener('click',stCloseFit);
   $('#styleFitModal')&&$('#styleFitModal').addEventListener('click',e=>{
     if(e.target.id==='styleFitModal')stCloseFit();
+  });
+  $('#stMore')&&$('#stMore').addEventListener('click',()=>{
+    if(!stItemsError)return;
+    stItemsError=false; stItemsDone=false; stMoreItems();
   });
 }
 /* '이 스타일 더 보기' — 스타일 상세로 이동하지 않고, 그 스타일의 Virtual Fitting
@@ -84,7 +90,8 @@ export function infCards(s){
 }
 export function stOpen(id){
   const s=STYLES.find(x=>x.id===id)||STYLES[0];
-  stCur=s; stItemPage=0;
+  stCur=s; stItemPage=0; stItemsLoading=false; stItemsDone=false; stItemsError=false;
+  const requestSeq=++stRequestSeq;
   $('#styleHome').style.display='none'; $('#styleDetail').style.display='';
   $$('#stCats .stCat').forEach(b=>b.classList.toggle('on',b.dataset.style===s.id));
   $('#stHero').innerHTML='<img src="'+SIMG(s)+'" alt="'+s.n+'"><div class="vg"></div>'+
@@ -97,26 +104,65 @@ export function stOpen(id){
     '<div><dt>확산 계기</dt><dd>'+s.by+'</dd></div>'+
     '<div><dt>핵심 키워드</dt><dd>'+s.kw.join(' · ')+'</dd></div></dl>';
   $('#stInf').innerHTML=infCards(s);
-  $('#stItems').innerHTML=''; stMoreItems(); stMoreItems();
+  $('#stItems').innerHTML='<div class="itState">상품을 불러오는 중…</div>';
+  $('#stItemCount').textContent='0 ITEMS';
+  stMoreItems(requestSeq);
   if(HAS_A)aAnimate('#stHero .in',{opacity:[0,1],translateY:[22,0],duration:900,ease:'out(3)'});
   scrollTo(0,0);
 }
-export function stMoreItems(){
-  const host=$('#stItems'); if(!host||!stCur)return;
-  const s=stCur, add=[];
-  for(let i=0;i<8;i++){
-    const k=stItemPage*8+i;
-    add.push(itemCard({
-      id:s.id+'-'+k,
-      img:IMG(((s.img+k*2)%35)+1),
-      br:ITEM_BRANDS[k%ITEM_BRANDS.length],
-      nm:s.kw[(k+1)%s.kw.length],
-      pr:(39+((k*17)%46))+'9,000원'
-    }));
+function stMoreState(text,retry=false){
+  const more=$('#stMore'); if(!more)return;
+  more.textContent=text;
+  more.classList.toggle('retry',retry);
+}
+
+export async function stMoreItems(requestSeq=stRequestSeq){
+  const host=$('#stItems');
+  if(!host||!stCur||stItemsLoading||stItemsDone)return;
+  const styleName=stCur.n;
+  const offset=stItemPage*ST_ITEM_PAGE_SIZE;
+  stItemsLoading=true; stItemsError=false;
+  stMoreState('상품을 불러오는 중…');
+  try{
+    const res=await fetch(styleProductsURL(styleName,offset));
+    const body=await res.text();
+    if(!res.ok)throw new Error('HTTP '+res.status);
+    let json;
+    try{ json=JSON.parse(body) }catch(e){ throw new Error('JSON 응답이 아닙니다') }
+    if(requestSeq!==stRequestSeq||!stCur||stCur.n!==styleName)return;
+    if(json.status==='error')throw new Error(json.reason||'상품 API 오류');
+
+    const items=json.status==='ok'&&json.data&&Array.isArray(json.data.items)
+      ?json.data.items:[];
+    host.querySelectorAll('.itState').forEach(el=>el.remove());
+    if(!items.length){
+      stItemsDone=true;
+      if(!host.querySelector('.itemCard')){
+        host.innerHTML='<div class="itState">이 스타일 태그가 연결된 상품이 아직 없습니다.</div>';
+      }
+      stMoreState('불러올 상품이 없습니다');
+      return;
+    }
+
+    const frag=document.createElement('div');
+    frag.innerHTML=items.map(item=>itemCard(styleProductCard(item))).join('');
+    const els=[...frag.children]; els.forEach(el=>host.appendChild(el));
+    stItemPage++;
+    stItemsDone=json.data.has_more===false||items.length<ST_ITEM_PAGE_SIZE;
+    const loaded=host.querySelectorAll('.itemCard').length;
+    $('#stItemCount').textContent=loaded+' ITEMS';
+    stMoreState(stItemsDone?'모든 상품을 불러왔습니다':'스크롤하면 더 불러옵니다');
+    if(HAS_A)aAnimate(els,{opacity:[0,1],translateY:[18,0],duration:760,delay:aStagger(50),ease:'out(3)'});
+  }catch(e){
+    if(requestSeq!==stRequestSeq)return;
+    stItemsError=true; stItemsDone=true;
+    host.querySelectorAll('.itState').forEach(el=>el.remove());
+    if(!host.querySelector('.itemCard')){
+      host.innerHTML='<div class="itState">상품을 불러오지 못했습니다.<br>'+
+        String(e&&e.message||e).replace(/[<>&]/g,'')+'</div>';
+    }
+    stMoreState('다시 시도',true);
+  }finally{
+    if(requestSeq===stRequestSeq)stItemsLoading=false;
   }
-  stItemPage++;
-  const frag=document.createElement('div'); frag.innerHTML=add.join('');
-  const els=[...frag.children]; els.forEach(e=>host.appendChild(e));
-  $('#stItemCount').textContent=host.children.length+' ITEMS';
-  if(HAS_A)aAnimate(els,{opacity:[0,1],translateY:[18,0],duration:760,delay:aStagger(50),ease:'out(3)'});
 }

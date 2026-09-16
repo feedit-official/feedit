@@ -190,6 +190,11 @@ function goStyle(id){
 document.addEventListener('click',e=>{
   const like=e.target.closest('[data-like-id]');
   if(like)return likeClick(like);
+  const product=e.target.closest('[data-product-url]');
+  if(product){
+    window.open(product.dataset.productUrl,'_blank','noopener,noreferrer');
+    return;
+  }
   const fit=e.target.closest('[data-fit-style]');
   if(fit)return stOpenFit(fit.dataset.fitStyle);
   const nav=e.target.closest('#mNav button'); if(nav)return goView(nav.dataset.v);
@@ -211,6 +216,14 @@ document.addEventListener('click',e=>{
           curTr=tr.dataset.tr; pushNav();
           return trRender(tr.dataset.tr) }
   const vt=e.target.closest('[data-vote]'); if(vt)return mVote(vt.dataset.vote);
+});
+
+document.addEventListener('keydown',e=>{
+  if(e.key!=='Enter'&&e.key!==' ')return;
+  const product=e.target.closest&&e.target.closest('[data-product-url]');
+  if(!product)return;
+  e.preventDefault();
+  window.open(product.dataset.productUrl,'_blank','noopener,noreferrer');
 });
 $('#mHome')&&$('#mHome').addEventListener('click',()=>goView('home'));
 $('#chatFab')&&$('#chatFab').addEventListener('click',()=>openChatWith('',null));

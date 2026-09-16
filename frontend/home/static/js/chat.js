@@ -99,6 +99,11 @@ export const ITEM_BRANDS=['NIKE','MUSINSA STANDARD','ETCE','POLO','ADIDAS','LEMA
    왼쪽 위에 매칭률 뱃지가 붙고, 하단은 브랜드 · 상품명 · 가격이 항상 세로로 쌓인다. */
 export const LIKED = new Map();      /* 찜 저장소 — id → 카드 데이터. 마이페이지 '찜'이 여기서 나온다 */
 const ITEM_REGISTRY = new Map();     /* 하트를 누를 때 어떤 카드였는지 되찾기 위한 등록부 */
+const cardEsc=v=>String(v==null?'':v).replace(/[&<>"']/g,c=>({
+  '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+}[c]));
+const cardImage=v=>/^(https?:\/\/|\/|assets\/)/i.test(String(v||''))?String(v):'';
+const cardLink=v=>/^https?:\/\//i.test(String(v||''))?String(v):'';
 export function toggleLike(id){
   if(LIKED.has(id)){ LIKED.delete(id); return false; }
   const d = ITEM_REGISTRY.get(id); if(!d) return false;
@@ -106,17 +111,20 @@ export function toggleLike(id){
   return true;
 }
 export function itemCard(o){
-  if(o.id) ITEM_REGISTRY.set(o.id, { img: o.img, br: o.br, nm: o.nm, pr: o.pr, tag: o.tag, style: o.style });
+  if(o.id) ITEM_REGISTRY.set(o.id, { img: o.img, br: o.br, nm: o.nm, pr: o.pr, tag: o.tag, style: o.style, url: o.url });
   const liked = !!(o.id && LIKED.has(o.id));
-  return '<div class="itemCard"' + (o.style ? ' data-style="' + o.style + '"' : '') + '>' +
-    '<div class="itemFig"><img src="' + o.img + '" alt="" loading="lazy">' +
-      (o.tag ? '<span class="matchTag">' + o.tag + '</span>' : '') +
-      (o.id ? '<button type="button" class="likeBtn' + (liked ? ' on' : '') + '" data-like-id="' + o.id + '" aria-label="찜하기">' +
+  const img=cardImage(o.img), url=cardLink(o.url);
+  return '<div class="itemCard"' + (o.style ? ' data-style="' + cardEsc(o.style) + '"' : '') +
+    (url ? ' data-product-url="' + cardEsc(url) + '" role="link" tabindex="0"' : '') + '>' +
+    '<div class="itemFig">' +
+      (img?'<img src="'+cardEsc(img)+'" alt="'+cardEsc(o.nm||'')+'" loading="lazy">':'<div class="itemNoImage">이미지 없음</div>') +
+      (o.tag ? '<span class="matchTag">' + cardEsc(o.tag) + '</span>' : '') +
+      (o.id ? '<button type="button" class="likeBtn' + (liked ? ' on' : '') + '" data-like-id="' + cardEsc(o.id) + '" aria-label="찜하기">' +
         '<svg viewBox="0 0 24 24"><path d="M12 21s-7.6-4.6-10.3-9.1C.2 9 1 5.5 4 4.1c2.4-1.1 5-.2 6.5 1.8L12 8l1.5-2.1c1.5-2 4.1-2.9 6.5-1.8 3 1.4 3.8 4.9 2.3 7.8C19.6 16.4 12 21 12 21z"/></svg></button>' : '') +
     '</div>' +
-    '<div class="itemBody"><div class="br">' + o.br + '</div>' +
-      '<div class="nm">' + o.nm + '</div>' +
-      '<div class="pr">' + o.pr + '</div></div></div>';
+    '<div class="itemBody"><div class="br">' + cardEsc(o.br) + '</div>' +
+      '<div class="nm">' + cardEsc(o.nm) + '</div>' +
+      '<div class="pr">' + cardEsc(o.pr) + '</div></div></div>';
 }
 
 /* ── Hot Trend Top 10 ───────────────────────────────── */

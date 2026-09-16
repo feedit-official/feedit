@@ -143,9 +143,20 @@ await t('★ 상품 — 검색어+브랜드 둘 다 주면 $ 번호가 어긋나
   const res = mkRes();
   await products(req('/api/products?q=엄브로&brand=UMBRO&limit=7'), res);
   const last = fake.CALLS[fake.CALLS.length - 1];
-  assert.deepEqual(last.args, ['%엄브로%', 'UMBRO', 7]);
-  assert.ok(/\$1/.test(last.sql) && /\$2/.test(last.sql) && /LIMIT \$3/.test(last.sql),
-    'LIMIT 가 $3 이어야 한다: ' + last.sql.slice(-60));
+  assert.deepEqual(last.args, ['%엄브로%', 'UMBRO', 8, 0]);
+  assert.ok(/\$1/.test(last.sql) && /\$2/.test(last.sql) && /LIMIT \$3 OFFSET \$4/.test(last.sql),
+    'LIMIT/OFFSET 이 $3/$4 이어야 한다: ' + last.sql.slice(-80));
+});
+
+await t('★ 상품 — 스타일은 자동 태그와 표준 스타일을 모두 본다', async () => {
+  fake.__setNext({ rows: [] });
+  const res = mkRes();
+  await products(req('/api/products?style=고프코어&limit=16&offset=32'), res);
+  const last = fake.CALLS[fake.CALLS.length - 1];
+  assert.deepEqual(last.args, ['고프코어', 17, 32]);
+  assert.match(last.sql,/commerce\.product_term/);
+  assert.match(last.sql,/direct_style\.canonical_name/);
+  assert.match(last.sql,/ps\.thumbnail_url/);
 });
 
 // ── 진단 ───────────────────────────────────────────────
