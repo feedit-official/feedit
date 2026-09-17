@@ -3,6 +3,7 @@ import { ME, requireAuth } from '../../../account/static/js/profile.js';
 import { rkClamp, rkRingHTML } from '../../../account/static/js/rank.js';
 import { jobBadgeHTML, jobShown } from '../../../account/static/js/job.js';
 import { smBarFill, smBarLabels } from '../../../trend/static/js/discount_resale.js';
+import { STYLES } from '../../../home/static/js/chat.js';
 
 /* ══════════════ 살!말? (feedit-salmal_2 이식) ══════════════
    이름 충돌을 막기 위해 통째로 자기 범위 안에서 돌린다. */
@@ -52,6 +53,8 @@ const $$=(s,el=document)=>[...el.querySelectorAll(s)];
 const fmtWon=n=>n.toLocaleString('ko-KR')+'원';
 const fmtHours=h=>h>=24?Math.round(h/24)+'일':h+'시간';
 const fmtNum=n=>n.toLocaleString('ko-KR');
+/* 등록할 때 고른 스타일 이름 — 고르지 않았으면 빈 문자열 */
+const styleNameOf=v=>{ const id=(v&&v.st&&v.st[0])||''; const s=STYLES.find(x=>x.id===id); return s?s.n:''; };
 const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
 const simA=v=>clamp(v.a+Math.round((v.taste-70)/4),3,97);
 const satisfaction=v=>clamp(v.taste+Math.round((v.base-70)/5),30,99);
@@ -425,6 +428,7 @@ function openModal(i){
   $('#modalTitle').textContent=v.t;
   $('#modalBrand').textContent=v.b;
   $('#modalPrice').textContent=fmtWon(v.p);
+  { const sn=styleNameOf(v); $('#modalStyleName').textContent=sn; $('#modalStyle').hidden=!sn; }
   $('#modalSegLabel').textContent=' (체형・스타일・나이)';
   const note=v.authorNote||noteFor(i);
   $('#modalNoteName').textContent=note.name;
@@ -655,11 +659,17 @@ const brandCombo=(function(){
 })();
 
 let createImgURL=null;
+/* 스타일 드롭다운 — 스타일 페이지와 같은 핵심 스타일 10종을 그대로 쓴다 */
+(function fillStyleSelect(){
+  const sel=$('#cStyle'); if(!sel)return;
+  sel.insertAdjacentHTML('beforeend',STYLES.map(s=>`<option value="${s.id}">${s.n}</option>`).join(''));
+})();
 function resetCreateForm(){
   $('#cTitle').value='';
   $('#cBrand').value='';
   brandCombo.hide();
   $('#cPrice').value='';
+  if($('#cStyle')) $('#cStyle').value='';
   $('#cNote').value='';
   $('#imgInput').value='';
   if(createImgURL){ URL.revokeObjectURL(createImgURL); createImgURL=null; }
@@ -720,6 +730,7 @@ $('#createSubmit').addEventListener('click',()=>{
   const brand=$('#cBrand').value.replace(/\s+/g,' ').trim();
   const priceRaw=$('#cPrice').value.trim();
   const note=$('#cNote').value.trim();
+  const style=$('#cStyle')?$('#cStyle').value:'';
 
   if(!title){ showToast('상품명을 입력해주세요'); return; }
   if(!brand){ showToast('브랜드를 입력해주세요'); return; }
@@ -731,6 +742,7 @@ $('#createSubmit').addEventListener('click',()=>{
     base:50, a:50, votes:0, hours:48, taste:70,
     tone:randomTone(), voted:null, comments:[], closed:false, seq,
     imgURL:createImgURL||null,
+    st:style?[style]:[],
     authorNote: note ? {name:'나', text:note} : null
   };
   createImgURL=null; /* 소유권을 item으로 넘겨 reset 시 URL이 해제되지 않도록 함 */

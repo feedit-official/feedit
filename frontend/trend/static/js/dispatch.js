@@ -419,8 +419,8 @@ export function trRender(id){
           '<div class="wkState">THIS WEEK</div>'+
           '<h3>'+top.n+' <em>'+top.en+'</em></h3>'+
           '<div class="wkLedger c3">'+
-            '<div class="ac"><span>이 스타일 검색</span><b>'+WK.topSearchN+'회</b></div>'+
-            '<div><span>이 스타일 투표</span><b>'+WK.topVoteN+'표</b></div>'+
+            '<div class="ac"><span>이 키워드 검색</span><b>'+WK.topSearchN+'회</b></div>'+
+            '<div><span>이 키워드 투표</span><b>'+WK.topVoteN+'표</b></div>'+
             '<div><span>전체 검색 중 비중</span><b>'+searchShare+'%</b></div>'+
           '</div>'+
           '<button type="button" class="pill sm" style="margin-top:20px" data-fit-style="'+top.id+'">→ 이 스타일 더 보기</button>'+
@@ -471,7 +471,7 @@ export function trRender(id){
           '<div class="wkVideoFrame"><iframe src="https://www.youtube.com/embed?listType=search&list='+ytQ+'" '+
             'title="'+top.n+' 관련 영상" loading="lazy" allow="accelerometer; autoplay; clipboard-write; '+
             'encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe></div>'+
-          '<div class="wkNote"><i>◆</i><span>유튜브에서 이 스타일과 관련해 지금 올라오는 영상을 그대로 불러옵니다.</span></div>'+
+          '<div class="wkNote"><i>◆</i><span>유튜브에서 이 키워드와 관련해 지금 올라오는 영상을 그대로 불러옵니다.</span></div>'+
         '</article>'+
         '<article class="wkCard">'+
           '<div class="wkCardHead"><h3>추천 웹매거진</h3><em>'+top.n+'</em></div>'+

@@ -75,7 +75,6 @@ export const VFIT_IMG={
   classic: ['assets/vfit/classic_2.jpg', 'assets/vfit/classic_3.jpg'],
   street:  ['assets/vfit/street_1.jpg',  'assets/vfit/street_3.jpg'],
   ameka:   ['assets/vfit/ameka_1.jpg',   'assets/vfit/ameka_2.jpg'],
-  y2k:     ['assets/vfit/y2k_1.jpg',     'assets/vfit/y2k_2.jpg'],
   feminine:['assets/vfit/feminine_1.jpg','assets/vfit/feminine_2.jpg'],
   biz:     ['assets/vfit/biz_1.jpg',     'assets/vfit/biz_2.jpg'],
   ath:     ['assets/vfit/ath_1.jpg',     'assets/vfit/ath_2.jpg']

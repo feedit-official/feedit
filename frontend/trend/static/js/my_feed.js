@@ -46,11 +46,11 @@ const FEED_SM_POOL=[
   {t:'퀼팅 다운 베스트',          b:'NAUTICA',           p:149000, votes:512,  hours:11, a:47, tone:['#33302c','#7a7267'], st:['gorp','ath'],      cat:'아우터'},
   {t:'오버핏 울 블레이저',        b:'AMOMENTO',          p:298000, votes:410,  hours:20, a:55, tone:['#332f2b','#6f6255'], st:['classic','grunge'],cat:'아우터'},
   {t:'와이드 코듀로이 팬츠',      b:'SOLEW',             p:139000, votes:391,  hours:15, a:58, tone:['#332e2a','#75695c'], st:['ameka','grunge'],  cat:'팬츠'},
-  {t:'레더 크로스 백',            b:'MATIN KIM',         p:168000, votes:305,  hours:30, a:44, tone:['#2c2c2e','#5f5f63'], st:['bike','y2k'],      cat:'가방'},
+  {t:'레더 크로스 백',            b:'MATIN KIM',         p:168000, votes:305,  hours:30, a:44, tone:['#2c2c2e','#5f5f63'], st:['bike','feminine'], cat:'가방'},
   {t:'워시드 후드 집업',          b:'THISISNEVERTHAT',   p:129000, votes:288,  hours:40, a:49, tone:['#2b2d2e','#565b5d'], st:['street','ath'],    cat:'후디'},
   {t:'울 발마칸 코트',            b:'SOLEW',             p:398000, votes:226,  hours:40, a:38, tone:['#37312c','#8c7f6e'], st:['classic'],         cat:'코트'},
   {t:'헤비 코튼 크루넥',          b:'COS',               p:59000,  votes:190,  hours:36, a:35, tone:['#2c2b29','#6b665e'], st:['norm','ath'],      cat:'티셔츠'},
-  {t:'레이어드 체인 목걸이',      b:'CENTIME',           p:68000,  votes:167,  hours:45, a:41, tone:['#2d2d2f','#5e6165'], st:['y2k','grunge'],    cat:'액세서리'}
+  {t:'레이어드 체인 목걸이',      b:'CENTIME',           p:68000,  votes:167,  hours:45, a:41, tone:['#2d2d2f','#5e6165'], st:['feminine','grunge'],cat:'액세서리'}
 ];
 /* 고른 스타일 순서대로 한 장씩 돌아가며 뽑는다 — 한 스타일이 4장을 독차지하지 않게.
    각 스타일 안에서는 투표가 많은 카드부터. 맞는 카드가 모자라면 인기순으로 채우되
@@ -90,7 +90,7 @@ export function feedSmPicks(styleIds){
 /* ── 내 피드 추천 풀 ──
    태그는 필터 칩과 같은 말을 쓴다. risk 는 0(무난) ~ 100(실험). */
 const MF_TAGS=['발레코어','아메카지','캐주얼','포멀','고프코어','워크웨어',
-               'Y2K','미니멀','스트릿','프레피','시티보이','올드머니'];
+               '페미닌','미니멀','스트릿','프레피','시티보이','올드머니'];
 const MF_POOL=[
   {b:'ANDERSSON BELL', n:'스웨이드 블루종 자켓', p:329000, img:1,  t:['워크웨어','올드머니'],  r:72, m:96},
   {b:'INSILENCE',      n:'램스울 라운드 니트',   p:118000, img:14, t:['미니멀','프레피'],      r:18, m:93},
@@ -98,7 +98,7 @@ const MF_POOL=[
   {b:'RANDOM IDENT.',  n:'스퀘어 토 페니 로퍼',  p:268000, img:19, t:['포멀','프레피'],        r:44, m:88},
   {b:'MUSINSA STANDARD',n:'옥스퍼드 셔츠',       p:39900,  img:11, t:['미니멀','포멀'],        r:8,  m:86},
   {b:'DE PAUL',        n:'헤비 스웻 후디',       p:89000,  img:8,  t:['스트릿','캐주얼'],      r:26, m:84},
-  {b:'MIU MIU',        n:'리본 크롭 캐미솔',     p:790000, img:2,  t:['발레코어','Y2K'],       r:92, m:83},
+  {b:'MIU MIU',        n:'리본 크롭 캐미솔',     p:790000, img:2,  t:['발레코어','페미닌'],    r:92, m:83},
   {b:'ARC\'TERYX',     n:'감마 SL 셸 자켓',      p:412000, img:23, t:['고프코어'],             r:66, m:81},
   {b:'CARHARTT WIP',   n:'디트로이트 자켓',      p:298000, img:5,  t:['워크웨어','아메카지'],  r:38, m:79},
   {b:'THISISNEVERTHAT',n:'나일론 카고 팬츠',     p:129000, img:27, t:['스트릿','고프코어'],    r:58, m:77},
@@ -107,7 +107,7 @@ const MF_POOL=[
   {b:'ADIDAS',         n:'삼바 OG',              p:139000, img:12, t:['블록코어','스트릿'],    r:30, m:73},
   {b:'UNIQLO',         n:'와이드 치노',          p:49900,  img:16, t:['캐주얼','시티보이'],    r:6,  m:71},
   {b:'LEVI\'S',        n:'501 오리지널',         p:118000, img:21, t:['아메카지','캐주얼'],    r:12, m:70},
-  {b:'ADER ERROR',     n:'디스트로이드 니트',    p:259000, img:25, t:['스트릿','Y2K'],         r:80, m:68}
+  {b:'ADER ERROR',     n:'디스트로이드 니트',    p:259000, img:25, t:['스트릿'],               r:80, m:68}
 ];
 var MF={tags:['발레코어','아메카지','워크웨어'],risk:22};
 

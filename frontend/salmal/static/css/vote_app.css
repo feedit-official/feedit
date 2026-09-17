@@ -344,7 +344,7 @@
 .createTitle{font-size:20px;font-weight:600;letter-spacing:-.03em;margin-bottom:4px}
 .createSub{font-size:12.5px;color:var(--pink-1);line-height:1.6;margin-bottom:18px}
 .cField{display:flex;flex-direction:column;gap:7px}
-.cField.grow{flex:1}
+.cField.grow{flex:0 0 auto}
 .cRow2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
 .cLabel{font-size:11.5px;font-weight:600;color:var(--pink-1)}
 .cInput{
@@ -358,7 +358,7 @@ select.cInput{
   background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%23999' stroke-width='1.6'%3E%3Cpath d='M5 7.5L10 12.5L15 7.5'/%3E%3C/svg%3E");
   background-repeat:no-repeat;background-position:right 11px center;background-size:16px;
 }
-.cTextarea{min-height:150px;resize:vertical;line-height:1.6;flex:1}
+.cTextarea{min-height:96px;resize:vertical;line-height:1.6}
 .imgDrop{
   position:relative;aspect-ratio:4/5;border-radius:12px;border:1.5px dashed var(--pink-3);
   background:#fff;cursor:pointer;overflow:hidden;display:flex;align-items:center;justify-content:center;

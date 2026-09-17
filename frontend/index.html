@@ -522,7 +522,7 @@
         </div>
         <div class="modalInfo">
           <h3 id="modalTitle"></h3>
-          <div class="modalMeta"><b id="modalBrand"></b> · <span id="modalPrice"></span></div>
+          <div class="modalMeta"><b id="modalBrand"></b> · <span id="modalPrice"></span><span id="modalStyle" hidden> · <span id="modalStyleName"></span></span></div>
         </div>
         <div class="modalPost">
           <span class="postName" id="modalNoteName"></span>
@@ -590,28 +590,36 @@
           </div>
         </div>
 
-        <!-- 우측 : 상품명 / 브랜드 / 가격 / 사연 -->
+        <!-- 우측 : 상품명 / 브랜드 / 가격 · 스타일 / 사연 -->
         <div class="createRight">
           <div class="cField">
             <label class="cLabel">상품명</label>
             <input type="text" class="cInput" id="cTitle" placeholder="예: 스웨이드 블루종 (버건디)">
           </div>
 
-          <div class="cRow2">
-            <div class="cField">
-              <label class="cLabel">브랜드</label>
-              <!-- 브랜드는 고르는 것이 아니라 찾는 것이다 —
-                   치는 동안 맞는 브랜드가 아래에 뜨고, 목록에 없으면 그대로 적어도 된다. -->
-              <div class="cCombo" id="cBrandCombo">
-                <input type="text" class="cInput" id="cBrand" placeholder="브랜드를 검색하세요"
-                       autocomplete="off" role="combobox" aria-autocomplete="list"
-                       aria-expanded="false" aria-controls="cBrandList">
-                <ul class="cComboList" id="cBrandList" role="listbox" hidden></ul>
-              </div>
+          <div class="cField">
+            <label class="cLabel">브랜드</label>
+            <!-- 브랜드는 고르는 것이 아니라 찾는 것이다 —
+                 치는 동안 맞는 브랜드가 아래에 뜨고, 목록에 없으면 그대로 적어도 된다. -->
+            <div class="cCombo" id="cBrandCombo">
+              <input type="text" class="cInput" id="cBrand" placeholder="브랜드를 검색하세요"
+                     autocomplete="off" role="combobox" aria-autocomplete="list"
+                     aria-expanded="false" aria-controls="cBrandList">
+              <ul class="cComboList" id="cBrandList" role="listbox" hidden></ul>
             </div>
+          </div>
+
+          <div class="cRow2">
             <div class="cField">
               <label class="cLabel">가격</label>
               <input type="text" inputmode="numeric" class="cInput" id="cPrice" placeholder="숫자만 입력 (원)">
+            </div>
+            <div class="cField">
+              <label class="cLabel">스타일</label>
+              <!-- 핵심 스타일 10종 — 옵션은 vote_app.js 가 STYLES 배열로 채운다 -->
+              <select class="cInput" id="cStyle">
+                <option value="">스타일 선택</option>
+              </select>
             </div>
           </div>
 
