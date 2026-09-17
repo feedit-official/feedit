@@ -6,7 +6,7 @@ import { goView } from '../../../app_shell/static/js/router.js';
 import { rkLevelOf, rkPaintAll, rkPaintAv, xpPaint } from './rank.js';
 import { trRender } from '../../../trend/static/js/dispatch.js';
 import { JOB_REVIEW_DEMO, jobFieldApply, jobFieldBind, jobFieldCheck, jobFieldReset, jobReviewBind, jobReviewRender } from './job.js';
-import { loginAccount, logoutAccount, saveAccount, session, signupAccount } from './account_api.js';
+import { googleLogin, googleSignupAccount, loginAccount, logoutAccount, prepareGoogle, saveAccount, session, signupAccount } from './account_api.js';
 
 /* 내 계정 — 운영자라 최고 등급 고정 */
 export const ME={name:'혁진',mail:'hyeokjin@feedit.co.kr',initial:'혁',xp:9400,   /* 누적 경험치. rank 는 여기서 계산된다 */
@@ -378,6 +378,40 @@ export function likeClick(btn){
   const n=$('#statSavedN'); if(n)n.textContent=LIKED.size;
 }
 
+/* Google 버튼 공통 처리 — 로그인 화면·가입 화면이 같은 흐름을 쓴다.
+   ★ googleLogin() 은 await 앞에서 바로 불러야 팝업이 막히지 않는다. */
+function googleContinue(btn, errEl){
+  if(errEl) errEl.style.display = 'none';
+  btn.disabled = true;
+  googleLogin().then(data => {
+    if(data.authenticated){ authLogin(data.user); return; }
+    if(data.needs_signup) enterGoogleSignup(data.google || {});
+  }).catch(e => {
+    if(e && e.cancelled) return;   /* 사용자가 창을 닫은 것은 오류로 보이지 않는다 */
+    const msg = (e && e.message) || 'Google 로그인에 실패했습니다.';
+    if(errEl && errEl.closest('.view.on')){ errEl.textContent = msg; errEl.style.display = 'block'; }
+    else acctToast(msg);
+  }).finally(() => { btn.disabled = false; });
+}
+
+/* 처음 온 Google 계정 — 가입 화면을 Google 모드로 연다.
+   아이디 칸에는 Google 이메일을 읽기 전용으로 두고, 비밀번호 칸은 숨긴다. */
+function enterGoogleSignup(google){
+  goView('signup');
+  resetSignupForm();
+  signupGoogleMode = true;
+  const gs = $('#googleSignupBtn'), suIdField = $('#suIdField'), suPwBlock = $('#suPwBlock'),
+        div = $('#signupGoogleDivider'), note = $('#signupGoogleNote'), suId = $('#suId'),
+        nick = $('#suNickname');
+  if(gs) gs.hidden = true;
+  if(div) div.hidden = true;
+  if(suPwBlock) suPwBlock.hidden = true;
+  if(note) note.hidden = false;
+  if(suIdField) suIdField.hidden = false;
+  if(suId){ suId.value = google.email || ''; suId.readOnly = true; }
+  if(nick && !nick.value) nick.value = String(google.name || '').trim().slice(0, 12);
+}
+
 /* 회원가입 폼 초기화 — 완료하지 않고 다른 화면으로 나가면 구글 모드를 포함해
    다음에 다시 들어왔을 때 처음 상태 그대로 보이게 한다. */
 export function resetSignupForm(){
@@ -417,8 +451,11 @@ export function acctBoot(){
     }catch(ex){ err.textContent=ex.message||'로그인하지 못했습니다.'; err.style.display='block' }
     finally{ if(submit)submit.disabled=false }
   });
+  /* Google 로그인 — 화면이 뜰 때 GIS 스크립트와 클라이언트를 미리 준비해 둔다
+     (클릭 뒤에 준비하면 브라우저가 팝업을 막는다). */
+  prepareGoogle().catch(()=>{ /* 서버 연결 실패는 아래 session() 경고가 이미 알린다 */ });
   const gl = $('#googleLoginBtn');
-  if(gl) gl.addEventListener('click', ()=>acctToast('Google 로그인은 계정 DB 연결 다음 단계에서 활성화됩니다.'));
+  if(gl) gl.addEventListener('click', ()=>googleContinue(gl, $('#loginErr')));
 
   /* ── 직업 선택 · 서류 첨부 (가입 · 회원정보 수정 공통) ── */
   jobFieldBind('su');
@@ -457,12 +494,17 @@ export function acctBoot(){
     err.style.display = 'none';
     const submit=sf.querySelector('[type="submit"]'); if(submit)submit.disabled=true;
     try{
-      const data=await signupAccount({
-        username:id, nickname:nick, password:pw,
+      const profileFields={
+        nickname:nick,
         birth_date:$('#suBirth').value||'',
         height:$('#suHeight').value||null,
         weight:$('#suWeight').value||null,
-      });
+      };
+      /* Google 가입은 서버 세션에 보관된 Google 신원으로 계정을 만든다 —
+         아이디·비밀번호는 보내지 않는다. */
+      const data=signupGoogleMode
+        ? await googleSignupAccount(profileFields)
+        : await signupAccount({ username:id, password:pw, ...profileFields });
       applyAccount(data.user);
       ME.role='user'; ME.job=''; ME.major='';
       signupComplete();
@@ -470,11 +512,10 @@ export function acctBoot(){
     }catch(ex){ err.textContent=ex.message||'회원가입하지 못했습니다.'; err.style.display='block' }
     finally{ if(submit)submit.disabled=false }
   });
-  /* 구글로 계속하기 — 목업이라 실제 구글 인증은 없지만, 흐름은 그대로 흉내낸다.
-     같은 회원가입 폼 위에서 아이디/비밀번호 입력만 막고 닉네임·생년월일·체형을 마저 받는다. */
+  /* 구글로 계속하기 — 이미 연결된 Google 계정이면 바로 로그인하고,
+     처음이면 같은 회원가입 폼 위에서 아이디/비밀번호 입력만 막고 닉네임·생년월일·체형을 마저 받는다. */
   const gs = $('#googleSignupBtn');
-  if(gs) gs.addEventListener('click', () =>
-    acctToast('Google 가입은 일반 회원 DB 연결을 확인한 뒤 활성화됩니다.'));
+  if(gs) gs.addEventListener('click', () => googleContinue(gs, $('#signupErr')));
   /* 아이디·비밀번호 안내는 치는 동안 바로 알려 준다 */
   const suId = $('#suId'), suIdMsg = $('#suIdMsg');
   if(suId) suId.addEventListener('input', () => {

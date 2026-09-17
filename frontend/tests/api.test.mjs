@@ -194,8 +194,8 @@ await t('진단 — 지표가 0행이면 원인을 짚어 준다', async () => {
 // ══════════════════════════════════════════════════════════
 //  챗봇 경로 — 배포된 곳에서 어디를 부르나
 // ══════════════════════════════════════════════════════════
-const chatHealth = (await import('../api/v1/health.js')).default;
-const chat       = (await import('../api/v1/chat.js')).default;
+const chatHealth = (await import('../api/_v1/health.js')).default;
+const chat       = (await import('../api/_v1/chat.js')).default;
 const virtualFit = (await import('../api/v1/virtual-fitting.js')).default;
 
 const mkStreamRes = () => {

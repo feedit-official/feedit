@@ -56,6 +56,10 @@
 }
 .acct .googleBtn:hover{box-shadow:inset 0 0 0 1px var(--pink-0);transform:translateY(-2px)}
 .acct .googleBtn svg{width:18px;height:18px;flex-shrink:0}
+/* Google 가입 모드에서 버튼·구분선을 숨긴다.
+   위의 display 지정이 기본 [hidden] 규칙을 이기므로 따로 못 박는다. */
+.acct .googleBtn[hidden],
+.acct .divider[hidden]{display:none}
 .acct .divider{
   display:flex;align-items:center;gap:14px;margin:24px 0;
   color:var(--pink-2);font-size:11.5px;letter-spacing:.02em;

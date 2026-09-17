@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import math
 import re
+import time
 
 from django.contrib.auth import (
     authenticate,
@@ -37,10 +38,16 @@ from apps.core.models import (
     VoteBallot,
 )
 
+from . import google_auth
+
 
 USERNAME_RE = re.compile(r"^[A-Za-z0-9]{4,16}$")
 STYLE_LIMIT = 3
 YOUTUBE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{6,20}$")
+# Google 로 인증했지만 아직 가입 폼(닉네임·체형)을 끝내지 않은 사람의 신원.
+# 세션(서버 쪽)에만 두고, 이 시간 안에 가입을 마치지 않으면 다시 인증해야 한다.
+GOOGLE_PENDING_KEY = "google_pending"
+GOOGLE_PENDING_TTL = 10 * 60
 
 
 def _json(request):
@@ -124,6 +131,7 @@ def _auth_payload(request, user, profile):
         "data": {
             "authenticated": True,
             "csrf_token": get_token(request),
+            "google_client_id": google_auth.client_id(),
             "user": _user_payload(user, profile),
         },
     }
@@ -228,7 +236,14 @@ def me(request):
     if not request.user.is_authenticated:
         return JsonResponse({
             "status": "ok",
-            "data": {"authenticated": False, "csrf_token": token, "user": None},
+            "data": {
+                "authenticated": False,
+                "csrf_token": token,
+                # 공개 값이다. 비어 있으면 프론트가 Google 버튼을 '설정 필요'로 안내한다.
+                "google_client_id": google_auth.client_id(),
+                "google_pending": _google_pending_public(request),
+                "user": None,
+            },
         })
     profile = _profile(request.user, create=True)
     return JsonResponse(_auth_payload(request, request.user, profile))
@@ -256,37 +271,59 @@ def signup(request):
         messages = exc.messages if isinstance(exc, ValidationError) else [str(exc)]
         return _error(" ".join(messages))
 
-    birth_date = str(data.get("birth_date") or "").strip()
-    birth_year = int(birth_date[:4]) if re.fullmatch(r"\d{4}-\d{2}-\d{2}", birth_date) else None
     try:
-        with transaction.atomic():
-            user = User.objects.create_user(
-                username=username,
-                password=password,
-                first_name=nickname,
-                email=str(data.get("email") or "").strip(),
-            )
-            profile = AppUser.objects.create(
-                user=user,
-                nickname=nickname,
-                birth_year=birth_year,
-                body_type=body_type,
-                profile_metadata={
-                    "birth_date": birth_date,
-                    "height": height,
-                    "weight": weight,
-                    # 직업 배지는 증빙 검토 뒤 관리자 경로에서만 기록한다.
-                    "job": "",
-                    "major": "",
-                    "avatar": 0,
-                    "bio": "",
-                },
-            )
-            _save_styles(profile, data.get("styles"))
-            django_login(request, user)
+        user, profile = _create_account(
+            request,
+            username=username,
+            nickname=nickname,
+            password=password,
+            email=str(data.get("email") or "").strip(),
+            data=data,
+            body=(height, weight, body_type),
+        )
     except ValueError as exc:
         return _error(str(exc))
     return JsonResponse(_auth_payload(request, user, profile), status=201)
+
+
+def _create_account(request, *, username, nickname, password, email, data, body, extra_meta=None):
+    """auth_user + app_user 를 한 트랜잭션으로 만들고 바로 로그인시킨다.
+
+    password 가 None 이면(Google 가입) 사용할 수 없는 비밀번호로 둔다.
+    비밀번호는 Django 기본 해시(PBKDF2-SHA256)로만 저장된다.
+    """
+    height, weight, body_type = body
+    birth_date = str(data.get("birth_date") or "").strip()
+    birth_year = int(birth_date[:4]) if re.fullmatch(r"\d{4}-\d{2}-\d{2}", birth_date) else None
+    with transaction.atomic():
+        user = User.objects.create_user(
+            username=username,
+            password=password,
+            first_name=nickname,
+            email=email,
+        )
+        meta = {
+            "birth_date": birth_date,
+            "height": height,
+            "weight": weight,
+            # 직업 배지는 증빙 검토 뒤 관리자 경로에서만 기록한다.
+            "job": "",
+            "major": "",
+            "avatar": 0,
+            "bio": "",
+        }
+        meta.update(extra_meta or {})
+        profile = AppUser.objects.create(
+            user=user,
+            nickname=nickname,
+            birth_year=birth_year,
+            body_type=body_type,
+            profile_metadata=meta,
+        )
+        _save_styles(profile, data.get("styles"))
+    # 로그인은 트랜잭션이 확정된 뒤에 — 세션 행이 롤백된 사용자를 가리키지 않게 한다.
+    django_login(request, user, backend="django.contrib.auth.backends.ModelBackend")
+    return user, profile
 
 
 @require_POST
@@ -296,13 +333,146 @@ def login(request):
         return _error("요청 형식이 올바른 JSON이 아닙니다.")
     identifier = str(data.get("username") or "").strip()
     password = str(data.get("password") or "")
-    found = User.objects.filter(Q(username__iexact=identifier) | Q(email__iexact=identifier)).first()
+    # 아이디 일치를 먼저 본다. Google 계정과 이메일이 같은 아이디 계정이 있어도
+    # 엉뚱한 쪽(비밀번호 없는 Google 계정)을 집지 않게 한다.
+    found = (
+        User.objects.filter(username__iexact=identifier).first()
+        or User.objects.filter(email__iexact=identifier).order_by("id").first()
+    )
     user = authenticate(request, username=found.username if found else identifier, password=password)
     if user is None or not user.is_active:
         return _error("아이디 또는 비밀번호가 올바르지 않습니다.", status=401)
     profile = _profile(user, create=True)
     django_login(request, user)
     return JsonResponse(_auth_payload(request, user, profile))
+
+
+# ── Google 로그인 ─────────────────────────────────────────────
+
+def _google_pending(request):
+    pending = request.session.get(GOOGLE_PENDING_KEY)
+    if not isinstance(pending, dict):
+        return None
+    if float(pending.get("expires_at") or 0) < time.time():
+        request.session.pop(GOOGLE_PENDING_KEY, None)
+        return None
+    return pending
+
+
+def _google_pending_public(request):
+    """가입 폼을 채우는 데 필요한 값만 내려 준다(sub 는 내려 주지 않는다)."""
+    pending = _google_pending(request)
+    if not pending:
+        return None
+    return {"email": pending["email"], "name": pending.get("name") or ""}
+
+
+def _google_username(sub):
+    # auth_user.username 은 150자 제한이고 sub 는 최대 255자라 앞 140자만 쓴다.
+    return f"google_{sub}"[:150]
+
+
+def _google_profile(sub):
+    return (
+        AppUser.objects.select_related("user")
+        .filter(profile_metadata__google_sub=sub)
+        .first()
+    )
+
+
+@require_POST
+def google_login(request):
+    """Google 팝업에서 받은 인가 코드로 로그인한다.
+
+    - 이미 연결된 계정 → 바로 로그인 (authenticated: true)
+    - 처음 온 Google 계정 → 세션에 신원만 보관하고 가입 폼으로 보낸다
+      (authenticated: false, needs_signup: true)
+    """
+    if not google_auth.is_configured():
+        return _error(
+            "Google 로그인이 아직 설정되지 않았습니다. 서버 .env 의 GOOGLE_CLIENT_ID · GOOGLE_CLIENT_SECRET 을 확인해 주세요.",
+            status=503,
+        )
+    data = _json(request)
+    if data is None:
+        return _error("요청 형식이 올바른 JSON이 아닙니다.")
+    code = str(data.get("code") or "").strip()
+    if not code or len(code) > 2048:
+        return _error("Google 인가 코드가 없습니다.")
+    try:
+        identity = google_auth.exchange_code(code)
+    except google_auth.GoogleAuthError as exc:
+        return _error(exc.reason, status=exc.status)
+
+    profile_obj = _google_profile(identity["sub"])
+    if profile_obj is not None:
+        user = profile_obj.user
+        if not user.is_active:
+            return _error("사용이 중지된 계정입니다.", status=403)
+        request.session.pop(GOOGLE_PENDING_KEY, None)
+        django_login(request, user, backend="django.contrib.auth.backends.ModelBackend")
+        return JsonResponse(_auth_payload(request, user, profile_obj))
+
+    request.session[GOOGLE_PENDING_KEY] = {**identity, "expires_at": time.time() + GOOGLE_PENDING_TTL}
+    return JsonResponse({
+        "status": "ok",
+        "data": {
+            "authenticated": False,
+            "needs_signup": True,
+            "csrf_token": get_token(request),
+            "google": {"email": identity["email"], "name": identity["name"]},
+            "user": None,
+        },
+    })
+
+
+@require_POST
+def google_signup(request):
+    """google_login 에서 보관한 신원 + 가입 폼 값으로 계정을 만든다."""
+    pending = _google_pending(request)
+    if pending is None:
+        return _error("Google 인증 시간이 지났습니다. 'Google로 계속하기'를 다시 눌러 주세요.", status=401)
+    data = _json(request)
+    if data is None:
+        return _error("요청 형식이 올바른 JSON이 아닙니다.")
+    nickname = str(data.get("nickname") or "").strip()
+    if not 2 <= len(nickname) <= 12:
+        return _error("닉네임은 2~12자로 입력해 주세요.")
+    try:
+        body = _body_profile(data.get("height"), data.get("weight"))
+    except ValueError as exc:
+        return _error(str(exc))
+
+    # 두 번 눌렀거나 다른 탭에서 먼저 가입했으면 새로 만들지 않고 로그인만 한다.
+    existing = _google_profile(pending["sub"])
+    if existing is not None:
+        request.session.pop(GOOGLE_PENDING_KEY, None)
+        django_login(request, existing.user, backend="django.contrib.auth.backends.ModelBackend")
+        return JsonResponse(_auth_payload(request, existing.user, existing))
+
+    username = _google_username(pending["sub"])
+    if User.objects.filter(username=username).exists():
+        return _error("이미 가입된 Google 계정입니다. 로그인해 주세요.", status=409)
+    try:
+        user, profile_obj = _create_account(
+            request,
+            username=username,
+            nickname=nickname,
+            password=None,  # Google 계정은 비밀번호로 로그인하지 않는다
+            email=pending["email"],
+            data=data,
+            body=body,
+            extra_meta={
+                "auth_provider": "google",
+                "google_sub": pending["sub"],
+                "google_picture": pending.get("picture") or "",
+            },
+        )
+    except ValueError as exc:
+        return _error(str(exc))
+    # django_login 이 세션 키를 새로 돌리므로, 그 뒤에 남은 보관 값을 지운다.
+    request.session.pop(GOOGLE_PENDING_KEY, None)
+    return JsonResponse(_auth_payload(request, user, profile_obj), status=201)
 
 
 @require_POST

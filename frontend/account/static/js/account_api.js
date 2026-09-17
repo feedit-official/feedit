@@ -53,3 +53,90 @@ export const saveAccount = data =>
 
 export const weeklyVideos = () =>
   request('weekly-videos');
+
+/* ── Google 로그인 ──────────────────────────────────────────
+ * Google Identity Services(GIS)의 코드 팝업으로 '인가 코드'만 받아 서버로 넘긴다.
+ * 코드→토큰 교환과 신원 확인은 Django가 client_secret으로 한다.
+ * 클라이언트 ID는 공개 값이라 /api/auth/me 응답에서 받아 쓴다. */
+const GSI_SRC = 'https://accounts.google.com/gsi/client';
+let gsiPromise = null;
+
+function loadGsi() {
+  if (globalThis.google && globalThis.google.accounts && globalThis.google.accounts.oauth2) {
+    return Promise.resolve(globalThis.google);
+  }
+  if (gsiPromise) return gsiPromise;
+  gsiPromise = new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = GSI_SRC;
+    script.async = true;
+    script.onload = () => resolve(globalThis.google);
+    script.onerror = () => {
+      gsiPromise = null;
+      reject(new Error('Google 로그인 스크립트를 불러오지 못했습니다. 네트워크를 확인해 주세요.'));
+    };
+    document.head.appendChild(script);
+  });
+  return gsiPromise;
+}
+
+/* 코드 클라이언트는 미리 만들어 둔다.
+ * ★ 클릭 뒤에 fetch·스크립트 로딩을 기다렸다가 팝업을 열면, 사파리 등은
+ *   '사용자 동작이 아니다'라며 팝업을 막는다. 그래서 화면이 뜰 때 준비하고,
+ *   클릭 순간에는 requestCode() 만 동기로 부른다. */
+let codeClient = null;
+let codeWaiter = null;
+let preparePromise = null;
+
+export function prepareGoogle() {
+  if (preparePromise) return preparePromise;
+  preparePromise = (async () => {
+    const me = await session();
+    if (!me.google_client_id) return false;
+    const google = await loadGsi();
+    codeClient = google.accounts.oauth2.initCodeClient({
+      client_id: me.google_client_id,
+      scope: 'openid email profile',
+      ux_mode: 'popup',
+      select_account: true,
+      callback: resp => {
+        const w = codeWaiter; codeWaiter = null;
+        if (!w) return;
+        if (resp && resp.code) w.resolve(resp.code);
+        else w.reject(new Error((resp && resp.error_description) || 'Google 인증을 완료하지 못했습니다.'));
+      },
+      error_callback: err => {
+        const w = codeWaiter; codeWaiter = null;
+        if (!w) return;
+        const closed = Boolean(err && err.type === 'popup_closed');
+        const e = new Error(closed ? 'Google 로그인 창이 닫혔습니다.'
+          : '팝업이 차단됐는지 확인한 뒤 다시 시도해 주세요.');
+        e.cancelled = closed;
+        w.reject(e);
+      },
+    });
+    return true;
+  })().catch(error => { preparePromise = null; throw error; });
+  return preparePromise;
+}
+
+/* 클릭 핸들러 안에서 await 없이 바로 부를 것.
+ * 결과: { authenticated:true, user } 이면 로그인 끝,
+ *       { authenticated:false, needs_signup:true, google:{email,name} } 이면 가입 폼으로 */
+export function googleLogin() {
+  if (!codeClient) {
+    return prepareGoogle().then(ready => {
+      throw new Error(ready
+        ? 'Google 로그인 준비가 끝났습니다. 버튼을 한 번 더 눌러 주세요.'
+        : 'Google 로그인이 아직 설정되지 않았습니다. 서버의 GOOGLE_CLIENT_ID 를 확인해 주세요.');
+    });
+  }
+  const codePromise = new Promise((resolve, reject) => { codeWaiter = { resolve, reject }; });
+  codeClient.requestCode();   // 동기 호출 — 팝업이 사용자 클릭에 묶인다
+  return codePromise
+    .then(code => request('google', { method:'POST', body:{ code } }))
+    .then(data => { if (data.authenticated) sessionPromise = null; return data; });
+}
+
+export const googleSignupAccount = data =>
+  request('google-signup', { method:'POST', body:data }).finally(() => { sessionPromise = null; });
