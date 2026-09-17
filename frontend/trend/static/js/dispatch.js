@@ -1147,7 +1147,7 @@ export function trRender(id) {
         '<div class="panelC" id="sentSigCard"><div class="ph"><h3>신호 유형별 건수</h3><em>최근 28일</em></div>'+
           '<div class="sigWrap" id="sigWrap">'+(SIG.length
           ? '<table class="mTable"><tr><th>신호</th><th></th><th>건수</th></tr>'+
-            SIG.map(p=>'<tr data-sig="'+p[0]+'"><td>'+p[0]+'</td>'+
+            SIG.map(p=>'<tr data-sig="'+p[0]+'" style="cursor:pointer"><td>'+p[0]+'</td>'+
               '<td><span class="bar" style="display:block"><i class="'+(p[2]>0?'c':'')+'" style="width:'+Math.round(p[1]/maxSig*100)+'%"></i></span></td>'+
               '<td class="n '+(p[2]>0?'up':p[2]<0?'dn':'')+'">'+p[1].toLocaleString()+'</td></tr>').join('')+'</table>'
           : unavailableHTML('반응 유형(질문·구매·경험·호평·비판·잡담) 건수가 아직 없습니다.',''))+'</div>'+
@@ -1158,6 +1158,20 @@ export function trRender(id) {
     /* G_CFG 에 올리지 않는다 — gMount 가 선·막대 엔진(gChart)으로 다시 그리면 원형이 사라진다 */
     sentPie($('[data-chart="sentMain"]'),{key:kw+'sent',rows:rows,lastDate:last.date}); trDial(); trFillBars();
     sentFitSignals();   /* 왼쪽 차트 카드 높이에 맞춰 넘치는 신호 목록을 접고 '+더보기' 로 연다 */
+    
+    /* ── 신호 행 클릭 → 근거 툴팁 팝업 핸들러 ── */
+    const intentMap = { '질문': 'QUESTION', '구매': 'PURCHASE', '경험': 'EXPERIENCE', '호평': 'PRAISE', '비판': 'CRITIQUE', '잡담': 'CHITCHAT' };
+    $$('#sigWrap tr[data-sig]').forEach(row => {
+      row.addEventListener('click', e => {
+        e.stopPropagation();
+        const intent = intentMap[row.dataset.sig];
+        const evList = (D.evidence || {})[intent] || [];
+        assocOpenPop(row, '긍부정 신호', {
+          n: row.dataset.sig, spark: null,
+          src: evList.length ? evList : [{ tag: '안내', text: '해당 신호로 분류된 최근 근거 문장이 없습니다.' }]
+        });
+      });
+    });
   }
   /* ══════════════ 할인률 변화 ══════════════
      값: /api/discount → snapshot.product_source_snapshot (세부 검색 조건에 걸린 상품) + 대표 용어 온도 */

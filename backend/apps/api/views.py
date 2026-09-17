@@ -612,6 +612,42 @@ def trend(request):
     )
 
 
+def _sentiment_evidence(term, is_brand=False, variants=None):
+    """긍부정 신호 유형별 근거 문장 추출"""
+    evidence = defaultdict(list)
+    intents = ["QUESTION", "PURCHASE", "EXPERIENCE", "PRAISE", "CRITIQUE", "CHITCHAT"]
+    
+    if is_brand:
+        docs = TextDocument.objects.filter(
+            document_type=TextDocument.DocumentType.COMMENT
+        ).filter(_contains_any("body", variants)).values_list("id", flat=True)[:2000]
+        qs = TextTermMention.objects.filter(
+            document_id__in=docs, intent_code__in=intents
+        ).exclude(mention_text__isnull=True).filter(_contains_any("mention_text", variants))
+    else:
+        qs = TextTermMention.objects.filter(
+            term=term, document__document_type=TextDocument.DocumentType.COMMENT,
+            intent_code__in=intents
+        ).exclude(mention_text__isnull=True)
+        
+    rows = (
+        qs.order_by("-created_at")
+        .values("intent_code", "mention_text", "document__source__name", "document__document_type")[:1000]
+    )
+    
+    for row in rows:
+        intent = str(row["intent_code"]).upper()
+        if not intent or intent == "NONE":
+            continue
+        bucket = evidence[intent]
+        if len(bucket) < 2:
+            bucket.append({
+                "tag": row["document__source__name"] or row["document__document_type"],
+                "text": row["mention_text"][:160],
+            })
+    return evidence
+
+
 @require_GET
 def sentiment(request):
     """GET /api/sentiment?term=셔츠&days=400&subject=term|brand.
@@ -687,6 +723,8 @@ def sentiment(request):
         )
         return _empty(detail, term=canonical, facet=facet, known=True)
 
+    evidence = _sentiment_evidence(term, is_brand=(method == "BRAND_CONTEXT"), variants=variants if method == "BRAND_CONTEXT" else None)
+
     return _ok({
         "term": canonical,
         "facet": facet,
@@ -699,6 +737,7 @@ def sentiment(request):
         "matched_comments": matched_comments,
         "classified_comments": classified_comments,
         "series": series,
+        "evidence": dict(evidence),
     })
 
 
