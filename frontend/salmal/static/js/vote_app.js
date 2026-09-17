@@ -4,12 +4,8 @@ import { rkClamp, rkRingHTML } from '../../../account/static/js/rank.js';
 import { jobBadgeHTML, jobShown } from '../../../account/static/js/job.js';
 import { smBarFill, smBarLabels } from '../../../trend/static/js/discount_resale.js';
 import { STYLES } from '../../../home/static/js/chat.js';
-<<<<<<< HEAD
 import { saveVote } from '../../../account/static/js/account_api.js';
-import { feedStyleOf } from '../../../trend/static/js/my_feed.js';
-=======
 import YOUTUBE_SALMAL_DATA from '../../data/youtube_salmal_cards.json' with { type: 'json' };
->>>>>>> aaf8c36015406f69e7095edfef9c5c6b2c258f44
 
 /* ══════════════ 살!말? (feedit-salmal_2 이식) ══════════════
    이름 충돌을 막기 위해 통째로 자기 범위 안에서 돌린다. */
@@ -329,10 +325,11 @@ function castVote(i,side){
   v.a=salRatioWithUserVote(v);
   updateCard(i);
   smVoteBeat($(`.voteCard[data-i="${i}"]`), side);
-  /* 서버에 투표를 남긴다 — 카드가 아직 DB 카드가 아니라서 제목·브랜드로 카드를 식별한다.
-     (DB 카드로 바뀌면 cardKey 에 vote_card id 를 넣으면 vote_ballot 에도 저장된다) */
-  saveVote({ cardKey:v.id?String(v.id):'mock:'+v.t+'|'+v.b, title:v.t, brand:v.b,
-    style:styleNameOf(v)||feedStyleOf(v.t), choice:v.voted===null?null:(v.voted===0?'BUY':'PASS') })
+  /* 서버에 투표를 남긴다 — 카드는 youtube_salmal_cards.json 이라 app.vote_card id 가 없다.
+     그래서 영상 id + 카탈로그 상품 id 로 카드를 식별한다.
+     (DB 카드로 바뀌면 cardKey 에 vote_card id(숫자)를 넣으면 vote_ballot 에도 저장된다) */
+  saveVote({ cardKey:'yt:'+(v.video_id||'')+':'+(v.catalog_product_id||v.t), title:v.t, brand:v.b,
+    style:styleNameOf(v), choice:v.voted===null?null:(v.voted===0?'BUY':'PASS') })
     .then(r=>{ if(r&&Number.isFinite(+r.vote_count))ME.votes=+r.vote_count; });
 }
 
