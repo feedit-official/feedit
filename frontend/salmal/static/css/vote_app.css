@@ -98,9 +98,15 @@
   text-transform:uppercase;margin-bottom:16px;font-feature-settings:'tnum' 1,'zero' 0;
 }
 .voteCard .cap em{font-style:normal;color:var(--coral)}
-.smBar{height:38px;border-radius:999px;overflow:hidden;display:flex;background:var(--pink-3);margin-bottom:11px}
+.smBar{
+  height:38px;border-radius:999px;overflow:hidden;display:flex;position:relative;
+  background:var(--pink-3);margin-bottom:11px;isolation:isolate;
+  /* Chrome가 스크롤 중 자식 막대를 별도 레이어로 합성할 때 overflow의 둥근
+     모서리를 한 프레임 놓치는 경우가 있어, 같은 곡률로 실제 클립을 고정한다. */
+  clip-path:inset(0 round 999px);
+}
 .smBar i{
-  display:flex;align-items:center;height:100%;
+  display:flex;align-items:center;height:100%;min-width:0;box-sizing:border-box;padding:0;
   /* width 트랜지션은 두지 않는다. anime 가 매 프레임 인라인 width 를 쓰는데
      CSS 트랜지션이 같은 속성을 붙잡고 있으면 값이 쓰일 때마다 0.8s 짜리 보간이
      새로 시작돼, 막대가 멈춘 듯 끌리다가 애니가 끝나는 순간 뚝 하고 튄다. */
@@ -114,10 +120,18 @@
      항상 켜 두면 어떤 순간에 봐도 절대 안 묻힌다. */
   overflow:visible;position:relative;z-index:2;
 }
-.smBar .buy{background:var(--coral);color:#fff;justify-content:flex-start;padding-left:13px;flex:0 0 auto}
+.smBar i > span{position:absolute;top:50%;transform:translateY(-50%);z-index:3}
+.smBar .buy{background:var(--coral);color:#fff;justify-content:flex-start;flex:0 0 auto}
+.smBar .buy > span{left:13px}
 /* .no 는 애니메이션으로 폭을 직접 받지 않는다 — flex:1 로 .buy 가 차지하고 남은
    자리를 통째로 먹는다. 그래야 두 조각의 폭 합이 프레임마다 항상 정확히 100%다. */
-.smBar .no{background:var(--pink-0);color:var(--paper);justify-content:flex-end;padding-right:13px;flex:1 1 0%}
+.smBar .no{
+  background:var(--pink-0);color:var(--paper);justify-content:flex-end;flex:1 1 0%;
+  /* `말` 라벨은 변하는 .no 조각이 아니라 전체 게이지를 기준으로 고정한다.
+     살 100%처럼 .no 폭이 0이거나 스프링이 경계를 넘는 순간에도 오른쪽 끝을 유지한다. */
+  position:static;
+}
+.smBar .no > span{right:13px}
 /* 이 세 군데 막대만 anime 없이 style.width 를 직접 쓴다. 여기만 CSS 로 부드럽게. */
 #modalBarAll i, #modalBarSim i, #smBuy, #smNo{transition:width .82s var(--ease)}
 .smBtns{display:flex;gap:8px}

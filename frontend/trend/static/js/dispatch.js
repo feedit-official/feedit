@@ -428,14 +428,13 @@ export function trRender(id){
   if(id==='myfeed'){
     const won=n=>n.toLocaleString('ko-KR')+'원';
     const hoursTx=h=>h>=24?Math.round(h/24)+'일':h+'시간';
-    /* 카드 자체는 실제 살!말? .voteCard 구조를 그대로 쓰고(이미지는 실제
-       카드처럼 톤 그라디언트로 대체 — 이 목업엔 실물 이미지가 없다) 매칭
-       이유 · 태그는 카드 박스 밖, 그 아래에 별도 블록으로 붙인다. */
+    /* 카드 구조와 상품 정보는 살!말? 본 화면과 같은 JSON 값을 쓴다.
+       매칭 이유와 태그만 카드 바깥의 내 취향 전용 정보로 덧붙인다. */
     const salCard=p=>
       '<div class="tpPickWrap">'+
         '<article class="voteCard in">'+
           '<div class="fig">'+
-            '<div class="plate" style="background:linear-gradient(150deg,'+p.tone[0]+','+p.tone[1]+')"></div>'+
+            '<div class="plate" style="background-image:url('+p.imgURL+');background-size:cover;background-position:center"></div>'+
             '<div class="vig"></div>'+
             '<span class="pricep">'+won(p.p)+'</span>'+
             '<span class="tagp"><b>'+p.b+'</b></span>'+
