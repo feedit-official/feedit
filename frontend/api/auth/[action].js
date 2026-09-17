@@ -22,6 +22,11 @@ export default async function handler(req, res) {
   if (token) headers['X-FEEDiT-Token'] = token;
   if (req.headers.cookie) headers.Cookie = req.headers.cookie;
   if (req.headers['x-csrftoken']) headers['X-CSRFToken'] = req.headers['x-csrftoken'];
+  /* Django는 HTTPS 요청의 CSRF를 검사할 때 Origin·Referer도 본다.
+     중계하면서 빠뜨리면 403 HTML 오류 페이지가 돌아와 화면이 JSON을 못 읽는다.
+     서버 .env 의 DJANGO_CSRF_TRUSTED_ORIGINS 에 버셀 주소가 있어야 통과한다. */
+  if (req.headers.origin) headers.Origin = req.headers.origin;
+  if (req.headers.referer) headers.Referer = req.headers.referer;
   let body;
   if (method === 'POST') {
     headers['Content-Type'] = 'application/json';
