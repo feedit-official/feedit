@@ -1,4 +1,4 @@
-/* /api/v1/chat · /api/v1/feedback · /api/v1/fit-classify · /api/v1/health
+/* /api/v1/chat · /api/v1/feedback · /api/v1/fit-classify · /api/v1/health · /api/v1/magazines
  *
  * 챗봇 쪽 네 주소를 **함수 하나**로 받는다.
  * 버셀 Hobby 요금제는 배포 하나에 서버리스 함수가 12개까지라, 파일마다 따로 두면
@@ -12,8 +12,9 @@ import chat from '../_v1/chat.js';
 import feedback from '../_v1/feedback.js';
 import fitClassify from '../_v1/fit-classify.js';
 import health from '../_v1/health.js';
+import magazines from '../_v1/magazines.js';
 
-const ROUTES = { chat, feedback, 'fit-classify': fitClassify, health };
+const ROUTES = { chat, feedback, 'fit-classify': fitClassify, health, magazines };
 
 export const config = { runtime: 'nodejs', maxDuration: 30 };
 

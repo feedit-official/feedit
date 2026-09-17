@@ -16,6 +16,7 @@
 엔드포인트
   GET  /v1/health                    떠 있나 · 기준일 · 적재 term 수
   GET  /v1/llm                       LLM 배선 진단 (모델 · 키 유무 · 마지막 오류)
+  GET  /v1/magazines?term=발레코어    추천 웹매거진 기사 (웹 검색)
   GET  /v1/me?plan=FREE              플랜과 하루 한도 (아직 계정이 없어 질의로 받는다)
   POST /v1/chat                      SSE 스트림
        {question, mode, plan, conversation_id, history?, images?}
@@ -356,6 +357,13 @@ class Handler(BaseHTTPRequestHandler):
                                     "disabled": llm.DISABLED,
                                     "key": llm.key_hint(), "key_from": llm.source_hint(),
                                     "env_file": where(), "last_error": llm.LAST_ERROR})
+        if u.path == "/v1/magazines":
+            # 금주의 리포트 · 추천 웹매거진 — 관심 키워드를 다룬 기사 (app/magazine.py)
+            from app import magazine
+            term = ((parse_qs(u.query).get("term") or [""])[0]).strip()
+            if not term:
+                return self._json(400, {"ok": False, "error": "TERM_REQUIRED"})
+            return self._json(200, {"ok": True, **magazine.find(term)})
         if u.path == "/v1/me":
             q = parse_qs(u.query)
             plan = plans.effective((q.get("plan") or ["FREE"])[0])

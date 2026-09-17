@@ -6,7 +6,7 @@ import { goView } from '../../../app_shell/static/js/router.js';
 import { rkLevelOf, rkPaintAll, rkPaintAv, xpPaint } from './rank.js';
 import { trRender } from '../../../trend/static/js/dispatch.js';
 import { JOB_REVIEW_DEMO, jobFieldApply, jobFieldBind, jobFieldCheck, jobFieldReset, jobReviewBind, jobReviewRender } from './job.js';
-import { googleLogin, googleSignupAccount, loginAccount, logoutAccount, prepareGoogle, saveAccount, session, signupAccount } from './account_api.js';
+import { googleLogin, googleSignupAccount, loginAccount, logoutAccount, prepareGoogle, saveAccount, saveLiked, session, signupAccount } from './account_api.js';
 
 /* 내 계정 — 운영자라 최고 등급 고정 */
 export const ME={name:'혁진',mail:'hyeokjin@feedit.co.kr',initial:'혁',xp:9400,   /* 누적 경험치. rank 는 여기서 계산된다 */
@@ -373,8 +373,16 @@ function acctModal(id, on){
 export function likeClick(btn){
   if(!requireAuth())return;
   const id=btn.dataset.likeId; if(!id)return;
+  const before=LIKED.get(id);
   const on=toggleLike(id);
   btn.classList.toggle('on',on);
+  /* 서버에도 찜/해제를 남긴다 — 금주의 리포트 '새로 찜한 것 · 총 추적 수' */
+  const d=on?LIKED.get(id):before;
+  if(d){
+    const st=STYLES.find(s=>s.id===d.style);
+    saveLiked({ itemId:id, liked:on, name:d.nm||'', brand:d.br||'', style:d.styleName||(st?st.n:'') })
+      .then(r=>{ if(r&&Number.isFinite(+r.saved_count))ME.saved=+r.saved_count; });
+  }
   const n=$('#statSavedN'); if(n)n.textContent=LIKED.size;
 }
 

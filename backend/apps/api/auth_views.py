@@ -35,14 +35,16 @@ from apps.core.models import (
     ProductTerm,
     UserSavedItem,
     UserTaste,
-    VoteBallot,
 )
 
 from . import google_auth
+from .activity_views import active_saved_count, active_vote_count
 
 
 USERNAME_RE = re.compile(r"^[A-Za-z0-9]{4,16}$")
 STYLE_LIMIT = 3
+# 영상 analysis_tags 에서 키워드를 찾아볼 축 (검색 키워드의 사전 축을 모를 때)
+KEYWORD_FACETS = ("style", "brand", "item", "category", "color", "tpo", "material", "detail", "fit", "pattern", "mood")
 YOUTUBE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{6,20}$")
 # Google 로 인증했지만 아직 가입 폼(닉네임·체형)을 끝내지 않은 사람의 신원.
 # 세션(서버 쪽)에만 두고, 이 시간 안에 가입을 마치지 않으면 다시 인증해야 한다.
@@ -120,8 +122,9 @@ def _user_payload(user, profile):
         "major": meta.get("major") or "",
         "role": "admin" if user.is_staff or user.is_superuser else "user",
         "styles": styles,
-        "saved_count": UserSavedItem.objects.filter(user=profile).count(),
-        "vote_count": VoteBallot.objects.filter(user=profile).count(),
+        # 찜·투표 수는 기록 API(activity_views)가 남긴 '현재 상태' 기준으로 센다.
+        "saved_count": active_saved_count(profile),
+        "vote_count": active_vote_count(profile),
     }
 
 
@@ -537,7 +540,17 @@ def weekly_videos(request):
     if not request.user.is_authenticated:
         return _error("로그인이 필요합니다.", status=401)
     profile_obj = _profile(request.user, create=True)
-    interests = _weekly_interests(profile_obj)
+    # ★ 2026-09-17 · ?term= 을 주면 그 키워드 하나로만 찾는다.
+    #   금주의 리포트는 '가장 많이 검색한 키워드'(스타일 · 브랜드 · 아이템 · 색상 · TPO …)로
+    #   한 줄 요약 · 히어로 카드 · 추천 영상 · 웹매거진을 모두 통일한다.
+    term = re.sub(r"\s+", " ", str(request.GET.get("term") or "")).strip()[:40]
+    if term:
+        found = DictionaryTerm.objects.filter(canonical_name=term).values_list("term_type", flat=True).first()
+        # 영상 분석 태그의 축 이름을 모르는 키워드도 있어, 흔한 축을 모두 대 본다.
+        facets = [f for f in dict.fromkeys([str(found or "").lower(), *KEYWORD_FACETS]) if f]
+        interests = [{"label": term, "facet": f, "weight": 10.0, "source": "검색한 키워드"} for f in facets]
+    else:
+        interests = _weekly_interests(profile_obj)
     if not interests:
         return _error("선택한 스타일이나 찜한 상품이 없어 추천 기준을 만들 수 없습니다.", status=404)
 
@@ -604,6 +617,8 @@ def weekly_videos(request):
     ranked.sort(key=lambda row: (row[0], row[1], row[2]), reverse=True)
     items = [row[3] for row in ranked[:6]]
     if not items:
+        if term:
+            return _error(f"‘{term}’ 태그가 붙은 유튜브 분석 영상이 아직 없습니다.", status=404)
         return _error("선택한 취향과 일치하는 유튜브 분석 태그가 아직 없습니다.", status=404)
     return JsonResponse({
         "status": "ok",

@@ -3,6 +3,7 @@ import { prime, primeUrl, sentimentUrl } from './live_data.js';
 import { FIDX, fsMatch, fsNorm } from '../../../style/static/js/search.js';
 import { KW, trToast } from './render_helpers.js';
 import { markTried, trRender } from './dispatch.js';
+import { logSearch } from '../../../account/static/js/account_api.js';
 
 /* 예시 질문 — 스타일 룩 · 아이템 위주. 전부 사전에 실제로 있는 말이라 그대로 검색된다. */
 const KW_Q={
@@ -90,6 +91,8 @@ function kwGo(v){
   if(!q){ kwPaintSug(); return }
   const match=selected||fsMatch(q,1)[0];
   if(!match){ kwPaintSug(); return }   /* 사전에 없으면 검색되지 않는다 */
+  /* 금주의 리포트용 검색 기록 — 스타일 축이면 취향 지분 계산에도 쓴다 */
+  logSearch(q, match.f||'', match.f==='스타일'?q:'');
 
   /* ★ 지표를 받아 오는 동안 돋보기를 돌린다.
      서버에 다녀오는 시간이 있는데 화면이 그대로면 눌린 줄을 모르고 또 누른다.
