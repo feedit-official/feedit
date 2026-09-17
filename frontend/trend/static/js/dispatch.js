@@ -803,10 +803,9 @@ export function trRender(id){
         kpi('최다 긍정 신호',topPos?topPos[0]:'–','',topPos?topPos[1].toLocaleString()+'건':'아직 없음',1)+
         kpi('최다 부정 신호',topNeg?topNeg[0]:'–','',topNeg?topNeg[1].toLocaleString()+'건':'아직 없음',0)+'</div>'+
       '<div class="trGrid" style="align-items:start">'+
-        '<div class="panelC" id="sentChartCard"><div class="gHead"><h3>긍정 · 중립 · 부정 반응 건수 추이</h3></div>'+
+        '<div class="panelC" id="sentChartCard"><div class="gHead"><h3>긍정 · 중립 · 부정 반응 비중</h3></div>'+
           '<div data-chart="sentMain"></div>'+
-          '<div class="note"><i>◆</i>막대 하나가 그 날(주별·월별은 그 구간 합계)의 반응 건수입니다.<br>'+
-            '긍정 막대가 부정보다 꾸준히 높으면 구매 쪽으로 기운 구간입니다. 빈 칸은 적재가 없던 날입니다.</div></div>'+
+          '<div class="note"><i>◆</i>기준일로부터 최근 7일(주별) · 30일(월별) 반응을 합쳐 긍정·중립·부정 비중으로 나눈 값입니다.</div></div>'+
         '<div class="panelC" id="sentSigCard"><div class="ph"><h3>신호 유형별 건수</h3><em>최근 28일</em></div>'+
           '<div class="sigWrap" id="sigWrap">'+(SIG.length
           ? '<table class="mTable"><tr><th>신호</th><th></th><th>건수</th></tr>'+
@@ -817,12 +816,9 @@ export function trRender(id){
           '<button class="sigMore" id="sigMoreBtn" type="button" hidden>+ 더보기</button>'+
           '<div class="note"><i>◆</i>주황이 긍정 계열(구매·경험·호평), 검정이 중립(질문·잡담)·부정(비판) 계열입니다.</div></div>'+
       '</div>';
-    /* 비율(%) 선 → 건수 막대. 주·월은 구간 합계(agg:'sum'), 빈 날은 막대를 세우지 않는다. */
-    G_CFG.sentMain={key:kw+'sent',rows:rows,type:'bar',min:0,
-      sets:[{id:'p',name:'긍정',field:'pos_n',unit:'건',agg:'sum',color:'var(--coral)',accent:1},
-            {id:'u',name:'중립',field:'neu_n',unit:'건',agg:'sum',color:'#c9c7c2'},
-            {id:'n',name:'부정',field:'neg_n',unit:'건',agg:'sum',color:'var(--pink-0)'}]};
-    gChart('[data-chart="sentMain"]',G_CFG.sentMain); trDial(); trFillBars();
+    /* 날짜별 막대 → 기간 통합 원형(파이) 차트. 주별 = 최근 7일 합, 월별 = 최근 30일 합 (기준일 포함) */
+    /* G_CFG 에 올리지 않는다 — gMount 가 선·막대 엔진(gChart)으로 다시 그리면 원형이 사라진다 */
+    sentPie($('[data-chart="sentMain"]'),{key:kw+'sent',rows:rows,lastDate:last.date}); trDial(); trFillBars();
     sentFitSignals();   /* 왼쪽 차트 카드 높이에 맞춰 넘치는 신호 목록을 접고 '+더보기' 로 연다 */
   }
   /* ══════════════ 할인률 변화 ══════════════
@@ -1112,6 +1108,75 @@ export function trRender(id){
   if(HAS_A)aAnimate($$('#trBody .kpi, #trBody .panelC, #trBody .concl, #trBody .verdict, #trBody .cheapest, #trBody .svAlso'),
     {opacity:[0,1],translateY:[16,0],duration:760,delay:aStagger(60),ease:'out(3)'});
   trCountUp();   /* 카드가 올라오는 동안 숫자도 같이 굴러 올라간다 */
+}
+/* 긍부정 - 반응 비중 원형(파이) 차트.
+   날짜별로 나누지 않고 선택한 기간(주별 7일 · 월별 30일)의 긍정·중립·부정 건수를 합쳐 한 원에 보여 준다.
+   건수 칸(pos_n·neu_n·neg_n)이 없는 응답이면 조각을 지어내지 않는다. */
+const SENT_PIE_G=[['w','주별',7],['m','월별',30]];
+function sentPie(el,cfg){
+  if(!el)return;
+  const g=SENT_PIE_G.some(x=>x[0]===el.dataset.g)?el.dataset.g:'w';
+  el.dataset.g=g;
+  const days=SENT_PIE_G.find(x=>x[0]===g)[2];
+  const rows=(cfg.rows||[]).filter(r=>r&&r.date&&trDayDiff(r.date,cfg.lastDate)<days&&trDayDiff(r.date,cfg.lastDate)>=0);
+  const hasCnt=rows.some(r=>['pos_n','neu_n','neg_n'].some(f=>r[f]!=null));
+  const sum=f=>rows.reduce((a,r)=>a+(+r[f]||0),0);
+  const parts=[['p','긍정',sum('pos_n'),'var(--coral)'],['u','중립',sum('neu_n'),'#c9c7c2'],['n','부정',sum('neg_n'),'var(--pink-0)']];
+  const total=parts.reduce((a,x)=>a+x[2],0);
+  const sel='<div class="gSel">'+SENT_PIE_G.map(x=>'<button type="button" data-g="'+x[0]+'"'+
+    (x[0]===g?' class="on"':'')+'>'+x[1]+'</button>').join('')+'</div>';
+  if(!hasCnt||total===0){
+    el.dataset.live=hasCnt?'zero':'none';
+    el.innerHTML=sel+unavailableHTML(hasCnt?'최근 '+days+'일 동안 분류된 반응이 0건입니다.':'긍정·중립·부정 건수가 아직 없습니다.','');
+  } else {
+    el.dataset.live='ok';
+    /* 채워진 원형(파이) 차트 — 조각 사이는 흰 틈으로 가르고, 가장 큰 조각을 바깥으로 살짝 띄워 강조한다.
+       12시 방향에서 시계 방향으로 긍정 → 중립 → 부정 순서로 그린다. */
+    const CX=100, CY=100, R=86, POP=7;
+    const pct=v=>Math.round(v/total*100);
+    const live=parts.filter(x=>x[2]>0);
+    const big=live.reduce((m,x)=>x[2]>m[2]?x:m,live[0]);
+    const pt=(ang,r)=>[CX+r*Math.sin(ang),CY-r*Math.cos(ang)];
+    let a0=0;
+    const segs=live.map(x=>{
+      const sweep=x[2]/total*Math.PI*2, a1=a0+sweep, mid=a0+sweep/2;
+      const off=(x===big&&live.length>1)?POP:0;
+      const dx=off*Math.sin(mid), dy=-off*Math.cos(mid);
+      const tip='<title>'+x[1]+' '+x[2].toLocaleString()+'건 · '+pct(x[2])+'%</title>';
+      let shape;
+      if(live.length===1){
+        shape='<circle class="pieSeg" data-s="'+x[0]+'" cx="'+CX+'" cy="'+CY+'" r="'+R+'" fill="'+x[3]+'">'+tip+'</circle>';
+      } else {
+        const [x0,y0]=pt(a0,R), [x1,y1]=pt(a1,R);
+        shape='<path class="pieSeg" data-s="'+x[0]+'" transform="translate('+dx.toFixed(2)+' '+dy.toFixed(2)+')" '+
+          'd="M'+CX+' '+CY+' L'+x0.toFixed(2)+' '+y0.toFixed(2)+' A'+R+' '+R+' 0 '+(sweep>Math.PI?1:0)+' 1 '+
+          x1.toFixed(2)+' '+y1.toFixed(2)+' Z" fill="'+x[3]+'">'+tip+'</path>';
+      }
+      /* 조각 안 퍼센트 — 큰 조각일수록 글자도 크게, 너무 얇은 조각(5% 미만)은 범례에만 둔다 */
+      const p=pct(x[2]);
+      let label='';
+      if(p>=5){
+        const lr=live.length===1?0:R*(p>=40?.5:.62);
+        const [lx,ly]=pt(mid,lr);
+        const fs=p>=40?22:p>=15?15:11;
+        label='<text class="pieTx" x="'+(lx+dx).toFixed(2)+'" y="'+(ly+dy).toFixed(2)+'" font-size="'+fs+'" '+
+          'fill="'+(x[0]==='u'?'#0a0a0a':'#fff')+'" text-anchor="middle" dominant-baseline="central">'+p+'%</text>';
+      }
+      a0=a1; return shape+label;
+    }).join('');
+    el.innerHTML=sel+
+      '<div class="sentPie">'+
+        '<div class="pieBox"><svg viewBox="-8 -8 216 216">'+segs+'</svg></div>'+
+        '<div class="pieSide"><div class="pieSum"><b>'+total.toLocaleString()+'</b><small>건 · 최근 '+days+'일 반응</small></div>'+
+        '<ul class="pieLg">'+parts.map(x=>'<li data-s="'+x[0]+'"><i style="background:'+x[3]+'"></i>'+
+          '<span>'+x[1]+'</span><b>'+pct(x[2])+'%</b><em>'+x[2].toLocaleString()+'건</em></li>').join('')+'</ul></div>'+
+      '</div>';
+    if(HAS_A)aAnimate(el.querySelectorAll('.pieSeg,.pieTx'),{opacity:[0,1],duration:520,delay:aStagger(90),ease:'out(3)'});
+  }
+  el.querySelector('.gSel').addEventListener('click',ev=>{
+    const b=ev.target.closest('button'); if(!b)return;
+    el.dataset.g=b.dataset.g; sentPie(el,cfg); sentFitSignals();
+  });
 }
 function trAnimateSvg(){ gDraw($$('#trBody .lifeSvg path'),1250,320) }
 /* 긍부정 - '신호 유형별 건수' 카드는 왼쪽 '구매의향 지수 추이' 차트 카드 높이에 '정확히' 맞아야 한다.

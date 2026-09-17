@@ -40,7 +40,7 @@ await t('★ 온도 차트가 term 을 넘긴다', () => {
 });
 await t('★ 연관어는 term, 긍부정은 직접 집계 rows 를 넘긴다', () => {
   assert.match(src, /G_CFG\.assocMain=\{key:kw\+'assoc',term:kw/);
-  assert.match(src, /G_CFG\.sentMain=\{key:kw\+'sent',rows:rows/);
+  assert.match(src, /sentPie\(\$\('\[data-chart="sentMain"\]'\),\{key:kw\+'sent',rows:rows/);
   assert.match(src, /sentimentUrl\(kw,KW\.f\)/);
 });
 await t('그리기 전에 prime 을 부른다', () => {

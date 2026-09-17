@@ -230,3 +230,20 @@
 }
 .sigMore:hover{border-color:var(--pink-0);color:var(--pink-0)}
 .sigMore[hidden]{display:none}
+
+/* 긍부정 — 반응 비중 원형(파이) 차트 */
+[data-chart="sentMain"] .gSel{margin-bottom:4px}
+.sentPie{display:flex;align-items:center;justify-content:center;gap:56px;padding:4px 4px 4px;flex-wrap:wrap}
+.sentPie .pieBox{width:220px;height:220px;flex:0 0 auto}
+.sentPie svg{width:100%;height:100%;display:block;overflow:visible}
+.sentPie .pieSeg{stroke:#fff;stroke-width:2.5;stroke-linejoin:round}
+.sentPie .pieTx{font-weight:700;pointer-events:none;letter-spacing:-.02em}
+.sentPie .pieSide{flex:0 1 auto;min-width:220px}
+.sentPie .pieSum{display:flex;align-items:baseline;gap:6px;margin-bottom:14px}
+.sentPie .pieSum b{font-size:22px;line-height:1.1}
+.sentPie .pieSum small{font-size:11px;color:var(--pink-2)}
+.sentPie .pieLg{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:12px}
+.sentPie .pieLg li{display:grid;grid-template-columns:10px 56px 64px auto;align-items:center;gap:16px;font-size:13px}
+.sentPie .pieLg i{width:10px;height:10px;border-radius:2px}
+.sentPie .pieLg b{font-size:15px;text-align:right}
+.sentPie .pieLg em{font-style:normal;font-size:11px;color:var(--pink-2);text-align:left}
