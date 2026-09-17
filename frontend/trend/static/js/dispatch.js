@@ -386,7 +386,11 @@ function wkActivityPaint(K,rp){
 async function wkActivityLoad(fallback,rp){
   WR={state:'loading',data:null,reason:''};
   try{ WR={state:'ok',data:await weeklyReport(),reason:''} }
-  catch(error){ WR={state:'error',data:null,reason:error&&error.message||'활동 기록을 불러오지 못했습니다.'} }
+  catch(error){
+    const msg=error&&error.message||'';
+    /* 404 면 서버(Django)에 /api/auth/weekly-report 가 아직 배포되지 않은 것이다 */
+    WR={state:'error',data:null,reason:/\(404\)/.test(msg)?'리포트 서버에 활동 기록 기능이 아직 배포되지 않았습니다 (404).':(msg||'활동 기록을 불러오지 못했습니다.')};
+  }
   if(!$('#wkReport'))return;
   /* 키워드가 정해진 뒤에 한 줄 요약 · 히어로 · 영상 · 웹매거진을 같은 키워드로 채운다 */
   const K=WKEY=wkKeyword(fallback);
@@ -426,7 +430,9 @@ async function wkMagLoad(term){
     const j=await r.json().catch(()=>null);
     next=j&&Array.isArray(j.articles)&&j.articles.length
       ? {term,state:'ok',items:j.articles.filter(a=>/^https?:\/\//.test(String(a.url||''))),reason:''}
-      : {term,state:'empty',items:[],reason:(j&&(j.reason||j.error))||'웹 검색 결과가 없습니다.'};
+      : {term,state:'empty',items:[],reason:(j&&j.error==='NOT_FOUND')
+          ? '웹 검색 서버(챗봇)에 웹매거진 기능이 아직 배포되지 않았습니다.'   /* 옛 챗봇 서버는 /v1/magazines 를 모른다 */
+          : (j&&(j.reason||j.error))||'웹 검색 결과가 없습니다.'};
   }catch(e){ next={term,state:'error',items:[],reason:'웹 검색 서버에 연결하지 못했습니다.'} }
   if(WM.term!==term)return;   /* 그사이 다른 키워드로 다시 불렀다 */
   WM=next; paint();
