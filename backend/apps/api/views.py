@@ -41,6 +41,7 @@ from django.views.decorators.http import require_GET
 from apps.core.models import (
     Brand,
     BrandSource,
+    ContentItem,
     DictionaryTerm,
     Product,
     ProductSource,
@@ -705,6 +706,160 @@ def sentiment(request):
 #  연관어 — analysis.term_assoc_daily
 # ══════════════════════════════════════════════════════════════
 
+def _analysis_tag_term_map():
+    """콘텐츠 JSON 태그의 표기 → 공통 DictionaryTerm ID.
+
+    새 분석이나 외부 호출은 하지 않는다. 표준명·정규화명·검수된 별칭만 연결한다.
+    같은 표기가 여러 활성 용어에 걸리면 먼저 확정된 표준 용어 하나만 사용한다.
+    """
+    terms = list(
+        DictionaryTerm.objects.exclude(status="INACTIVE")
+        .values("id", "canonical_name", "normalized_name", "term_type")
+    )
+    by_id = {row["id"]: row for row in terms}
+    by_name = {}
+    for row in terms:
+        for value in (row["canonical_name"], row["normalized_name"]):
+            key = _norm(value)
+            if key:
+                by_name.setdefault(key, row["id"])
+    for alias in TermAlias.objects.filter(term_id__in=by_id).values(
+        "term_id", "alias", "normalized_alias"
+    ):
+        for value in (alias["alias"], alias["normalized_alias"]):
+            key = _norm(value)
+            if key:
+                by_name.setdefault(key, alias["term_id"])
+    return by_name, by_id
+
+
+def _tag_values(value):
+    """analysis_tags의 현재/과거 JSON 모양에서 문자열 태그만 꺼낸다."""
+    if isinstance(value, str):
+        yield value
+    elif isinstance(value, list):
+        for item in value:
+            yield from _tag_values(item)
+    elif isinstance(value, dict):
+        for key, item in value.items():
+            if not str(key).startswith("_"):
+                yield from _tag_values(item)
+
+
+def _assoc_evidence(source_term, target_ids):
+    """실제 같은 문서 안에서 찾은 대상 용어 문맥만 근거로 돌려준다."""
+    evidence = defaultdict(list)
+    if not target_ids:
+        return evidence
+    doc_ids = TextTermMention.objects.filter(term=source_term).values("document_id")
+    rows = (
+        TextTermMention.objects.filter(term_id__in=target_ids, document_id__in=doc_ids)
+        .exclude(mention_text__isnull=True).exclude(mention_text="")
+        .order_by("-created_at")
+        .values("term_id", "mention_text", "document__document_type", "document__source__name")[:1500]
+    )
+    for row in rows:
+        bucket = evidence[row["term_id"]]
+        if len(bucket) < 2:
+            bucket.append({
+                "tag": row["document__source__name"] or row["document__document_type"],
+                "text": row["mention_text"][:160],
+            })
+    return evidence
+
+
+def _direct_assoc(term, limit):
+    """적재 지표 없이 기존 DB의 공통 키만으로 연관 용어를 찾는다.
+
+    - 문서: 같은 TextDocument의 TextTermMention
+    - 상품: 같은 ProductSource의 ProductTerm (표준 상품 style도 기준 용어로 인정)
+    - 콘텐츠: 같은 ContentItem.analysis_tags JSON
+
+    서로 단위가 다른 세 개의 수를 새 지표처럼 합성하지 않는다. 화면 호환용
+    cooccurrence는 '공통 레코드 수 합계'이고, 원천별 수를 sources에 함께 공개한다.
+    """
+    stats = defaultdict(lambda: {"documents": 0, "products": 0, "contents": 0})
+
+    source_docs = TextTermMention.objects.filter(term=term).values("document_id")
+    for row in (
+        TextTermMention.objects.filter(document_id__in=source_docs)
+        .exclude(term=term)
+        .values("term_id")
+        .annotate(n=Count("document_id", distinct=True))
+    ):
+        stats[row["term_id"]]["documents"] = row["n"]
+
+    source_products = (
+        ProductSource.objects.filter(Q(product_terms__term=term) | Q(product__style__term=term))
+        .values("id")
+        .distinct()
+    )
+    for row in (
+        ProductTerm.objects.filter(product_source_id__in=source_products)
+        .exclude(term=term)
+        .values("term_id")
+        .annotate(n=Count("product_source_id", distinct=True))
+    ):
+        stats[row["term_id"]]["products"] = row["n"]
+
+    by_name, term_rows = _analysis_tag_term_map()
+    source_id = term.id
+    content_matches = 0
+    for row in ContentItem.objects.exclude(analysis_tags={}).values("analysis_tags").iterator(chunk_size=500):
+        ids = {
+            by_name[key]
+            for raw in _tag_values(row["analysis_tags"])
+            if (key := _norm(raw)) in by_name
+        }
+        if source_id not in ids:
+            continue
+        content_matches += 1
+        for target_id in ids - {source_id}:
+            stats[target_id]["contents"] += 1
+
+    ranked = []
+    for target_id, sources in stats.items():
+        total = sum(sources.values())
+        if total:
+            ranked.append((target_id, total, sum(1 for value in sources.values() if value), sources))
+    ranked.sort(key=lambda row: (-row[1], -row[2], term_rows.get(row[0], {}).get("canonical_name", "")))
+    ranked = ranked[:limit]
+    evidence = _assoc_evidence(term, [row[0] for row in ranked])
+
+    items = []
+    for rank, (target_id, total, _, sources) in enumerate(ranked, 1):
+        target = term_rows.get(target_id)
+        if not target:
+            continue
+        items.append({
+            "term": target["canonical_name"],
+            "facet": target["term_type"],
+            "facet_ko": FACET_KO.get(target["term_type"], target["term_type"]),
+            "cooccurrence": total,
+            "lift": None,
+            "pmi": None,
+            "percentile": None,
+            "rank": rank,
+            "change": None,
+            "sources": sources,
+            "evidence": evidence.get(target_id, []),
+        })
+    return {
+        "term": term.canonical_name,
+        "as_of": timezone.localdate().isoformat(),
+        "previous": None,
+        "metric_version": None,
+        "method": "DIRECT_SHARED_KEYS",
+        "scope_label": "기존 DB 공통 키 직접 연결",
+        "items": items,
+        "history": [],
+        "source_records": {
+            "documents": TextTermMention.objects.filter(term=term).values("document_id").distinct().count(),
+            "products": source_products.count(),
+            "contents": content_matches,
+        },
+    }
+
 @require_GET
 def assoc(request):
     """GET /api/assoc?term=발레코어&limit=60&days=90
@@ -724,19 +879,25 @@ def assoc(request):
     base = TermAssocDaily.objects.filter(source_term=term)
     ver_row = base.order_by("-metric_date").values("metric_version").first()
     if ver_row is None:
+        direct = _direct_assoc(term, limit)
+        if direct["items"]:
+            return _ok(direct)
         total = TermAssocDaily.objects.count()
         return _empty(
-            "연관어 표가 비어 있습니다. 적재가 아직 돌지 않았습니다." if total == 0
-            else f"‘{term.canonical_name}’ 의 연관어가 아직 없습니다. 함께 언급된 문서가 모자랍니다.",
-            term=term.canonical_name, total_rows=total)
+            f"‘{term.canonical_name}’ 과 공통 문서·상품·콘텐츠 태그를 가진 연관 용어가 없습니다.",
+            term=term.canonical_name, total_rows=total,
+            source_records=direct["source_records"])
     base = base.filter(metric_version=ver_row["metric_version"])
     dates = list(base.values_list("metric_date", flat=True).distinct().order_by("-metric_date")[:2])
     latest = dates[0]
     prev = dates[1] if len(dates) > 1 else None
 
+    sort_method = request.GET.get("sort", "pmi")
+    order_clause = ["-cooccurrence_count", "-pmi"] if sort_method == "cooc" else [Coalesce("association_rank", 999999), "-pmi", "-cooccurrence_count"]
+
     rows = list(
         base.filter(metric_date=latest)
-        .order_by(Coalesce("association_rank", 999999), "-pmi", "-cooccurrence_count")
+        .order_by(*order_clause)
         .values("target_term_id", "target_term__canonical_name", "target_term__term_type",
                 "cooccurrence_count", "lift", "pmi", "association_percentile",
                 "association_rank", "is_new")[:limit]
@@ -746,20 +907,8 @@ def assoc(request):
         prev_rank = dict(base.filter(metric_date=prev).values_list("target_term_id",
                                                                      "association_rank"))
 
-    # 근거 문장 — 기준 용어가 나온 문서 안에서 연관 용어가 언급된 문맥
     target_ids = [r["target_term_id"] for r in rows]
-    evidence = defaultdict(list)
-    if target_ids:
-        doc_ids = TextTermMention.objects.filter(term=term).values("document_id")
-        for m in (TextTermMention.objects.filter(term_id__in=target_ids, document_id__in=doc_ids)
-                  .exclude(mention_text__isnull=True).exclude(mention_text="")
-                  .order_by("-created_at")
-                  .values("term_id", "mention_text", "document__document_type",
-                          "document__source__name")[:1500]):
-            lst = evidence[m["term_id"]]
-            if len(lst) < 2:
-                lst.append({"tag": m["document__source__name"] or m["document__document_type"],
-                            "text": m["mention_text"][:160]})
+    evidence = _assoc_evidence(term, target_ids)
 
     items = []
     for r in rows:
