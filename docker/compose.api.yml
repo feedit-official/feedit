@@ -70,7 +70,9 @@ services:
       DJANGO_DEBUG: "False"
       # ★ 앞단(nginx)이 있을 때만 켠다. 앞단 없이 켜면 머리글을 위조당한다.
       DJANGO_BEHIND_PROXY: "true"
-      DJANGO_CSRF_TRUSTED_ORIGINS: "https://feedit-official.duckdns.org"
+      # ★ .env 값을 쓴다. 여기에 주소를 박아 두면 env_file 값을 덮어써서
+      #   버셀 주소를 .env 에 넣어도 로그인 POST 가 CSRF 403 으로 막힌다(2026-09-17).
+      DJANGO_CSRF_TRUSTED_ORIGINS: "${DJANGO_CSRF_TRUSTED_ORIGINS:-https://feedit-official.duckdns.org}"
 
     # ★ 127.0.0.1 에만 묶는다. 앞단 nginx 가 여기로 넘기고,
     #   인터넷에서는 직접 못 닿는다. 앞의 127.0.0.1 을 빼면
