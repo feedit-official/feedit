@@ -2,7 +2,7 @@ import { $, $$, HAS_A, aAnimate, aSpring, aStagger, aUtils } from '../../../core
 import { WK, feedSmPicks } from './my_feed.js';
 import { STYLES } from '../../../home/static/js/chat.js';
 import { SIMG } from '../../../style/static/js/style_page.js';
-import { FS, FS_COLS, fsBuild, fsChipsPaint, fsDropDisallowed, fsHideSug, fsLoadDictionary, fsReset } from '../../../style/static/js/search.js';
+import { FS, getFsCols, fsBuild, fsChipsPaint, fsDropDisallowed, fsHideSug, fsLoadDictionary, fsReset, fsPaintPop } from '../../../style/static/js/search.js';
 import { G_CFG, KW, fsItem, fsItemFull, gMount, josa, trEmpty, trFillBars } from './render_helpers.js';
 import { ME, bioPaint } from '../../../account/static/js/profile.js';
 import { S_EDIT, S_FEED, TR_META } from './nav_meta.js';
@@ -495,7 +495,7 @@ function fsTerm() {
 const EDIT_API = { stock: '/api/discount', resale: '/api/resale', life: '/api/lifecycle' };
 function editUrl(id) {
   const p = new URLSearchParams();
-  FS_COLS.forEach(c => (FS.pick[c.ax] || []).forEach(v => p.append(c.param, v)));
+  getFsCols().forEach(c => (FS.pick[c.ax] || []).forEach(v => p.append(c.param, v)));
   const t = fsTerm(); if (t) p.set('term', t);
   return EDIT_API[id] + '?' + p.toString();
 }
@@ -586,7 +586,11 @@ export function trRender(id) {
       fsReset(); fsHideSug();
       const cb = $('#fsChips'); if (cb) { cb.hidden = true; cb.innerHTML = '' }
     }
-    FS.id = useSearch ? id : null;
+    if (FS.id !== (useSearch ? id : null)) {
+      FS.opts = {};
+      FS.id = useSearch ? id : null;
+      if (FS.id) fsPaintPop(); /* 미리 칸 모양을 바꿔 둔다 */
+    }
     /* 수명주기는 스타일 · 종류 · 브랜드까지만 — 다른 탭에서 걸어 온 아이템명 조건은 뗀다 */
     if (useSearch && fsDropDisallowed()) fsChipsPaint();
     const fi = $('#fsInput');

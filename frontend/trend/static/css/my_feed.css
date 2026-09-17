@@ -266,7 +266,7 @@
 }
 .fsPopBg.on{opacity:1;pointer-events:auto}
 .fsPop{
-  width:min(980px,100%);max-height:min(660px,88vh);display:flex;flex-direction:column;
+  width:min(980px,100%);height:min(660px,88vh);display:flex;flex-direction:column;
   background:var(--paper);border-radius:16px;overflow:hidden;
   box-shadow:0 60px 120px -50px rgba(10,10,10,.7);
   transform:translateY(14px) scale(.985);transition:transform .38s var(--ease);
@@ -281,6 +281,7 @@
   display:grid;place-items:center}
 .fsX:hover{background:var(--coral);color:#fff}
 .fsCols{flex:1;min-height:0;display:grid;grid-template-columns:repeat(var(--fsN,4),1fr)}
+.fsPop.is-discount .fsCols{grid-template-columns:minmax(150px, 190px) minmax(150px, 190px) minmax(150px, 190px) 1fr}
 .fsCol{min-height:0;display:flex;flex-direction:column;border-right:1px solid var(--pink-3)}
 .fsCol:last-child{border-right:none}
 /* 탭에서 못 쓰는 축(수명주기의 아이템명)은 칸째 접는다 — search.js fsPaintPop */
@@ -398,3 +399,29 @@
   .fsBar.busy .kwGoIc{animation:none}
   .fsBar.busy::after{animation:none;opacity:.6}
 }
+
+/* Discount modal specific styles */
+.fsPop.is-discount .fsOpt.has-thumb {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-align: left;
+  padding: 8px 12px;
+}
+.fsPop.is-discount .fsOpt.has-thumb img {
+  width: 80px;
+  height: 80px;
+  border-radius: 6px;
+  object-fit: cover;
+  flex-shrink: 0;
+  border: 1px solid rgba(0,0,0,0.05);
+}
+.fsPop.is-discount .fsOpt.has-thumb .fsOptTx {
+  flex: 1;
+  white-space: normal;
+  line-height: 1.4;
+  word-break: keep-all;
+}
+.fsPop { resize: both; }
+
+.fsPop.is-discount { width: 1100px; max-width: 96vw; }

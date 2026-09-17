@@ -31,7 +31,7 @@ from collections import defaultdict
 from datetime import timedelta
 
 from django.db import connection
-from django.db.models import Count, Max, Min, Q, Sum
+from django.db.models import Count, F, Max, Min, Q, Sum
 from django.db.models.functions import Coalesce
 from django.http import JsonResponse
 from django.utils import timezone
@@ -1002,7 +1002,7 @@ MIN_PRODUCTS_FOR_FACETS = 20
 
 BRAND_EXPR = Coalesce("product__brand__name", "source_brand__brand__name", "source_brand__name")
 ITEM_EXPR = Coalesce("product__canonical_name", "source_name")
-
+CATEGORY_EXPR = Coalesce("product__category__name", "source_category__category__name", "source_category__source_category_name")
 
 def _list(request, name):
     out, seen = [], set()
@@ -1097,6 +1097,38 @@ def _term_rows(qs, term_type, keep, limit):
     return out
 
 
+def _item_with_thumb_rows(qs, expr, keep, limit):
+    out = _count_rows(qs, expr, keep, limit)
+    labels = [o["label"] for o in out if not o.get("picked_only")]
+    
+    thumb_map = {}
+    if labels:
+        from apps.core.models import ProductSource
+        
+        # 1. Check ProductSource by product__canonical_name (fast join)
+        prod_thumbs = ProductSource.objects.filter(product__canonical_name__in=labels)\
+            .exclude(thumbnail_url__isnull=True).exclude(thumbnail_url="")\
+            .values_list("product__canonical_name", "thumbnail_url")
+        for k, v in prod_thumbs:
+            if k not in thumb_map:
+                thumb_map[k] = v
+                
+        # 2. For remaining labels, check ProductSource by source_name (fast index)
+        missing_labels = [L for L in labels if L not in thumb_map]
+        if missing_labels:
+            ps_thumbs = ProductSource.objects.filter(source_name__in=missing_labels)\
+                .exclude(thumbnail_url__isnull=True).exclude(thumbnail_url="")\
+                .values_list("source_name", "thumbnail_url")
+            for k, v in ps_thumbs:
+                if k not in thumb_map:
+                    thumb_map[k] = v
+                    
+    for o in out:
+        o["thumb"] = thumb_map.get(o["label"])
+        
+    return out
+
+
 @require_GET
 def facets(request):
     """GET /api/facets?style=스트릿&brand=스투시&limit=200 — 세부 검색 네 칸의 후보."""
@@ -1129,6 +1161,30 @@ def facets(request):
         "kind": _term_rows(_apply(base, sel, "kind"), "ITEM", sel["kind"], limit),
         "brand": _count_rows(_apply(base, sel, "brand"), BRAND_EXPR, sel["brand"], limit),
         "item": _count_rows(_apply(base, sel, "item"), ITEM_EXPR, sel["item"], limit),
+    }
+    if not any(len(v) for v in data.values()):
+        return _empty("고른 조건에 맞는 상품이 없습니다. 조건을 하나 빼고 다시 보세요.",
+                      matched=0, narrowed=True)
+    return _ok(data, matched=matched, narrowed=True, selected=sel, products=n_products)
+
+
+@require_GET
+def discount_facets(request):
+    """GET /api/discount/facets?style=스트릿&brand=스투시&limit=200"""
+    limit = _int(request, "limit", 200, 1, 1000)
+    sel = _selection(request)
+    base = ProductSource.objects.exclude(market_type="RESALE").filter(status="ACTIVE")
+    n_products = base.count()
+
+    if n_products == 0:
+        return _empty("상품 데이터가 비어 있습니다.", narrowed=False, products=n_products)
+
+    matched = _apply(base, sel).count()
+    data = {
+        "style": _core_style_rows(_apply(base, sel, "style"), sel["style"]),
+        "brand": _count_rows(_apply(base, sel, "brand"), BRAND_EXPR, sel["brand"], limit),
+        "kind": _count_rows(_apply(base, sel, "kind"), CATEGORY_EXPR, sel["kind"], limit),
+        "item": _item_with_thumb_rows(_apply(base, sel, "item"), ITEM_EXPR, sel["item"], limit),
     }
     if not any(len(v) for v in data.values()):
         return _empty("고른 조건에 맞는 상품이 없습니다. 조건을 하나 빼고 다시 보세요.",

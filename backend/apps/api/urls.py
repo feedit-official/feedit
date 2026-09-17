@@ -41,6 +41,7 @@ urlpatterns = [
     path("sentiment", views.sentiment, name="sentiment"),  # 댓글 원문 기반 긍부정
     path("assoc", views.assoc, name="assoc"),            # 연관어
     path("discount", views.discount, name="discount"),   # 할인률 변화
+    path("discount/facets", views.discount_facets, name="discount-facets"),
     path("resale", views.resale, name="resale"),         # 리세일 시세 지수
     path("lifecycle", views.lifecycle, name="lifecycle"),  # 수명주기
     path("products", views.products, name="products"),

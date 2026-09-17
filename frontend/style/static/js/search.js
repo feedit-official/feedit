@@ -102,17 +102,27 @@ const FALIAS={
      서버 사전은 앞의 것을 '아이템' 이라 부른다. 내려온 것은 ITEM 용어이므로
      여기서 '종류' 로 받는다. 안 그러면 두 칸에 같은 말이 섞인다.
    ══════════════════════════════════════════════════════ */
-export const FS_COLS=[
+export const FS_COLS_DEFAULT=[
   {ax:'스타일',   param:'style', head:'STYLE'},
   {ax:'종류',     param:'kind',  head:'종류'},
   {ax:'브랜드',   param:'brand', head:'브랜드'},
   {ax:'아이템명', param:'item',  head:'아이템명'}
 ];
+export const FS_COLS_DISCOUNT=[
+  {ax:'스타일', param:'style', head:'STYLE'},
+  {ax:'브랜드', param:'brand', head:'브랜드'},
+  {ax:'카테고리', param:'kind', head:'카테고리'},
+  {ax:'상품명', param:'item', head:'상품명'}
+];
+export function getFsCols() {
+  return (FS.id === 'stock') ? FS_COLS_DISCOUNT : FS_COLS_DEFAULT;
+}
+export const FS_COLS = FS_COLS_DEFAULT;
 /* 칸으로는 안 서지만 칩으로는 걸리는 축 — 좁히는 축이 아니라 속성이다.
    검색칸에서만 걸린다(사전에 색·디테일·TPO 가 잔뜩 들어 있다). */
 const FS_ATTR=['소재','색','디테일','TPO'];
 /* 구체적인 것부터 — 지표를 물을 때 무엇을 대표로 삼을지의 순서다 */
-export const FS_ORDER=['아이템명','브랜드','종류','스타일'].concat(FS_ATTR);
+export const FS_ORDER=['상품명','아이템명','브랜드','카테고리','종류','스타일'].concat(FS_ATTR);
 /* 탭마다 걸 수 있는 축 — null 이면 전부.
    ★ 수명주기는 사전에 있는 키워드(스타일 · 종류 · 브랜드)까지만 받는다.
      아이템명(개별 상품)과 속성(소재 · 색 · 디테일 · TPO)은 유행 곡선이 붙는 단위가 아니다. */
@@ -381,10 +391,11 @@ function fsLocalOpts(ax){
    ★ 서버는 축을 영문 이름(style·kind·brand·item)으로 준다. 화면의 축 이름은
      한글이다. 여기서 바꿔 주지 않으면 FS.opts['스타일'] 이 늘 undefined 라
      **서버가 잘 왔는데도 조용히 로컬 목록으로 떨어진다.** */
-const FS_PARAM=FS_COLS.reduce((m,c)=>{ m[c.ax]=c.param; return m },{});
 function fsOptsFor(ax){
-  const key=FS_PARAM[ax];
+  const col = getFsCols().find(c => c.ax === ax);
+  const key = col ? col.param : null;
   if(FS.opts&&key&&Array.isArray(FS.opts[key]))return {list:FS.opts[key],from:'db'};
+  if(['stock', 'resale', 'life'].indexOf(FS.id) >= 0) return {list:[], from:'db'};
   return {list:fsLocalOpts(ax).map(l=>({label:l,count:null})),from:'local'};
 }
 
@@ -394,9 +405,10 @@ function fsOptsFor(ax){
 let fsSeq=0, fsFacetT=null;
 function fsFacetURL(){
   const p=new URLSearchParams();
-  FS_COLS.forEach(c=>{ if(fsAxOk(c.ax))fsPickedOf(c.ax).forEach(v=>p.append(c.param,v)) });
+  getFsCols().forEach(c=>{ if(fsAxOk(c.ax))fsPickedOf(c.ax).forEach(v=>p.append(c.param,v)) });
   p.set('limit',String(FS_POP_CAP));
-  return '/api/facets?'+p.toString();
+  const base = (FS.id === 'stock') ? '/api/discount/facets?' : '/api/facets?';
+  return base + p.toString();
 }
 /* ★ 실패를 한 문장으로 뭉개지 않는다.
    예전엔 어떤 실패든 "닿지 못했습니다" 하나였다. 그런데 실제로 나온 것은
@@ -450,7 +462,7 @@ export function fsLoadFacets(){
            ★ 빈 객체를 넣으면 안 된다. fsOptsFor 가 '축이 없네' 하고
              로컬 목록으로 떨어져서, 없는 후보를 있는 것처럼 보여 준다.
              축마다 빈 배열을 명시해 '여긴 없다'가 그대로 그려지게 한다. */
-        FS.opts={}; FS_COLS.forEach(c=>{ FS.opts[c.param]=[] });
+        FS.opts={}; getFsCols().forEach(c=>{ FS.opts[c.param]=[] });
         FS.narrowed=!!j.narrowed; FS.matched=(j.matched==null?0:j.matched);
         FS.err=''; FS.note=j.reason||'';
       }else{
@@ -475,6 +487,7 @@ function fsLoadFacetsSoon(){
 
 /* ── 세부 검색 팝업 ── */
 function fsOpenPop(){
+  const pop=$('.fsPop'); if(pop){ pop.style.transform=''; pop.style.transition=''; }
   FS.open=true; $('#fsPopBg').classList.add('on'); $('#fsMore').classList.add('on');
   fsPaintPop(); fsLoadFacets();
 }
@@ -484,23 +497,30 @@ function fsColHTML(col){
   const ax=col.ax;
   const {list,from}=fsOptsFor(ax);
   const q=fsNorm(FS.colq[ax]||'');
-  const hit=q?list.filter(o=>fsNorm(o.label).indexOf(q)>=0):list;
+  const hit=q?list.filter(o=>fsNorm(o.label).indexOf(q)>=0):[...list];
+  hit.sort((a,b) => a.label.localeCompare(b.label, 'ko-KR'));
   const picked=fsPickedOf(ax);
 
   if(!hit.length){
-    const why=q
-      ? '‘'+fsEsc(FS.colq[ax])+'’ 로 찾은 것이 없습니다.'
-      : (from==='db'
-          ? '이 조건에서는 남는 것이 없습니다.\n칩을 하나 빼 보세요.'
-          : '아직 후보가 없습니다.');
+    let why = '';
+    if (FS.loading && (!FS.opts || !Object.keys(FS.opts).length)) {
+      why = '정보를 불러오는 중입니다...';
+    } else {
+      why=q
+        ? '‘'+fsEsc(FS.colq[ax])+'’ 로 찾은 것이 없습니다.'
+        : (from==='db'
+            ? '이 조건에서는 남는 것이 없습니다.\n칩을 하나 빼 보세요.'
+            : '아직 후보가 없습니다.');
+    }
     return '<div class="hint">'+why.replace(/\n/g,'<br>')+'</div>';
   }
   const shown=hit.slice(0,FS_POP_CAP);
   return shown.map(o=>{
     const on=picked.indexOf(o.label)>=0;
-    return '<button type="button" data-ax="'+fsEsc(ax)+'" data-fv="'+fsEsc(o.label)+'"'+
-      ' class="fsOpt'+(on?' on':'')+(o.count===0?' zero':'')+'"'+
+    return '<button type="button" data-ax="'+fsEsc(ax)+'" data-fv="'+fsEsc(o.label)+'" title="'+fsEsc(o.label)+'"'+
+      ' class="fsOpt'+(on?' on':'')+(o.count===0?' zero':'')+(o.thumb?' has-thumb':'')+'"'+
       ' aria-pressed="'+(on?'true':'false')+'">'+
+      (o.thumb?'<img src="'+fsEsc(o.thumb)+'" loading="lazy" alt="">':'')+
       '<span class="fsOptTx">'+fsEsc(o.label)+'</span>'+
       (o.count==null?'':'<i>'+o.count+'</i>')+'</button>';
   }).join('')
@@ -510,16 +530,31 @@ function fsColHTML(col){
       : '');
 }
 
-function fsPaintPop(){
+export function fsPaintPop(){
   /* 못 쓰는 축의 칸은 접는다 — 남은 칸이 가로를 나눠 갖는다 */
   const cols=$('.fsCols'); let shown=0;
-  FS_COLS.forEach((c,lv)=>{
+  const pop=$('.fsPop');
+  if(pop) {
+    if(FS.id === 'stock') pop.classList.add('is-discount');
+    else pop.classList.remove('is-discount');
+  }
+  $$('.fsCol').forEach(col => col.hidden = true);
+  getFsCols().forEach((c,lv)=>{
     const col=$('.fsCol[data-lv="'+lv+'"]'), ok=fsAxOk(c.ax);
-    if(col)col.hidden=!ok;
+    if(col){
+      col.hidden=!ok;
+      const ch = col.querySelector('.fsColH'); if(ch) ch.textContent = c.ax;
+      const inp = col.querySelector('input'); 
+      if(inp) {
+        inp.dataset.ax = c.ax;
+        inp.placeholder = c.ax + ' 찾기';
+        inp.setAttribute('aria-label', c.ax + ' 찾기');
+      }
+    }
     if(ok)shown++;
   });
   if(cols)cols.style.setProperty('--fsN',shown);
-  FS_COLS.forEach((c,lv)=>{
+  getFsCols().forEach((c,lv)=>{
     const host=$('#fsC'+lv); if(!host||!fsAxOk(c.ax))return;
     host.innerHTML=fsColHTML(c);
     host.classList.toggle('isLoading',!!FS.loading);
@@ -649,9 +684,9 @@ export function fsBuild(){
     cols.addEventListener('input',e=>{
       const q=e.target.closest('input[data-ax]'); if(!q)return;
       FS.colq[q.dataset.ax]=q.value;
-      const lv=FS_COLS.findIndex(c=>c.ax===q.dataset.ax);
+      const lv=getFsCols().findIndex(c=>c.ax===q.dataset.ax);
       if(lv<0)return;
-      const host=$('#fsC'+lv); if(host)host.innerHTML=fsColHTML(FS_COLS[lv]);
+      const host=$('#fsC'+lv); if(host)host.innerHTML=fsColHTML(getFsCols()[lv]);
     });
   }
   $('#fsPicked').addEventListener('click',e=>{
@@ -670,5 +705,35 @@ export function fsBuild(){
   document.addEventListener('click',e=>{ if(!e.target.closest('.fsWrap'))fsHideSug();
     if(!e.target.closest('.kwWrap'))kwHideSug(); });
   if(!fsQBooked){ fsQBooked=true; fsQStep(); setTimeout(fsQTick,3200) }
+
+  const head = $('.fsPopHead');
+  const pop = $('.fsPop');
+  if(head && pop) {
+    let isDragging = false;
+    let startX = 0, startY = 0, initialX = 0, initialY = 0;
+    head.style.cursor = 'grab';
+    head.addEventListener('mousedown', e => {
+      if(e.target.closest('button')) return;
+      if(!pop.style.transform) { initialX = 0; initialY = 0; }
+      isDragging = true;
+      head.style.cursor = 'grabbing';
+      pop.style.transition = 'none';
+      startX = e.clientX - initialX;
+      startY = e.clientY - initialY;
+      e.preventDefault();
+    });
+    window.addEventListener('mousemove', e => {
+      if(!isDragging) return;
+      initialX = e.clientX - startX;
+      initialY = e.clientY - startY;
+      pop.style.transform = `translate(${initialX}px, ${initialY}px)`;
+    });
+    window.addEventListener('mouseup', () => {
+      if(isDragging) {
+        isDragging = false;
+        head.style.cursor = 'grab';
+      }
+    });
+  }
   fsPaintPop();
 }
