@@ -60,7 +60,7 @@ export function trToast(msg){
 /* ★ 처음 들어오면 비어 있다.
    전에는 '발레코어' 가 기본값이라, 아무것도 검색하지 않았는데 화면에 숫자가
    가득 떠 있었다. 그게 진짜 데이터인 줄 알기 쉽다. 검색해야 나오게 바꿨다. */
-export var KW={q:'',sug:[],cur:-1,part:'temp',asked:{}};
+export var KW={q:'',f:'',sug:[],cur:-1,part:'temp',asked:{}};
 
 
 /* ── 검색 전 빈 화면 ────────────────────────────────────────

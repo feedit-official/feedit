@@ -38,16 +38,24 @@ await t('★ 온도 차트가 term 을 넘긴다', () => {
   assert.match(src, /field:'mention'/);
   assert.match(src, /field:'temp'/);
 });
-await t('★ 연관어·긍부정도 term 을 넘긴다', () => {
+await t('★ 연관어는 term, 긍부정은 직접 집계 rows 를 넘긴다', () => {
   assert.match(src, /G_CFG\.assocMain=\{key:kw\+'assoc',term:kw/);
-  assert.match(src, /G_CFG\.sentMain=\{key:kw\+'sent',term:kw/);
+  assert.match(src, /G_CFG\.sentMain=\{key:kw\+'sent',rows:rows/);
+  assert.match(src, /sentimentUrl\(kw,KW\.f\)/);
 });
 await t('그리기 전에 prime 을 부른다', () => {
   assert.match(src, /prime\(kw\)\.then/);
   assert.match(src, /stateOf\(kw\)\.status==='unknown'/);
+  assert.match(src, /primeOnce\(id,sentimentUrl\(KW\.q,KW\.f\)\)/);
 });
 await t('★ 늦게 온 응답이 딴 탭을 덮지 않는다', () => {
   assert.match(src, /if\(TR_CUR===id\) trRender\(id\)/);
+});
+await t('★ 금주 추천 영상은 검색 목업이 아니라 개인화 API의 영상 ID를 쓴다', () => {
+  assert.match(src, /weeklyVideos\(\)/);
+  assert.match(src, /video\.embed_url/);
+  assert.doesNotMatch(src, /embed\?listType=search/);
+  assert.match(src, /조회 .*metrics\.views/);
 });
 
 // ── 실제로 그려 본다 ──

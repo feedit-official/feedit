@@ -7,7 +7,7 @@ import { G_CFG, KW, fsItem, fsItemFull, gMount, josa, trEmpty, trFillBars } from
 import { ME, bioPaint } from '../../../account/static/js/profile.js';
 import { S_EDIT, S_FEED, TR_META } from './nav_meta.js';
 import { assocClosePop, assocOpenPop } from './assoc_popover.js';
-import { entryOf, prime, primeUrl, stateOf, stateOfUrl, summaryOf, unavailableHTML } from './live_data.js';
+import { entryOf, prime, primeUrl, sentimentUrl, stateOf, stateOfUrl, summaryOf, unavailableHTML } from './live_data.js';
 import { gChart, gDraw, gSeed } from './chart_engine.js';
 import { kwWire } from './saved_keywords.js';
 import { rkChip, rkPaintAv } from '../../../account/static/js/rank.js';
@@ -16,6 +16,7 @@ import { smBarFill, svRender } from './discount_resale.js';
 import { trCountUp } from './count_up.js';
 import { trDial, wkAnimate } from './weekly_report.js';
 import { trSideOpen } from '../../../app_shell/static/js/router.js';
+import { weeklyVideos } from '../../../account/static/js/account_api.js';
 
 /* 탭 자리 — 키워드 검색바 / 커머스 탭 / 없음 세 가지로 갈린다 */
 function trTabsRender(id){
@@ -161,6 +162,32 @@ document.addEventListener('click',e=>{
 /* DB 에서 온 글자는 반드시 이스케이프해서 넣는다 */
 function trEsc(v){ return String(v==null?'':v).replace(/[&<>"']/g,m=>(
   {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])) }
+const wkMetric = value => Number(value||0).toLocaleString('ko-KR');
+async function wkLoadVideo(){
+  const host=$('#wkVideoRec');
+  if(!host)return;
+  try{
+    const data=await weeklyVideos();
+    if(!host.isConnected)return;
+    const video=(data.items||[])[0];
+    if(!video)throw new Error('추천할 수 있는 영상이 아직 없습니다.');
+    const metrics=video.metrics||{};
+    host.innerHTML=
+      '<div class="wkVideoFrame"><iframe src="'+trEsc(video.embed_url)+'" '+
+        'title="'+trEsc(video.title)+'" loading="lazy" allow="accelerometer; autoplay; clipboard-write; '+
+        'encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe></div>'+
+      '<div class="wkVideoInfo"><span><b>'+trEsc(video.channel||'YouTube')+'</b>'+trEsc(video.title)+'</span>'+
+        '<a href="'+trEsc(video.url)+'" target="_blank" rel="noopener">YouTube에서 보기 ↗</a></div>'+
+      '<div class="wkNote"><i>◆</i><span><b>'+trEsc(video.reason)+'</b> 취향과 맞고, '+
+        '조회 '+wkMetric(metrics.views)+'회 · 좋아요 '+wkMetric(metrics.likes)+'개 · 댓글 '+
+        wkMetric(metrics.comments)+'개인 영상입니다.</span></div>';
+    const badge=$('#wkVideoBadge');
+    if(badge)badge.textContent=video.reason||'취향 기반';
+  }catch(error){
+    if(!host.isConnected)return;
+    host.innerHTML='<div class="wkVideoEmpty"><b>추천 영상을 불러오지 못했습니다.</b><span>'+trEsc(error.message||'잠시 뒤 다시 확인해 주세요.')+'</span></div>';
+  }
+}
 function trWon(v){ return v==null?'–':Math.round(v).toLocaleString('ko-KR')+'원' }
 function trDayDiff(a,b){ return Math.round((new Date(b)-new Date(a))/864e5) }
 function trLoading(what){
@@ -219,7 +246,7 @@ export function trRender(id){
 
      받아 오기 전에는 stateOf() 가 'unknown' 이라 예전처럼 씨드 난수로 그린다.
      받아 온 뒤 다시 그리면서 실값 또는 '측정 불가'로 바뀐다. */
-  if(id==='temp'||id==='assoc'||id==='sentiment'){
+  if(id==='temp'||id==='assoc'){
     const kw=KW.q||fsItem();
     /* ★ 한 번 시도한 말은 잠깐 다시 안 묻는다.
        실패는 캐시하지 않기로 했는데(고친 뒤 재시도가 돼야 하니까),
@@ -238,6 +265,7 @@ export function trRender(id){
   }
   /* 연관어 · 할인률 · 리세일 · 수명주기는 URL 단위로 받는다 */
   if(id==='assoc'&&KW.q) primeOnce(id,'/api/assoc?term='+encodeURIComponent(KW.q));
+  if(id==='sentiment'&&KW.q) primeOnce(id,sentimentUrl(KW.q,KW.f));
   if(EDIT_API[id]&&fsItem()) primeOnce(id,editUrl(id));
   const m=TR_META[id]||TR_META.myfeed;
   $('#trTitle').textContent=m[0];
@@ -403,7 +431,6 @@ export function trRender(id){
     const others=STYLES.filter(s=>s.id!==top.id&&rise.includes(s.pk)).slice(0,3);
     const maxAct=Math.max.apply(null,WK.days), DAY=['월','화','수','목','금','토','일'];
     const searchShare=Math.round(WK.topSearchN/WK.search*100);
-    const ytQ=encodeURIComponent(top.n+' 스타일링');
     const rp=WK.range.split(' · ');
 
     body.innerHTML='<div class="wkReport" id="wkReport">'+
@@ -467,11 +494,8 @@ export function trRender(id){
       /* ── 추천 영상 · 웹매거진 — 지어낸 기사가 아니라, 실제 검색 결과로 바로 연결한다 ── */
       '<section class="wkG2 wkG2b">'+
         '<article class="wkCard">'+
-          '<div class="wkCardHead"><h3>이번 주 추천 영상</h3><em>'+top.n+'</em></div>'+
-          '<div class="wkVideoFrame"><iframe src="https://www.youtube.com/embed?listType=search&list='+ytQ+'" '+
-            'title="'+top.n+' 관련 영상" loading="lazy" allow="accelerometer; autoplay; clipboard-write; '+
-            'encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe></div>'+
-          '<div class="wkNote"><i>◆</i><span>유튜브에서 이 키워드와 관련해 지금 올라오는 영상을 그대로 불러옵니다.</span></div>'+
+          '<div class="wkCardHead"><h3>이번 주 추천 영상</h3><em id="wkVideoBadge">취향 분석 중</em></div>'+
+          '<div id="wkVideoRec"><div class="wkVideoLoading"><i></i><span>선택한 스타일과 찜 상품 태그로<br>콘텐츠 DB를 찾고 있습니다.</span></div></div>'+
         '</article>'+
         '<article class="wkCard">'+
           '<div class="wkCardHead"><h3>추천 웹매거진</h3><em>'+top.n+'</em></div>'+
@@ -499,6 +523,7 @@ export function trRender(id){
       '</div>'+
     '</div>';
     wkAnimate();
+    wkLoadVideo();
   }
   else if(id==='saved'){ svRender(body) }
   /* ══════════════ 언급량 · 온도 ══════════════
@@ -686,14 +711,15 @@ export function trRender(id){
      값: /api/trend 의 긍정·부정 비율, 반응 유형 건수, 구매의향 지수(purchase_intent_index) */
   else if(id==='sentiment'){
     const kw=KW.q;
-    const st=stateOf(kw);
+    const sentUrl=sentimentUrl(kw,KW.f);
+    const st=stateOfUrl(sentUrl);
     if(st.status==='unknown'){ body.innerHTML=trLoading('‘'+trEsc(kw)+'’ 의 긍부정 지표를'); return; }
     if(st.status==='empty'||st.status==='error'){
       body.innerHTML=unavailableHTML(st.reason,
         st.detail || (st.status==='error'?'연결이 되면 자동으로 실제 값이 뜹니다.':''));
       return;
     }
-    const E=entryOf(kw), rows=((E&&E.data&&E.data.series)||[]);
+    const D=st.data||{}, rows=Array.isArray(D.series)?D.series:[];
     const last=rows[rows.length-1]||{};
     /* '계산이 안 됐다'와 '계산했는데 분류된 반응이 0건이다'는 다른 말이다.
        행은 있는데 긍정·중립·부정·의도 건수가 전부 0 이면 그렇게 적는다. */
@@ -773,7 +799,7 @@ export function trRender(id){
           '</div>'+
         '</div></div>'+
       '<div class="kpis" style="grid-template-columns:repeat(3,minmax(0,1fr))">'+
-        kpi('총 반응 수',total.toLocaleString(),'건','최근 28일 · 긍정+중립+부정',1)+
+        kpi('총 반응 수',total.toLocaleString(),'건','최근 28일 · '+trEsc(D.scope_label||'용어 직접 언급'),1)+
         kpi('최다 긍정 신호',topPos?topPos[0]:'–','',topPos?topPos[1].toLocaleString()+'건':'아직 없음',1)+
         kpi('최다 부정 신호',topNeg?topNeg[0]:'–','',topNeg?topNeg[1].toLocaleString()+'건':'아직 없음',0)+'</div>'+
       '<div class="trGrid" style="align-items:start">'+
@@ -792,7 +818,7 @@ export function trRender(id){
           '<div class="note"><i>◆</i>주황이 긍정 계열(구매·경험·호평), 검정이 중립(질문·잡담)·부정(비판) 계열입니다.</div></div>'+
       '</div>';
     /* 비율(%) 선 → 건수 막대. 주·월은 구간 합계(agg:'sum'), 빈 날은 막대를 세우지 않는다. */
-    G_CFG.sentMain={key:kw+'sent',term:kw,type:'bar',min:0,
+    G_CFG.sentMain={key:kw+'sent',rows:rows,type:'bar',min:0,
       sets:[{id:'p',name:'긍정',field:'pos_n',unit:'건',agg:'sum',color:'var(--coral)',accent:1},
             {id:'u',name:'중립',field:'neu_n',unit:'건',agg:'sum',color:'#c9c7c2'},
             {id:'n',name:'부정',field:'neg_n',unit:'건',agg:'sum',color:'var(--pink-0)'}]};

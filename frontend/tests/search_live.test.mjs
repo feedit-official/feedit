@@ -33,7 +33,13 @@ globalThis.localStorage = dom.window.localStorage;
 let fetched = [];
 globalThis.fetch = async (u) => { fetched.push(u);
   await new Promise(r=>setTimeout(r,30));
-  return { ok:true, json: async () => ({status:'empty', reason:'적재 전입니다.'}) }; };
+  const payload = {status:'empty', reason:'적재 전입니다.'};
+  return {
+    ok:true,
+    status:200,
+    text: async () => JSON.stringify(payload),
+    json: async () => payload,
+  }; };
 
 let pass=0, fail=0;
 const t = async (n,f)=>{ try{ await f(); console.log('✅',n); pass++; }
@@ -45,6 +51,9 @@ const t = async (n,f)=>{ try{ await f(); console.log('✅',n); pass++; }
 await import(`${F}/main.js`);
 const sk = await import(`${F}/trend/static/js/saved_keywords.js`);
 const rh = await import(`${F}/trend/static/js/render_helpers.js`);
+/* router.js 가 실제 앱 진입을 130ms 뒤에 한 번 그린다. 그 예약 작업까지 끝낸 뒤
+   테스트용 검색창을 세워야, 진행 중인 조회 버튼이 중간에 교체되지 않는다. */
+await new Promise(r=>setTimeout(r,180));
 
 await t('★ 순환 import 가 깨지지 않는다', () => {
   assert.equal(typeof sk.kwWire, 'function');
@@ -80,7 +89,6 @@ await t('★ 조회 버튼 클릭도 같다', async () => {
   const inp = bar(); fetched = [];
   inp.value = '새틴';
   document.getElementById('kwGoBtn').dispatchEvent(new dom.window.MouseEvent('click',{bubbles:true}));
-  await new Promise(r=>setTimeout(r,10));
   assert.equal(document.getElementById('kwGoBtn').disabled, true, '두 번 못 누르게 잠근다');
   await new Promise(r=>setTimeout(r,120));
   assert.ok(fetched.some(u=>String(u).includes('%EC%83%88%ED%8B%B4')||String(u).includes('새틴')),

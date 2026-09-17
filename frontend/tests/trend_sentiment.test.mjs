@@ -5,7 +5,7 @@
  *     비율(%) 선이 아니다.
  *   · 주별·월별은 구간 **합계**다. 평균이 아니다.
  *   · 적재가 없던 날은 막대를 세우지 않는다(옆 값을 복사해 채우지 않는다).
- *   · '신호 유형별 건수' 가 analysis.term_metric_daily 의 6칸
+ *   · '신호 유형별 건수' 가 text_term_mention 의 의도 코드 6종을 일별로 합친 값이다.
  *     (질문·구매·경험·호평·비판·잡담) 그대로다. 0건도 0 으로 남는다.
  *
  * 돌리는 법:  node tests/trend_sentiment.test.mjs      (jsdom 필요)
@@ -59,10 +59,11 @@ const body = () => document.getElementById('trBody');
 const click = (c, g) => c.querySelector(`.gSel button[data-g="${g}"]`)
   .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
 /* 차트 기본 단위는 주별이다. 일별로 보려면 버튼을 누른다. */
-const render = async (term, series, g = 'd') => {
-  reply = { status: 'ok', data: { term, facet: 'STYLE', series } };
-  await live.prime(term);
-  KW.q = term;
+const render = async (term, series, g = 'd', facet = '스타일') => {
+  reply = { status: 'ok', data: { term, facet: facet === '브랜드' ? 'BRAND' : 'STYLE',
+    scope_label: facet === '브랜드' ? '브랜드 언급 문맥' : '용어 직접 언급', series } };
+  KW.q = term; KW.f = facet;
+  await live.primeUrl(live.sentimentUrl(term, facet), { force: true });
   D.trRender('sentiment');
   const c = body().querySelector('[data-chart="sentMain"]');
   if (g && c.querySelector('.gSel')) click(c, g);
@@ -88,10 +89,16 @@ await t('막대 높이가 건수에 비례한다 (마지막 날 긍정 10 · 중
 });
 
 await t('주별은 7일 합계다 (평균이 아니다)', () => {
-  const s = live.seriesOf('발레코어', { points: 4, step: 'w', field: 'neu_n', raw: true, agg: 'sum', fill: false });
+  const source = rows(60, base);
+  const s = live.seriesFromRows(source, { points: 4, step: 'w', field: 'neu_n', raw: true, agg: 'sum', fill: false });
   assert.deepEqual(s, [35, 35, 35, 35]);
-  const avg = live.seriesOf('발레코어', { points: 4, step: 'w', field: 'neu_n', raw: true });
+  const avg = live.seriesFromRows(source, { points: 4, step: 'w', field: 'neu_n', raw: true });
   assert.deepEqual(avg, [5, 5, 5, 5], '기존 평균 경로는 그대로');
+});
+
+await t('브랜드 검색은 브랜드 문맥 API를 사용하고 출처를 화면에 밝힌다', async () => {
+  await render('나이키', rows(60, base), null, '브랜드');
+  assert.match(body().querySelector('.kpis').textContent, /브랜드 언급 문맥/);
 });
 
 await t('주별 · 월별 전환이 막대로 다시 그려진다', async () => {
@@ -192,8 +199,10 @@ await t('구매의향 지수가 있으면 그 값이 먼저다 (건수가 적어
 
 await t('다른 선 차트(온도)는 그대로 선이다', async () => {
   const { gChart } = await import(`${W}/trend/static/js/chart_engine.js`);
+  reply = { status: 'ok', data: { term: '온도테스트', facet: 'STYLE', series: rows(60, base) } };
+  await live.prime('온도테스트', 400, { force: true });
   const el = document.createElement('div'); document.body.appendChild(el);
-  gChart(el, { key: 'k', term: '발레코어', min: 0, max: 100, sets: [{ id: 'm', field: 'mention' }, { id: 't', field: 'temp', accent: 1 }] });
+  gChart(el, { key: 'k', term: '온도테스트', min: 0, max: 100, sets: [{ id: 'm', field: 'mention' }, { id: 't', field: 'temp', accent: 1 }] });
   assert.equal(el.querySelectorAll('path.ln,path.ln2').length, 2);
   assert.equal(el.querySelectorAll('rect.gBar').length, 0);
 });
