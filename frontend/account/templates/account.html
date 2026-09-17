@@ -129,26 +129,27 @@
             <button type="button" class="leaveBtn" id="leaveBtn">회원 탈퇴</button>
           </div>
           <div class="panel">
-            <div class="panelHead"><h3>필터</h3></div>
+            <div class="panelHead"><h3>즐겨입는 스타일</h3></div>
             <div class="formRow">
               <label>이런 스타일이 좋아요 <span>복수 선택</span></label>
               <div class="chipRow" id="styleWrap"></div>
             </div>
             <div class="formRow">
-              <label>추천 성향 <span>안정 ↔ 실험</span></label>
-              <input type="range" class="rangeSlider" id="myRange" min="0" max="100" value="38">
-              <div class="rangeLab"><span>무난템 · 국밥템</span><span>하이엔드 · 실험적</span></div>
+              <button type="button" class="pill styleSaveBtn" id="styleSaveBtn">저장</button>
             </div>
           </div>
         </div>
         <div class="myCol">
-          <div class="panel">
-            <div class="panelHead"><h3>오늘의 추천</h3><span class="sub" id="recSub">매칭도 순</span></div>
-            <div class="recGrid" id="recGrid"></div>
-          </div>
-          <div class="panel">
-            <div class="panelHead"><h3>무난템 · 국밥템</h3><span class="sub">실패 확률이 낮은 기본 아이템</span></div>
-            <div class="recGrid" id="basicGrid"></div>
+          <div class="panel" id="todayRecPanel">
+            <div class="panelHead"><h3>오늘의 추천</h3></div>
+            <div class="recBlock">
+              <div class="recBlockHead" id="recMineTitle">내 취향 0개 기준</div>
+              <div class="recGrid" id="recMine"></div>
+            </div>
+            <div class="recBlock">
+              <div class="recBlockHead">지금 뜨는 코어 기준</div>
+              <div class="recGrid" id="recHot"></div>
+            </div>
           </div>
         </div>
       </div>

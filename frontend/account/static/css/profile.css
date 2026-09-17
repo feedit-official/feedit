@@ -433,6 +433,10 @@
 /* ── 오늘의 추천 패널 — 높이는 profile.js 가 왼쪽 두 패널 합산 높이에 맞춰 인라인으로
    맞춘다(syncTodayRecHeight). 카드가 그 높이를 넘으면 잘리지 않고 안에서 스크롤한다. */
 .acct #todayRecPanel{overflow-y:auto}
+/* 두 칸(내 취향 / 지금 뜨는 코어) — 칸 제목은 패널 제목보다 한 단계 작게 */
+.acct .recBlock+.recBlock{margin-top:28px;padding-top:22px;border-top:1px solid var(--pink-3)}
+.acct .recBlockHead{font-size:12.5px;font-weight:600;color:var(--pink-1);margin-bottom:12px}
+.acct .recEmpty{color:var(--pink-1)}
 
 /* ── 즐겨입는 스타일 저장 버튼 (마이페이지 필터 패널) ── */
 .acct .styleSaveBtn{display:block;width:100%;justify-content:center}
