@@ -4,47 +4,51 @@ import { rkClamp, rkRingHTML } from '../../../account/static/js/rank.js';
 import { jobBadgeHTML, jobShown } from '../../../account/static/js/job.js';
 import { smBarFill, smBarLabels } from '../../../trend/static/js/discount_resale.js';
 import { STYLES } from '../../../home/static/js/chat.js';
+<<<<<<< HEAD
 import { saveVote } from '../../../account/static/js/account_api.js';
 import { feedStyleOf } from '../../../trend/static/js/my_feed.js';
+=======
+import YOUTUBE_SALMAL_DATA from '../../data/youtube_salmal_cards.json' with { type: 'json' };
+>>>>>>> aaf8c36015406f69e7095edfef9c5c6b2c258f44
 
 /* ══════════════ 살!말? (feedit-salmal_2 이식) ══════════════
    이름 충돌을 막기 위해 통째로 자기 범위 안에서 돌린다. */
 export function salmalBoot(){
 
-/* ============================================================
-   데이터 — feedit-mockup_1.html VOTES 구조 참조, 필드 확장
-   ============================================================ */
-const VOTES=[
- {t:'스웨이드 블루종 (버건디)', b:'ANDERSSON BELL', p:329000, base:81, votes:842, hours:6,  taste:92, tone:['#3a332f','#6b5c52'], imgURL:'assets/hi/f20.jpg'},
- {t:'셀비지 와이드 데님',       b:'MUSINSA STANDARD', p:89000, base:64, votes:1930, hours:48, taste:75, tone:['#2f3336','#5a6166'], imgURL:'assets/hi/f21.jpg'},
- {t:'퀼팅 다운 베스트',         b:'NAUTICA',         p:149000, base:47, votes:512, hours:11, taste:60, tone:['#33302c','#7a7267'], imgURL:'assets/hi/f22.jpg'},
- {t:'스퀘어 토 로퍼',           b:'RANDOM IDENTITIES', p:268000, base:73, votes:1104, hours:24, taste:88, tone:['#2b2b2b','#585858'], imgURL:'assets/hi/f23.jpg'},
- {t:'울 발마칸 코트',           b:'SOLEW',           p:398000, base:38, votes:226, hours:40, taste:40, tone:['#37312c','#8c7f6e'], imgURL:'assets/hi/f24.jpg'},
- {t:'니트 집업 카디건',         b:'INSILENCE',       p:119000, base:69, votes:764, hours:8,  taste:81, tone:['#302d2b','#6e6660'], imgURL:'assets/hi/f25.jpg'},
- {t:'와이드 코듀로이 팬츠',     b:'SOLEW',           p:139000, base:58, votes:391, hours:15, taste:70, tone:['#332e2a','#75695c'], imgURL:'assets/hi/f26.jpg'},
- {t:'레더 크로스 백',           b:'MATIN KIM',       p:168000, base:44, votes:305, hours:30, taste:66, tone:['#2c2c2e','#5f5f63'], imgURL:'assets/hi/f27.jpg'},
- {t:'오버핏 울 블레이저',       b:'AMOMENTO',        p:298000, base:55, votes:410, hours:20, taste:77, tone:['#332f2b','#6f6255'], imgURL:'assets/hi/f28.jpg'},
- {t:'캐시미어 머플러',          b:'LE 17 SEPTEMBRE', p:98000,  base:71, votes:602, hours:5,  taste:85, tone:['#2e2a2c','#5c5459'], imgURL:'assets/hi/f29.jpg'},
- {t:'워시드 후드 집업',         b:'THISISNEVERTHAT', p:129000, base:49, votes:288, hours:40, taste:58, tone:['#2b2d2e','#565b5d'], imgURL:'assets/hi/f30.jpg'},
- {t:'베이직 옥스포드 셔츠',     b:'MUSINSA STANDARD',p:39900,  base:62, votes:733, hours:14, taste:69, tone:['#302f2c','#6a655c'], imgURL:'assets/hi/f31.jpg'},
- {t:'헤비 코튼 크루넥',         b:'COS',             p:59000,  base:35, votes:190, hours:36, taste:44, tone:['#2c2b29','#6b665e'], imgURL:'assets/hi/f32.jpg'},
- {t:'원턱 와이드 슬랙스',       b:'UNIFORM BRIDGE',  p:79000,  base:66, votes:521, hours:9,  taste:79, tone:['#2b2c2d','#585d60'], imgURL:'assets/hi/f33.jpg'},
- {t:'삼바 OG',                 b:'ADIDAS',          p:139000, base:88, votes:2210,hours:3,  taste:95, tone:['#2f2b2b','#726358'], imgURL:'assets/hi/f34.jpg'},
- {t:'레이어드 체인 목걸이',     b:'CENTIME',         p:68000,  base:41, votes:167, hours:45, taste:52, tone:['#2d2d2f','#5e6165'], imgURL:'assets/hi/f35.jpg'},
- {t:'와이드 리넨 셔츠',         b:'COS',             p:79000,  base:72, votes:1560,hours:0,  taste:70, tone:['#33322d','#736c5e'], closed:true, imgURL:'assets/hi/f02.jpg'},
- {t:'스트랩 샌들',              b:'RANDOM IDENTITIES',p:98000, base:33, votes:640, hours:0,  taste:55, tone:['#2c2b2a','#615c56'], closed:true, imgURL:'assets/hi/f05.jpg'},
- {t:'헤링본 트위드 재킷',       b:'SOLEW',           p:259000, base:61, votes:920, hours:0,  taste:66, tone:['#302c2a','#6f6459'], closed:true, imgURL:'assets/hi/f11.jpg'},
- {t:'미니멀 크로스백',          b:'MSTA',            p:87000,  base:69, votes:1240,hours:0,  taste:73, tone:['#2b2a29','#645d54'], closed:true, imgURL:'assets/hi/f13.jpg'},
- {t:'스트라이프 니트',          b:'COS',             p:69000,  base:44, votes:512, hours:0,  taste:58, tone:['#302e2c','#6c655c'], closed:true, imgURL:'assets/hi/f04.jpg'},
- {t:'카고 워크 팬츠',           b:'CARHARTT WIP',    p:149000, base:58, votes:880, hours:0,  taste:66, tone:['#2d2c2a','#665f56'], closed:true, imgURL:'assets/hi/f06.jpg'},
- {t:'레트로 러너 스니커즈',     b:'NEW BALANCE',     p:159000, base:91, votes:3020,hours:0,  taste:92, tone:['#2b2b2d','#5c5c60'], closed:true, imgURL:'assets/hi/f08.jpg'},
- {t:'오버사이즈 후드티',        b:'THISISNEVERTHAT', p:89000,  base:37, votes:410, hours:0,  taste:48, tone:['#2e2b28','#6d655a'], closed:true, imgURL:'assets/hi/f09.jpg'},
- {t:'데님 셔츠 자켓',           b:"LEVI'S",          p:119000, base:63, votes:670, hours:0,  taste:70, tone:['#2c2d30','#585c63'], closed:true, imgURL:'assets/hi/f12.jpg'},
- {t:'버킷햇',                   b:'KIJUN',           p:45000,  base:52, votes:390, hours:0,  taste:60, tone:['#302f2b','#726a5d'], closed:true, imgURL:'assets/hi/f15.jpg'},
- {t:'스퀘어 선글라스',          b:'GENTLE MONSTER',  p:229000, base:76, votes:1560,hours:0,  taste:81, tone:['#2a2a2c','#59595e'], closed:true, imgURL:'assets/hi/f17.jpg'},
- {t:'램스울 가디건',            b:'LEMAIRE',         p:389000, base:41, votes:240, hours:0,  taste:52, tone:['#312d2a','#756c60'], closed:true, imgURL:'assets/hi/f03.jpg'}
-];
-VOTES.forEach((v,i)=>{v.a=v.base; v.voted=null; v.comments=[]; v.seq=i;});
+/* 실제 카드의 단일 원본은 youtube_salmal_cards.json이다. */
+const VOTES=YOUTUBE_SALMAL_DATA.cards.map((card,i)=>{
+  const summary=card.closed?card.closed_vote_summary:card.comment_summary;
+  const totalCount=card.closed?summary.total:summary.sal+summary.mal+summary.neutral;
+  return {
+    ...card,
+    t:card.product_name,
+    b:card.brand||'브랜드 미확인',
+    p:card.price,
+    base:summary.sal_ratio,
+    baseSal:summary.sal,
+    baseMal:summary.mal,
+    votes:totalCount,
+    hours:card.closed?0:card.hours_remaining,
+    taste:card.similar_user_ratio.sal,
+    tone:['#302d2b','#6e6660'],
+    /* 상품 상세 URL이 아니라 DB ProductSource의 대표 썸네일만 카드/모달에 쓴다. */
+    imgURL:card.representative_image_url||card.product_image_url,
+    youtubeId:card.video_id,
+    closed:card.closed,
+    st:card.style_tags,
+    authorNote:{name:card.mock_author.name, text:card.mock_author.story},
+    comments:card.representative_comments.map((comment,j)=>({
+      name:comment.display_name,
+      tag:comment.vote==='살'?0:comment.vote==='말'?1:null,
+      rk:comment.rank,
+      job:comment.job,
+      text:comment.display_text||comment.text,
+      time:comment.time||relativeCommentTime(i,j)
+    })),
+    seq:i
+  };
+});
+VOTES.forEach((v,i)=>{v.a=v.base; v.voted=null; v.comments=Array.isArray(v.comments)?v.comments:[]; v.seq=i;});
 const BRAND_LIST=[...new Set(VOTES.map(v=>v.b))].sort();
 const TONE_PALETTE=[['#332e2a','#75695c'],['#2c2c2e','#5f5f63'],['#302f2c','#6a655c'],
   ['#2b2c2d','#585d60'],['#33322d','#736c5e'],['#2e2a2c','#5c5459']];
@@ -52,14 +56,26 @@ const randomTone=()=>TONE_PALETTE[Math.floor(Math.random()*TONE_PALETTE.length)]
 
 const $=(s,el=document)=>el.querySelector(s);
 const $$=(s,el=document)=>[...el.querySelectorAll(s)];
-const fmtWon=n=>n.toLocaleString('ko-KR')+'원';
-const fmtHours=h=>h>=24?Math.round(h/24)+'일':h+'시간';
+const fmtWon=n=>Number.isFinite(n)?n.toLocaleString('ko-KR')+'원':'가격 정보 없음';
+const fmtHours=h=>Number.isFinite(h)?(h>=24?Math.round(h/24)+'일':h+'시간'):'기간 정보 없음';
 const fmtNum=n=>n.toLocaleString('ko-KR');
 /* 등록할 때 고른 스타일 이름 — 고르지 않았으면 빈 문자열 */
-const styleNameOf=v=>{ const id=(v&&v.st&&v.st[0])||''; const s=STYLES.find(x=>x.id===id); return s?s.n:''; };
+const styleNameOf=v=>(v&&Array.isArray(v.st)?v.st:[])
+  .map(id=>STYLES.find(x=>x.id===id)).filter(Boolean).map(s=>s.n).join(' · ');
 const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
-const simA=v=>clamp(v.a+Math.round((v.taste-70)/4),3,97);
+const simA=v=>v.youtubeId?v.taste:clamp(v.a+Math.round((v.taste-70)/4),3,97);
 const satisfaction=v=>clamp(v.taste+Math.round((v.base-70)/5),30,99);
+function relativeCommentTime(cardIndex,commentIndex){
+  /* 목업 댓글 시각은 모두 시간 단위로 통일한다. 24시간을 넘어도 '일 전'으로
+     바꾸지 않아 카드마다 표시 형식이 섞이지 않게 한다. */
+  const hours=1+((cardIndex*7+commentIndex*5)%72);
+  return `${hours}시간 전`;
+}
+function salRatioWithUserVote(v){
+  const sal=v.baseSal+(v.voted===0?1:0);
+  const mal=v.baseMal+(v.voted===1?1:0);
+  return sal+mal?Math.round(sal*100/(sal+mal)):50;
+}
 
 /* ── 댓글 시드 데이터 ─────────────────────────────────── */
 /* rk: 작성자 등급(0~4) — 아바타 링(rkPaintAv)이 여기서 색을 가져온다
@@ -70,9 +86,9 @@ const COMMENT_SEED=[
  {name:'소은', tag:0, rk:0, job:'Student', text:'가격 대비 소재가 꽤 괜찮은 편이에요.', time:'6시간 전'},
  {name:'재훈', tag:null, rk:2, job:'Basic', text:'구매 전에 후기 더 보고 싶어요, 다들 어떠세요?', time:'9시간 전'},
  {name:'다인', tag:0, rk:4, job:'Stylist', text:'재구매 의사 있어요! 세탁 후에도 변형 없었어요.', time:'11시간 전'},
- {name:'유진', tag:1, rk:1, job:'Creator', text:'다음 시즌엔 색상이 더 다양하게 나왔으면 좋겠어요.', time:'1일 전'},
- {name:'태윤', tag:0, rk:2, job:'Buyer', text:'매장에서 직접 보고 왔는데 사진보다 훨씬 낫습니다.', time:'1일 전'},
- {name:'하은', tag:1, rk:0, job:'Basic', text:'배송이 좀 느렸어요, 아이템 자체는 무난해요.', time:'2일 전'}
+ {name:'유진', tag:1, rk:1, job:'Creator', text:'다음 시즌엔 색상이 더 다양하게 나왔으면 좋겠어요.', time:'24시간 전'},
+ {name:'태윤', tag:0, rk:2, job:'Buyer', text:'매장에서 직접 보고 왔는데 사진보다 훨씬 낫습니다.', time:'27시간 전'},
+ {name:'하은', tag:1, rk:0, job:'Basic', text:'배송이 좀 느렸어요, 아이템 자체는 무난해요.', time:'48시간 전'}
 ];
 function seedComments(i){
   const out=[];
@@ -85,8 +101,10 @@ const nextCommentId=()=>COMMENT_UID++;
    (신고/삭제 등) 개별 조작이 가능하게 만든다. 이후 새로 만든 게시글은
    비어있는 comments 배열을 그대로 유지한다. */
 VOTES.forEach((v,i)=>{
-  if(v.comments.length===0){
+  if(v.comments.length===0&&!v.youtubeId){
     v.comments=seedComments(i).map(c=>({...c, id:nextCommentId()}));
+  }else{
+    v.comments=v.comments.map(c=>({...c, id:c.id||nextCommentId()}));
   }
 });
 
@@ -110,7 +128,7 @@ function orderFor(tab){
   idx=idx.filter(i=>!VOTES[i].closed);
   if(tab==='closing'){
     /* 마감임박: 마감까지 12시간 이하 남은 게시글만 */
-    return idx.filter(i=>VOTES[i].hours<=12).sort((a,b)=>VOTES[a].hours-VOTES[b].hours);
+    return idx.filter(i=>Number.isFinite(VOTES[i].hours)&&VOTES[i].hours<=12).sort((a,b)=>VOTES[a].hours-VOTES[b].hours);
   }
   if(tab==='popular'){
     /* 인기순: 참여수(투표수) 많은 순 */
@@ -121,7 +139,9 @@ function orderFor(tab){
     return idx.sort((a,b)=>VOTES[b].taste-VOTES[a].taste);
   }
   /* 최신순: 가장 최근에 등록된 게시글 먼저 */
-  return idx.sort((a,b)=>VOTES[b].seq-VOTES[a].seq);
+  return idx.sort((a,b)=>VOTES[a].youtubeId&&VOTES[b].youtubeId
+    ? VOTES[b].upload_date.localeCompare(VOTES[a].upload_date)||VOTES[a].seq-VOTES[b].seq
+    : VOTES[b].seq-VOTES[a].seq);
 }
 
 function plateStyle(v){
@@ -154,10 +174,7 @@ function cardHTML(i){
     <div class="body">
       <h4>${v.t}</h4>
       <div class="cap">${capText}</div>
-      <div class="smBar">
-        <i class="buy" data-w="${v.a}" style="width:${v.a}%"><span>살 ${v.a}%</span></i>
-        <i class="no" data-w="${100-v.a}" style="width:${100-v.a}%"><span>${100-v.a}% 말</span></i>
-      </div>
+      <div class="smBar"><i class="buy" data-w="${v.a}" style="width:${v.a}%"><span>살 ${v.a}%</span></i><i class="no" data-w="${100-v.a}" style="width:${100-v.a}%"><span>${100-v.a}% 말</span></i></div>
       ${btnsHTML}
     </div>
   </div>`;
@@ -292,10 +309,11 @@ function updateCard(i){
   buyBar.dataset.w=v.a; noBar.dataset.w=100-v.a;   /* 다시 그릴 때의 목표값도 같이 옮긴다 */
   buyBar.classList.remove('tight'); noBar.classList.remove('tight');
   if(HAS_A){
+    aUtils.remove(buyBar);
     aAnimate(buyBar,{width:v.a+'%',duration:820,ease:aSpring({stiffness:104,damping:15}),
       onComplete:()=>smBarLabels([buyBar,noBar])});
-    aAnimate(noBar ,{width:(100-v.a)+'%',duration:820,ease:aSpring({stiffness:104,damping:15})});
-  }else{ buyBar.style.width=v.a+'%'; noBar.style.width=(100-v.a)+'%'; smBarLabels([buyBar,noBar]) }
+  }else{ buyBar.style.width=v.a+'%'; smBarLabels([buyBar,noBar]) }
+  noBar.style.removeProperty('width');
   $$('.smBtns button',card).forEach(btn=>{
     const side=+btn.dataset.vote;
     btn.classList.toggle('picked', v.voted===side);
@@ -308,9 +326,7 @@ function castVote(i,side){
   if(!requireAuth())return;
   const v=VOTES[i];
   v.voted = (v.voted===side) ? null : side;
-  if(v.voted===0) v.a=Math.min(97, v.base+4);
-  else if(v.voted===1) v.a=Math.max(3, v.base-4);
-  else v.a=v.base;
+  v.a=salRatioWithUserVote(v);
   updateCard(i);
   smVoteBeat($(`.voteCard[data-i="${i}"]`), side);
   /* 서버에 투표를 남긴다 — 카드가 아직 DB 카드가 아니라서 제목·브랜드로 카드를 식별한다.
@@ -436,7 +452,9 @@ function openModal(i){
   $('#modalBrand').textContent=v.b;
   $('#modalPrice').textContent=fmtWon(v.p);
   { const sn=styleNameOf(v); $('#modalStyleName').textContent=sn; $('#modalStyle').hidden=!sn; }
-  $('#modalSegLabel').textContent=' (체형・스타일・나이)';
+  const segmentTitle=$('#modalSegLabel').parentElement;
+  segmentTitle.firstChild.textContent='나와 비슷한 사용자들';
+  $('#modalSegLabel').textContent=' (체형 · 스타일 · 나이)';
   const note=v.authorNote||noteFor(i);
   $('#modalNoteName').textContent=note.name;
   $('#modalNote').textContent=note.text;
@@ -463,8 +481,9 @@ function updateModalVote(){
   /* 한쪽이 크게 이겨도 진 쪽 %가 잘려 사라지지 않게 tight 를 같이 걸어 둔다 */
   const setPair=(bar,a)=>{
     const b=$('.buy',bar), n=$('.no',bar);
-    b.style.width=a+'%';       b.textContent='살 '+a+'%';
-    n.style.width=(100-a)+'%'; n.textContent=(100-a)+'% 말';
+    b.style.background='';
+    b.style.width=a+'%';       b.innerHTML='<span>살 '+a+'%</span>';
+    n.style.removeProperty('width'); n.innerHTML='<span>'+(100-a)+'% 말</span>';
     b.classList.toggle('tight',a<28); n.classList.toggle('tight',(100-a)<28);
   };
   setPair($('#modalBarAll'), v.a);
@@ -480,9 +499,10 @@ function buildAIReport(i){
   el.textContent=verdictBuy?'지금 사도 좋아요':'조금 더 지켜보세요';
   el.classList.toggle('buy',verdictBuy);
   $('#aiWhy').textContent=
-    `전체 투표에서 ${v.a>=50?'살':'말'} 의견이 우세하고, 취향이 비슷한 사용자 사이에서는 ${sim}%가 구매에 동의했습니다. `+
-    `실제 구매자 만족도는 ${sat}%로 ${sat>=80?'높은 편':sat>=60?'무난한 편':'다소 낮은 편'}이며, `+
-    `마감까지 ${fmtHours(v.hours)} 남아 지금이 결정하기 좋은 시점입니다.`;
+    `전체 투표에서는 ${v.a>=50?'살':'말'} 의견이 우세합니다. `+
+    `체형·스타일·나이가 비슷한 목업 사용자 집단에서는 ${sim}%가 구매에 동의했습니다. `+
+    `구매자 만족도는 ${sat}%로 ${sat>=80?'높은 편':sat>=60?'무난한 편':'다소 낮은 편'}입니다. `+
+    (v.closed?'투표가 종료되어 최종 결과를 보여드립니다.':`마감까지 ${fmtHours(v.hours)} 남았습니다.`);
   $('#aiStats').innerHTML=`
     <div><div class="k">전체 살 비율</div><div class="v">${v.a}%</div></div>
     <div><div class="k">유사 세그먼트</div><div class="v">${sim}%</div></div>
@@ -515,7 +535,7 @@ function sendComment(){
   const ta=$('#commentInput');
   const text=ta.value.trim();
   if(!text)return;
-  VOTES[i].comments.unshift({name:'나', rk:ME.rank, me:true, text, time:'방금 전', id:nextCommentId()});
+  VOTES[i].comments.unshift({name:'나', rk:ME.rank, me:true, text, time:'1시간 전', id:nextCommentId()});
   ta.value='';
   renderComments();
   $('#commentsList').scrollTop=0;

@@ -1,5 +1,6 @@
 import { $, $$, HAS_A, aAnimate, aStagger } from '../../../core/static/js/dom.js';
 import { IMG, STYLES } from '../../../home/static/js/chat.js';
+import YOUTUBE_SALMAL_DATA from '../../../salmal/data/youtube_salmal_cards.json' with { type: 'json' };
 
 /* ── 금주의 리포트 데이터 ──
    실제로 셀 수 없는 것(판단 적중률 · 아낀 돈 · 재고 변화 · 내 결정이 옳았는지)은
@@ -21,6 +22,7 @@ export const WK={
 };
 
 /* ── 내 피드 · 살!말? 취향 매칭 큐레이션 ────────────────────────
+<<<<<<< HEAD
    살!말? 페이지의 VOTES는 salmalBoot() 함수 안에 갇힌 지역 변수라 다른
    곳에서 참조할 수 없다 — 진행 중(마감 전)인 카드의 값을 여기에 옮겨 적었다.
    VOTES 쪽 데이터가 바뀌면 이 배열도 같이 맞춰야 한다.
@@ -52,6 +54,32 @@ const FEED_SM_POOL=[
   {t:'헤비 코튼 크루넥',          b:'COS',               p:59000,  votes:190,  hours:36, a:35, tone:['#2c2b29','#6b665e'], st:['norm','ath'],      cat:'티셔츠'},
   {t:'레이어드 체인 목걸이',      b:'CENTIME',           p:68000,  votes:167,  hours:45, a:41, tone:['#2d2d2f','#5e6165'], st:['feminine','grunge'],cat:'액세서리'}
 ];
+=======
+   본 화면과 같은 JSON을 읽는다. 별도 카드 목록을 복사해 두지 않아 상품·이미지·
+   투표 비율이 바뀌면 내 피드에도 즉시 같은 값이 반영된다. 같은 상품은 한 번만 둔다. */
+const ACTIVE_SALMAL=YOUTUBE_SALMAL_DATA.cards
+  .map((card,seq)=>{
+    const summary=card.comment_summary;
+    return {
+      t:card.product_name,
+      b:card.brand,
+      p:card.price,
+      votes:summary.sal+summary.mal+summary.neutral,
+      hours:card.hours_remaining,
+      a:summary.sal_ratio,
+      tone:['#302d2b','#6e6660'],
+      st:card.style_tags,
+      cat:card.category,
+      imgURL:card.representative_image_url||card.product_image_url,
+      catalogId:card.catalog_product_id||card.product_name,
+      seq,
+      featured:seq===0,
+      closed:card.closed
+    };
+  })
+  .filter(card=>!card.closed);
+const FEED_SM_POOL=[...new Map(ACTIVE_SALMAL.map(card=>[card.catalogId,card])).values()];
+>>>>>>> aaf8c36015406f69e7095edfef9c5c6b2c258f44
 /* 고른 스타일 순서대로 한 장씩 돌아가며 뽑는다 — 한 스타일이 4장을 독차지하지 않게.
    각 스타일 안에서는 투표가 많은 카드부터. 맞는 카드가 모자라면 인기순으로 채우되
    그 카드에는 '일치' 표시를 붙이지 않는다(맞지 않는 것을 맞는다고 쓰지 않는다). */
@@ -60,6 +88,11 @@ export function feedSmPicks(styleIds){
   const nameOf=id=>(STYLES.find(s=>s.id===id)||{}).n||id;
   const byVotes=FEED_SM_POOL.slice().sort((x,y)=>y.votes-x.votes);
   const used=new Set(), out=[];
+  const featured=FEED_SM_POOL.find(card=>card.featured);
+  if(featured){
+    used.add(featured);
+    out.push({o:featured,hit:featured.st.filter(id=>ids.includes(id))});
+  }
   for(let round=0; out.length<4 && round<FEED_SM_POOL.length; round++){
     let added=false;
     for(const id of ids){
