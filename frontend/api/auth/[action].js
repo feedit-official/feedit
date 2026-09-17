@@ -2,7 +2,9 @@
  * 세션·CSRF 쿠키를 브라우저와 백엔드 사이에 그대로 전달한다. */
 import { backendBase, backendToken } from '../_lib/db.js';
 
-const ALLOWED = new Set(['me', 'signup', 'login', 'logout', 'profile', 'weekly-videos', 'google', 'google-signup']);
+const ALLOWED = new Set(['me', 'signup', 'login', 'logout', 'profile', 'weekly-videos', 'google', 'google-signup',
+  // 활동 기록 · 금주의 리포트 (backend/apps/api/activity_views.py)
+  'event', 'vote', 'saved', 'weekly-report']);
 
 export default async function handler(req, res) {
   const url = new URL(req.url, 'http://x');

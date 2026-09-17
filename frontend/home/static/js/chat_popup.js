@@ -2,6 +2,7 @@ import { $, $$, HAS_A, aAnimate } from '../../../core/static/js/dom.js';
 import { SAY, SM_ON, SM_SAY, STYLES, LIKED, M_QUESTIONS, SM_QUESTIONS, ansCardHTML, smSwitch } from './chat.js';
 import { API_BASE, classifyFitImages, sendAnswerFeedback, isUp, askStream, reportHTML, notesHTML, followupHTML, actionsHTML, refusalHTML, requestLexicon, fillBars, MAX_IMAGES, imageFileToDataURL, bindImageDrop, wantsVirtualFit, responseCardHTML } from './chat_api.js';
 import { AUTH, ME, openStyleSelect, requireAuth } from '../../../account/static/js/profile.js';
+import { logChat } from '../../../account/static/js/account_api.js';
 
 /* ══════════════════════════════════════════════════════
    챗봇 팝업 — 일반 모드 · 살말 모드
@@ -724,6 +725,8 @@ function cpAsk(text,key,opts){
   let c=(opts&&opts.forceNew)?cpNewConvo():cpActiveConvo(); if(!c)c=cpNewConvo();
   c.messages.push({role:'me', text, images});
   if(!c.title)c.title=cpTitleFrom(text||'사진 문의');
+  /* 금주의 리포트 '챗봇 사용 시간' — 로그인한 사용자만 chat_session 에 남긴다 */
+  if(AUTH.in)logChat('cp-'+cpMode()+'-'+c.id, c.title);
   const directFit=wantsVirtualFit(text,images);
   const aiMsg={role:'ai', html:'', key, pending:!directFit};
   if(directFit)aiMsg.fit=cpNewFit(images,text);

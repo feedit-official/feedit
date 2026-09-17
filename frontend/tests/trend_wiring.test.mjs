@@ -52,7 +52,7 @@ await t('★ 늦게 온 응답이 딴 탭을 덮지 않는다', () => {
   assert.match(src, /if\(TR_CUR===id\) trRender\(id\)/);
 });
 await t('★ 금주 추천 영상은 검색 목업이 아니라 개인화 API의 영상 ID를 쓴다', () => {
-  assert.match(src, /weeklyVideos\(\)/);
+  assert.match(src, /weeklyVideos\(term\)/);   // 이번 주 가장 많이 검색한 키워드로 찾는다
   assert.match(src, /video\.embed_url/);
   assert.doesNotMatch(src, /embed\?listType=search/);
   assert.match(src, /조회 .*metrics\.views/);

@@ -16,7 +16,7 @@ import { smBarFill, svRender } from './discount_resale.js';
 import { trCountUp } from './count_up.js';
 import { trDial, wkAnimate } from './weekly_report.js';
 import { trSideOpen } from '../../../app_shell/static/js/router.js';
-import { weeklyVideos } from '../../../account/static/js/account_api.js';
+import { weeklyReport, weeklyVideos } from '../../../account/static/js/account_api.js';
 
 /* 탭 자리 — 키워드 검색바 / 커머스 탭 / 없음 세 가지로 갈린다 */
 function trTabsRender(id){
@@ -214,11 +214,12 @@ document.addEventListener('click',e=>{
 function trEsc(v){ return String(v==null?'':v).replace(/[&<>"']/g,m=>(
   {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])) }
 const wkMetric = value => Number(value||0).toLocaleString('ko-KR');
-async function wkLoadVideo(){
+async function wkLoadVideo(term){
   const host=$('#wkVideoRec');
   if(!host)return;
+  const badge0=$('#wkVideoBadge'); if(badge0)badge0.textContent=term||'취향 기반';
   try{
-    const data=await weeklyVideos();
+    const data=await weeklyVideos(term);
     if(!host.isConnected)return;
     const video=(data.items||[])[0];
     if(!video)throw new Error('추천할 수 있는 영상이 아직 없습니다.');
@@ -233,11 +234,198 @@ async function wkLoadVideo(){
         '조회 '+wkMetric(metrics.views)+'회 · 좋아요 '+wkMetric(metrics.likes)+'개 · 댓글 '+
         wkMetric(metrics.comments)+'개인 영상입니다.</span></div>';
     const badge=$('#wkVideoBadge');
-    if(badge)badge.textContent=video.reason||'취향 기반';
+    if(badge)badge.textContent=term||video.reason||'취향 기반';
   }catch(error){
     if(!host.isConnected)return;
     host.innerHTML='<div class="wkVideoEmpty"><b>추천 영상을 불러오지 못했습니다.</b><span>'+trEsc(error.message||'잠시 뒤 다시 확인해 주세요.')+'</span></div>';
   }
+}
+/* ── 금주의 리포트 · 활동 지표 (/api/auth/weekly-report) ──
+   ★ 2026-09-17 · 검색 수 · 챗봇 시간 · 요일별 활동 · 취향 지분을 WK 목업에서 실기록으로 바꿨다.
+     서버가 user_event(검색·투표·찜·챗봇)와 chat_session 으로 이번 주(월~일, KST)를 집계한다.
+     받기 전에는 '…', 실패하면 사유를 적는다. 숫자를 지어내지 않는다. */
+let WR={state:'loading',data:null,reason:''};
+const WK_DAY=['월','화','수','목','금','토','일'];
+const wkSign=n=>(n>0?'+':'')+n;
+/* ── 이번 주 리포트의 축 = 가장 많이 검색한 키워드 ──
+   ★ 2026-09-17 · 한 줄 요약 · 히어로 카드 · 추천 영상 · 추천 웹매거진이 모두 같은 키워드를 말한다.
+     키워드는 스타일만이 아니다 — 브랜드 · 아이템 · 색상 · TPO 등 검색창에서 확정한 모든 말이 된다.
+     이번 주 검색 기록이 없으면 내 첫 번째 관심 스타일(없으면 대표 스타일)로 대신하고, 그렇다고 적는다.
+     (내 취향 지분은 같은 검색 기록 중 스타일만 따로 나눠 본다 — activity.py _taste_block) */
+let WKEY=null;   /* {label, facet, style:STYLES 항목|null, from:'search'|'style'} */
+function wkKeyword(fallback){
+  const d=WR.data, top=d&&d.search&&d.search.top;
+  const byName=n=>STYLES.find(s=>s.n===n)||null;
+  if(top&&top.label)return {label:top.label,facet:top.facet||(byName(top.label)?'스타일':''),style:byName(top.label),from:'search'};
+  return {label:fallback.n,facet:'스타일',style:fallback,from:'style'};
+}
+function wkLineHTML(K,rp){
+  const h=!K?'<h2>이번 주 가장 관심 있었던 키워드를 확인하고 있습니다…</h2>'
+    :K.from==='search'?'<h2>이번 주 가장 관심 있었던 키워드는 <em>'+trEsc(K.label)+'</em>입니다.</h2>'
+    :'<h2>이번 주 검색 기록이 없어 관심 스타일 <em>'+trEsc(K.label)+'</em>의 흐름을 보여 드립니다.</h2>';
+  return h+'<span>'+rp.join(' · ')+' · 매주 '+WK.updateDay+' 갱신</span>';
+}
+/* 히어로 카드 — 이미지 · 키워드 이름 · 트렌드 온도 3칸 · 더 보기 버튼 */
+function wkHeroHTML(K){
+  if(!K)return '<div class="wkHeroImg wkHeroType"><b>…</b></div>'+
+    '<div class="wkCopy"><div class="wkState">THIS WEEK</div><h3>…</h3>'+
+    '<div class="wkLedger c3">'+wkLedgerHTML(null)+'</div></div>';
+  const sub=K.style?K.style.en:(K.facet||'KEYWORD');
+  /* 스타일은 스타일 대표 사진, 그 밖의 키워드는 관련 상품 사진을 받아 온 뒤 채운다(wkHeroImage) */
+  const img=K.style
+    ? '<div class="wkHeroImg"><img src="'+SIMG(K.style)+'" alt="'+trEsc(K.label)+'" loading="lazy"></div>'
+    : '<div class="wkHeroImg wkHeroType" id="wkHeroImg"><b>'+trEsc(K.label)+'</b></div>';
+  const btn=K.style
+    ? '<button type="button" class="pill sm" style="margin-top:20px" data-fit-style="'+K.style.id+'">→ 이 스타일 더 보기</button>'
+    : '<button type="button" class="pill sm" style="margin-top:20px" data-tr="temp" data-wk-kw="'+trEsc(K.label)+'" data-wk-facet="'+trEsc(K.facet||'')+'">→ 언급량 · 온도에서 보기</button>';
+  return img+
+    '<div class="wkCopy">'+
+      '<div class="wkState">THIS WEEK · '+(K.from==='search'?'가장 많이 검색한 키워드':'내 관심 스타일')+'</div>'+
+      '<h3>'+trEsc(K.label)+' <em>'+trEsc(sub)+'</em></h3>'+
+      '<div class="wkLedger c3" id="wkHeroLedger">'+wkLedgerHTML({n:K.label})+'</div>'+
+      btn+
+    '</div>';
+}
+/* 스타일이 아닌 키워드의 히어로 사진 — /api/products 의 첫 상품 사진. 없으면 글자 판을 그대로 둔다 */
+async function wkHeroImage(K){
+  if(!K||K.style)return;
+  const p=new URLSearchParams({limit:'1'});
+  p.set(K.facet==='브랜드'?'brand':'q',K.label);
+  try{
+    const r=await fetch('/api/products?'+p.toString(),{headers:{Accept:'application/json'}});
+    const j=await r.json();
+    const it=j&&j.status==='ok'&&j.data&&(j.data.items||j.data)[0];
+    const src=it&&(it.image||it.thumbnail_url);
+    const el=$('#wkHeroImg');
+    if(src&&/^https?:\/\//.test(src)&&el&&WKEY===K){
+      el.classList.remove('wkHeroType');
+      el.innerHTML='<img src="'+trEsc(src)+'" alt="'+trEsc(K.label)+'" loading="lazy">';
+    }
+  }catch(e){ /* 사진이 없어도 카드는 글자 판으로 충분하다 */ }
+}
+/* '언급량 · 온도에서 보기' — 라우터가 화면을 바꾸기 전에(capture) 검색어를 넘겨 둔다 */
+document.addEventListener('click',e=>{
+  const b=e.target.closest&&e.target.closest('[data-wk-kw]'); if(!b)return;
+  KW.q=b.dataset.wkKw; KW.f=b.dataset.wkFacet||''; KW.part='temp';
+  setTimeout(()=>{ const it=$('.sItem[data-tr="temp"]'); if(it){ $$('.sItem').forEach(x=>x.classList.remove('on')); it.classList.add('on') } },0);
+},true);
+function wkMetricsHTML(){
+  const d=WR.data, wait=WR.state!=='ok';
+  const v=x=>wait?(WR.state==='loading'?'…':'–'):x;
+  const rows=wait
+    ? [['검색한 키워드','','개'],['새로 찜한 것','','개'],['살!말? 투표','','표'],['트렌드 분석','','분']]
+        .map(r=>[r[0],v(),r[2],WR.state==='loading'?'불러오는 중':trEsc(WR.reason||'기록을 불러오지 못했습니다.'),0])
+    : [['검색한 키워드',d.search.keywords,'개',wkSign(d.search.delta)+' · 지난주 대비',1],
+       ['새로 찜한 것',d.saved.new,'개','총 '+d.saved.total+'개 추적 중',0],
+       ['살!말? 투표',d.vote.count,'표',wkSign(d.vote.delta)+' · 지난주 대비',1],
+       ['트렌드 분석',d.chat.minutes,'분',d.chat.sessions?'평균 사용 시간 '+d.chat.avg_minutes+'분':'이번 주 챗봇 사용 기록 없음',0]];
+  return rows.map((m,i)=>'<div class="wkMetric'+(m[4]?' hot':'')+'">'+
+    '<span class="idx">'+String(i+1).padStart(2,'0')+'</span>'+
+    '<span class="lb">'+m[0]+'</span>'+
+    '<strong>'+m[1]+'<small>'+m[2]+'</small></strong>'+
+    '<em>'+m[3]+'</em></div>').join('');
+}
+/* 활동이 가장 몰린 2시간 구간 — '21시 – 23시' */
+function wkPeakHours(hours){
+  let best=-1,at=0;
+  for(let h=0;h<24;h++){ const n=hours[h]+hours[(h+1)%24]; if(n>best){best=n;at=h} }
+  return best>0?at+'시 – '+((at+2)%24)+'시':'–';
+}
+function wkDaysHTML(){
+  const head=peak=>'<div class="wkCardHead"><h3>요일별 활동</h3><em>PEAK · '+peak+'</em></div>';
+  if(WR.state!=='ok')return head('–')+'<div class="wkNote"><i>◆</i><span>'+
+    (WR.state==='loading'?'이번 주 활동 기록을 불러오는 중입니다…':trEsc(WR.reason||'활동 기록을 불러오지 못했습니다.'))+'</span></div>';
+  const days=WR.data.activity.days, max=Math.max(...days), total=days.reduce((a,b)=>a+b,0);
+  const today=WK_DAY[(new Date().getDay()+6)%7];
+  const best=max>0?WK_DAY[days.indexOf(max)]:null;
+  return head(wkPeakHours(WR.data.activity.hours))+
+    '<div class="wkDays"><div class="wkBarset">'+
+    WK_DAY.map((d,i)=>{const n=days[i];
+      return '<div class="wkDay'+(max>0&&n===max?' peak':'')+(d===today?' today':'')+'">'+
+        '<span class="v">'+n+'</span>'+
+        '<span class="t"><i data-h="'+(max?Math.round(n/max*100):0)+'"></i></span>'+
+        '<span class="l">'+d+'</span></div>'}).join('')+
+    '</div></div>'+
+    '<div class="wkNote"><i>◆</i><span>'+(total
+      ? '<b>'+best+'요일</b>에 가장 많이 활동하셨습니다. 검색 · 투표 · 찜 · 챗봇 기록 '+total+'건 기준입니다.'
+      : '이번 주 활동 기록이 아직 없습니다. 검색 · 투표 · 찜 · 챗봇을 이용하면 이곳에 쌓입니다.')+'</span></div>';
+}
+function wkTasteHTML(){
+  const head='<div class="wkCardHead"><h3>내 취향 지분</h3><em>VS. LAST WEEK</em></div>';
+  if(WR.state!=='ok')return head+'<div class="wkNote"><i>◆</i><span>'+
+    (WR.state==='loading'?'취향 지분을 계산하는 중입니다…':trEsc(WR.reason||'취향 기록을 불러오지 못했습니다.'))+'</span></div>';
+  const T=WR.data.taste;
+  if(!T.items.length)return head+'<div class="wkNote"><i>◆</i><span>이번 주 검색한 키워드 중 스타일이 아직 없습니다. '+
+    '스타일을 검색하면 비중이 계산됩니다.</span></div>';
+  return head+'<div class="wkTasteList">'+T.items.map((t,i)=>
+      '<div class="wkTaste'+(i===0?' primary':'')+'"><span>'+trEsc(t.label)+'</span>'+
+      '<span class="rail"><i data-w="'+t.share+'"></i></span>'+
+      '<b>'+t.share+'%</b>'+
+      (t.delta==null?'<em>비교 전</em>':'<em class="'+(t.delta>=0?'up':'')+'">'+wkSign(t.delta)+'%p</em>')+'</div>').join('')+
+    '</div>'+
+    '<div class="wkNote"><i>◆</i><span>'+(T.new_style
+      ? '이번 주 새로 유입된 축은 <b>'+trEsc(T.new_style)+'</b>입니다. '
+      : '')+'이번 주 검색한 스타일 '+T.signals+'건'+(T.prev_signals?' · 지난주 '+T.prev_signals+'건':' · 지난주 기록이 없어 증감은 다음 주부터 표시됩니다')+'.</span></div>';
+}
+/* 받아 온 뒤 칸만 다시 채운다 — 본문 전체를 다시 그리면 등장 애니메이션이 또 돈다 */
+function wkActivityPaint(K,rp){
+  const put=(sel,html)=>{ const el=$(sel); if(el)el.innerHTML=html; return el };
+  put('#wkLine',wkLineHTML(K,rp));
+  put('#wkHero',wkHeroHTML(K));
+  put('#wkMetrics',wkMetricsHTML());
+  put('#wkDaysCard',wkDaysHTML());
+  put('#wkTasteCard',wkTasteHTML());
+  $$('#wkReport .wkDay .t i').forEach(e=>e.style.height=e.dataset.h+'%');
+  $$('#wkReport .wkTaste .rail i').forEach(e=>e.style.width=e.dataset.w+'%');
+  $$('#wkReport .wkMetric').forEach(e=>e.style.setProperty('--u',e.classList.contains('hot')?'38px':'22px'));
+}
+async function wkActivityLoad(fallback,rp){
+  WR={state:'loading',data:null,reason:''};
+  try{ WR={state:'ok',data:await weeklyReport(),reason:''} }
+  catch(error){ WR={state:'error',data:null,reason:error&&error.message||'활동 기록을 불러오지 못했습니다.'} }
+  if(!$('#wkReport'))return;
+  /* 키워드가 정해진 뒤에 한 줄 요약 · 히어로 · 영상 · 웹매거진을 같은 키워드로 채운다 */
+  const K=WKEY=wkKeyword(fallback);
+  wkActivityPaint(K,rp);
+  wkHeroImage(K);
+  tpLoad([{n:K.label}],()=>{ const l=$('#wkHeroLedger'); if(l&&WKEY===K)l.innerHTML=wkLedgerHTML({n:K.label}) });
+  wkLoadVideo(K.label);
+  wkMagLoad(K.label);
+  const g=$('#wkNextGrid'); if(g)g.innerHTML=wkNextHTML(K.style||{id:null});
+}
+/* ── 추천 웹매거진 (/api/v1/magazines) ──
+   ★ 2026-09-17 · 매체 사이트 검색 링크(google site:)를 걷어내고, 관심 키워드를 다룬
+     매거진 **기사로 바로** 연결한다. DB 에 매거진 자료가 없어 챗봇 서버가 웹 검색으로 찾는다.
+     기준 키워드 = 이번 주 가장 많이 검색한 키워드 → 없으면 히어로 스타일.
+     웹 검색은 10~20초 걸리므로 먼저 '찾는 중'을 띄우고, 도착하면 이 카드만 갈아 끼운다. */
+let WM={term:'',state:'loading',items:[],reason:''};
+const WM_ARROW='<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8">'+
+  '<path d="M7 17L17 7M9 7h8v8"/></svg>';
+function wkMagHTML(term){
+  const head='<div class="wkCardHead"><h3>추천 웹매거진</h3><em>'+trEsc(term||'…')+'</em></div>';
+  if(!term||WM.state==='loading')return head+
+    '<div class="wkMagLoading"><i></i><span>'+(term?'‘'+trEsc(term)+'’을 다룬<br>웹매거진 기사를 찾고 있습니다.':'관심 키워드를 확인하고 있습니다.')+'</span></div>';
+  if(WM.state!=='ok'||!WM.items.length)return head+
+    '<div class="wkMagEmpty"><b>추천할 웹매거진 기사를 찾지 못했습니다.</b><span>'+trEsc(WM.reason||'잠시 뒤 다시 확인해 주세요.')+'</span></div>';
+  return head+'<div class="wkMagList">'+WM.items.map(a=>
+    '<a class="wkMagRow" target="_blank" rel="noopener noreferrer" href="'+trEsc(a.url)+'">'+
+    '<span class="tx"><b>'+trEsc(a.magazine)+'</b><span>'+trEsc(a.title)+'</span></span>'+WM_ARROW+'</a>').join('')+
+  '</div>';
+}
+async function wkMagLoad(term){
+  WM={term,state:'loading',items:[],reason:''};
+  const paint=()=>{ const el=$('#wkMagCard'); if(el&&WM.term===term)el.innerHTML=wkMagHTML(term) };
+  paint();
+  let next;
+  try{
+    const r=await fetch('/api/v1/magazines?term='+encodeURIComponent(term),{headers:{Accept:'application/json'}});
+    const j=await r.json().catch(()=>null);
+    next=j&&Array.isArray(j.articles)&&j.articles.length
+      ? {term,state:'ok',items:j.articles.filter(a=>/^https?:\/\//.test(String(a.url||''))),reason:''}
+      : {term,state:'empty',items:[],reason:(j&&(j.reason||j.error))||'웹 검색 결과가 없습니다.'};
+  }catch(e){ next={term,state:'error',items:[],reason:'웹 검색 서버에 연결하지 못했습니다.'} }
+  if(WM.term!==term)return;   /* 그사이 다른 키워드로 다시 불렀다 */
+  WM=next; paint();
 }
 /* ── 금주의 리포트 실데이터 도우미 ── */
 /* 이번 주(월~일) — ['2026.09', 'W3 · 9/14 – 9/20'] 의 두 조각 */
@@ -250,7 +438,7 @@ function wkRange(now=new Date()){
 }
 /* 히어로 3칸 — 트렌드 온도 · 지난주 대비 · 수명주기 단계 */
 function wkLedgerHTML(s){
-  const L=tpLive(s);
+  const L=s?tpLive(s):{state:'loading'};
   const cell=(lb,v,ac)=>'<div'+(ac?' class="ac"':'')+'><span>'+lb+'</span><b>'+v+'</b></div>';
   if(L.state!=='ok'){
     const v=L.state==='loading'?'…':'–';
@@ -514,93 +702,40 @@ export function trRender(id){
   else if(id==='report'){
     /* ★ 2026-09-17 실데이터로 바꾼 칸
          · 기간 — 오늘 날짜로 이번 주(월~일)를 계산
-         · 히어로 스타일 — 내가 고른 즐겨입는 스타일(user_taste)의 첫 번째
+         · 한 줄 요약 · 히어로 · 추천 영상 · 웹매거진 — 이번 주 가장 많이 검색한 키워드(없으면 첫 관심 스타일)
          · 히어로 지표 — /api/lifecycle 의 트렌드 온도 · 7일 전 대비 · 수명주기 단계
-         · 찜 · 투표 — /api/auth/me 의 saved_count · vote_count (누적)
+         · 지표 4칸 · 요일별 활동 · 취향 지분(검색한 스타일만) — /api/auth/weekly-report
          · 같이 지켜볼 스타일 — 스타일 10종의 /api/lifecycle 단계 · 온도로 고른다
-       검색 수 · 챗봇 시간 · 요일별 활동 · 취향 지분은 행동 기록(user_event)이 쌓이지 않아 아직 WK 목업이다. */
+       WK 에서 아직 쓰는 것은 갱신 요일뿐이다. 추천 웹매거진은 /api/v1/magazines(웹 검색). */
     const mine=tpMine();
-    const top=mine[0]||null;
-    const heroStyle=top||STYLES.find(s=>s.id===WK.topStyle)||STYLES[0];
-    const maxAct=Math.max.apply(null,WK.days), DAY=['월','화','수','목','금','토','일'];
+    const fallback=mine[0]||STYLES[0];   /* 이번 주 검색 기록이 없을 때만 쓴다 */
     const rp=wkRange();
+    WR={state:'loading',data:null,reason:''}; WKEY=null;
 
     body.innerHTML='<div class="wkReport" id="wkReport">'+
-      /* ── 한 줄 요약 — 이번 주 가장 많이 검색·투표한 스타일이 리포트의 축이다 ── */
-      '<div class="wkLine">'+
-        (top?'<h2>이번 주 내 관심 스타일 <em>'+top.n+'</em>의 흐름입니다.</h2>'
-            :'<h2>아직 고른 관심 스타일이 없어 <em>'+heroStyle.n+'</em>의 흐름을 보여 드립니다.</h2>')+
-        '<span>'+rp.join(' · ')+' · 매주 '+WK.updateDay+' 갱신</span>'+
-      '</div>'+
-      /* ── 관심 스타일 히어로 ── */
-      '<section class="wkHero">'+
-        '<div class="wkHeroImg"><img src="'+SIMG(heroStyle)+'" alt="'+heroStyle.n+'" loading="lazy"></div>'+
-        '<div class="wkCopy">'+
-          '<div class="wkState">THIS WEEK</div>'+
-          '<h3>'+heroStyle.n+' <em>'+heroStyle.en+'</em></h3>'+
-          '<div class="wkLedger c3" id="wkHeroLedger">'+wkLedgerHTML(heroStyle)+'</div>'+
-          '<button type="button" class="pill sm" style="margin-top:20px" data-fit-style="'+heroStyle.id+'">→ 이 스타일 더 보기</button>'+
-        '</div>'+
-      '</section>'+
-      /* ── 지표 4칸 — 실제로 셀 수 있는 로그만 ── */
-      '<section class="wkMetrics">'+
-        [['검색한 키워드',WK.search,'개','+'+WK.searchD+' · 지난주 대비',1],
-         ['찜한 것',ME.saved,'개','누적 · 내 계정 기준',0],
-         ['살!말? 투표',ME.votes,'표','누적 · 내 계정 기준',1],
-         ['트렌드 분석',WK.chatMin,'분','평균 사용 시간 '+WK.chatAvgMin+'분',0]]
-        .map((m,i)=>'<div class="wkMetric'+(m[4]?' hot':'')+'">'+
-          '<span class="idx">'+String(i+1).padStart(2,'0')+'</span>'+
-          '<span class="lb">'+m[0]+'</span>'+
-          '<strong>'+m[1]+'<small>'+m[2]+'</small></strong>'+
-          '<em>'+m[3]+'</em></div>').join('')+
-      '</section>'+
+      /* ── 한 줄 요약 — 이번 주 가장 많이 검색한 키워드가 리포트의 축이다 ── */
+      '<div class="wkLine" id="wkLine">'+wkLineHTML(null,rp)+'</div>'+
+      /* ── 키워드 히어로 (키워드가 정해지면 wkActivityLoad 가 채운다) ── */
+      '<section class="wkHero" id="wkHero">'+wkHeroHTML(null)+'</section>'+
+      /* ── 지표 4칸 — 실제로 셀 수 있는 로그만 (/api/auth/weekly-report) ── */
+      '<section class="wkMetrics" id="wkMetrics">'+wkMetricsHTML()+'</section>'+
       /* ── 요일별 활동 · 취향 지분 ── */
       '<section class="wkG2">'+
-        '<article class="wkCard">'+
-          '<div class="wkCardHead"><h3>요일별 활동</h3><em>PEAK · '+WK.peak+'</em></div>'+
-          '<div class="wkDays"><div class="wkBarset">'+
-          DAY.map((d,i)=>{const v=WK.days[i];
-            return '<div class="wkDay'+(v===maxAct?' peak':'')+(d===WK.today?' today':'')+'">'+
-              '<span class="v">'+v+'</span>'+
-              '<span class="t"><i data-h="'+Math.round(v/maxAct*100)+'"></i></span>'+
-              '<span class="l">'+d+'</span></div>'}).join('')+
-          '</div></div>'+
-          '<div class="wkNote"><i>◆</i><span><b>'+WK.bestDay+'요일</b>에 가장 많이 보셨습니다. '+
-            '주말에 몰아보는 편이라면 금요일 저녁 리포트 알림이 잘 맞습니다.</span></div>'+
-        '</article>'+
-        '<article class="wkCard">'+
-          '<div class="wkCardHead"><h3>내 취향 지분</h3><em>VS. LAST WEEK</em></div>'+
-          '<div class="wkTasteList">'+WK.taste.map((t,i)=>
-            '<div class="wkTaste'+(i===0?' primary':'')+'"><span>'+t[0]+'</span>'+
-            '<span class="rail"><i data-w="'+t[1]+'"></i></span>'+
-            '<b>'+t[1]+'%</b>'+
-            '<em class="'+(t[2]>=0?'up':'')+'">'+(t[2]>0?'+':'')+t[2]+'%p</em></div>').join('')+
-          '</div>'+
-          '<div class="wkNote"><i>◆</i><span>이번 주 새로 유입된 축은 <b>'+WK.newTaste+'</b>입니다. '+
-            '추천에 반영되기 시작했습니다.</span></div>'+
-        '</article>'+
+        '<article class="wkCard" id="wkDaysCard">'+wkDaysHTML()+'</article>'+
+        '<article class="wkCard" id="wkTasteCard">'+wkTasteHTML()+'</article>'+
       '</section>'+
       /* ── 추천 영상 · 웹매거진 — 지어낸 기사가 아니라, 실제 검색 결과로 바로 연결한다 ── */
       '<section class="wkG2 wkG2b">'+
         '<article class="wkCard">'+
           '<div class="wkCardHead"><h3>이번 주 추천 영상</h3><em id="wkVideoBadge">취향 분석 중</em></div>'+
-          '<div id="wkVideoRec"><div class="wkVideoLoading"><i></i><span>선택한 스타일과 찜 상품 태그로<br>콘텐츠 DB를 찾고 있습니다.</span></div></div>'+
+          '<div id="wkVideoRec"><div class="wkVideoLoading"><i></i><span>이번 주 관심 키워드로<br>콘텐츠 DB를 찾고 있습니다.</span></div></div>'+
         '</article>'+
-        '<article class="wkCard">'+
-          '<div class="wkCardHead"><h3>추천 웹매거진</h3><em>'+heroStyle.n+'</em></div>'+
-          '<div class="wkMagList">'+WK.webzine.map(w=>
-            '<a class="wkMagRow" target="_blank" rel="noopener" href="https://www.google.com/search?q=site:'+
-            w.domain+'+'+encodeURIComponent(heroStyle.n)+'">'+
-            '<span class="tx"><b>'+w.src+'</b><span>“'+heroStyle.n+'” 관련 글 찾아보기</span></span>'+
-            '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8">'+
-            '<path d="M7 17L17 7M9 7h8v8"/></svg></a>').join('')+
-          '</div>'+
-        '</article>'+
+        '<article class="wkCard" id="wkMagCard">'+wkMagHTML(null)+'</article>'+
       '</section>'+
       /* ── 같이 지켜볼 만한 스타일 ── */
       '<section class="wkCard" style="margin-top:10px">'+
         '<div class="wkCardHead"><h3>같이 지켜볼 만한 스타일</h3><em>HOT NOW</em></div>'+
-        '<div class="wkNextGrid" id="wkNextGrid">'+wkNextHTML(heroStyle)+'</div>'+
+        '<div class="wkNextGrid" id="wkNextGrid">'+wkNextHTML({id:null})+'</div>'+
       '</section>'+
       '<div class="wkFoot">'+
         '<span>FEEDiT · FASHION TREND ANALYSIS &amp; RECOMMENDATION CONSULTING</span>'+
@@ -608,11 +743,11 @@ export function trRender(id){
       '</div>'+
     '</div>';
     wkAnimate();
-    wkLoadVideo();
-    /* 스타일 10종의 온도 · 수명주기를 받아 오면 히어로 지표와 '같이 지켜볼 스타일'만 다시 채운다 */
+    /* 활동 기록을 받으면 키워드를 정하고 한 줄 요약 · 히어로 · 지표 · 영상 · 웹매거진을 채운다 */
+    wkActivityLoad(fallback,rp);
+    /* 스타일 10종의 온도 · 수명주기를 받아 오면 '같이 지켜볼 스타일'만 다시 채운다 */
     tpLoad(STYLES,()=>{
-      const l=$('#wkHeroLedger'); if(l)l.innerHTML=wkLedgerHTML(heroStyle);
-      const g=$('#wkNextGrid'); if(g)g.innerHTML=wkNextHTML(heroStyle);
+      const g=$('#wkNextGrid'); if(g)g.innerHTML=wkNextHTML(WKEY&&WKEY.style||{id:null});
     });
   }
   else if(id==='saved'){ svRender(body) }

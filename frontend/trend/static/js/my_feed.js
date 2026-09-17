@@ -16,14 +16,8 @@ export const WK={
   chatMin:76, chatAvgMin:4.2,
   days:[6,11,9,14,21,17,8], today:'수', bestDay:'금', peak:'21시 – 23시',
   taste:[['발레코어',42,6],['아메카지',28,-3],['워크웨어',18,2],['고프코어',12,5]],
-  newTaste:'고프코어',
-  /* 추천 웹매거진 — 특정 기사를 지어내는 대신, 실제 매체 사이트에서
-     이번 주 관심 스타일을 바로 검색해 보여주는 링크로 연결한다 */
-  webzine:[
-    {src:'무신사 매거진', domain:'magazine.musinsa.com'},
-    {src:'하입비스트 코리아', domain:'hypebeast.kr'},
-    {src:'W Korea', domain:'www.wkorea.com'}
-  ]
+  newTaste:'고프코어'
+  /* 추천 웹매거진은 목업 목록 대신 /api/v1/magazines(웹 검색)로 기사를 찾는다 — dispatch.js wkMagLoad */
 };
 
 /* ── 내 피드 · 살!말? 취향 매칭 큐레이션 ────────────────────────
@@ -34,6 +28,12 @@ export const WK={
    ★ 2026-09-16 · 고정 4장(블록코어 · 아메카지 · 워크웨어 태그)을 걷어냈다.
      카드마다 어울리는 스타일(st, 스타일 페이지 10종 id)을 달아 두고,
      사용자가 고른 즐겨입는 스타일(최대 3개)에 맞는 카드만 골라 4장을 채운다. */
+/* 살!말? 카드 제목 → 어울리는 스타일 이름 (투표 기록의 취향 지분 계산용). 없으면 '' */
+export function feedStyleOf(title){
+  const p=FEED_SM_POOL.find(x=>x.t===title);
+  const s=p&&p.st&&STYLES.find(x=>x.id===p.st[0]);
+  return s?s.n:'';
+}
 const FEED_SM_POOL=[
   {t:'삼바 OG',                  b:'ADIDAS',            p:139000, votes:2210, hours:3,  a:88, tone:['#2f2b2b','#726358'], st:['block','street'],  cat:'스니커'},
   {t:'셀비지 와이드 데님',        b:'MUSINSA STANDARD',  p:89000,  votes:1930, hours:48, a:64, tone:['#2f3336','#5a6166'], st:['ameka','street'],  cat:'데님'},

@@ -4,6 +4,8 @@ import { rkClamp, rkRingHTML } from '../../../account/static/js/rank.js';
 import { jobBadgeHTML, jobShown } from '../../../account/static/js/job.js';
 import { smBarFill, smBarLabels } from '../../../trend/static/js/discount_resale.js';
 import { STYLES } from '../../../home/static/js/chat.js';
+import { saveVote } from '../../../account/static/js/account_api.js';
+import { feedStyleOf } from '../../../trend/static/js/my_feed.js';
 
 /* ══════════════ 살!말? (feedit-salmal_2 이식) ══════════════
    이름 충돌을 막기 위해 통째로 자기 범위 안에서 돌린다. */
@@ -311,6 +313,11 @@ function castVote(i,side){
   else v.a=v.base;
   updateCard(i);
   smVoteBeat($(`.voteCard[data-i="${i}"]`), side);
+  /* 서버에 투표를 남긴다 — 카드가 아직 DB 카드가 아니라서 제목·브랜드로 카드를 식별한다.
+     (DB 카드로 바뀌면 cardKey 에 vote_card id 를 넣으면 vote_ballot 에도 저장된다) */
+  saveVote({ cardKey:v.id?String(v.id):'mock:'+v.t+'|'+v.b, title:v.t, brand:v.b,
+    style:styleNameOf(v)||feedStyleOf(v.t), choice:v.voted===null?null:(v.voted===0?'BUY':'PASS') })
+    .then(r=>{ if(r&&Number.isFinite(+r.vote_count))ME.votes=+r.vote_count; });
 }
 
 function attachCardHandlers(root=document){

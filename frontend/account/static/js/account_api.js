@@ -54,8 +54,32 @@ export const logoutAccount = () =>
 export const saveAccount = data =>
   request('profile', { method:'POST', body:data });
 
-export const weeklyVideos = () =>
-  request('weekly-videos');
+/* term 을 주면 그 키워드 태그가 붙은 영상만 찾는다 (금주의 리포트 · 가장 많이 검색한 키워드) */
+export const weeklyVideos = (term = '') =>
+  request('weekly-videos' + (term ? '?term=' + encodeURIComponent(term) : ''));
+
+/* ── 활동 기록 ─────────────────────────────────────────────
+ * 검색 · 살!말? 투표 · 찜 · 챗봇 사용을 서버(user_event · chat_session)에 남긴다.
+ * 금주의 리포트가 이 기록으로 채워진다.
+ * ★ 기록은 화면 동작을 막으면 안 된다 — 실패(비로그인 401 · 서버 꺼짐)는 조용히 넘긴다. */
+const quiet = promise => promise.catch(() => null);
+
+export const logSearch = (q, facet = '', style = '') =>
+  quiet(request('event', { method:'POST', body:{ type:'SEARCH', q, facet, style } }));
+
+export const logChat = (conversationId, title = '') =>
+  quiet(request('event', { method:'POST', body:{ type:'CHAT', conversation_id:conversationId, title } }));
+
+/* choice: 'BUY' | 'PASS' | null(투표 취소) */
+export const saveVote = ({ cardKey, title = '', brand = '', style = '', choice = null }) =>
+  quiet(request('vote', { method:'POST', body:{ card_key:cardKey, title, brand, style, choice } }));
+
+export const saveLiked = ({ itemId, liked, name = '', brand = '', style = '' }) =>
+  quiet(request('saved', { method:'POST', body:{ item_id:itemId, liked, name, brand, style } }));
+
+/* 금주의 리포트 — 실패하면 예외를 그대로 올려 화면이 사유를 적게 한다 */
+export const weeklyReport = () =>
+  request('weekly-report');
 
 /* ── Google 로그인 ──────────────────────────────────────────
  * Google Identity Services(GIS)의 코드 팝업으로 '인가 코드'만 받아 서버로 넘긴다.
