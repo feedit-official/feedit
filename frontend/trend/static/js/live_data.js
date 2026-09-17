@@ -154,6 +154,12 @@ export function stateOfUrl(url) {
   return URL_CACHE.get(url) || { status: 'unknown', reason: '아직 확인하지 않았습니다.' };
 }
 
+export function sentimentUrl(term, facet = '') {
+  const p = new URLSearchParams({ term: String(term || ''), days: '400' });
+  if (facet === '브랜드' || facet === 'BRAND') p.set('subject', 'brand');
+  return '/api/sentiment?' + p.toString();
+}
+
 export async function primeUrl(url, opts = {}) {
   const hit = URL_CACHE.get(url);
   const ttl = hit && hit.status === 'error' ? TTL_ERR_MS : TTL_MS;

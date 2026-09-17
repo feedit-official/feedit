@@ -1,0 +1,60 @@
+/* 회원가입·로그인·프로필 요청을 Django로 중계한다.
+ * 세션·CSRF 쿠키를 브라우저와 백엔드 사이에 그대로 전달한다. */
+import { backendBase, backendToken } from '../_lib/db.js';
+
+const ALLOWED = new Set(['me', 'signup', 'login', 'logout', 'profile', 'weekly-videos']);
+
+export default async function handler(req, res) {
+  const url = new URL(req.url, 'http://x');
+  const action = url.pathname.replace(/^\/api\/auth\//, '').split('/')[0];
+  if (!ALLOWED.has(action)) return send(res, 404, { status:'error', reason:'없는 인증 주소입니다.', data:null });
+  const base = backendBase();
+  if (!base) return send(res, 503, {
+    status:'error', reason:'BACKEND_API_URL이 설정되지 않아 로그인 서버에 연결할 수 없습니다.', data:null,
+  });
+
+  const method = String(req.method || 'GET').toUpperCase();
+  if (!['GET', 'POST'].includes(method)) {
+    return send(res, 405, { status:'error', reason:'지원하지 않는 요청 방식입니다.', data:null });
+  }
+  const headers = { Accept:'application/json' };
+  const token = backendToken();
+  if (token) headers['X-FEEDiT-Token'] = token;
+  if (req.headers.cookie) headers.Cookie = req.headers.cookie;
+  if (req.headers['x-csrftoken']) headers['X-CSRFToken'] = req.headers['x-csrftoken'];
+  let body;
+  if (method === 'POST') {
+    headers['Content-Type'] = 'application/json';
+    body = typeof req.body === 'string' ? req.body : JSON.stringify(req.body || {});
+  }
+
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 10000);
+    const upstream = await fetch(`${base}/auth/${action}`, {
+      method, headers, body, signal:controller.signal, redirect:'manual',
+    });
+    clearTimeout(timer);
+    const text = await upstream.text();
+    const cookies = typeof upstream.headers.getSetCookie === 'function'
+      ? upstream.headers.getSetCookie()
+      : [upstream.headers.get('set-cookie')].filter(Boolean);
+    if (cookies.length) res.setHeader('Set-Cookie', cookies);
+    res.statusCode = upstream.status;
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-store');
+    return res.end(text || JSON.stringify({ status:'error', reason:'인증 서버 응답이 비었습니다.', data:null }));
+  } catch (error) {
+    return send(res, 502, {
+      status:'error', reason:'로그인 서버에 연결하지 못했습니다.',
+      detail:String(error && error.message || error).slice(0, 140), data:null,
+    });
+  }
+}
+
+function send(res, status, body) {
+  res.statusCode = status;
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-store');
+  return res.end(JSON.stringify(body));
+}

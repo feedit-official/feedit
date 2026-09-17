@@ -176,8 +176,19 @@ if os.getenv("DJANGO_BEHIND_PROXY", "False").lower() == "true":
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
     USE_X_FORWARDED_HOST = True
 
-CSRF_TRUSTED_ORIGINS = [
-    o.strip()
-    for o in os.getenv("DJANGO_CSRF_TRUSTED_ORIGINS", "https://feedit-official.duckdns.org").split(",")
-    if o.strip()
-]
+_LOCAL_FRONTEND_PORTS = (4173, 4174, *range(5173, 5184))
+CSRF_TRUSTED_ORIGINS = list(dict.fromkeys([
+    *(
+        f"http://{host}:{port}"
+        for host in ("localhost", "127.0.0.1")
+        for port in _LOCAL_FRONTEND_PORTS
+    ),
+    *[
+        o.strip()
+        for o in os.getenv(
+            "DJANGO_CSRF_TRUSTED_ORIGINS",
+            "https://feedit-official.duckdns.org",
+        ).split(",")
+        if o.strip()
+    ],
+]))

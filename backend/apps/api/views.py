@@ -35,10 +35,12 @@ from django.db.models import Count, Max, Min, Q, Sum
 from django.db.models.functions import Coalesce
 from django.http import JsonResponse
 from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 from django.views.decorators.http import require_GET
 
 from apps.core.models import (
     Brand,
+    BrandSource,
     DictionaryTerm,
     Product,
     ProductSource,
@@ -48,6 +50,7 @@ from apps.core.models import (
     TermAlias,
     TermAssocDaily,
     TermMetricDaily,
+    TextDocument,
     TextTermMention,
     VoteBallot,
     VoteCard,
@@ -150,6 +153,117 @@ def _resolve_term(name):
     return base.filter(
         Q(brand__name=name) | Q(brand__english_name__iexact=name), term_type="BRAND"
     ).first()
+
+
+def _resolve_brand(name):
+    """표준명·영문명·플랫폼 표기 중 하나로 활성 브랜드를 찾는다."""
+    name = (name or "").strip()
+    if not name:
+        return None
+    brand = Brand.objects.filter(status="ACTIVE").filter(
+        Q(name=name) | Q(english_name__iexact=name)
+    ).first()
+    if brand:
+        return brand
+    brand_id = (
+        BrandSource.objects.filter(brand__status="ACTIVE")
+        .filter(Q(name=name) | Q(english_name__iexact=name))
+        .values_list("brand_id", flat=True)
+        .first()
+    )
+    return Brand.objects.filter(id=brand_id).first() if brand_id else None
+
+
+def _brand_variants(brand):
+    """댓글에서 브랜드를 찾을 때 쓸 검수된 표기. 너무 짧은 표기는 오탐을 막는다."""
+    raw = [brand.name, brand.english_name]
+    raw.extend(
+        value
+        for pair in BrandSource.objects.filter(brand=brand).values_list("name", "english_name")
+        for value in pair
+    )
+    variants, seen = [], set()
+    for value in raw:
+        value = str(value or "").strip()
+        key = _norm(value)
+        if not key or key in seen or (value.isascii() and len(key) < 3) or (not value.isascii() and len(key) < 2):
+            continue
+        seen.add(key)
+        variants.append(value)
+    return variants[:40]
+
+
+def _contains_any(field, values):
+    query = Q()
+    for value in values:
+        query |= Q(**{f"{field}__icontains": value})
+    return query
+
+
+def _published_date(metadata):
+    raw = metadata.get("published_at") if isinstance(metadata, dict) else None
+    parsed = parse_datetime(str(raw)) if raw else None
+    return parsed.date() if parsed else None
+
+
+def _direct_sentiment_series(rows, days):
+    """mention 행을 댓글 단위로 합친 뒤, 실제 게시일 기준 일별 반응으로 만든다."""
+    documents = {}
+    for row in rows:
+        day = _published_date(row.get("document__analysis_metadata"))
+        score = _num(row.get("sentiment_score"))
+        if day is None or score is None:
+            continue
+        doc = documents.setdefault(
+            row["document_id"], {"date": day, "scores": [], "intent": row.get("intent_code")}
+        )
+        doc["scores"].append(score)
+        if not doc["intent"] and row.get("intent_code"):
+            doc["intent"] = row["intent_code"]
+
+    if not documents:
+        return [], None, 0
+
+    last_date = max(doc["date"] for doc in documents.values())
+    since = last_date - timedelta(days=days - 1)
+    daily = defaultdict(lambda: defaultdict(int))
+    intent_fields = {
+        "QUESTION": "question_n", "PURCHASE": "purchase_n", "EXPERIENCE": "experience_n",
+        "PRAISE": "praise_n", "CRITIQUE": "critique_n", "CHITCHAT": "chitchat_n",
+    }
+    included = 0
+    for doc in documents.values():
+        if doc["date"] < since:
+            continue
+        included += 1
+        bucket = daily[doc["date"]]
+        score = sum(doc["scores"]) / len(doc["scores"])
+        polarity = "pos_n" if score > 0.5 else "neg_n" if score < 0.5 else "neu_n"
+        bucket[polarity] += 1
+        intent_field = intent_fields.get(str(doc["intent"] or "").upper())
+        if intent_field:
+            bucket[intent_field] += 1
+
+    series = []
+    count_fields = (
+        "pos_n", "neu_n", "neg_n", "question_n", "purchase_n", "experience_n",
+        "praise_n", "critique_n", "chitchat_n",
+    )
+    for day in sorted(daily):
+        bucket = daily[day]
+        point = {"date": day.isoformat(), **{field: bucket[field] for field in count_fields}}
+        total = point["pos_n"] + point["neu_n"] + point["neg_n"]
+        point.update({
+            "mention": total,
+            "document": total,
+            "pos_rate": round(point["pos_n"] / total * 100, 4) if total else None,
+            "neu_rate": round(point["neu_n"] / total * 100, 4) if total else None,
+            "neg_rate": round(point["neg_n"] / total * 100, 4) if total else None,
+            "sentiment": round((point["pos_n"] - point["neg_n"]) / total, 5) if total else None,
+            "intent": None,
+        })
+        series.append(point)
+    return series, last_date, included
 
 
 def _metric_version(term_id=None):
@@ -495,6 +609,96 @@ def trend(request):
         },
         **extra,
     )
+
+
+@require_GET
+def sentiment(request):
+    """GET /api/sentiment?term=셔츠&days=400&subject=term|brand.
+
+    사전 용어는 TextTermMention의 해당 term 분석을 직접 집계한다.
+    브랜드는 아직 DictionaryTerm(BRAND)이 없으므로 브랜드 표기가 실제 포함된
+    mention 문맥만 모아 '브랜드 언급 문맥 반응'으로 제공한다.
+    """
+    name = (request.GET.get("term") or "").strip()
+    if not name:
+        return _empty("term 을 지정해 주세요. 예: /api/sentiment?term=셔츠")
+    days = _int(request, "days", 400, 7, 730)
+    requested_kind = (request.GET.get("subject") or request.GET.get("kind") or "").strip().lower()
+    term = None if requested_kind == "brand" else _resolve_term(name)
+
+    method = "TERM_MENTION"
+    facet = None
+    canonical = name
+    if term is not None:
+        canonical = term.canonical_name
+        facet = term.term_type
+        mention_rows = list(
+            TextTermMention.objects.filter(
+                term=term,
+                document__document_type=TextDocument.DocumentType.COMMENT,
+                sentiment_score__isnull=False,
+            ).values(
+                "document_id", "document__analysis_metadata", "sentiment_score", "intent_code"
+            )
+        )
+        matched_comments = len({row["document_id"] for row in mention_rows})
+    else:
+        brand = _resolve_brand(name)
+        if brand is None:
+            return _empty(
+                f"‘{name}’ 을 활성 사전이나 브랜드 표에서 찾지 못했습니다.",
+                term=name, known=False,
+            )
+        canonical = brand.name or brand.english_name or name
+        facet = "BRAND"
+        method = "BRAND_CONTEXT"
+        variants = _brand_variants(brand)
+        if not variants:
+            return _empty(
+                f"‘{canonical}’ 은 브랜드이지만 댓글에서 안전하게 찾을 수 있는 표기가 없습니다.",
+                term=canonical, known=True,
+            )
+        documents = list(
+            TextDocument.objects.filter(document_type=TextDocument.DocumentType.COMMENT)
+            .filter(_contains_any("body", variants))
+            .values("id", "analysis_metadata")
+        )
+        matched_comments = len(documents)
+        doc_meta = {row["id"]: row["analysis_metadata"] for row in documents}
+        mention_rows = list(
+            TextTermMention.objects.filter(
+                document_id__in=doc_meta,
+                sentiment_score__isnull=False,
+            )
+            .exclude(mention_text__isnull=True)
+            .filter(_contains_any("mention_text", variants))
+            .values("document_id", "sentiment_score", "intent_code")
+        )
+        for row in mention_rows:
+            row["document__analysis_metadata"] = doc_meta.get(row["document_id"], {})
+
+    series, last_date, classified_comments = _direct_sentiment_series(mention_rows, days)
+    if not series:
+        detail = (
+            "브랜드가 언급된 댓글은 있지만 해당 문맥에 연결된 긍부정 분석행이 없습니다."
+            if method == "BRAND_CONTEXT" and matched_comments
+            else "댓글에서 이 용어와 연결된 긍부정 분석행이 없습니다."
+        )
+        return _empty(detail, term=canonical, facet=facet, known=True)
+
+    return _ok({
+        "term": canonical,
+        "facet": facet,
+        "days": days,
+        "points": len(series),
+        "as_of": last_date.isoformat(),
+        "metric_version": "direct-text-mention-v1",
+        "method": method,
+        "scope_label": "브랜드 언급 문맥" if method == "BRAND_CONTEXT" else "용어 직접 언급",
+        "matched_comments": matched_comments,
+        "classified_comments": classified_comments,
+        "series": series,
+    })
 
 
 # ══════════════════════════════════════════════════════════════

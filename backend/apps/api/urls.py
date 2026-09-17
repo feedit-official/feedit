@@ -6,7 +6,7 @@
 
 from django.urls import path
 
-from . import views
+from . import auth_views, views
 from .crawl_views import (
     CrawlRunDetailAPIView,
     CrawlRunListAPIView,
@@ -17,12 +17,21 @@ from .crawl_views import (
 app_name = "api"
 
 urlpatterns = [
+    # ── 사용자 세션·프로필 ──
+    path("auth/me", auth_views.me, name="auth-me"),
+    path("auth/signup", auth_views.signup, name="auth-signup"),
+    path("auth/login", auth_views.login, name="auth-login"),
+    path("auth/logout", auth_views.logout, name="auth-logout"),
+    path("auth/profile", auth_views.profile, name="auth-profile"),
+    path("auth/weekly-videos", auth_views.weekly_videos, name="auth-weekly-videos"),
+
     # ── 프론트 읽기 전용 ──
     path("health", views.health, name="health"),
     path("terms", views.terms, name="terms"),
     path("dictionary", views.dictionary, name="dictionary"),
     path("facets", views.facets, name="facets"),
     path("trend", views.trend, name="trend"),            # 언급량·온도 / 긍부정
+    path("sentiment", views.sentiment, name="sentiment"),  # 댓글 원문 기반 긍부정
     path("assoc", views.assoc, name="assoc"),            # 연관어
     path("discount", views.discount, name="discount"),   # 할인률 변화
     path("resale", views.resale, name="resale"),         # 리세일 시세 지수

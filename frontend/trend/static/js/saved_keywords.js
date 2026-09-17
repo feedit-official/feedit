@@ -1,5 +1,5 @@
 import { $, $$, HAS_A, aAnimate, aSpring, aTimeline } from '../../../core/static/js/dom.js';
-import { prime, primeUrl } from './live_data.js';
+import { prime, primeUrl, sentimentUrl } from './live_data.js';
 import { FIDX, fsMatch, fsNorm } from '../../../style/static/js/search.js';
 import { KW, trToast } from './render_helpers.js';
 import { markTried, trRender } from './dispatch.js';
@@ -83,24 +83,28 @@ function kwMoveSug(d){
 /* 검색어 확정 → 그 파트를 다시 그린다 */
 function kwGo(v){
   const inp=$('#kwInput'); if(!inp)return;
-  if(v)inp.value=v;
+  const selected=v&&typeof v==='object'?v:null;
+  if(selected)inp.value=selected.label;
+  else if(v)inp.value=v;
   const q=inp.value.trim();
   if(!q){ kwPaintSug(); return }
-  if(!fsMatch(q,1).length){ kwPaintSug(); return }   /* 사전에 없으면 검색되지 않는다 */
+  const match=selected||fsMatch(q,1)[0];
+  if(!match){ kwPaintSug(); return }   /* 사전에 없으면 검색되지 않는다 */
 
   /* ★ 지표를 받아 오는 동안 돋보기를 돌린다.
      서버에 다녀오는 시간이 있는데 화면이 그대로면 눌린 줄을 모르고 또 누른다.
      받아 온 뒤에는 trRender 가 다시 그리므로 여기서 끄지 않아도 되지만,
      실패했을 때를 대비해 반드시 되돌린다(finally). */
   kwBusy(true);
-  KW.q=q; kwHideSug();
+  KW.q=q; KW.f=match.f||''; kwHideSug();
   /* 연관어 파트는 /api/assoc 도 새로 받는다 (사람이 직접 눌렀으니 캐시를 무시한다). */
   const assocUrl=KW.part==='assoc'?'/api/assoc?term='+encodeURIComponent(q):null;
-  const jobs=[prime(q,undefined,{force:true})];
+  const sentUrl=KW.part==='sentiment'?sentimentUrl(q,KW.f):null;
+  const jobs=sentUrl?[primeUrl(sentUrl,{force:true})]:[prime(q,undefined,{force:true})];
   if(assocUrl)jobs.push(primeUrl(assocUrl,{force:true}));
   Promise.all(jobs.map(j=>Promise.resolve(j).catch(()=>{}))).then(()=>{
     /* 내가 방금 물어봤다 — 이어서 도는 trRender 는 또 묻지 마라. */
-    markTried(q); if(assocUrl)markTried(assocUrl);
+    markTried(q); if(assocUrl)markTried(assocUrl); if(sentUrl)markTried(sentUrl);
     kwBusy(false);
     trRender(KW.part);
   });
@@ -126,13 +130,13 @@ export function kwWire(part){
     else if(e.key==='ArrowUp'){ e.preventDefault(); kwMoveSug(-1) }
     else if(e.key==='Escape'){ kwHideSug() }
     else if(e.key==='Enter'){ e.preventDefault();
-      if(KW.cur>=0&&KW.sug[KW.cur])kwGo(KW.sug[KW.cur].label); else kwGo();
+      if(KW.cur>=0&&KW.sug[KW.cur])kwGo(KW.sug[KW.cur]); else kwGo();
     }
   });
   inp.addEventListener('focus',()=>{ if(inp.value)kwPaintSug() });
   $('#kwSug').addEventListener('click',e=>{
     const sg=e.target.closest('.sg');
-    if(sg){ kwGo(KW.sug[+sg.dataset.k].label); return }
+    if(sg){ kwGo(KW.sug[+sg.dataset.k]); return }
     const near=e.target.closest('[data-kw]');
     if(near){ kwGo(near.dataset.kw); return }
     const ask=e.target.closest('#kwAsk');

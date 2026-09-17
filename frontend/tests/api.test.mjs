@@ -317,6 +317,70 @@ await t('BACKEND_API_URL 이 없으면 예전처럼 pg 로 간다', async () => 
   assert.ok(fake.CALLS.length > before, 'pg 를 불러야 한다');
 });
 
+await t('★ 긍부정 — Vercel 동적 함수가 Django 직접 집계 API를 중계한다', async () => {
+  process.env.BACKEND_API_URL = 'http://feedit-official.duckdns.org/api';
+  const kind = (await import('../api/[kind].js')).default;
+  let called = null;
+  globalThis.fetch = async (u) => { called = u; return {
+    ok: true, json: async () => ({ status: 'ok', data: { term: '나이키', method: 'BRAND_CONTEXT', series: [] } }) }; };
+  const res = mkRes();
+  await kind(req('/api/sentiment?term=나이키&subject=brand'), res);
+  assert.equal(called, 'http://feedit-official.duckdns.org/api/sentiment?term=%EB%82%98%EC%9D%B4%ED%82%A4&subject=brand');
+  assert.equal(res.body.data.method, 'BRAND_CONTEXT');
+  delete process.env.BACKEND_API_URL;
+});
+
+await t('★ 인증 — 세션·CSRF 쿠키와 POST 본문을 Django로 중계한다', async () => {
+  process.env.BACKEND_API_URL = 'http://feedit-official.duckdns.org/api';
+  process.env.BACKEND_API_TOKEN = 'server-only-token';
+  const auth = (await import('../api/auth/[action].js')).default;
+  let called = null, options = null;
+  globalThis.fetch = async (url, opts) => {
+    called = url; options = opts;
+    return {
+      status:201,
+      headers:{ getSetCookie:()=>['sessionid=abc; HttpOnly; Path=/','csrftoken=xyz; Path=/'] },
+      text:async()=>JSON.stringify({status:'ok',data:{authenticated:true,user:{nickname:'테스트'}}}),
+    };
+  };
+  const res = mkRes();
+  await auth({
+    url:'/api/auth/signup', method:'POST',
+    headers:{cookie:'csrftoken=old','x-csrftoken':'old'},
+    body:{username:'tester',password:'password'},
+  }, res);
+  assert.equal(called, 'http://feedit-official.duckdns.org/api/auth/signup');
+  assert.equal(options.headers['X-FEEDiT-Token'], 'server-only-token');
+  assert.equal(options.headers.Cookie, 'csrftoken=old');
+  assert.equal(options.headers['X-CSRFToken'], 'old');
+  assert.equal(JSON.parse(options.body).username, 'tester');
+  assert.equal(res.statusCode, 201);
+  assert.equal(res.headers['Set-Cookie'].length, 2);
+  delete process.env.BACKEND_API_URL;
+  delete process.env.BACKEND_API_TOKEN;
+});
+
+await t('★ 추천 영상 — 로그인 쿠키를 붙여 개인화 Django API로 중계한다', async () => {
+  process.env.BACKEND_API_URL = 'http://feedit-official.duckdns.org/api';
+  const auth = (await import('../api/auth/[action].js')).default;
+  let called = null, options = null;
+  globalThis.fetch = async (url, opts) => {
+    called = url; options = opts;
+    return {
+      status:200,
+      headers:{getSetCookie:()=>[]},
+      text:async()=>JSON.stringify({status:'ok',data:{items:[{youtube_id:'abc123'}]}}),
+    };
+  };
+  const res = mkRes();
+  await auth({url:'/api/auth/weekly-videos',method:'GET',headers:{cookie:'sessionid=abc'}},res);
+  assert.equal(called,'http://feedit-official.duckdns.org/api/auth/weekly-videos');
+  assert.equal(options.headers.Cookie,'sessionid=abc');
+  assert.equal(options.method,'GET');
+  assert.equal(res.body.data.items[0].youtube_id,'abc123');
+  delete process.env.BACKEND_API_URL;
+});
+
 // ── 사전 — 용어 표와 브랜드 표를 합쳐서 준다 ────────────
 const dictionary = (await import('../api/dictionary.js')).default;
 

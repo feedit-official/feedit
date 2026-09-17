@@ -28,7 +28,7 @@ t('★ 검색창 배선이 어떤 분기보다 앞에, 딱 한 번 붙는다', (
   const w = dispatch.indexOf('kwWire(');
   const e = dispatch.indexOf('KW_TABS.indexOf(id) >= 0 && !KW.q');
   assert.ok(w > 0 && w < e, '빈 화면 분기보다 앞이어야 한다');
-  assert.match(dispatch, /trTabsRender\(id\);\n[\s\S]{0,600}?kwWire\(id\)/);
+  assert.match(dispatch, /trTabsRender\(id\);\r?\n[\s\S]{0,600}?kwWire\(id\)/);
 });
 
 t('예시 질문 회전이 빈 입력일 때만 돈다', () => {
@@ -40,7 +40,7 @@ t('예시 질문 회전이 빈 입력일 때만 돈다', () => {
 
 t('엔터가 조회로 이어진다', () => {
   assert.match(saved, /else if\(e\.key==='Enter'\)\{ e\.preventDefault\(\);/);
-  assert.match(saved, /kwGo\(KW\.sug\[KW\.cur\]\.label\); else kwGo\(\);/);
+  assert.match(saved, /kwGo\(KW\.sug\[KW\.cur\]\); else kwGo\(\);/);
 });
 
 // ── 조회 버튼 ────────────────────────────────────────────
@@ -67,10 +67,11 @@ t('★ 조회하는 동안 busy 를 켜고, 실패해도 반드시 끈다', () =
 });
 
 t('조회 전에 지표를 받아 온다', () => {
-  assert.match(saved, /import \{ prime, primeUrl \} from '\.\/live_data\.js'/);
+  assert.match(saved, /import \{ prime, primeUrl, sentimentUrl \} from '\.\/live_data\.js'/);
   // 사람이 직접 누른 것이므로 캐시를 무시하고 새로 받는다. (1년치 — 전년 대비를 위해 기본 기간)
   assert.match(saved, /prime\(q,undefined,\{force:true\}\)/);
   assert.match(saved, /primeUrl\(assocUrl,\{force:true\}\)/);
+  assert.match(saved, /primeUrl\(sentUrl,\{force:true\}\)/);
 });
 
 // ── 모션 ─────────────────────────────────────────────────
