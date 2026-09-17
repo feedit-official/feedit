@@ -8,7 +8,7 @@ import { ME, bioPaint } from '../../../account/static/js/profile.js';
 import { S_EDIT, S_FEED, TR_META } from './nav_meta.js';
 import { assocClosePop, assocOpenPop } from './assoc_popover.js';
 import { entryOf, prime, primeUrl, sentimentUrl, stateOf, stateOfUrl, summaryOf, unavailableHTML } from './live_data.js';
-import { gChart, gDraw, gSeed } from './chart_engine.js';
+import { gChart, gDraw } from './chart_engine.js';
 import { kwWire } from './saved_keywords.js';
 import { rkChip, rkPaintAv } from '../../../account/static/js/rank.js';
 import { jobPlanText } from '../../../account/static/js/job.js';
@@ -73,10 +73,39 @@ export function markTried(kw){ if(kw) TR_TRIED[kw]=Date.now(); }
 /* ── 내 피드 · 내 관심 코어의 시장 화제성 ──
    '즐겨입는 스타일'(ME.styles, 가입 팝업 · 마이페이지에서 고른 것)만 버튼으로 세우고,
    누른 한 개의 화제성만 보여 준다. 다른 스타일은 섞지 않는다.
-   숫자는 목업이다 — 스타일 id 로 고정 시드를 뽑아 새로고침해도 같은 값이 나온다. */
+   ★ 2026-09-17 · 시드 난수를 걷어내고 실데이터로 바꿨다.
+     화제성 = /api/trend 의 트렌드 온도(term_metric_daily.trend_temperature)
+     주간 변화 = 7일 전 대비 온도 차 · 단계 = /api/lifecycle 의 수명주기 판정
+     값이 없으면 숫자를 지어내지 않고 '–' 와 사유를 적는다. */
 let TP_PICK=null;
+const TP_RISE=['태동','확산'];   /* /api/lifecycle 단계 중 '올라가는' 구간 */
+/* 받침 조사 — 영문 이름(Y2K)은 끝 글자를 읽는 소리로 고른다 (L·M·N·R 은 받침) */
+const tpJosa=(w,a,b)=>/[A-Za-z0-9]$/.test(w)?(/[LMNRlmnr1368]$/.test(w)?a:b):josa(w,a,b);
+function tpMine(){ return STYLES.filter(s=>ME.styles.has(s.id)) }
+const lcUrl=n=>'/api/lifecycle?term='+encodeURIComponent(n);
+
+/* 스타일 하나의 실지표를 캐시에서 꺼낸다 (받는 건 tpLoad 가 한다).
+   state: loading(아직 안 받음) · none(지표 없음) · ok */
+function tpLive(s){
+  const st=stateOf(s.n), L=stateOfUrl(lcUrl(s.n));
+  if(st.status==='unknown'||L.status==='unknown')return {state:'loading'};
+  const S=summaryOf(s.n);
+  if(!S||S.temp==null)return {state:'none',reason:st.status==='ok'?'트렌드 온도가 아직 계산되지 않았습니다.':(st.reason||'측정된 자료가 없습니다.')};
+  /* 최근 7일 · 그 전 7일 언급량 합 (마지막 적재일 기준) */
+  const E=entryOf(s.n), rows=E&&E.byDate?[...E.byDate.values()]:[];
+  const inWin=(r,lo,hi)=>{ const d=trDayDiff(r.date,S.asOf); return d>=lo&&d<hi };
+  const m7=rows.filter(r=>inWin(r,0,7)).reduce((a,r)=>a+(+r.mention||0),0);
+  const m7p=rows.filter(r=>inWin(r,7,14)).reduce((a,r)=>a+(+r.mention||0),0);
+  return {state:'ok',temp:Math.round(S.temp),wk:S.tempWk==null?null:Math.round(S.tempWk),
+    stage:L.status==='ok'&&L.data?L.data.stage:null,m7,m7p,asOf:S.asOf};
+}
+/* 고른 스타일들의 온도 · 수명주기를 한꺼번에 받아 두고, 다 받으면 done 을 부른다 */
+function tpLoad(list,done){
+  if(!list.length)return;
+  Promise.allSettled(list.flatMap(s=>[prime(s.n),primeUrl(lcUrl(s.n))])).then(()=>done&&done());
+}
 function tpHeroHTML(){
-  const mine=STYLES.filter(s=>ME.styles.has(s.id));
+  const mine=tpMine();
   if(!mine.length){
     return '<div class="tpPulseTop"><span class="tpTag">TREND ALIGNMENT</span></div>'+
       '<div class="tpPulseCopy"><strong>내 관심 코어의 시장 화제성</strong>'+
@@ -86,67 +115,89 @@ function tpHeroHTML(){
   }
   if(!mine.some(s=>s.id===TP_PICK))TP_PICK=mine[0].id;
   const cur=mine.find(s=>s.id===TP_PICK);
-  const deg=tpDeg(cur);
-  const dlt=(TP_RISE.includes(cur.pk)?1:-1)*(1+Math.round(gSeed(cur.id+'pd')*8));
-  const up=dlt>0;
-  return '<div class="tpPulseTop"><span class="tpTag">TREND ALIGNMENT · '+cur.en.toUpperCase()+'</span>'+
-      '<span class="tpDelta">'+(up?'▲ ':'▼ ')+Math.abs(dlt)+'° 이번 주</span></div>'+
-    '<div class="tpBigDeg">'+deg+'<em>°</em></div>'+
-    '<div class="tpPulseCopy"><strong>내 관심 코어의 시장 화제성</strong>'+
-      '<p><b>'+cur.n+'</b>'+tpJosa(cur.n,'은','는')+' 지금 <b>'+cur.pk+'</b> 구간입니다. '+
-        cur.kw.slice(0,2).join(' · ')+' 쪽에서 반응이 '+(up?'빠르게 붙고 있어요.':'조금씩 식고 있어요.')+'</p>'+
-      '<div class="tpTasteTags" role="tablist">'+mine.map(s=>
+  const L=tpLive(cur);
+  const tabs='<div class="tpTasteTags" role="tablist">'+mine.map(s=>
         '<button type="button" role="tab" data-tp-style="'+s.id+'" aria-selected="'+(s.id===TP_PICK)+'"'+
-        (s.id===TP_PICK?' class="on"':'')+'>'+s.n+'</button>').join('')+'</div>'+
+        (s.id===TP_PICK?' class="on"':'')+'>'+s.n+'</button>').join('')+'</div>';
+  let delta='', deg='–', copy;
+  if(L.state==='loading'){
+    copy='<b>'+cur.n+'</b>의 트렌드 온도를 불러오는 중입니다…';
+  } else if(L.state==='none'){
+    copy='<b>'+cur.n+'</b>'+tpJosa(cur.n,'은','는')+' 아직 화제성을 잴 자료가 없습니다.<br>'+trEsc(L.reason);
+  } else {
+    deg=L.temp;
+    delta=L.wk==null?'<span class="tpDelta">지난주 비교 불가</span>'
+      :'<span class="tpDelta">'+(L.wk>0?'▲ ':L.wk<0?'▼ ':'– ')+Math.abs(L.wk)+'° 지난주 대비</span>';
+    copy='<b>'+cur.n+'</b>'+tpJosa(cur.n,'은','는')+' '+
+      (L.stage?'지금 <b>'+L.stage+'</b> 구간입니다. ':'수명주기 단계는 아직 판정할 자료가 부족합니다. ')+
+      '최근 7일 언급 '+L.m7.toLocaleString()+'건(지난주 '+L.m7p.toLocaleString()+'건) · '+trEsc(L.asOf)+' 기준';
+  }
+  return '<div class="tpPulseTop"><span class="tpTag">TREND ALIGNMENT · '+cur.en.toUpperCase()+'</span>'+delta+'</div>'+
+    '<div class="tpBigDeg">'+deg+(deg==='–'?'':'<em>°</em>')+'</div>'+
+    '<div class="tpPulseCopy"><strong>내 관심 코어의 시장 화제성</strong>'+
+      '<p>'+copy+'</p>'+tabs+
     '</div>';
 }
-/* ── 신규 신호 · 오늘의 취향 브리핑 ──
-   화제성 카드와 같은 출처(ME.styles)를 쓴다. 고정 문구(블록코어 · 아메카지)는 걷어냈다.
-   신호 수도 스타일 id 시드 목업이다 — 화제성 카드의 숫자와 같은 시드를 써서 서로 어긋나지 않는다. */
-const TP_RISE=['확산','재상승','재점화'];   /* 정점 통과는 이미 꼭짓점을 넘었으니 상승으로 세지 않는다 */
-/* 화제성 — 상승 구간이면 높게, 아니면 낮게 나오게 해 문구와 숫자가 어긋나지 않게 한다 */
-const tpDeg=s=>Math.round((TP_RISE.includes(s.pk)?70:38)+gSeed(s.id+'pulse')*26);
-/* 받침 조사 — 영문 이름(Y2K)은 끝 글자를 읽는 소리로 고른다 (L·M·N·R 은 받침) */
-const tpJosa=(w,a,b)=>/[A-Za-z0-9]$/.test(w)?(/[LMNRlmnr1368]$/.test(w)?a:b):josa(w,a,b);
-const tpSig=s=>1+Math.round(gSeed(s.id+'sig')*7);
-function tpMine(){ return STYLES.filter(s=>ME.styles.has(s.id)) }
+/* ── 내 관심 스타일 최근 7일 언급량 ──
+   화제성 카드와 같은 출처(ME.styles · /api/trend)를 쓴다. 지난주 같은 기간 대비 증감을 붙인다. */
 function tpSignalHTML(){
   const mine=tpMine();
-  const rows=mine.map(s=>[s.n,tpSig(s)]);
-  /* 고른 스타일이 적으면 대표 키워드로 줄을 채운다 — 여전히 내 스타일에서만 나온 말이다 */
-  mine.forEach(s=>{ if(rows.length<4)rows.push([s.kw[0],Math.max(1,Math.round(tpSig(s)/3))]) });
-  const total=rows.reduce((a,r)=>a+r[1],0);
-  return '<div class="tpSignalHead"><span>NEW SIGNALS DETECTED</span><i class="tpLiveDot"></i></div>'+
-    '<div class="tpSignalNum">'+total+'<em>signals</em></div>'+
-    '<div><h4>내 관심 키워드 관련 신규 신호</h4>'+
-      '<p>'+(mine.length?'최근 수집 데이터 중 내 취향 태그와 직접 연결되는 변화만 추렸습니다.'
-        :'즐겨입는 스타일을 고르면 그 스타일과 연결된 신호만 모아 보여 드립니다.')+'</p>'+
-      '<div class="tpSignalList">'+rows.slice(0,4).map(r=>'<span>'+r[0]+' <b>+'+r[1]+'</b></span>').join('')+'</div>'+
-    '</div>';
+  const lives=mine.map(s=>[s,tpLive(s)]);
+  const loading=lives.some(x=>x[1].state==='loading');
+  const ok=lives.filter(x=>x[1].state==='ok');
+  const total=ok.reduce((a,x)=>a+x[1].m7,0);
+  const head='<div class="tpSignalHead"><span>LAST 7 DAYS · MENTIONS</span><i class="tpLiveDot"></i></div>';
+  let num, p, list='';
+  if(!mine.length){ num='–'; p='즐겨입는 스타일을 고르면 그 스타일의 최근 언급량을 모아 보여 드립니다.' }
+  else if(loading){ num='–'; p='내 관심 스타일의 언급량을 불러오는 중입니다…' }
+  else if(!ok.length){ num='–'; p='고른 스타일에 측정된 언급량이 아직 없습니다.' }
+  else {
+    num=total.toLocaleString();
+    p='수집된 글·영상·리뷰에서 내 관심 스타일이 언급된 건수입니다. 옆 숫자는 지난주 같은 기간 대비 증감입니다.';
+    list='<div class="tpSignalList">'+lives.map(([s,L])=>{
+      if(L.state!=='ok')return '<span>'+s.n+' <b>–</b></span>';
+      const d=L.m7-L.m7p;
+      return '<span>'+s.n+' '+L.m7.toLocaleString()+'건 <b>'+(d>0?'+':'')+d.toLocaleString()+'</b></span>';
+    }).join('')+'</div>';
+  }
+  return head+'<div class="tpSignalNum">'+num+'<em>mentions</em></div>'+
+    '<div><h4>내 관심 스타일 최근 7일 언급량</h4><p>'+p+'</p>'+list+'</div>';
 }
 function tpBriefHTML(){
   const mine=tpMine();
-  const rise=mine.filter(s=>TP_RISE.includes(s.pk));
+  const lives=mine.map(s=>[s,tpLive(s)]);
+  const ok=lives.filter(x=>x[1].state==='ok');
+  const rise=ok.filter(x=>TP_RISE.includes(x[1].stage));
   let tx;
   if(!mine.length){
     tx='아직 고른 즐겨입는 스타일이 없습니다. 스타일을 고르면 매일 이 자리에서 취향 브리핑을 드립니다.';
+  }else if(lives.some(x=>x[1].state==='loading')){
+    tx='내 관심 스타일의 트렌드 지표를 불러오는 중입니다…';
+  }else if(!ok.length){
+    tx='고른 스타일에 측정된 트렌드 지표가 아직 없어 브리핑을 만들지 못했습니다.';
   }else{
-    tx=mine.map(s=>s.n+tpJosa(s.n,'은','는')+' 화제성 '+tpDeg(s)+'°로 '+s.pk+' 구간').join(', ')+'입니다. '+
+    tx=lives.map(([s,L])=>L.state==='ok'
+        ? s.n+tpJosa(s.n,'은','는')+' 온도 '+L.temp+'°'+(L.stage?'로 '+L.stage+' 구간':'')
+        : s.n+tpJosa(s.n,'은','는')+' 지표 없음').join(', ')+'입니다. '+
       (rise.length
-        ? '지금은 '+rise.map(s=>s.n).join(' · ')+' 쪽에서 "완전 유행 전" 아이템을 고르기 좋은 타이밍이에요.'
-        : '고른 스타일이 모두 상승 구간은 아니라, 새로 사기보다 가진 옷을 활용하기 좋은 시기예요.');
+        ? '지금은 '+rise.map(x=>x[0].n).join(' · ')+' 쪽이 올라가는 구간이라 "완전 유행 전" 아이템을 고르기 좋은 타이밍이에요.'
+        : '고른 스타일 중 올라가는(태동·확산) 구간은 없어, 새로 사기보다 가진 옷을 활용하기 좋은 시기예요.');
   }
   return '<div class="tpBriefNo">01</div>'+
     '<div class="tpBriefText"><b>오늘의 취향 브리핑</b><p>'+tx+'</p></div>'+
     '<div class="tpBriefScore"><b>'+rise.length+'</b> CORE RISING</div>';
 }
+/* 받아 온 뒤 카드 세 장 안만 갈아 끼운다 */
+function tpRepaint(){
+  const h=$('#tpHero'); if(h)h.innerHTML=tpHeroHTML();
+  const g=$('#tpSignal'); if(g)g.innerHTML=tpSignalHTML();
+  const b=$('#tpBrief'); if(b)b.innerHTML=tpBriefHTML();
+}
 /* 즐겨입는 스타일이 바뀌면(가입 팝업 · 마이페이지) 내 피드 카드 세 장을 다시 채운다 */
 document.addEventListener('feedit:styles',()=>{
   /* 내 피드가 열려 있으면 맞춤 살!말? 카드까지 통째로 다시 고른다 */
   if($('#tpSalGrid')){ trRender('myfeed'); return }
-  const h=$('#tpHero'); if(h)h.innerHTML=tpHeroHTML();
-  const g=$('#tpSignal'); if(g)g.innerHTML=tpSignalHTML();
-  const b=$('#tpBrief'); if(b)b.innerHTML=tpBriefHTML();
+  tpRepaint(); tpLoad(tpMine(),tpRepaint);
 });
 
 /* 버튼을 누르면 카드 안만 갈아 끼운다 — 본문 전체를 다시 그리면 등장 애니메이션이 또 돈다 */
@@ -187,6 +238,40 @@ async function wkLoadVideo(){
     if(!host.isConnected)return;
     host.innerHTML='<div class="wkVideoEmpty"><b>추천 영상을 불러오지 못했습니다.</b><span>'+trEsc(error.message||'잠시 뒤 다시 확인해 주세요.')+'</span></div>';
   }
+}
+/* ── 금주의 리포트 실데이터 도우미 ── */
+/* 이번 주(월~일) — ['2026.09', 'W3 · 9/14 – 9/20'] 의 두 조각 */
+function wkRange(now=new Date()){
+  const mon=new Date(now); mon.setDate(now.getDate()-((now.getDay()+6)%7));
+  const sun=new Date(mon); sun.setDate(mon.getDate()+6);
+  const md=d=>(d.getMonth()+1)+'/'+d.getDate();
+  const wn=Math.floor((mon.getDate()-1)/7)+1;
+  return [mon.getFullYear()+'.'+String(mon.getMonth()+1).padStart(2,'0'),'W'+wn+' · '+md(mon)+' – '+md(sun)];
+}
+/* 히어로 3칸 — 트렌드 온도 · 지난주 대비 · 수명주기 단계 */
+function wkLedgerHTML(s){
+  const L=tpLive(s);
+  const cell=(lb,v,ac)=>'<div'+(ac?' class="ac"':'')+'><span>'+lb+'</span><b>'+v+'</b></div>';
+  if(L.state!=='ok'){
+    const v=L.state==='loading'?'…':'–';
+    return cell('트렌드 온도',v,1)+cell('지난주 대비',v)+cell('수명주기 단계',v);
+  }
+  return cell('트렌드 온도',L.temp+'°',1)+
+    cell('지난주 대비',L.wk==null?'–':(L.wk>0?'+':'')+L.wk+'°')+
+    cell('수명주기 단계',L.stage||'판정 전');
+}
+/* 같이 지켜볼 스타일 3개 — 올라가는(태동·확산) 구간 먼저, 그 안에서 온도 높은 순 */
+function wkNextHTML(top){
+  const lives=STYLES.filter(s=>s.id!==top.id).map(s=>[s,tpLive(s)]);
+  if(lives.some(x=>x[1].state==='loading'))
+    return '<div class="note" data-live="loading"><i>◆</i><span>스타일별 트렌드 온도를 불러오는 중입니다…</span></div>';
+  const ok=lives.filter(x=>x[1].state==='ok')
+    .sort((a,b)=>(TP_RISE.includes(b[1].stage)-TP_RISE.includes(a[1].stage))||(b[1].temp-a[1].temp)).slice(0,3);
+  if(!ok.length)return unavailableHTML('스타일별 트렌드 지표가 아직 없습니다.','');
+  return ok.map(([s,L])=>
+    '<div class="wkNextCard" data-style="'+s.id+'" style="cursor:pointer">'+
+    '<div class="wkNextHead"><i></i><b>'+s.n+'</b><span>'+(L.stage?L.stage+' · ':'')+L.temp+'°</span></div>'+
+    '<p>'+s.ab+'</p></div>').join('');
 }
 function trWon(v){ return v==null?'–':Math.round(v).toLocaleString('ko-KR')+'원' }
 function trDayDiff(a,b){ return Math.round((new Date(b)-new Date(a))/864e5) }
@@ -408,6 +493,7 @@ export function trRender(id){
     if(pn)pn.textContent=ME.name;
     if(pr)pr.outerHTML=rkChip(ME.rank).replace('class="rk','id="trProfRk" class="rk');
     bioPaint();
+    tpLoad(tpMine(),tpRepaint);   /* 온도·수명주기를 받아 오면 카드 세 장만 다시 채운다 */
     if(HAS_A){
       aAnimate($$('#trBody .tpCard, #trBody .tpPickWrap'),
         {opacity:[0,1],translateY:[16,0],duration:720,delay:aStagger(52),ease:'out(3)'});
@@ -426,38 +512,41 @@ export function trRender(id){
   }
 
   else if(id==='report'){
-    const top=STYLES.find(s=>s.id===WK.topStyle)||STYLES[0];
-    const rise=['확산','재상승','재점화','정점 통과'];
-    const others=STYLES.filter(s=>s.id!==top.id&&rise.includes(s.pk)).slice(0,3);
+    /* ★ 2026-09-17 실데이터로 바꾼 칸
+         · 기간 — 오늘 날짜로 이번 주(월~일)를 계산
+         · 히어로 스타일 — 내가 고른 즐겨입는 스타일(user_taste)의 첫 번째
+         · 히어로 지표 — /api/lifecycle 의 트렌드 온도 · 7일 전 대비 · 수명주기 단계
+         · 찜 · 투표 — /api/auth/me 의 saved_count · vote_count (누적)
+         · 같이 지켜볼 스타일 — 스타일 10종의 /api/lifecycle 단계 · 온도로 고른다
+       검색 수 · 챗봇 시간 · 요일별 활동 · 취향 지분은 행동 기록(user_event)이 쌓이지 않아 아직 WK 목업이다. */
+    const mine=tpMine();
+    const top=mine[0]||null;
+    const heroStyle=top||STYLES.find(s=>s.id===WK.topStyle)||STYLES[0];
     const maxAct=Math.max.apply(null,WK.days), DAY=['월','화','수','목','금','토','일'];
-    const searchShare=Math.round(WK.topSearchN/WK.search*100);
-    const rp=WK.range.split(' · ');
+    const rp=wkRange();
 
     body.innerHTML='<div class="wkReport" id="wkReport">'+
       /* ── 한 줄 요약 — 이번 주 가장 많이 검색·투표한 스타일이 리포트의 축이다 ── */
       '<div class="wkLine">'+
-        '<h2>이번 주 가장 관심 있었던 키워드는 <em>'+top.n+'</em>입니다.</h2>'+
-        '<span>'+WK.range+' · 매주 '+WK.updateDay+' 갱신</span>'+
+        (top?'<h2>이번 주 내 관심 스타일 <em>'+top.n+'</em>의 흐름입니다.</h2>'
+            :'<h2>아직 고른 관심 스타일이 없어 <em>'+heroStyle.n+'</em>의 흐름을 보여 드립니다.</h2>')+
+        '<span>'+rp.join(' · ')+' · 매주 '+WK.updateDay+' 갱신</span>'+
       '</div>'+
       /* ── 관심 스타일 히어로 ── */
       '<section class="wkHero">'+
-        '<div class="wkHeroImg"><img src="'+SIMG(top)+'" alt="'+top.n+'" loading="lazy"></div>'+
+        '<div class="wkHeroImg"><img src="'+SIMG(heroStyle)+'" alt="'+heroStyle.n+'" loading="lazy"></div>'+
         '<div class="wkCopy">'+
           '<div class="wkState">THIS WEEK</div>'+
-          '<h3>'+top.n+' <em>'+top.en+'</em></h3>'+
-          '<div class="wkLedger c3">'+
-            '<div class="ac"><span>이 키워드 검색</span><b>'+WK.topSearchN+'회</b></div>'+
-            '<div><span>이 키워드 투표</span><b>'+WK.topVoteN+'표</b></div>'+
-            '<div><span>전체 검색 중 비중</span><b>'+searchShare+'%</b></div>'+
-          '</div>'+
-          '<button type="button" class="pill sm" style="margin-top:20px" data-fit-style="'+top.id+'">→ 이 스타일 더 보기</button>'+
+          '<h3>'+heroStyle.n+' <em>'+heroStyle.en+'</em></h3>'+
+          '<div class="wkLedger c3" id="wkHeroLedger">'+wkLedgerHTML(heroStyle)+'</div>'+
+          '<button type="button" class="pill sm" style="margin-top:20px" data-fit-style="'+heroStyle.id+'">→ 이 스타일 더 보기</button>'+
         '</div>'+
       '</section>'+
       /* ── 지표 4칸 — 실제로 셀 수 있는 로그만 ── */
       '<section class="wkMetrics">'+
         [['검색한 키워드',WK.search,'개','+'+WK.searchD+' · 지난주 대비',1],
-         ['새로 찜한 것',WK.fav,'개','총 '+WK.favTotal+'개 추적 중',0],
-         ['살!말? 투표',WK.vote,'표','+'+WK.voteD+' · 지난주 대비',1],
+         ['찜한 것',ME.saved,'개','누적 · 내 계정 기준',0],
+         ['살!말? 투표',ME.votes,'표','누적 · 내 계정 기준',1],
          ['트렌드 분석',WK.chatMin,'분','평균 사용 시간 '+WK.chatAvgMin+'분',0]]
         .map((m,i)=>'<div class="wkMetric'+(m[4]?' hot':'')+'">'+
           '<span class="idx">'+String(i+1).padStart(2,'0')+'</span>'+
@@ -498,11 +587,11 @@ export function trRender(id){
           '<div id="wkVideoRec"><div class="wkVideoLoading"><i></i><span>선택한 스타일과 찜 상품 태그로<br>콘텐츠 DB를 찾고 있습니다.</span></div></div>'+
         '</article>'+
         '<article class="wkCard">'+
-          '<div class="wkCardHead"><h3>추천 웹매거진</h3><em>'+top.n+'</em></div>'+
+          '<div class="wkCardHead"><h3>추천 웹매거진</h3><em>'+heroStyle.n+'</em></div>'+
           '<div class="wkMagList">'+WK.webzine.map(w=>
             '<a class="wkMagRow" target="_blank" rel="noopener" href="https://www.google.com/search?q=site:'+
-            w.domain+'+'+encodeURIComponent(top.n)+'">'+
-            '<span class="tx"><b>'+w.src+'</b><span>“'+top.n+'” 관련 글 찾아보기</span></span>'+
+            w.domain+'+'+encodeURIComponent(heroStyle.n)+'">'+
+            '<span class="tx"><b>'+w.src+'</b><span>“'+heroStyle.n+'” 관련 글 찾아보기</span></span>'+
             '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8">'+
             '<path d="M7 17L17 7M9 7h8v8"/></svg></a>').join('')+
           '</div>'+
@@ -511,19 +600,20 @@ export function trRender(id){
       /* ── 같이 지켜볼 만한 스타일 ── */
       '<section class="wkCard" style="margin-top:10px">'+
         '<div class="wkCardHead"><h3>같이 지켜볼 만한 스타일</h3><em>HOT NOW</em></div>'+
-        '<div class="wkNextGrid">'+others.map(s=>
-          '<div class="wkNextCard" data-style="'+s.id+'" style="cursor:pointer">'+
-          '<div class="wkNextHead"><i></i><b>'+s.n+'</b><span>'+s.pk+'</span></div>'+
-          '<p>'+s.ab+'</p></div>').join('')+
-        '</div>'+
+        '<div class="wkNextGrid" id="wkNextGrid">'+wkNextHTML(heroStyle)+'</div>'+
       '</section>'+
       '<div class="wkFoot">'+
         '<span>FEEDiT · FASHION TREND ANALYSIS &amp; RECOMMENDATION CONSULTING</span>'+
-        '<span>PERSONAL REPORT · '+(rp[1]||'')+' / '+(rp[0]||'')+'</span>'+
+        '<span>PERSONAL REPORT · '+rp[1]+' / '+rp[0]+'</span>'+
       '</div>'+
     '</div>';
     wkAnimate();
     wkLoadVideo();
+    /* 스타일 10종의 온도 · 수명주기를 받아 오면 히어로 지표와 '같이 지켜볼 스타일'만 다시 채운다 */
+    tpLoad(STYLES,()=>{
+      const l=$('#wkHeroLedger'); if(l)l.innerHTML=wkLedgerHTML(heroStyle);
+      const g=$('#wkNextGrid'); if(g)g.innerHTML=wkNextHTML(heroStyle);
+    });
   }
   else if(id==='saved'){ svRender(body) }
   /* ══════════════ 언급량 · 온도 ══════════════
