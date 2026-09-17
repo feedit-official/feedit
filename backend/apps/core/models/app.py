@@ -280,6 +280,19 @@ class UserSavedItem(models.Model):
         verbose_name = "저장 항목"
         verbose_name_plural = "저장 항목"
 
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "product"],
+                condition=models.Q(product__isnull=False),
+                name="uq_saved_user_product",
+            ),
+            models.UniqueConstraint(
+                fields=["user", "content_item"],
+                condition=models.Q(content_item__isnull=False),
+                name="uq_saved_user_content",
+            ),
+        ]
+
         indexes = [
             models.Index(
                 fields=["user", "-created_at"],
@@ -420,6 +433,39 @@ class VoteBallot(models.Model):
 
     def __str__(self):
         return f"{self.card} / {self.get_choice_display()}"
+
+
+class VoteComment(models.Model):
+    """살말 카드에 사용자가 남긴 댓글."""
+
+    card = models.ForeignKey(
+        VoteCard,
+        on_delete=models.CASCADE,
+        related_name="comments",
+        verbose_name="살말 카드",
+    )
+    user = models.ForeignKey(
+        AppUser,
+        on_delete=models.CASCADE,
+        related_name="vote_comments",
+        verbose_name="작성자",
+    )
+    content = models.TextField(verbose_name="댓글 내용")
+    is_deleted = models.BooleanField(default=False, db_index=True, verbose_name="삭제 여부")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="작성일시")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="수정일시")
+
+    class Meta:
+        db_table = '"app"."vote_comment"'
+        verbose_name = "살말 댓글"
+        verbose_name_plural = "살말 댓글"
+        indexes = [
+            models.Index(fields=["card", "-created_at"], name="idx_vote_comment_card"),
+            models.Index(fields=["user", "-created_at"], name="idx_vote_comment_user"),
+        ]
+
+    def __str__(self):
+        return f"{self.card} / {self.user}"
 
 
 class ChatSession(models.Model):
