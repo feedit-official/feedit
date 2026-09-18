@@ -9,11 +9,18 @@
   POST   /api/auth/chats  {op:"import"}   브라우저에만 있던 대화를 한 번에 옮긴다
   POST   /api/auth/chats  {op:"update"}   제목 · 고정 변경
   POST   /api/auth/chats  {op:"truncate"} 질문을 고쳐 다시 물을 때 그 뒤 메시지를 지운다
-  DELETE /api/auth/chats  {key}           대화 삭제 (메시지도 함께)
+  DELETE /api/auth/chats  {key}           대화 삭제 — 메시지는 지우고 세션 행은 남긴다(아래)
 
 세션 식별
   context.conversation_id = "cp-<mode>-<key>". 팀의 /api/auth/event(CHAT) 도
   같은 값으로 세션을 찾으므로 두 기록이 한 행으로 모인다(금주의 리포트 사용 시간).
+
+★ 삭제해도 '챗봇 사용 시간'은 남는다
+  금주의 리포트(activity.py _chat_block)는 chat_session 의 started_at ~ updated_at 으로
+  사용 시간을 센다. 그래서 삭제는 메시지(본문)만 지우고 세션 행은 context.deleted=true,
+  제목 없음으로 남긴다. 목록 · 조회에서는 보이지 않는다.
+  같은 이유로 이름 변경 · 고정 · 삭제는 updated_at 을 건드리지 않는다(queryset.update) —
+  일주일 전 대화 이름을 바꿨다고 사용 시간이 일주일로 늘면 안 된다.
 
 ★ 첨부 사진(data URL)은 저장하지 않는다 — 한 장이 수백 KB 다. 장 수만 남기고,
   사진에서 읽어 낸 관찰값은 turn.visual 에 남아 다음 질문의 맥락으로 쓰인다.
@@ -24,6 +31,7 @@ from __future__ import annotations
 import re
 
 from django.db import transaction
+from django.db.models import Q
 from django.http import JsonResponse
 from django.views.decorators.http import require_http_methods
 
@@ -92,8 +100,20 @@ def _mode_key(data):
     return mode, key, None
 
 
+def _live(qs):
+    """삭제 표시된 세션은 빼고 — 사용 시간 집계용으로만 남아 있는 행이다."""
+    # exclude(context__deleted=True) 는 키가 없는 행(NULL)까지 빼 버린다 — 둘로 나눠 적는다
+    return qs.filter(Q(context__deleted__isnull=True) | Q(context__deleted=False))
+
+
+def _set_ctx(s, **changes):
+    """context 만 고친다. save() 를 부르면 auto_now 인 updated_at 이 움직인다."""
+    ctx = dict(s.context or {}); ctx.update(changes); s.context = ctx
+    ChatSession.objects.filter(id=s.id).update(context=ctx)
+
+
 def _find(profile, mode, key, lock=False):
-    qs = ChatSession.objects.filter(user=profile, context__conversation_id=_conv_id(mode, key))
+    qs = _live(ChatSession.objects.filter(user=profile, context__conversation_id=_conv_id(mode, key)))
     if lock:
         qs = qs.select_for_update()
     return qs.first()
@@ -155,12 +175,12 @@ def chats(request):
         if sid:
             if not str(sid).isdigit():
                 return _error("id 가 올바르지 않습니다.")
-            s = ChatSession.objects.filter(user=profile, id=int(sid)).first()
+            s = _live(ChatSession.objects.filter(user=profile, id=int(sid))).first()
             if s is None:
                 return _error("대화를 찾을 수 없습니다.", status=404)
             msgs = [_message_row(m) for m in s.messages.order_by("created_at", "id")]
             return JsonResponse({"status": "ok", "data": {"session": _session_row(s), "messages": msgs}})
-        qs = ChatSession.objects.filter(user=profile, context__has_key="key")
+        qs = _live(ChatSession.objects.filter(user=profile, context__has_key="key"))
         mode = request.GET.get("mode")
         if mode in MODES:
             qs = qs.filter(context__mode=mode)
@@ -179,7 +199,9 @@ def chats(request):
         with transaction.atomic():
             s = _find(profile, mode, key, lock=True)
             if s is not None:
-                s.delete()
+                s.messages.all().delete()                       # 본문은 지운다
+                _set_ctx(s, deleted=True, pinned=False)         # 행은 사용 시간 집계용으로 남긴다
+                ChatSession.objects.filter(id=s.id).update(title=None)
         return JsonResponse({"status": "ok", "data": {"deleted": True}})
 
     op = _text(data.get("op"), 20)
@@ -195,7 +217,7 @@ def chats(request):
             if s is not None and s.messages.exists():
                 return JsonResponse({"status": "ok", "data": {"session": _session_row(s), "ids": [], "skipped": True}})
             s = _get_or_create(profile, mode, key, data.get("title"))
-            ctx = dict(s.context or {}); ctx["pinned"] = bool(data.get("pinned")); s.context = ctx; s.save()
+            _set_ctx(s, pinned=bool(data.get("pinned")))
             ids = [_write_turn(s, t) for t in turns[:IMPORT_MAX_TURNS] if isinstance(t, dict)]
             return JsonResponse({"status": "ok", "data": {"session": _session_row(s), "ids": ids}})
         s = _find(profile, mode, key, lock=True)
@@ -204,15 +226,14 @@ def chats(request):
         if op == "update":
             if "title" in data:
                 s.title = _text(data.get("title"), 300) or None
+                ChatSession.objects.filter(id=s.id).update(title=s.title)
             if "pinned" in data:
-                ctx = dict(s.context or {}); ctx["pinned"] = bool(data.get("pinned")); s.context = ctx
-            s.save()
+                _set_ctx(s, pinned=bool(data.get("pinned")))
             return JsonResponse({"status": "ok", "data": {"session": _session_row(s)}})
         if op == "truncate":
             from_id = data.get("from_message_id")
             if not isinstance(from_id, int):
                 return _error("from_message_id 가 필요합니다.")
             n, _ = s.messages.filter(id__gte=from_id).delete()
-            s.save()
             return JsonResponse({"status": "ok", "data": {"deleted": n}})
     return _error("op 는 turn · import · update · truncate 중 하나여야 합니다.")
