@@ -1,7 +1,7 @@
 import { $, $$, HAS_A, aAnimate, aSpring, aStagger, aTimeline, aUtils } from '../../../core/static/js/dom.js';
 import { AUTH, acctBoot, dropPendingAuth, likeClick, myRender, requireAuth, resetSignupForm } from '../../../account/static/js/profile.js';
 import { SM_ON, hotBuild, mImgInit, newChat, qRoll, sendChat, smSwitch } from '../../../home/static/js/chat.js';
-import { closeChatPopup, cpCloseMenu, cpImgInit, cpNewConvo, cpOpenMenu, cpRenderList, cpRenderThread, cpSave, cpSend, cpStore, cpToggleMode, openChatWith } from '../../../home/static/js/chat_popup.js';
+import { closeChatPopup, cpCloseMenu, cpImgInit, cpNewConvo, cpOpenMenu, cpRenderList, cpRenderThread, cpSave, cpSend, cpStore, cpToggleMode, openChatWith, openVirtualTryOn } from '../../../home/static/js/chat_popup.js';
 import { mPaintVote, mVote, smBuild } from '../../../salmal/static/js/nav_widget.js';
 import { prBuild } from '../../../pricing/static/js/pricing.js';
 import { renderDeck } from '../../../intro/static/js/deck.js';
@@ -228,6 +228,7 @@ document.addEventListener('keydown',e=>{
 });
 $('#mHome')&&$('#mHome').addEventListener('click',()=>goView('home'));
 $('#chatFab')&&$('#chatFab').addEventListener('click',()=>openChatWith('',null));
+$('#homeVtonQuick')&&$('#homeVtonQuick').addEventListener('click',openVirtualTryOn);
 $('#mSend')&&$('#mSend').addEventListener('click',sendChat);
 /* 살!말? 버튼은 이제 뷰 이동이 아니라 모드 전환이다 */
 $('#smToggle')&&$('#smToggle').addEventListener('click',e=>{ e.stopPropagation(); smSwitch(!SM_ON,e) });
@@ -245,6 +246,7 @@ $('#mInput')&&$('#mInput').addEventListener('keydown',e=>{
    있어야 한다. salmalBoot 안에 두면 살!말? 탭을 한 번도 안 들어간 채로
    홈에서 팝업을 열었을 때 닫기·전송·새 대화가 전부 먹통이 된다. */
 $('#cpAv')&&$('#cpAv').addEventListener('click',cpToggleMode);
+$('#cpVtonQuick')&&$('#cpVtonQuick').addEventListener('click',openVirtualTryOn);
 /* 마크가 버튼 역할을 하므로 키보드로도 눌린다 — Enter · Space */
 $('#cpAv')&&$('#cpAv').addEventListener('keydown',e=>{
   if(e.key==='Enter'||e.key===' '){ e.preventDefault(); cpToggleMode(); }

@@ -69,6 +69,11 @@
 }
 .cpListEmpty{font-size:13.5px;color:var(--pink-2);padding:8px}
 
+/* 대화 목록 아래의 반복 진입점. 목록이 짧아도 왼쪽 하단에 붙어 있고,
+   일반 모드에서는 감춘다. */
+.cpVtonQuick{width:100%;flex:0 0 auto;margin-top:14px;padding:11px 12px 11px 10px}
+.cpOverlay.sm .cpVtonQuick{display:flex;animation:vtonQuickIn .52s var(--ease) both}
+
 /* 대화 목록 줄 — 제목 버튼(.cpItem) + 메뉴 버튼(.cpKebab)을 나란히.
    ⋮ 는 평소엔 숨어 있다가(opacity:0) 줄에 마우스를 올리거나 메뉴가 열려 있을 때
    드러난다. .cpItem 안에 넣지 않는다 — 버튼 중첩은 잘못된 HTML이고,

@@ -13,6 +13,7 @@ import fs from 'node:fs';
 
 const F = new URL('..', import.meta.url).href.replace(/\/$/, '');
 const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+const chatCss = fs.readFileSync(new URL('../home/static/css/chat.css', import.meta.url), 'utf8');
 const popupCss = fs.readFileSync(new URL('../home/static/css/chat_popup.css', import.meta.url), 'utf8');
 const dom = new JSDOM(html, { url: 'http://localhost:5173/' });
 for (const k of ['window','document','Element','SVGElement','getComputedStyle','Node',
@@ -415,6 +416,42 @@ await t('바깥을 누르면 메뉴가 닫힌다', async () => {
   click(document.body);
   await wait(10);
   assert.equal(menu().hidden, true, '메뉴가 떠 있다');
+});
+
+/* ── Virtual Try On 단독 진입 (2026-09-18) ──────────────
+   질문을 먼저 보내지 않아도 홈·팝업의 두 버튼이 같은 빈 착장을 연다. */
+await t('홈 챗바 위와 팝업 왼쪽 하단에 Virtual Try On 버튼이 있다', () => {
+  assert.ok(document.querySelector('#homeVtonQuick'), '홈 버튼이 없다');
+  assert.ok(document.querySelector('#cpVtonQuick'), '팝업 버튼이 없다');
+  assert.match(chatCss, /#v-home\.smMode \.vtonQuickHome\{display:flex/,
+               '홈 버튼이 살말 모드에서 보이지 않는다');
+  assert.match(popupCss, /\.cpOverlay\.sm \.cpVtonQuick\{display:flex/,
+               '팝업 버튼이 살말 모드에서 보이지 않는다');
+});
+
+await t('질문 없이 바로 빈 착장 위젯을 연다', async () => {
+  CP.openVirtualTryOn();
+  await wait(340);
+  const c = CP.cpStore().convos.find(x => x.id === CP.cpStore().activeId);
+  assert.equal(c.title, 'Virtual Try On');
+  assert.equal(c.transient, true, '저장될 수 없는 착장 상태가 대화 기록으로 남는다');
+  assert.equal(c.messages.some(m => m.role === 'me'), false, '질문 메시지가 자동으로 생겼다');
+  assert.ok(thread().querySelector('.cpFit'), '착장 위젯이 없다');
+  assert.equal(thread().querySelectorAll('.cpFitSlot:not(.addSlot)').length, 1,
+               '첫 사진을 넣을 빈 칸이 하나여야 한다');
+  assert.equal(document.querySelector('#cpOverlay').classList.contains('sm'), true,
+               '살말 팝업으로 열리지 않았다');
+});
+
+await t('홈·팝업 버튼이 둘 다 같은 독립 착장을 연다', async () => {
+  const count = () => CP.cpStore().convos.length;
+  const before = count();
+  click(document.querySelector('#homeVtonQuick'));
+  await wait(40);
+  assert.equal(count(), before + 1, '홈 버튼이 새 착장을 열지 않았다');
+  click(document.querySelector('#cpVtonQuick'));
+  await wait(40);
+  assert.equal(count(), before + 2, '팝업 버튼이 새 착장을 열지 않았다');
 });
 
 console.log(`\n${pass}개 통과 · ${fail}개 실패`);

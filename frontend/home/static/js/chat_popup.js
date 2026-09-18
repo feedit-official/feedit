@@ -43,8 +43,11 @@ function cpPack(keepImagesFor){
   const out={};
   for(const mode of ['general','salmal']){
     const s=CP_STORE[mode];
-    out[mode]={activeId:s.activeId,
-      convos:s.convos.slice(0,CP_KEEP).map((c,i)=>({
+    /* 단독 VTON은 fit 상태를 저장하지 않는 한시 화면이다.
+       fit만 빼고 대화를 남기면 새로고침 후 안내 문장만 남는 꺼진 진입점이 된다. */
+    const kept=s.convos.filter(c=>!c.transient).slice(0,CP_KEEP);
+    out[mode]={activeId:kept.some(c=>c.id===s.activeId)?s.activeId:null,
+      convos:kept.map((c,i)=>({
         id:c.id,key:c.key,mode,sid:c.sid||null,at:c.at||0,loaded:c.loaded!==false,
         title:c.title||'',time:c.time||'',pinned:!!c.pinned,
         messages:(c.messages||[]).filter(m=>!m.pending).map(m=>cpPackMsg(m,i<keepImagesFor))}))};
@@ -1316,6 +1319,33 @@ export function openChatWith(text,key,opts){
   openChatPopup();
   if(opts&&opts.fresh) cpNewConvo();
   cpAsk(text, key||cpKeyFor(text), opts);
+}
+
+/* Virtual Try On 단독 진입 — 질문이나 챗봇 응답을 거치지 않고
+   빈 착장 위젯을 새 대화에 바로 연다. 응답 아래의 입혀보기와 같은
+   cpNewFit/cpFitHTML을 재사용해 사진 분류·생성·재시도 동작이 다르지 않게 한다. */
+export function openVirtualTryOn(){
+  if(!AUTH.in){
+    requireAuth(()=>openVirtualTryOn());
+    return;
+  }
+  if(!SM_ON)smSwitch(true,null,true);
+  openChatPopup();
+  const c=cpNewConvo();
+  c.title='Virtual Try On';
+  c.transient=true;
+  c.messages.push({
+    role:'ai',pending:false,key:null,
+    html:'<p>입혀보고 싶은 아이템 사진을 종류별로 올려 주세요.</p>',
+    fit:cpNewFit([],''),
+  });
+  cpRenderList();
+  cpRenderThread();
+  cpSave();
+  setTimeout(()=>{
+    const first=$('#cpThread [data-vf-pick="0"]');
+    if(first)first.focus();
+  },300);
 }
 
 /* 팝업 상단 좌측 마크 — 눌리면 동전이 뒤집히듯 한 바퀴 돌며 일반/살말 모드를 바꾼다.
