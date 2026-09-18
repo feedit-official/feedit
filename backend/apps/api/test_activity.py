@@ -79,6 +79,35 @@ class WeeklyReportTest(unittest.TestCase):
         self.assertEqual(a["days"], [1, 0, 0, 1, 0, 0, 0])
         self.assertEqual((a["hours"][21], a["hours"][9]), (1, 1))
 
+    def test_activity_drops_quick_undo(self):
+        """★ 30초 안에 취소한 찜 · 투표는 활동량에서 뺀다.
+
+        잘못 눌러 곧바로 취소한 것까지 세면 막대가 실제 관심보다 부풀어 보인다.
+        대신 한참 뒤에 취소한 것은 진짜 활동이므로 그대로 센다.
+        """
+        def at(hour, minute, second=0, days_ago=0):
+            return NOW.replace(hour=hour, minute=minute, second=second) - timedelta(days=days_ago)
+
+        events = [
+            # ① 찜 → 10초 뒤 취소 = 없던 일 (2건 모두 빠진다)
+            {"type": "SAVE", "at": at(10, 0, 0), "meta": {"item_id": "a", "liked": True}, "style": None},
+            {"type": "SAVE", "at": at(10, 0, 10), "meta": {"item_id": "a", "liked": False}, "style": None},
+            # ② 찜 → 5분 뒤 취소 = 실제 활동 (2건 다 센다)
+            {"type": "SAVE", "at": at(11, 0, 0), "meta": {"item_id": "b", "liked": True}, "style": None},
+            {"type": "SAVE", "at": at(11, 5, 0), "meta": {"item_id": "b", "liked": False}, "style": None},
+            # ③ 투표 → 10초 뒤 취소 = 없던 일
+            {"type": "VOTE", "at": at(12, 0, 0), "meta": {"card_key": "c", "choice": "BUY"}, "style": None},
+            {"type": "VOTE", "at": at(12, 0, 10), "meta": {"card_key": "c", "choice": None}, "style": None},
+            # ④ 취소하지 않은 찜 = 그대로 센다
+            {"type": "SAVE", "at": at(13, 0, 0), "meta": {"item_id": "d", "liked": True}, "style": None},
+        ]
+        a = build_weekly_report(events, [], NOW)["activity"]
+        self.assertEqual(sum(a["days"]), 3)          # ② 2건 + ④ 1건
+        self.assertEqual(a["hours"][10], 0)          # ① 빠짐
+        self.assertEqual(a["hours"][11], 2)          # ② 남음
+        self.assertEqual(a["hours"][12], 0)          # ③ 빠짐
+        self.assertEqual(a["hours"][13], 1)          # ④ 남음
+
     def test_taste_share_vs_last_week(self):
         """검색한 키워드 중 스타일만 센다 — 투표 · 찜 · 스타일 아닌 검색은 빠진다."""
         events = [ev("SEARCH", 0, style="발레코어", q="발레코어"), ev("SEARCH", 1, style="발레코어", q="발레코어"),

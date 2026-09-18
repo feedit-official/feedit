@@ -20,6 +20,11 @@ from zoneinfo import ZoneInfo
 KST = ZoneInfo("Asia/Seoul")
 TASTE_LIMIT = 4
 
+# 켰다가 이 시간 안에 다시 끈 것은 '없던 일'로 본다 (초).
+# 잘못 눌러 바로 취소한 것까지 활동량으로 세면, 화면의 막대가 실제 관심보다 부풀어 보인다.
+# 값을 바꾸고 싶으면 여기 한 줄만 고치면 된다.
+UNDO_WINDOW = 30
+
 
 def week_bounds(now: datetime):
     """이번 주 월요일 00:00(KST), 다음 주 월요일 00:00, 지난주 월요일 00:00 을 돌려준다."""
@@ -150,10 +155,53 @@ def _chat_block(events, sessions, start, end):
     return {"minutes": total, "sessions": len(mins), "avg_minutes": round(total / len(mins)) if mins else 0}
 
 
+# 토글형 기록(찜·투표)의 켬/끔 판정. (이벤트 종류, 대상 키, 켜짐인가) 로 읽는다.
+TOGGLES = (
+    ("SAVE", "item_id", lambda m: bool(m.get("liked"))),
+    ("VOTE", "card_key", lambda m: m.get("choice") in ("BUY", "PASS")),
+)
+
+
+def _undone(events):
+    """켰다가 UNDO_WINDOW 안에 끈 쌍을 찾아 그 두 행을 돌려준다.
+
+    왜 필요한가
+    -----------
+    찜을 잘못 눌러 곧바로 취소해도 user_event 에는 두 행(liked True → False)이 남는다.
+    '찜한 것' KPI 는 마지막 상태만 보므로 0으로 맞지만, 요일별 활동 막대는 행 수를
+    그대로 세기 때문에 왕복 한 번이 활동 2건이 된다. 사람은 그 막대를
+    "내가 이만큼 관심을 보였다"로 읽으므로, 없던 일은 빼는 편이 정직하다.
+
+    같은 대상을 여러 번 켜고 끄면 각 쌍을 따로 본다. 창을 넘겨 끈 것(진짜로 한동안
+    찜해 두었다가 나중에 취소한 것)은 **빼지 않는다** — 그건 실제 활동이다.
+    반환: 제외할 행의 id 집합(파이썬 객체 식별자).
+    """
+    drop = set()
+    for kind, key_name, is_on in TOGGLES:
+        rows = sorted((r for r in events if r["type"] == kind), key=lambda r: r["at"])
+        pending = {}   # 대상 키 → 아직 짝을 못 찾은 '켬' 행
+        for row in rows:
+            key = str(row["meta"].get(key_name) or "")
+            if not key:
+                continue
+            if is_on(row["meta"]):
+                pending[key] = row
+                continue
+            opened = pending.pop(key, None)
+            if opened is None:
+                continue
+            if (row["at"] - opened["at"]).total_seconds() <= UNDO_WINDOW:
+                drop.add(id(opened))
+                drop.add(id(row))
+    return drop
+
+
 def _activity_block(events, start, end):
+    """요일별 · 시간대별 활동량. 30초 안에 취소한 찜·투표는 세지 않는다."""
+    drop = _undone(events)
     days, hours = [0] * 7, [0] * 24
     for r in events:
-        if _in(r, start, end):
+        if _in(r, start, end) and id(r) not in drop:
             local = r["at"].astimezone(KST)
             days[local.weekday()] += 1
             hours[local.hour] += 1

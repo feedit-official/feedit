@@ -127,6 +127,8 @@
   line-height:1.65;color:var(--pink-2)}
 .wkNote i{font-style:normal;color:var(--coral);font-size:8px;margin-top:3px}
 .wkNote b{font-weight:600;color:var(--pink-1)}
+/* 집계 규칙을 밝히는 곁말 — 본문보다 한 단계 옅게 */
+.wkNote .wkNoteSub{font-style:normal;color:var(--pink-3)}
 
 /* 요일 막대 */
 .wkDays{height:170px;display:flex;align-items:stretch}
@@ -277,6 +279,11 @@
 .wkMagLoading i{width:18px;height:18px;border-radius:50%;border:2px solid rgba(0,0,0,.1);
   border-top-color:var(--coral);animation:wkVideoSpin .8s linear infinite}
 .wkMagEmpty b{font-size:13px;font-weight:600}
+/* 못 찾았을 때의 '다시 찾기' — 새로고침보다 이쪽이 빠르다(서버가 캐시해 둔다) */
+.wkMagRetry{margin-top:2px;padding:9px 16px;border-radius:999px;cursor:pointer;
+  border:1px solid var(--pink-3);background:#fff;color:var(--pink-1);
+  font-size:11.5px;font-family:inherit}
+.wkMagRetry:hover{background:var(--pink-0);border-color:var(--pink-0);color:var(--paper)}
 .wkMagList{display:flex;flex-direction:column;gap:6px}
 .wkMagRow{display:flex;align-items:center;justify-content:space-between;gap:12px;
   padding:14px 4px;border-bottom:1px solid var(--pink-3);color:inherit;

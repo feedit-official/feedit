@@ -16,7 +16,12 @@ export default async function handler(req, res) {
     const headers = { Accept:'application/json' };
     if (process.env.CHAT_BACKEND_TOKEN) headers['X-FEEDiT-Token'] = process.env.CHAT_BACKEND_TOKEN;
     const c = new AbortController();
-    const t = setTimeout(() => c.abort(), 28000);   /* 웹 검색은 10~20초 걸린다 */
+    /* ★ 2026-09-18 · 28초 → 55초.
+         챗봇의 magazine.find() 는 최악의 경우 LLM 웹 검색 25초 + 주소 확인 4편×6초 = 50초 가까이 걸린다.
+         28초에서 끊으면 **처음 찾는 키워드는 거의 매번 여기서 잘린다.** 그러고 나서 챗봇이
+         뒤늦게 끝내고 결과를 캐시하니, 사용자는 "처음엔 안 뜨는데 다시 들어가면 뜬다"를 겪는다.
+         함수 자체의 한도(vercel.json 의 maxDuration 60)보다는 짧게 둔다 — 그래야 잘린 이유를 말할 수 있다. */
+    const t = setTimeout(() => c.abort(), 55000);
     const upstream = await fetch(backend + '/v1/magazines?term=' + encodeURIComponent(term), { headers, signal:c.signal });
     clearTimeout(t);
     const text = await upstream.text();
@@ -27,7 +32,10 @@ export default async function handler(req, res) {
     if (upstream.ok && payload.found) res.setHeader('Cache-Control', 's-maxage=21600, stale-while-revalidate=3600');
     return json(res, upstream.status, payload);
   } catch (e) {
-    return json(res, 504, { ok:false, reason:'웹 검색 서버에 닿지 못했습니다.' });
+    const aborted = e && (e.name === 'AbortError' || e.name === 'TimeoutError');
+    return json(res, 504, { ok:false, reason: aborted
+      ? '웹 검색이 제한 시간 안에 끝나지 않았습니다. 잠시 뒤 다시 열면 찾아 둔 결과가 나옵니다.'
+      : '웹 검색 서버에 닿지 못했습니다.' });
   }
 }
 

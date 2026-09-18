@@ -11,6 +11,12 @@ const ALLOWED = new Set(['me', 'signup', 'login', 'logout', 'profile', 'weekly-v
 export default async function handler(req, res) {
   const url = new URL(req.url, 'http://x');
   const action = url.pathname.replace(/^\/api\/auth\//, '').split('/')[0];
+  /* ★ 물음표 뒤(질의 문자열)를 반드시 같이 넘긴다.
+       예전에는 `${base}/auth/${action}` 만 불러서 **?term=… 이 통째로 사라졌다.**
+       그래서 금주의 리포트가 '민소매'로 영상을 찾아 달라고 해도 Django 는 term 을
+       못 받고 취향·찜 기반으로 떨어져, 한 줄 요약은 '민소매'인데 영상은 신발이
+       나왔다(2026-09-18). salmal/[action].js 는 원래 넘기고 있었다. */
+  const query = url.search || '';
   if (!ALLOWED.has(action)) return send(res, 404, { status:'error', reason:'없는 인증 주소입니다.', data:null });
   const base = backendBase();
   if (!base) return send(res, 503, {
@@ -40,8 +46,12 @@ export default async function handler(req, res) {
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 10000);
+<<<<<<< Updated upstream
     // ?id= · ?term= 같은 질의도 그대로 넘긴다 (예전에는 떨어져 weekly-videos?term 이 무시됐다)
     const upstream = await fetch(`${base}/auth/${action}${url.search}`, {
+=======
+    const upstream = await fetch(`${base}/auth/${action}${query}`, {
+>>>>>>> Stashed changes
       method, headers, body, signal:controller.signal, redirect:'manual',
     });
     clearTimeout(timer);

@@ -347,7 +347,8 @@ function wkDaysHTML(){
         '<span class="l">'+d+'</span></div>'}).join('')+
     '</div></div>'+
     '<div class="wkNote"><i>◆</i><span>'+(total
-      ? '<b>'+best+'요일</b>에 가장 많이 활동하셨습니다. 검색 · 투표 · 찜 · 챗봇 기록 '+total+'건 기준입니다.'
+      ? '<b>'+best+'요일</b>에 가장 많이 활동하셨습니다. 검색 · 투표 · 찜 · 챗봇 기록 '+total+'건 기준입니다. '+
+        '<em class="wkNoteSub">30초 안에 취소한 찜 · 투표는 세지 않습니다.</em>'
       : '이번 주 활동 기록이 아직 없습니다. 검색 · 투표 · 찜 · 챗봇을 이용하면 이곳에 쌓입니다.')+'</span></div>';
 }
 function wkTasteHTML(){
@@ -410,7 +411,12 @@ function wkMagHTML(term){
   if(!term||WM.state==='loading')return head+
     '<div class="wkMagLoading"><i></i><span>'+(term?'‘'+trEsc(term)+'’을 다룬<br>웹매거진 기사를 찾고 있습니다.':'관심 키워드를 확인하고 있습니다.')+'</span></div>';
   if(WM.state!=='ok'||!WM.items.length)return head+
-    '<div class="wkMagEmpty"><b>추천할 웹매거진 기사를 찾지 못했습니다.</b><span>'+trEsc(WM.reason||'잠시 뒤 다시 확인해 주세요.')+'</span></div>';
+    '<div class="wkMagEmpty"><b>추천할 웹매거진 기사를 찾지 못했습니다.</b>'+
+      '<span>'+trEsc(WM.reason||'잠시 뒤 다시 확인해 주세요.')+'</span>'+
+      /* 웹 검색이 잘려도 챗봇은 뒤늦게 끝내고 결과를 캐시해 둔다.
+         그래서 한 번 더 부르면 바로 나오는 일이 많다 — 새로고침 대신 이 버튼을 준다. */
+      '<button type="button" class="wkMagRetry" data-wk-mag="'+trEsc(term||'')+'">다시 찾기</button>'+
+    '</div>';
   return head+'<div class="wkMagList">'+WM.items.map(a=>
     '<a class="wkMagRow" target="_blank" rel="noopener noreferrer" href="'+trEsc(a.url)+'">'+
     '<span class="tx"><b>'+trEsc(a.magazine)+'</b><span>'+trEsc(a.title)+'</span></span>'+WM_ARROW+'</a>').join('')+
@@ -422,17 +428,36 @@ async function wkMagLoad(term){
   paint();
   let next;
   try{
-    const r=await fetch('/api/v1/magazines?term='+encodeURIComponent(term),{headers:{Accept:'application/json'}});
+    /* ★ 스스로도 시간을 끊는다. 이게 없으면 중계가 매달릴 때 카드가 '찾는 중'에서
+         영영 멈춰 있다 — 사용자는 고장인지 기다리는 중인지 알 수 없다.
+         버셀 함수 한도(60초)보다 조금 짧게 둔다. */
+    const ctrl=new AbortController();
+    const timer=setTimeout(()=>ctrl.abort(),58000);
+    let r;
+    try{ r=await fetch('/api/v1/magazines?term='+encodeURIComponent(term),
+      {headers:{Accept:'application/json'},signal:ctrl.signal}) }
+    finally{ clearTimeout(timer) }
     const j=await r.json().catch(()=>null);
     next=j&&Array.isArray(j.articles)&&j.articles.length
       ? {term,state:'ok',items:j.articles.filter(a=>/^https?:\/\//.test(String(a.url||''))),reason:''}
       : {term,state:'empty',items:[],reason:(j&&j.error==='NOT_FOUND')
           ? '웹 검색 서버(챗봇)에 웹매거진 기능이 아직 배포되지 않았습니다.'   /* 옛 챗봇 서버는 /v1/magazines 를 모른다 */
           : (j&&(j.reason||j.error))||'웹 검색 결과가 없습니다.'};
-  }catch(e){ next={term,state:'error',items:[],reason:'웹 검색 서버에 연결하지 못했습니다.'} }
+  }catch(e){
+    next={term,state:'error',items:[],
+      reason:(e&&e.name==='AbortError')
+        ? '웹 검색이 오래 걸려 기다리기를 멈췄습니다. 다시 찾기를 누르면 찾아 둔 결과가 나옵니다.'
+        : '웹 검색 서버에 연결하지 못했습니다.'};
+  }
   if(WM.term!==term)return;   /* 그사이 다른 키워드로 다시 불렀다 */
   WM=next; paint();
 }
+/* '다시 찾기' — 같은 키워드로 한 번 더 부른다 */
+document.addEventListener('click',e=>{
+  const b=e.target.closest('.wkMagRetry'); if(!b)return;
+  const term=b.dataset.wkMag; if(term)wkMagLoad(term);
+});
+
 /* ── 금주의 리포트 실데이터 도우미 ── */
 /* 이번 주(월~일) — ['2026.09', 'W3 · 9/14 – 9/20'] 의 두 조각 */
 function wkRange(now=new Date()){

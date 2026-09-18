@@ -1,5 +1,5 @@
 import { HAS_A, aAnimate, aSpring, aStagger, aUtils } from '../../../core/static/js/dom.js';
-import { ME, requireAuth } from '../../../account/static/js/profile.js';
+import { AUTH, ME, requireAuth } from '../../../account/static/js/profile.js';
 import { rkClamp, rkRingHTML } from '../../../account/static/js/rank.js';
 import { jobBadgeHTML, jobShown } from '../../../account/static/js/job.js';
 import { smBarFill, smBarLabels } from '../../../trend/static/js/discount_resale.js';
@@ -210,6 +210,18 @@ const PAGE_SIZE=8;
 const state={tab:'popular', page:1};
 
 function renderGrid(){
+  /* ★ '내 취향'은 로그인해야 고를 수 있다.
+       예전에는 비로그인일 때 tasteMatch 가 전부 0 이라 orderFor 의
+       `matched.length?matched:idx` 가 **전체 카드로 떨어져**, 로그아웃 상태에서도
+       내 취향 추천이 있는 것처럼 보였다. 맞지 않는 것을 맞는다고 쓰지 않는다. */
+  const gate=$('#smGate'), grid0=$('#voteGrid'), pager0=$('#pager');
+  const locked=state.tab==='taste'&&!AUTH.in;
+  if(gate)gate.hidden=!locked;
+  if(locked){
+    if(grid0)grid0.innerHTML='';
+    if(pager0)pager0.innerHTML='';
+    return;
+  }
   const order=orderFor(state.tab);
   const totalPages=Math.max(1,Math.ceil(order.length/PAGE_SIZE));
   if(state.page>totalPages) state.page=totalPages;
