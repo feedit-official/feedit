@@ -4,7 +4,9 @@ import { backendBase, backendToken } from '../_lib/db.js';
 
 const ALLOWED = new Set(['me', 'signup', 'login', 'logout', 'profile', 'weekly-videos', 'google', 'google-signup',
   // 활동 기록 · 금주의 리포트 (backend/apps/api/activity_views.py)
-  'event', 'vote', 'vote-comment', 'vote-report', 'saved', 'weekly-report']);
+  'event', 'vote', 'vote-comment', 'vote-report', 'saved', 'weekly-report',
+  // 챗봇 대화 기록 (backend/apps/api/chat_views.py)
+  'chats']);
 
 export default async function handler(req, res) {
   const url = new URL(req.url, 'http://x');
@@ -38,7 +40,8 @@ export default async function handler(req, res) {
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 10000);
-    const upstream = await fetch(`${base}/auth/${action}`, {
+    // ?id= · ?term= 같은 질의도 그대로 넘긴다 (예전에는 떨어져 weekly-videos?term 이 무시됐다)
+    const upstream = await fetch(`${base}/auth/${action}${url.search}`, {
       method, headers, body, signal:controller.signal, redirect:'manual',
     });
     clearTimeout(timer);

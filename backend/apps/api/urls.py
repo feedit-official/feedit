@@ -6,7 +6,7 @@
 
 from django.urls import path
 
-from . import activity_views, auth_views, salmal_views, views
+from . import activity_views, auth_views, chat_views, salmal_views, views
 from .crawl_views import (
     CrawlRunDetailAPIView,
     CrawlRunListAPIView,
@@ -33,6 +33,7 @@ urlpatterns = [
     path("auth/vote-report", activity_views.vote_report, name="auth-vote-report"),
     path("auth/saved", activity_views.saved, name="auth-saved"),                    # 찜 / 찜 해제
     path("auth/weekly-report", activity_views.weekly_report, name="auth-weekly-report"),
+    path("auth/chats", chat_views.chats, name="auth-chats"),                       # 챗봇 대화 기록 (chat_views.py)
 
     # ── 프론트 읽기 전용 ──
     path("health", views.health, name="health"),

@@ -2,7 +2,7 @@ import { $, $$, HAS_A, aAnimate } from '../../../core/static/js/dom.js';
 import { SAY, SM_ON, SM_SAY, STYLES, LIKED, M_QUESTIONS, SM_QUESTIONS, ansCardHTML, smSwitch } from './chat.js';
 import { API_BASE, classifyFitImages, sendAnswerFeedback, isUp, askStream, reportHTML, notesHTML, followupHTML, actionsHTML, refusalHTML, requestLexicon, fillBars, MAX_IMAGES, imageFileToDataURL, bindImageDrop, wantsVirtualFit, responseCardHTML } from './chat_api.js';
 import { AUTH, ME, openStyleSelect, requireAuth } from '../../../account/static/js/profile.js';
-import { logChat } from '../../../account/static/js/account_api.js';
+import { logChat, chatList, chatLoad, chatSaveTurn, chatImport, chatUpdate, chatTruncate, chatDelete } from '../../../account/static/js/account_api.js';
 
 /* ══════════════════════════════════════════════════════
    챗봇 팝업 — 일반 모드 · 살말 모드
@@ -25,6 +25,7 @@ let CP_UID=1;
      버린다. 사진을 버린 대화는 글은 그대로 남는다 — 다시 열었을 때 무엇을
      물었는지는 읽을 수 있어야 한다. */
 const CP_KEY='feedit.chat.v1';
+let CP_OWNER='';                     /* 로그인한 계정 — 계정마다 따로 보관한다 (아래 DB 연동) */
 const CP_KEEP=20;                    /* 모드별로 보관할 대화 수 */
 let cpSaveT=0;
 function cpPackMsg(m,keepImages){
@@ -32,7 +33,7 @@ function cpPackMsg(m,keepImages){
              cardHtml:m.cardHtml||'',followHtml:m.followHtml||'',cueHtml:m.cueHtml||'',
              actionsHtml:m.actionsHtml||'',turn:m.turn||null,
              feedback:m.feedback||null,feedbackPrompt:m.feedbackPrompt===true,
-             imagesDropped:!!m.imagesDropped};
+             imagesDropped:!!m.imagesDropped, sid:m.sid||null};
   if(m.images&&m.images.length){
     if(keepImages)out.images=m.images; else out.imagesDropped=true;
   }
@@ -44,7 +45,8 @@ function cpPack(keepImagesFor){
     const s=CP_STORE[mode];
     out[mode]={activeId:s.activeId,
       convos:s.convos.slice(0,CP_KEEP).map((c,i)=>({
-        id:c.id,title:c.title||'',time:c.time||'',pinned:!!c.pinned,
+        id:c.id,key:c.key,mode,sid:c.sid||null,at:c.at||0,loaded:c.loaded!==false,
+        title:c.title||'',time:c.time||'',pinned:!!c.pinned,
         messages:(c.messages||[]).filter(m=>!m.pending).map(m=>cpPackMsg(m,i<keepImagesFor))}))};
   }
   return out;
@@ -55,16 +57,23 @@ export function cpSave(){
   /* 연달아 바뀌는 동안 매번 쓰지 않는다 — 타이핑 중 저장이 겹치면 버벅인다 */
   cpSaveT=setTimeout(()=>{
     for(const keep of [CP_KEEP,3,1,0]){
-      try{ localStorage.setItem(CP_KEY,JSON.stringify({v:1,uid:CP_UID,store:cpPack(keep)})); return }
+      try{ localStorage.setItem(cpStorageKey(),JSON.stringify({v:1,uid:CP_UID,store:cpPack(keep)})); return }
       catch(e){ /* 한도 초과 — 사진을 더 버리고 다시 */ }
     }
-    try{ localStorage.removeItem(CP_KEY) }catch(e){ /* 지우지도 못하면 포기한다 */ }
+    try{ localStorage.removeItem(cpStorageKey()) }catch(e){ /* 지우지도 못하면 포기한다 */ }
   },400);
 }
 function cpRestore(){
   if(typeof localStorage==='undefined')return;
   let saved=null;
-  try{ saved=JSON.parse(localStorage.getItem(CP_KEY)||'null') }catch(e){ saved=null }
+  try{ saved=JSON.parse(localStorage.getItem(cpStorageKey())||'null') }catch(e){ saved=null }
+  /* 계정별 보관 전의 기록(feedit.chat.v1)은 처음 로그인한 계정이 가져간다 — 그 뒤 DB 로 옮겨진다 */
+  if(!saved&&CP_OWNER){
+    try{
+      saved=JSON.parse(localStorage.getItem(CP_KEY)||'null');
+      if(saved)localStorage.removeItem(CP_KEY);
+    }catch(e){ saved=null }
+  }
   if(!saved||saved.v!==1||!saved.store)return;
   let max=0;
   for(const mode of ['general','salmal']){
@@ -72,7 +81,9 @@ function cpRestore(){
     if(!from||!Array.isArray(from.convos))continue;
     CP_STORE[mode].convos=from.convos.filter(c=>c&&Array.isArray(c.messages)).map(c=>{
       max=Math.max(max,Number(c.id)||0);
-      return {id:Number(c.id)||0,title:String(c.title||''),time:String(c.time||''),
+      return {id:Number(c.id)||0,key:cpValidKey(c.key)||cpNewKey(),mode,
+              sid:Number(c.sid)||null,at:Number(c.at)||0,loaded:c.loaded!==false,
+              title:String(c.title||''),time:String(c.time||''),
               pinned:!!c.pinned,
               messages:c.messages.map(m=>Object.assign({},m,{pending:false}))};
     });
@@ -82,7 +93,157 @@ function cpRestore(){
   CP_UID=Math.max(CP_UID,max+1,Number(saved.uid)||1);
 }
 cpRestore();
-/* 대화 기록의 RDS 복원은 팀 백엔드(/api/auth/*)에 조회 API가 생기면 다시 붙인다. 지금은 로컬 보관만. */
+/* ── 대화 기록 DB 연동 (2026-09-18) ─────────────────────
+   원본은 RDS(app.chat_session · app.chat_message, /api/auth/chats)다.
+   위의 localStorage 는 팝업을 열자마자 그리기 위한 사본이다.
+   · 대화 하나 = 서버 세션 하나. 둘을 잇는 값은 c.key (기기마다 세는 c.id 는 겹친다)
+   · 팝업을 열면 목록을 받아 합치고, 대화를 누르면 그때 본문을 받는다
+   · 답이 끝날 때마다 질문+답을 한 턴으로 저장한다 — turn(무엇을 물었나·용어·사진 관찰값)도
+     같이 남으므로, 다른 기기에서 이어 물어도 챗봇이 앞 맥락을 그대로 받는다
+   · 쓰기 실패는 조용히 넘긴다 — 저장이 안 된다고 대화가 막히면 안 된다 */
+function cpStorageKey(){ return CP_OWNER?CP_KEY+':'+CP_OWNER:CP_KEY }
+function cpNewKey(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,8) }
+function cpValidKey(k){ k=String(k||''); return /^[A-Za-z0-9_-]{1,40}$/.test(k)?k:'' }
+const cpModeOf=c=>c&&c.mode==='salmal'?'salmal':(c&&c.mode==='general'?'general':cpMode());
+export const cpConvId=c=>'cp-'+cpModeOf(c)+'-'+c.key;
+/* 로그인한 계정이 바뀌면(로그아웃 → 다른 계정) 앞 사람 대화를 보이지 않게 갈아 끼운다 */
+function cpSyncOwner(){
+  const owner=AUTH.in?String(ME.mail||'me').toLowerCase():'';
+  if(owner===CP_OWNER)return false;
+  CP_OWNER=owner;
+  for(const mode of ['general','salmal']){ CP_STORE[mode].convos=[]; CP_STORE[mode].activeId=null }
+  cpRestore();
+  cpHydratedAt=0;
+  return true;
+}
+function cpTimeLabel(iso){
+  const d=new Date(iso||Date.now());
+  return isNaN(d)?cpNowLabel():(d.getMonth()+1)+'월 '+d.getDate()+'일';
+}
+function cpFromServer(rows){
+  return (rows||[]).map(r=>{
+    const meta=r.metadata||{};
+    if(r.role==='USER')return {role:'me',text:r.content||'',images:[],
+      imagesDropped:Number(meta.images)>0,sid:r.id};
+    if(r.role!=='ASSISTANT')return null;
+    return {role:'ai',html:meta.html||'',cardHtml:meta.card_html||'',followHtml:meta.follow_html||'',
+      cueHtml:meta.cue_html||'',actionsHtml:meta.actions_html||'',key:meta.key||null,
+      turn:meta.turn||null,feedbackPrompt:false,pending:false,sid:r.id};
+  }).filter(Boolean);
+}
+function cpSortByTime(bucket){
+  bucket.convos.sort((a,b)=>(b.at||0)-(a.at||0));
+  cpSortConvos(bucket);
+}
+/* 대화 본문을 서버에서 받는다. 이미 있는 것(sid 가 같은 것)은 겹쳐 넣지 않는다. */
+function cpEnsureLoaded(c){
+  if(!c||!c.sid||c.loaded!==false||!AUTH.in)return Promise.resolve();
+  if(c.loadP)return c.loadP;
+  c.loadP=chatLoad(c.sid).then(d=>{
+    const have=new Set(c.messages.map(m=>m.sid).filter(Boolean));
+    const older=cpFromServer(d&&d.messages).filter(m=>!have.has(m.sid));
+    c.messages=older.concat(c.messages);
+    c.loaded=true; cpSave();
+  }).catch(()=>{ /* 다음에 열 때 다시 받는다 */ }).finally(()=>{
+    c.loadP=null;
+    if(cpActiveConvo()===c)cpRenderThread();
+  });
+  return c.loadP;
+}
+/* 브라우저에만 있던 대화(연동 전 기록)를 한 번 서버로 옮긴다 */
+function cpTurnsOf(c){
+  const out=[];
+  for(let i=0;i<c.messages.length;i++){
+    const me=c.messages[i], ai=c.messages[i+1];
+    if(me.role!=='me'||!ai||ai.role!=='ai'||ai.pending||ai.fit)continue;
+    out.push({question:me.text||'',images:(me.images||[]).length,answer:cpAnswerPayload(ai)});
+    i++;
+  }
+  return out;
+}
+async function cpImportLocal(c){
+  if(c.importing||c.saving)return;
+  const turns=cpTurnsOf(c); if(!turns.length)return;
+  c.importing=true;
+  try{
+    const d=await chatImport({mode:cpModeOf(c),key:c.key,title:c.title||'',pinned:!!c.pinned,turns});
+    if(d&&d.session){
+      c.sid=d.session.id; c.loaded=true;
+      const pairs=d.ids||[]; let k=0;
+      for(let i=0;i<c.messages.length&&k<pairs.length;i++){
+        const me=c.messages[i], ai=c.messages[i+1];
+        if(me.role!=='me'||!ai||ai.role!=='ai'||ai.pending||ai.fit)continue;
+        me.sid=pairs[k][0]; ai.sid=pairs[k][1]; k++; i++;
+      }
+      cpSave();
+    }
+  }finally{ c.importing=false }
+}
+let cpHydratedAt=0, cpHydrating=null;
+function cpHydrate(force){
+  if(!AUTH.in)return Promise.resolve();
+  if(cpHydrating)return cpHydrating;
+  if(!force&&Date.now()-cpHydratedAt<60000)return Promise.resolve();
+  cpHydrating=(async()=>{
+    const d=await chatList();
+    const rows=(d&&d.sessions)||[];
+    const seen={general:new Set(),salmal:new Set()};
+    for(const r of rows){
+      const mode=r.mode==='salmal'?'salmal':'general';
+      const key=cpValidKey(r.key); if(!key)continue;
+      seen[mode].add(key);
+      const bucket=CP_STORE[mode];
+      const at=Date.parse(r.updated_at)||0;
+      let c=bucket.convos.find(x=>x.key===key);
+      if(c){
+        c.sid=r.id; c.title=r.title||c.title; c.pinned=!!r.pinned;
+        c.at=Math.max(c.at||0,at); c.time=cpTimeLabel(r.updated_at);
+      }else{
+        bucket.convos.push({id:CP_UID++,key,mode,sid:r.id,at,time:cpTimeLabel(r.updated_at),
+          title:r.title||'',pinned:!!r.pinned,messages:[],loaded:false});
+      }
+    }
+    const full=rows.length>=60;   /* 서버 목록 상한 — 넘치면 '없음'을 '지워짐'으로 읽지 않는다 */
+    for(const mode of ['general','salmal']){
+      const bucket=CP_STORE[mode];
+      bucket.convos=bucket.convos.filter(c=>{
+        if(!c.sid||seen[mode].has(c.key)||full)return true;
+        if(cpActiveRun&&cpActiveRun.c===c)return true;
+        return false;                                /* 다른 기기에서 지운 대화 */
+      });
+      if(bucket.activeId&&!bucket.convos.some(c=>c.id===bucket.activeId))bucket.activeId=null;
+      cpSortByTime(bucket);
+      for(const c of bucket.convos) if(!c.sid&&!seen[mode].has(c.key)) void cpImportLocal(c);
+    }
+    cpHydratedAt=Date.now(); cpSave();
+    if($('#cpOverlay')&&$('#cpOverlay').classList.contains('on')){ cpRenderList(); cpRenderThread(); }
+  })().catch(()=>{ /* 서버가 꺼져 있으면 브라우저 사본으로 계속 쓴다 */ }).finally(()=>{ cpHydrating=null });
+  return cpHydrating;
+}
+function cpAnswerPayload(ai){
+  const holder=typeof document!=='undefined'?document.createElement('div'):null;
+  let text='';
+  if(holder){
+    holder.innerHTML=[ai.html,ai.cardHtml].filter(Boolean).join(' ');
+    text=(holder.textContent||'').replace(/\s+/g,' ').trim();
+  }
+  return {text,html:ai.html||'',card_html:ai.cardHtml||'',follow_html:ai.followHtml||'',
+    cue_html:ai.cueHtml||'',actions_html:ai.actionsHtml||'',key:ai.key||null,turn:ai.turn||null};
+}
+/* 답 한 턴을 저장한다. 돌아온 메시지 id 를 붙여 둔다 — 질문을 고쳐 다시 물을 때 쓴다. */
+async function cpPersistTurn(c,me,ai){
+  if(!AUTH.in||!c||!me||!ai)return;
+  c.saving=(c.saving||0)+1;
+  let d=null;
+  try{
+    d=await chatSaveTurn({mode:cpModeOf(c),key:c.key,title:c.title||'',
+      question:me.text||'',images:(me.images||[]).length,answer:cpAnswerPayload(ai)});
+  }finally{ c.saving-=1 }
+  if(!d||!d.session)return;
+  c.sid=d.session.id; if(c.loaded===undefined)c.loaded=true;
+  me.sid=d.user_message_id; ai.sid=d.ai_message_id;
+  cpSave();
+}
 /* 사이드바 프로필(이름·소개)은 모드별로 다르게 남겨 둔다 — 팝업 자체가 둘이라는 것을
    보여주는 자리라서다. 대화 안의 답변 라벨은 별개로 항상 FEEDiT 하나로 묶는다(아래). */
 const CP_PROFILE={
@@ -158,7 +319,7 @@ function cpNowLabel(){
 }
 export function cpNewConvo(){
   const s=cpStore();
-  const c={id:CP_UID++, title:'', time:cpNowLabel(), messages:[]};
+  const c={id:CP_UID++, key:cpNewKey(), mode:cpMode(), at:Date.now(), title:'', time:cpNowLabel(), messages:[]};
   s.convos.unshift(c);
   s.activeId=c.id;
   cpSave();
@@ -299,7 +460,9 @@ function cpMenuPick(what){
   const id=Number(el.dataset.cid);
   const s=cpStore(), c=s.convos.find(x=>x.id===id);
   if(!c){ cpCloseMenu(); return }
-  if(what==='pin'){ c.pinned=!c.pinned; cpCloseMenu(); cpRenderList(); cpSave(); return }
+  if(what==='pin'){ c.pinned=!c.pinned; cpCloseMenu(); cpRenderList(); cpSave();
+    if(AUTH.in&&c.sid)chatUpdate({mode:cpModeOf(c),key:c.key,pinned:c.pinned});
+    return }
   if(what==='rename'){ cpCloseMenu(); cpEditTitle(id); return }
   if(what==='del'){
     const btn=document.querySelector('.cpKebab[data-menu="'+id+'"]');
@@ -341,6 +504,8 @@ export function cpDeleteConvo(id){
   if(at<0)return;
   /* 답변을 만드는 중인 대화를 지우면 그 응답부터 멈춘다 */
   if(cpActiveRun&&cpActiveRun.c&&cpActiveRun.c.id===id)cpStop();
+  const gone=s.convos[at];
+  if(AUTH.in&&gone&&gone.key)chatDelete({mode:cpModeOf(gone),key:gone.key});
   s.convos.splice(at,1);
   if(s.activeId===id)s.activeId=s.convos.length?s.convos[Math.min(at,s.convos.length-1)].id:null;
   cpCloseMenu();
@@ -363,7 +528,11 @@ export function cpEditTitle(id){
   let done=false;
   const commit=(save)=>{
     if(done)return; done=true;
-    if(save)c.title=input.value.replace(/\s+/g,' ').trim();
+    if(save){
+      const next=input.value.replace(/\s+/g,' ').trim();
+      if(next!==(c.title||'')&&AUTH.in&&c.sid)chatUpdate({mode:cpModeOf(c),key:c.key,title:next});
+      c.title=next;
+    }
     cpRenderList(); cpSave();
   };
   input.addEventListener('keydown',e=>{
@@ -750,6 +919,9 @@ export function cpEditSave(idx){
   if(!next&&!images.length)return;       /* 빈 질문은 보내지 않는다 */
   delete m.editing;
   if(next===(m.text||'')){ cpRenderThread({keepScroll:true}); return; }
+  /* 서버에도 이 질문부터 뒤를 지운다 — 남겨 두면 다시 열었을 때 옛 답이 되살아난다 */
+  const cut=c.messages.slice(idx).find(x=>x.sid);
+  if(AUTH.in&&cut)chatTruncate({mode:cpModeOf(c),key:c.key,from_message_id:cut.sid});
   c.messages.length=idx;                 /* 이 질문과 그 뒤를 걷어낸다 */
   cpSave();
   cpAsk(next, cpKeyFor(next), {images});
@@ -760,6 +932,14 @@ export function cpRenderThread(opts){
   const toBottom=()=>{ wrap.scrollTop=keepAt>=0?keepAt:wrap.scrollHeight };
   const c=cpActiveConvo();
   if(cpTypeTimer){ clearTimeout(cpTypeTimer); cpTypeTimer=null; }
+  if(c&&c.loaded===false){
+    void cpEnsureLoaded(c);
+    if(!c.messages.length){
+      wrap.classList.add('hasMsg');
+      th.innerHTML='<p class="cpListEmpty">'+(c.loadP?'대화를 불러오는 중…':'대화를 불러오지 못했습니다. 다시 열어 주세요.')+'</p>';
+      return;
+    }
+  }
   if(!c||!c.messages.length){ wrap.classList.remove('hasMsg'); th.innerHTML=''; return; }
   wrap.classList.add('hasMsg');
   const typeIdx=(opts&&opts.typeLast)?c.messages.length-1:-1;
@@ -914,7 +1094,7 @@ function cpAskMock(c,aiMsg,key){
    두 모드가 따로 1,2,3… 으로 세므로 안 붙이면 섞인다. */
 async function cpAskLive(c,aiMsg,text,images){
   const run=aiMsg.run;
-  const conv='cp-'+cpMode()+'-'+c.id;
+  const conv=cpConvId(c);
   const history=cpHistoryFor(c);
   /* pending 은 아직 true 로 남겨둔다 — 첫 실제 응답(text/report/error)이
      오기 전까지는 별 아이콘이 돌아가는 "생각 중" 헤더를 그대로 보여준다.
@@ -1026,10 +1206,20 @@ function cpAsk(text,key,opts){
   const images=(opts&&opts.images)||[];
   if(!text && !images.length)return;
   let c=(opts&&opts.forceNew)?cpNewConvo():cpActiveConvo(); if(!c)c=cpNewConvo();
-  c.messages.push({role:'me', text, images});
+  /* 서버에서 아직 본문을 안 받은 대화면 받고 나서 잇는다 — 앞 턴이 있어야 챗봇이 맥락을 잇는다 */
+  if(c.loaded===false&&c.sid){
+    cpEnsureLoaded(c).finally(()=>cpAskInto(c,text,key,images));
+    return;
+  }
+  cpAskInto(c,text,key,images);
+}
+function cpAskInto(c,text,key,images){
+  const meMsg={role:'me', text, images};
+  c.messages.push(meMsg);
+  c.at=Date.now(); c.time=cpNowLabel();
   if(!c.title)c.title=cpTitleFrom(text||'사진 문의');
   /* 금주의 리포트 '챗봇 사용 시간' — 로그인한 사용자만 chat_session 에 남긴다 */
-  if(AUTH.in)logChat('cp-'+cpMode()+'-'+c.id, c.title);
+  if(AUTH.in)logChat(cpConvId(c), c.title);
   const directFit=wantsVirtualFit(text,images);
   const aiMsg={role:'ai', html:'', key, pending:!directFit};
   if(directFit)aiMsg.fit=cpNewFit(images,text);
@@ -1063,6 +1253,9 @@ function cpAsk(text,key,opts){
       delete aiMsg.run;
       if(cpActiveRun===run){cpActiveRun=null;cpRunButton(false)}
       cpSave();          /* 답이 끝난 상태 그대로 남긴다 */
+      /* 중단한 답은 서버에 남기지 않는다 — 다른 기기에서 반쪽 답을 보게 된다 */
+      if(!run.controller.signal.aborted&&!aiMsg.pending&&(aiMsg.html||aiMsg.cardHtml||aiMsg.key))
+        void cpPersistTurn(c,meMsg,aiMsg);
     }
   })();
 }
@@ -1095,7 +1288,9 @@ export function openChatPopup(){
   ov.classList.toggle('sm',SM_ON);
   ov.classList.add('on');
   document.body.style.overflow='hidden';
+  cpSyncOwner();
   cpPaintProfile(); cpRenderList(); cpRenderThread();
+  void cpHydrate();
   setTimeout(()=>{ const ta=$('#cpInput'); if(ta)ta.focus(); },260);
 }
 export function closeChatPopup(){
