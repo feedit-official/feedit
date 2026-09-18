@@ -178,9 +178,17 @@ def engine() -> ChatEngine:
     return _engine
 
 
+def _json_default(value):
+    """json 이 모르는 값(Decimal · 날짜)은 숫자나 문자열로 — 모양 때문에 답이 죽지 않게."""
+    from decimal import Decimal
+    if isinstance(value, Decimal):
+        return int(value) if value == value.to_integral_value() else float(value)
+    return str(value)
+
+
 def sse(event: str, data) -> bytes:
     return (f"event: {event}\n"
-            f"data: {json.dumps(data, ensure_ascii=False)}\n\n").encode("utf-8")
+            f"data: {json.dumps(data, ensure_ascii=False, default=_json_default)}\n\n").encode("utf-8")
 
 
 def _log_turn(question: str, rep: dict) -> None:
@@ -671,10 +679,18 @@ class Handler(BaseHTTPRequestHandler):
         except BrokenPipeError:
             pass                                   # 사용자가 창을 닫았다. 정상이다.
         except Exception as ex:                    # noqa: BLE001
+            # ★ 삼키지 않는다 (2026-09-18). 예전에는 종류만 화면에 보내고 로그엔 아무것도
+            #   안 남겨, "서버에서 답을 만들지 못했습니다" 의 원인을 찾을 길이 없었다.
+            import traceback
+            traceback.print_exc()
+            tb = traceback.extract_tb(ex.__traceback__)
+            where_ = next((f"{Path(f.filename).name}:{f.lineno}" for f in reversed(tb)
+                           if "/app/" in f.filename or f.filename.endswith("server.py")), "")
             try:
                 push("error", {"ok": False, "reason": "SERVER_ERROR",
                                "message": "서버에서 답을 만들지 못했습니다.",
-                               "detail": type(ex).__name__})
+                               # 종류와 위치만 — 예외 문구에는 값이 섞일 수 있어 싣지 않는다
+                               "detail": type(ex).__name__ + (f" @ {where_}" if where_ else "")})
                 push("done", {"ok": False})
             except OSError:
                 pass

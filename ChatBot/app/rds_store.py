@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+from decimal import Decimal
 from typing import Any
 
 import psycopg
@@ -9,6 +10,21 @@ from psycopg.rows import dict_row
 
 from .config import METRIC_VERSION
 from .store import at_iso, platform_label
+
+
+def _plain(value: Any) -> Any:
+    """Postgres numeric → 파이썬 숫자.
+
+    ★ psycopg 는 numeric 을 Decimal 로 준다 (2026-09-18). 예전 SQLite 는 float 였다.
+      Decimal 은 json.dumps 가 못 읽어 리포트를 화면에 보내다 TypeError 로 죽었고,
+      float 와 곱하면 그 자리에서 TypeError 가 난다. 읽는 순간 바꿔 둔다.
+      정수 값은 int 로 — "82.0" 이 답변에 찍히면 verify 가 도구 결과와 대조하지 못한다.
+    """
+    if isinstance(value, Decimal):
+        return int(value) if value == value.to_integral_value() else float(value)
+    if isinstance(value, list):
+        return [_plain(v) for v in value]
+    return value
 
 
 def _term(term_key: str) -> str:
@@ -34,7 +50,7 @@ class RDSStore:
     def q(self, sql: str, args=()) -> list[dict[str, Any]]:
         with self.conn().cursor() as cursor:
             cursor.execute(sql, args)
-            return list(cursor.fetchall())
+            return [{k: _plain(v) for k, v in row.items()} for row in cursor.fetchall()]
 
     def one(self, sql: str, args=()) -> dict | None:
         rows = self.q(sql, args)

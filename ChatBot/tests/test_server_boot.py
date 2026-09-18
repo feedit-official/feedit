@@ -14,3 +14,19 @@ def test_engine_uses_names_defined_at_module_level():
                and n not in ("DISABLED",)]
     assert missing == [], missing
     assert hasattr(server.llm, "DISABLED")
+
+
+def test_rds_numeric_becomes_plain_numbers():
+    """Postgres numeric(Decimal) 가 리포트에 섞여 json 이 죽던 문제 (2026-09-18)."""
+    from decimal import Decimal
+    from app.rds_store import _plain
+    assert _plain(Decimal("82")) == 82 and isinstance(_plain(Decimal("82")), int)
+    assert _plain(Decimal("0.62")) == 0.62
+    assert _plain([Decimal("1.5"), "x"]) == [1.5, "x"]
+
+
+def test_sse_survives_decimal_and_dates():
+    import datetime
+    from decimal import Decimal
+    out = server.sse("report", {"rate": Decimal("0.62"), "at": datetime.date(2026, 9, 8)})
+    assert b'"rate": 0.62' in out and b'"2026-09-08"' in out
