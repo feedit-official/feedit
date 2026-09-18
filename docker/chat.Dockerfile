@@ -2,7 +2,7 @@
 #
 # ★ web.Dockerfile 과 따로 둔다.
 #   web 쪽은 torch·easyocr·playwright 까지 깔아 이미지가 수 GB 다.
-#   챗봇이 실제로 쓰는 건 requests 와 PyYAML 뿐이라, 같이 묶으면
+#   챗봇이 실제로 쓰는 건 requests·PyYAML·psycopg 뿐이라, 같이 묶으면
 #   챗봇 코드 한 줄 고칠 때마다 그 무거운 빌드를 다시 기다리게 된다.
 
 FROM python:3.13-slim
@@ -24,8 +24,8 @@ COPY ChatBot/ /app/
 ENV FEEDIT_CHAT_HOST=0.0.0.0
 ENV FEEDIT_CHAT_PORT=8770
 
-# 크롤러 저장소는 compose 가 읽기 전용으로 마운트한다.
-ENV FEEDIT_CRAWLER_DIR=/crawler
+# 운영 데이터는 같은 VPC의 RDS를 읽는다.
+ENV FEEDIT_DATA_BACKEND=rds
 
 EXPOSE 8770
 

@@ -328,9 +328,37 @@ def fix(answer: str, trace, rep: Report, question: str = "",
     if not fixed:
         rep.skipped = "empty_fix"
         return _hedge(answer, rep)
+    # ★ 고친 답을 그대로 믿지 않는다 (2026-09-14).
+    #   실측: "감성 지표는 아직 측정 자료가 없습니다.keletal" 이 화면에 떴다.
+    #   규칙 2 가 시킨 대로 문장은 바꿨는데, 소형 모델이 끝에 영문 조각을
+    #   흘렸다. 검증관의 일은 **지우는 것**이지 쓰는 것이 아니므로(규칙 3),
+    #   원문에 없던 영문 낱말이 새로 생겼다면 그 재작성은 깨진 것이다.
+    strays = _new_latin_words(answer, fixed)
+    if strays:
+        rep.skipped = "fix_garbled:" + ",".join(strays[:3])
+        return _hedge(answer, rep)
     rep.changed = fixed != answer
     rep.removed = [str(x) for x in (res.get("removed") or [])]
     return fixed
+
+
+_LATIN_WORD = re.compile(r"[A-Za-z]{3,}")
+
+
+def _new_latin_words(before: str, after: str) -> list[str]:
+    """고친 답에만 새로 생긴 영문 낱말.
+
+    왜 영문만 보나 — 검증관이 하는 일은 숫자를 지우고 문장을 정해진 한국어
+    문구로 바꾸는 것뿐이다. 브랜드명 같은 영문은 원문에 이미 있으므로 통과하고,
+    원문에 없던 영문이 튀어나오면 생성이 깨진 것이다. 한국어로 새 문장을
+    지어내는 경우까지 잡지는 못한다 — 그건 이 검사가 노리는 것이 아니다.
+    """
+    had = {w.lower() for w in _LATIN_WORD.findall(before)}
+    out = []
+    for w in _LATIN_WORD.findall(after):
+        if w.lower() not in had and w.lower() not in out:
+            out.append(w.lower())
+    return out
 
 
 def _hedge(answer: str, rep: Report) -> str:

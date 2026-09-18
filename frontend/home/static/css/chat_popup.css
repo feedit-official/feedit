@@ -69,19 +69,67 @@
 }
 .cpListEmpty{font-size:13.5px;color:var(--pink-2);padding:8px}
 
-/* 대화 목록 줄 — 제목 버튼(.cpItem) + 수정 버튼(.cpEdit)을 나란히.
-   연필은 평소엔 숨어 있다가(opacity:0) 줄에 마우스를 올리면 밑줄 그은
-   모양으로 드러난다. .cpItem 안에 넣지 않는다 — 버튼 중첩은 잘못된 HTML이고,
+/* 대화 목록 줄 — 제목 버튼(.cpItem) + 메뉴 버튼(.cpKebab)을 나란히.
+   ⋮ 는 평소엔 숨어 있다가(opacity:0) 줄에 마우스를 올리거나 메뉴가 열려 있을 때
+   드러난다. .cpItem 안에 넣지 않는다 — 버튼 중첩은 잘못된 HTML이고,
    라우터가 잡는 .cpItem[data-cid]의 클릭 영역도 그대로 둬야 한다. */
 .cpItemRow{display:flex;align-items:center;gap:2px}
 .cpItemRow .cpItem{flex:1;min-width:0}
-.cpEdit{
-  flex:0 0 auto;width:30px;height:30px;border-radius:8px;display:grid;place-items:center;
+.cpKebab{
+  flex:0 0 auto;width:28px;height:28px;border-radius:8px;display:grid;place-items:center;
   color:var(--pink-2);opacity:0;transition:opacity .18s,background .2s,color .2s;
 }
-.cpItemRow:hover .cpEdit,.cpItemRow:focus-within .cpEdit{opacity:1}
-.cpEdit:hover{background:var(--pink-3);color:var(--pink-0)}
-.cpEdit i{font-style:normal;font-size:14px;text-decoration:underline;text-underline-offset:2px}
+.cpKebab svg{width:14px;height:14px;display:block}
+.cpItemRow:hover .cpKebab,.cpItemRow:focus-within .cpKebab,.cpKebab.on{opacity:1}
+.cpKebab:hover,.cpKebab.on{background:var(--pink-3);color:var(--pink-0)}
+/* 고정한 대화 — 날짜 옆에 작은 표를 달고, 줄 왼쪽에 얇은 선을 세운다.
+   목록 맨 위에 올라가 있는 이유를 한눈에 알 수 있어야 한다. */
+.cpItemRow.pinned .cpItem{position:relative}
+.cpItemRow.pinned .cpItem::before{
+  content:'';position:absolute;left:0;top:9px;bottom:9px;width:2px;border-radius:2px;
+  background:var(--coral);
+}
+.cpItemRow.pinned .cpItem{padding-left:12px}
+.cpPinMark{
+  display:inline-block;margin-left:6px;padding:1px 5px;border-radius:999px;
+  background:var(--pink-3);color:var(--pink-1);font-family:inherit;font-size:9.5px;
+  font-weight:600;letter-spacing:0;vertical-align:1px;
+}
+
+/* ── 대화 줄 메뉴 (2026-09-14) ────────────────────────
+   목록(.cpList)은 세로 스크롤이 걸려 있어 그 안에 띄우면 아래쪽 줄에서 잘린다.
+   화면 좌표(position:fixed)로 띄우고 자리만 JS가 잡아 준다. */
+.cpMenu{
+  position:fixed;z-index:1200;min-width:196px;padding:6px;
+  background:#fff;border-radius:13px;
+  box-shadow:0 1px 2px rgba(10,10,10,.08),0 12px 34px -8px rgba(10,10,10,.28);
+  opacity:0;transform:translateY(-4px) scale(.98);transform-origin:top right;
+  transition:opacity .16s var(--ease),transform .16s var(--ease);
+}
+.cpMenu.on{opacity:1;transform:none}
+.cpMenuItem{
+  display:flex;align-items:center;gap:9px;width:100%;padding:8px 9px;border-radius:9px;
+  text-align:left;font-size:13.5px;color:var(--pink-0);transition:background .15s,color .15s;
+}
+.cpMenuItem svg{width:16px;height:16px;flex:0 0 auto;color:var(--pink-1)}
+.cpMenuItem span{flex:1;min-width:0}
+.cpMenuItem em{
+  font-style:normal;font-family:var(--num);font-size:11px;color:var(--pink-2);
+  flex:0 0 auto;
+}
+.cpMenuItem:hover{background:var(--pink-3)}
+.cpMenuItem.danger{color:var(--coral)}
+.cpMenuItem.danger svg{color:var(--coral)}
+.cpMenuItem.danger:hover{background:rgba(255,107,74,.1)}
+.cpMenuLine{height:1px;margin:5px 8px;background:var(--pink-3)}
+/* 삭제 확인 — 메뉴 자리를 그대로 쓴다. 팝업 위에 브라우저 창을 또 띄우지 않는다. */
+.cpMenuAsk{margin:0;padding:9px 9px 7px;font-size:12.5px;line-height:1.5;color:var(--pink-1)}
+.cpMenuAskRow{display:flex;gap:5px}
+.cpMenuAskRow .cpMenuItem{justify-content:center;background:var(--paper);font-size:12.5px;padding:7px}
+.cpMenuAskRow .cpMenuItem:hover{background:var(--pink-3)}
+.cpMenuAskRow .cpMenuItem.danger{background:var(--coral);color:#fff}
+.cpMenuAskRow .cpMenuItem.danger:hover{background:#ff8464}
+
 .cpTitleIn{
   display:block;width:100%;font:inherit;font-size:14px;color:var(--pink-1);line-height:1.45;
   background:#fff;border:1px solid var(--pink-0);border-radius:6px;padding:3px 7px;
@@ -121,6 +169,46 @@
 .bubImgs{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
 .bubImgs img{width:96px;height:96px;object-fit:cover;border-radius:14px;
   box-shadow:0 1px 0 rgba(10,10,10,.05),0 10px 22px -14px rgba(10,10,10,.4)}
+/* ── 마지막 질문 그 자리에서 고치기 (2026-09-14) ───────────
+   연필을 눌러도 원래 말풍선의 크기를 유지한다. 숨긴 sizer가 원문과 같은
+   글꼴·여백으로 박스 크기를 잡고 textarea는 그 위에 정확히 겹친다. */
+.msg.me.editing{width:100%;align-items:flex-end}
+.cpEditBox{
+  position:relative;display:grid;width:max-content;max-width:62%;overflow:hidden;
+  border-radius:20px 20px 6px 20px;background:#fff;
+  box-shadow:inset 0 0 0 1.5px var(--pink-0);
+  transition:box-shadow .2s;
+}
+.cpOverlay.sm .cpEditBox{box-shadow:inset 0 0 0 1.5px var(--coral)}
+.cpEditSizer,.cpEditIn{
+  grid-area:1/1;display:block;padding:12px 17px;font-family:inherit;font-size:14px;
+  letter-spacing:-.02em;line-height:1.5;white-space:pre-wrap;overflow-wrap:break-word;
+  word-break:break-word;box-sizing:border-box;
+}
+.cpEditSizer{visibility:hidden;pointer-events:none;min-width:1ch}
+.cpEditIn{
+  width:100%;height:100%;min-width:0;min-height:0;resize:none;border:0;outline:none;
+  background:transparent;color:var(--pink-0);overflow:auto;
+}
+.cpEditActs{
+  align-self:flex-end;display:flex;align-items:center;justify-content:flex-end;
+  gap:8px;max-width:62%;margin-top:2px;
+}
+/* 되돌릴 수 없는 일이라 미리 말해 둔다 — 저장하면 아래 답변이 지워진다 */
+.cpEditWhy{
+  font-size:13px;color:var(--pink-2);cursor:help;margin-right:auto;
+  padding-left:2px;
+}
+.cpEditBtn{
+  padding:7px 16px;border-radius:999px;font-size:13px;letter-spacing:-.01em;
+  color:var(--pink-1);background:transparent;transition:background .18s,color .18s;
+}
+.cpEditBtn:hover{background:var(--pink-3);color:var(--pink-0)}
+.cpEditBtn.on{background:var(--pink-0);color:var(--paper)}
+.cpEditBtn.on:hover{background:var(--pink-1);color:var(--paper)}
+.cpOverlay.sm .cpEditBtn.on{background:var(--coral)}
+.cpOverlay.sm .cpEditBtn.on:hover{background:#ff8464}
+
 .cpInputRow textarea{
   flex:1;resize:none;min-height:44px;max-height:120px;border-radius:14px;
   padding:12px 15px;font-family:inherit;font-size:13px;background:#fff;
@@ -185,24 +273,57 @@
 .cpFitHead span{font-family:var(--num);font-size:9.5px;letter-spacing:.14em;color:var(--coral)}
 .cpFitHead b{font-size:14px;letter-spacing:-.02em}
 .cpFitGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-items:stretch}
-.cpFitSetup{padding:18px;border-right:1px solid var(--pink-3)}
+/* 칸 수는 '창 폭'이 아니라 '이 칸의 폭'을 보고 정한다 (2026-09-14).
+   설정 칸은 팝업 절반이라, 창이 820px 쯤이면 여기는 180px 밖에 안 된다 —
+   그 폭에 정사각형 세 칸을 넣으면 한 칸이 45px 이라 옷이 안 보인다. */
+.cpFitSetup{padding:18px;border-right:1px solid var(--pink-3);container-type:inline-size}
 .cpFitGuide{margin:0 0 10px;font-size:11px;line-height:1.55;color:var(--pink-1)}
-.cpFitItems{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.cpFitModels+.cpFitGuide{padding-top:12px;border-top:1px solid var(--pink-3)}
+/* ★ 칸 목록은 두 줄(여섯 칸)까지만 자리를 차지하고, 그 위로는 스스로 스크롤한다
+   (2026-09-14). 아홉 칸까지 늘릴 수 있게 된 뒤로 칸을 늘릴 때마다 왼쪽 설정
+   칸이 길어졌고, .cpFitGrid 가 align-items:stretch 라 오른쪽 결과 칸까지
+   덩달아 늘어났다 — 아직 아무것도 없는 검은 칸만 길어지는 셈이었다.
+   ★ 상한(max-height)은 JS(cpFitSizeItems)가 잰 값으로 덮어쓴다. 타일이
+     정사각형(aspect-ratio:1)이라 한 줄 높이가 폭에 따라 정해지는데, CSS 의
+     max-height 에서 %는 '부모의 높이' 기준이라 폭에서 높이를 끌어올 수 없다.
+     여기 적힌 값은 JS 가 재기 전 첫 그림에만 잠깐 쓰이는 대략치다. */
+.cpFitItems{
+  display:grid;grid-template-columns:repeat(3,1fr);gap:10px;
+  max-height:min(58vh,520px);
+  overflow-y:auto;overscroll-behavior:contain;
+  /* 스크롤바가 타일 위에 얹히지 않게 오른쪽만 살짝 비운다 */
+  padding-right:4px;margin-right:-4px;
+  scrollbar-width:thin;scrollbar-color:var(--pink-3) transparent;
+}
+/* 문턱값은 '타일이 몇 px 이하로 작아지면 옷이 안 보이나'로 잡았다.
+   세 칸은 105px(3×105+간격 20), 두 칸은 80px(2×80+간격 10) 아래로 내려가면
+   한 단계씩 줄인다. */
+@container (max-width:340px){ .cpFitItems{grid-template-columns:repeat(2,1fr)} }
+@container (max-width:170px){ .cpFitItems{grid-template-columns:1fr} }
+.cpFitItems::-webkit-scrollbar{width:6px}
+.cpFitItems::-webkit-scrollbar-thumb{background:var(--pink-3);border-radius:99px}
+.cpFitItems::-webkit-scrollbar-thumb:hover{background:var(--pink-2)}
+.cpFitItems::-webkit-scrollbar-track{background:transparent}
 .cpFitSlot{min-width:0;position:relative}
+/* ★ 정사각형으로 둔다 — 옷 사진은 세로로 긴 것이 많아, 가로로 납작한 칸에
+   넣으면 실제 사진은 가운데 조금만 차지하고 양옆이 비어 보인다. */
 .cpFitItem{position:relative;width:100%;aspect-ratio:1;padding:8px;border:1px dashed var(--pink-2);border-radius:10px;overflow:hidden;background:var(--paper);display:flex;align-items:center;justify-content:center}
-/* ★ 올린 아이템 사진은 **자르지 않는다.**
-   width/height:100% 로 채우고 object-fit 에만 기대면, 어딘가에서 그 한 줄이
-   먹히지 않는 순간 사진이 칸 밖으로 넘어가 잘려 나간다(2026-09-11 실측:
-   스커트 밑단이 잘렸다). max-* 와 auto 로 두면 어떤 경우에도 칸을 넘지 않는다. */
 .cpFitItemImg{max-width:100%;max-height:100%;width:auto;height:auto;object-fit:contain}
 .cpFitItem small{position:absolute;left:5px;right:5px;bottom:5px;padding:4px 6px;border-radius:20px;background:rgba(20,18,17,.72);color:#fff;font-size:9px;text-align:center;white-space:nowrap}
-.cpFitRemove{position:absolute;z-index:2;left:6px;top:6px;width:22px;height:22px;border-radius:50%;display:grid;place-items:center;background:rgba(20,18,17,.76);color:#fff;font-size:14px;line-height:1;box-shadow:0 2px 8px rgba(0,0,0,.16)}
+.cpFitRemove{position:absolute;z-index:2;left:6px;top:6px;width:22px;height:22px;border-radius:50%;display:grid;place-items:center;background:rgba(20,18,17,.76);color:#fff;font-size:14px;line-height:1;box-shadow:0 2px 8px rgba(0,0,0,.16);opacity:0;transition:opacity .16s,background .18s}
+.cpFitSlot:hover .cpFitRemove,.cpFitSlot:focus-within .cpFitRemove{opacity:1}
 .cpFitRemove:hover{background:var(--coral)}
+/* 칸 늘리기 ＋ — 사진 칸과 헷갈리지 않게 톤을 낮추고 글자를 붙인다 (2026-09-14) */
+.cpFitSlot.addSlot .cpFitAdd{border-style:dashed;border-color:var(--pink-3);background:transparent}
+.cpFitSlot.addSlot .cpFitAdd:hover{border-color:var(--coral);background:rgba(255,107,74,.05)}
+.cpFitSlot.addSlot .cpFitAdd:hover .cpFitPlus{color:var(--coral)}
+.cpFitAddCap{margin:4px 0 0;font-size:10px;color:var(--pink-2);text-align:center}
 .cpFitPlus{font-size:22px;color:var(--pink-2);font-weight:300}
 .cpFitEmpty{font-size:13px;color:var(--pink-2)}
 .cpFitSetup>label{display:block;margin-top:12px;font-size:12px;font-weight:600;color:var(--pink-1)}
 .cpFitSetup select{width:100%;margin-top:6px;padding:8px 9px;border:1px solid var(--pink-3);border-radius:8px;background:#fff;font:inherit;font-size:12px}
-.cpFitModels{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:12px}
+/* ★ 모델 고르기가 칸 위로 올라왔다 (2026-09-14) — 여백도 위가 아니라 아래에 둔다 */
+.cpFitModels{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin:0 0 14px}
 .cpFitModels label{position:relative;cursor:pointer}.cpFitModels input{position:absolute;opacity:0}
 .cpFitModels img{display:block;width:100%;height:112px;object-fit:cover;object-position:top;border:2px solid transparent;border-radius:8px;background:var(--pink-3)}
 .cpFitModels span{display:block;text-align:center;margin-top:4px;font-size:10.5px}
@@ -221,7 +342,6 @@
 .cpFitLoader .cpStar{font-style:normal;font-size:34px;line-height:1;transform-origin:50% 55%;animation:cpSpin 1.1s ease-in-out infinite,cpPulse 1.4s ease-in-out infinite}
 @media(max-width:620px){
   .cpFitGrid{grid-template-columns:1fr}.cpFitSetup{border-right:0;border-bottom:1px solid var(--pink-3);padding:15px}
-  .cpFitItems{grid-template-columns:repeat(3,1fr)}
   .cpFitOutput{min-height:340px;aspect-ratio:1}
   .cpFitResult{max-height:none;width:100%;height:100%;object-fit:cover}
 }
@@ -231,20 +351,6 @@
    2026-09-13 추가 — 대화 보관·삭제, 다시 묻기, 답변 피드백,
    빈 화면 예시, 취향 안내, 착장 재시도
    ══════════════════════════════════════════════════════ */
-
-/* 목록 삭제 버튼 — 연필과 같은 자리·같은 규칙(평소 숨김, 줄에 올리면 드러남).
-   한 번 누르면 '삭제?' 로 넓어지므로 폭을 고정하지 않는다. */
-.cpDel{
-  flex:0 0 auto;min-width:30px;height:30px;padding:0 6px;border-radius:8px;
-  display:grid;place-items:center;color:var(--pink-2);
-  opacity:0;transition:opacity .18s,background .2s,color .2s;
-}
-.cpItemRow:hover .cpDel,.cpItemRow:focus-within .cpDel{opacity:1}
-.cpDel:hover{background:var(--pink-3);color:var(--pink-0)}
-.cpDel svg{width:14px;height:14px;display:block}
-.cpDel i{font-style:normal;font-size:11.5px}
-.cpDel.armed{opacity:1;background:var(--coral);color:#fff}
-.cpDel.armed i{font-size:11.5px;font-weight:600}
 
 /* 다시 묻기 — 내 말풍선 아래 작은 글씨. 평소엔 옅고, 줄에 올리면 또렷해진다. */
 /* 내 말풍선 아래 아이콘 줄 — 재전송 · 수정 · 복사 (2026-09-14).
@@ -342,31 +448,61 @@
 .cpFitCat:hover{border-color:var(--pink-2)}
 .cpFitCat:focus{outline:none;border-color:var(--coral)}
 
-/* 합성 옵션 서랍 — 결과 이미지 왼쪽 위. 접으면 켠 개수만 남는다. */
+/* 합성 옵션 서랍 — 결과 이미지 왼쪽 위. 접으면 켠 개수만 남는다.
+   ★ 버튼이 검은 반투명이라 결과 칸(#1c1917)에 그대로 묻혀 있었다 (2026-09-14).
+     흰 알약으로 뒤집어 어두운 바탕 위에서 먼저 눈에 들어오게 한다. */
 .cpFitOpts{position:absolute;z-index:3;left:10px;top:10px;max-width:calc(100% - 62px)}
 .cpFitOptsBtn{
-  display:inline-flex;align-items:center;gap:5px;padding:5px 11px;border-radius:999px;
-  background:rgba(20,18,17,.62);color:#fff;font-size:11px;letter-spacing:-.01em;
-  backdrop-filter:blur(6px);transition:background .18s;
+  display:inline-flex;align-items:center;gap:6px;padding:6px 13px;border-radius:999px;
+  background:rgba(255,255,255,.95);color:var(--pink-0);font-size:11.5px;font-weight:600;
+  letter-spacing:-.01em;box-shadow:0 2px 10px rgba(0,0,0,.32);
+  backdrop-filter:blur(6px);transition:background .18s,color .18s,box-shadow .18s;
 }
-.cpFitOptsBtn:hover{background:rgba(20,18,17,.82)}
-.cpFitOpts.on .cpFitOptsBtn{background:var(--coral)}
+.cpFitOptsBtn::after{
+  content:'';width:0;height:0;margin-left:1px;
+  border-left:3.5px solid transparent;border-right:3.5px solid transparent;
+  border-top:4px solid currentColor;opacity:.55;transition:transform .2s;
+}
+.cpFitOpts.on .cpFitOptsBtn::after{transform:rotate(180deg)}
+.cpFitOptsBtn:hover{background:#fff;box-shadow:0 4px 14px rgba(0,0,0,.4)}
+.cpFitOpts.on .cpFitOptsBtn{background:var(--coral);color:#fff}
 .cpFitOptsBtn b{
-  min-width:15px;height:15px;padding:0 4px;border-radius:999px;display:grid;place-items:center;
-  background:rgba(255,255,255,.22);font-size:9.5px;font-weight:600;
+  min-width:16px;height:16px;padding:0 4px;border-radius:999px;display:grid;place-items:center;
+  background:var(--coral);color:#fff;font-size:9.5px;font-weight:700;
 }
+.cpFitOpts.on .cpFitOptsBtn b{background:rgba(255,255,255,.26)}
 .cpFitOptsBody{
-  margin-top:6px;padding:9px;border-radius:11px;display:flex;flex-wrap:wrap;gap:5px;
-  background:rgba(255,255,255,.94);box-shadow:0 8px 22px rgba(0,0,0,.2);backdrop-filter:blur(8px);
+  width:232px;max-width:calc(100vw - 60px);max-height:min(340px,52vh);overflow-y:auto;
+  margin-top:7px;padding:11px 12px;border-radius:13px;
+  background:#fff;box-shadow:0 10px 30px rgba(0,0,0,.34);
 }
-.cpFitOpt{
-  padding:5px 10px;border-radius:999px;background:var(--paper);color:var(--pink-1);
-  box-shadow:inset 0 0 0 1px var(--pink-3);font-size:10.5px;white-space:nowrap;
-  transition:background .18s,color .18s,box-shadow .18s;
+/* 옵션 한 묶음 — 제목 아래에 스위치 줄이 선다 */
+.cpVfGroup+.cpVfGroup{margin-top:11px;padding-top:11px;border-top:1px solid var(--pink-3)}
+.cpVfGroupTitle{
+  margin:0 0 5px;font-size:10px;font-weight:700;letter-spacing:.02em;color:var(--pink-2);
 }
-.cpFitOpt:hover{color:var(--pink-0);box-shadow:inset 0 0 0 1px var(--pink-1)}
-.cpFitOpt.on{background:var(--coral);color:#fff;box-shadow:none}
-.cpFitOptsHint{width:100%;margin:1px 0 0;font-size:9.5px;color:var(--pink-2)}
+.cpVfGroupHint{margin:5px 0 0;font-size:9.5px;line-height:1.45;color:var(--pink-2)}
+.cpVfRow{
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+  min-height:28px;
+}
+.cpVfRow span{font-size:12.5px;color:var(--pink-0);letter-spacing:-.01em}
+/* 작은 on/off 슬라이드 — 챗바의 모드 전환(.salmalBtn)과 같은 몸짓, 크기만 줄였다 */
+.cpVfSw{
+  position:relative;flex:0 0 auto;width:38px;height:21px;border-radius:999px;
+  background:var(--pink-3);box-shadow:inset 0 0 0 1px rgba(10,10,10,.05);
+  transition:background-color .26s var(--ease),box-shadow .26s var(--ease);
+}
+.cpVfSw:hover{box-shadow:inset 0 0 0 1px var(--pink-2)}
+.cpVfSw.on{background:var(--coral);box-shadow:none}
+.cpVfSw.on:hover{background:#ff8464}
+.cpVfSw .thumb{
+  position:absolute;top:2px;left:2px;width:17px;height:17px;border-radius:50%;
+  background:#fff;box-shadow:0 1px 2px rgba(10,10,10,.3);
+  transition:transform .26s cubic-bezier(.19,1,.22,1);
+}
+.cpVfSw.on .thumb{transform:translateX(17px)}
+.cpFitOptsHint{width:100%;margin:10px 0 0;font-size:9.5px;line-height:1.5;color:var(--pink-2)}
 
 /* 결과 저장 — 오른쪽 위. 결과가 있을 때만 나타난다. */
 .cpFitDl{

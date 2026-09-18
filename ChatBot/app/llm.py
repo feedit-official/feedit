@@ -1,7 +1,7 @@
-"""Luna 클라이언트 — OpenAI Responses API.
+"""역할별 OpenAI 모델 클라이언트 — Responses API.
 
-크롤러의 `llm_analysis.py` 와 **같은 방식**을 쓴다. 모델도 같다.
-두 곳이 다른 모델을 쓰면 "왜 답이 다르지" 를 영영 못 쫓는다.
+전송 방식은 크롤러의 `llm_analysis.py` 와 같되, 챗봇 안에서는 역할별 모델을 쓴다.
+도구 선택·해석은 Terra, 값 대조·형식 정리는 Luna가 기본이다.
 
 ★ 이 모듈이 지키는 것
 
@@ -371,24 +371,40 @@ _VISION_SALMAL = (
 )
 
 
-def vision(question: str, images: list[str], *, mode: str = "general") -> str | None:
-    """사진(들)을 보고 짧게 답한다. 실패하면 None — 부르는 쪽(engine.py)이
-    사용자에게 실패라고 말한다. 여러 장이면 한 메시지의 content 배열에 같이
-    싣는다 — Responses API 멀티모달 입력 형식 (input_text + input_image)."""
+def vision(question: str, images: list[str], *, mode: str = "general") -> dict | None:
+    """사진 설명과 다음 턴에 이어 쓸 관찰값을 한 번에 구조화한다.
+
+    예전에는 답변 문자열만 받아 아이템·소재가 다음 턴의 history에서 사라졌다.
+    숫자나 브랜드 추측은 받지 않고, 사진에서 직접 볼 수 있는 항목만 저장한다.
+    """
     r = role("vision")
     instr = _VISION_SALMAL if mode == "salmal" else _VISION_GENERAL
     content: list[dict] = [{"type": "input_text", "text": question or "이 사진을 봐 주세요."}]
     for u in images[:6]:
         content.append({"type": "input_image", "image_url": u})
     payload = [{"role": "user", "content": content}]
-    out = respond(instr, payload, effort=r["effort"], model=r["model"], timeout=30)
-    return out["text"] if out else None
+    schema = strict_schema("general_visual", {
+        "item": {"type": "string"},
+        "colors": {"type": "array", "items": {"type": "string"}},
+        "materials": {"type": "array", "items": {"type": "string"}},
+        "silhouette": {"type": "array", "items": {"type": "string"}},
+        "details": {"type": "array", "items": {"type": "string"}},
+        "styles": {"type": "array", "items": {"type": "string"}},
+        "uncertainties": {"type": "array", "items": {"type": "string"}},
+        "summary": {"type": "string"},
+    }, ["item", "colors", "materials", "silhouette", "details", "styles",
+        "uncertainties", "summary"])
+    return respond(instr + " 사진에서 직접 확인한 내용을 스키마에 나눠 담고, "
+                   "summary는 사용자에게 보여 줄 2~4문장 답변으로 작성하세요.",
+                   payload, schema, effort=r["effort"], model=r["model"], timeout=30)
 
 
 def vision_salmal(question: str, images: list[str]) -> dict | None:
-    """사진에서 보이는 상품명·스타일 태그·짧은 조언만 구조화한다.
+    """살말 판단과 후속 질문에 함께 쓸 시각 관찰값을 구조화한다.
 
     지수는 이 모델 출력 숫자가 아니라 salmal_index의 고정 계산식이 만든다.
+    색·소재·실루엣도 함께 받아야 다음 턴의 "소재는?" 같은 질문에서 사진을
+    다시 올리라고 하지 않는다.
     """
     content: list[dict] = [{"type": "input_text", "text": question or "이 아이템 살까 말까?"}]
     for u in images[:6]:
@@ -396,13 +412,22 @@ def vision_salmal(question: str, images: list[str]) -> dict | None:
     schema = strict_schema("salmal_visual", {
         "item": {"type": "string"},
         "tags": {"type": "array", "items": {"type": "string"}},
+        "colors": {"type": "array", "items": {"type": "string"}},
+        "materials": {"type": "array", "items": {"type": "string"}},
+        "silhouette": {"type": "array", "items": {"type": "string"}},
+        "details": {"type": "array", "items": {"type": "string"}},
+        "styles": {"type": "array", "items": {"type": "string"}},
+        "uncertainties": {"type": "array", "items": {"type": "string"}},
         "summary": {"type": "string"},
-    }, ["item", "tags", "summary"])
+    }, ["item", "tags", "colors", "materials", "silhouette", "details",
+        "styles", "uncertainties", "summary"])
     instructions = (
-        "FEEDiT 살말 분석용 시각 판독기입니다. 사진에서 직접 확인되는 의류 종류와 "
-        "스타일 태그만 반환하세요. 브랜드, 가격, 재고, 트렌드 수치나 점수는 추측하지 "
-        "마세요. tags는 한국어 명사 1~6개, summary는 보이는 특징과 구매 전 확인할 점을 "
-        "2~3문장으로 작성하세요."
+        "FEEDiT 살말 분석용 시각 판독기입니다. 사진에서 직접 확인되는 의류 종류, "
+        "색, 소재로 보이는 표면 특성, 실루엣·길이, 디테일과 스타일 태그를 각각 "
+        "반환하세요. 사진만으로 정확한 혼용률이나 소재를 확정할 수 없으면 materials에 "
+        "'광택 있는 직물로 보임'처럼 관찰 수준으로 쓰고 uncertainties에 한계를 적으세요. "
+        "브랜드, 가격, 재고, 트렌드 수치나 점수는 추측하지 마세요. tags는 한국어 명사 "
+        "1~6개, summary는 보이는 특징과 구매 전 확인할 점을 2~3문장으로 작성하세요."
     )
     return respond(instructions, [{"role": "user", "content": content}], schema,
                    timeout=30, **role("vision"))

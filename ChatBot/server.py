@@ -174,7 +174,7 @@ def engine() -> ChatEngine:
     if _engine is None:
         with _engine_lock:
             if _engine is None:
-                _engine = ChatEngine(salmal=SalmalHTTPAdapter())
+                _engine = ChatEngine(use_llm=not llm.DISABLED, salmal=SalmalHTTPAdapter())
     return _engine
 
 
@@ -270,33 +270,65 @@ def clean_taste_context(raw: dict) -> dict:
     return out
 
 
+_TREND_ACTION_INTENTS = {"metric.level", "metric.direction", "metric.platform",
+                         "metric.assoc", "metric.sentiment", "metric.lifecycle"}
+_STYLE_DETAIL_ASK = re.compile(r"뜻|유래|기원|정의|어떤\s*스타일|무슨\s*스타일|설명해", re.I)
+_TREND_DETAIL_ASK = re.compile(
+    r"지표|온도|트렌드|유행|인기|요즘|핫|유효|추이|상승|하락|꺾", re.I)
+_COMMUNITY_ASK = re.compile(r"투표|사람들|다들|의견|후기|커뮤니티|물어", re.I)
+_TRYON_ASK = re.compile(r"입혀|입어|착용|어울|핏(?:은|이|을|을까)?|코디", re.I)
+_PURCHASE_ASK = re.compile(r"살까|사도|말까|살지|구매|지를까|추천|고민|어때", re.I)
+
+
 def actions_for(rep: dict, mode: str = "general") -> list[dict]:
-    """다음에 무엇을 할 수 있는지. 화면에 실제로 있는 곳으로만 보낸다."""
+    """답에서 바로 이어 할 가치가 있는 행동만 보낸다.
+
+    버튼은 기능 목록이 아니다. 매 답변마다 같은 네 개를 붙이면 사용자는 본문보다
+    버튼을 먼저 무시하게 된다. 현재 질문·의도·확인된 상품/사진이 실제로 다음 행동과
+    이어질 때만 노출한다.
+    """
     acts = []
     terms = rep.get("terms") or []
     first = terms[0] if terms else None
-    if first and first.get("facet") == "style":
-        acts.append({"label": "Style 탭에서 자세히", "type": "view",
-                     "view": "style", "style": first.get("canonical")})
-    if first and first.get("available"):
-        acts.append({"label": "지표로 보기", "type": "view", "view": "trend",
-                     "part": "temp", "keyword": first.get("canonical")})
+    question = str(rep.get("question") or "")
+    intent = str(rep.get("intent") or "")
+
+    if mode == "general" and len(terms) == 1:
+        # 뜻·유래를 설명한 뒤에는 Style 페이지가 자연스러운 다음 단계다.
+        if (first and first.get("facet") == "style"
+                and (intent == "knowledge.origin" or _STYLE_DETAIL_ASK.search(question))):
+            acts.append({"label": "Style 탭에서 자세히", "type": "view",
+                         "view": "style", "style": first.get("canonical")})
+        # 수치·방향·플랫폼을 물은 경우에만 상세 지표 페이지를 제안한다.
+        if (first and first.get("available")
+                and (intent in _TREND_ACTION_INTENTS
+                     or _TREND_DETAIL_ASK.search(question))):
+            acts.append({"label": "지표로 보기", "type": "view", "view": "trend",
+                         "part": "temp", "keyword": first.get("canonical")})
     if rep.get("hint", {}).get("code") == "MODE_MISMATCH":
         acts.append(rep["hint"]["action"] | {"label": "살!말? 모드로"})
     if mode == "salmal":
         # 물어보기 카드는 **확인한 것만** 들고 간다. 확인하지 못한 칸은 비워 두고
         # 사용자가 직접 적는다 — 짐작으로 채우면 사용자가 확인한 값으로 읽는다.
-        community = {"label": "물어보기", "type": "community"}
         draft = rep.get("item_draft")
+        keep = {}
         if isinstance(draft, dict):
             keep = {k: draft.get(k) for k in ("title", "brand", "price", "source")
                     if draft.get(k) not in (None, "")}
+        # 실제 상품을 확인했거나 사용자가 다른 사람의 의견을 요청했을 때만 커뮤니티로.
+        if keep or intent == "buy.opinion" or _COMMUNITY_ASK.search(question):
+            community = {"label": "물어보기", "type": "community"}
             if keep:
                 community["draft"] = keep
-        acts.extend([
-            community,
-            {"label": "입혀보기", "type": "virtual_fit"},
-        ])
+            acts.append(community)
+
+        # 착장 의도 또는 이번 답의 사진 분석이 있을 때만 입혀보기를 제안한다.
+        has_visual = isinstance(rep.get("visual_context"), dict) and bool(rep["visual_context"])
+        wants_tryon = intent == "buy.tryon" or bool(_TRYON_ASK.search(question))
+        photo_purchase = has_visual and (intent == "vision.salmal"
+                                         or bool(_PURCHASE_ASK.search(question)))
+        if wants_tryon or photo_purchase:
+            acts.append({"label": "입혀보기", "type": "virtual_fit"})
     return acts
 
 
@@ -511,6 +543,10 @@ class Handler(BaseHTTPRequestHandler):
                     category=str(req.get("category") or "상의"),
                     # 착장 옵션(아우터 레이어드·열림/닫힘). 없으면 예전과 같다.
                     options=req.get("options") if isinstance(req.get("options"), dict) else None,
+                    # 포즈 (2026-09-14). 비우면 준비된 포즈 중에서 무작위로
+                    # 뽑는다 — 같은 옷을 다시 입혀 봐도 다른 컷이 나온다.
+                    # 앞선 결과의 pose 를 그대로 보내면 같은 자세로 다시 낸다.
+                    pose=str(req.get("pose") or "") or None,
                 )
             except (ValueError, RuntimeError) as exc:
                 return self._json(400, {"ok": False, "error": type(exc).__name__,
@@ -616,8 +652,6 @@ class Handler(BaseHTTPRequestHandler):
                 for d in split_deltas(rep["message"]):
                     push("text", {"delta": d})
                     time.sleep(0.012)
-                if images:
-                    push("actions", [{"label": "바로 입혀보기", "type": "virtual_fit"}])
                 push("done", {"ok": True})
                 return
 
@@ -627,8 +661,6 @@ class Handler(BaseHTTPRequestHandler):
             push("report", rep)
             _log_turn(question, rep)
             acts = actions_for(rep, mode=mode)
-            if images and not any(a.get("type") == "virtual_fit" for a in acts):
-                acts.append({"label": "바로 입혀보기", "type": "virtual_fit"})
             if acts:
                 push("actions", acts)
             push("done", {"ok": True, "intent": rep.get("intent"),

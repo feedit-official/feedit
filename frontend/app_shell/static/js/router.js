@@ -1,7 +1,7 @@
 import { $, $$, HAS_A, aAnimate, aSpring, aStagger, aTimeline, aUtils } from '../../../core/static/js/dom.js';
 import { AUTH, acctBoot, dropPendingAuth, likeClick, myRender, requireAuth, resetSignupForm } from '../../../account/static/js/profile.js';
 import { SM_ON, hotBuild, mImgInit, newChat, qRoll, sendChat, smSwitch } from '../../../home/static/js/chat.js';
-import { closeChatPopup, cpDelClick, cpEditTitle, cpImgInit, cpNewConvo, cpRenderList, cpRenderThread, cpSave, cpSend, cpStore, cpToggleMode, openChatWith } from '../../../home/static/js/chat_popup.js';
+import { closeChatPopup, cpCloseMenu, cpImgInit, cpNewConvo, cpOpenMenu, cpRenderList, cpRenderThread, cpSave, cpSend, cpStore, cpToggleMode, openChatWith } from '../../../home/static/js/chat_popup.js';
 import { mPaintVote, mVote, smBuild } from '../../../salmal/static/js/nav_widget.js';
 import { prBuild } from '../../../pricing/static/js/pricing.js';
 import { renderDeck } from '../../../intro/static/js/deck.js';
@@ -254,12 +254,12 @@ $('#cpNewBtn')&&$('#cpNewBtn').addEventListener('click',()=>{
   const ta=$('#cpInput'); if(ta)ta.focus();
 });
 $('#cpList')&&$('#cpList').addEventListener('click',e=>{
-  const edit=e.target.closest('.cpEdit[data-edit]');
-  if(edit){ cpEditTitle(+edit.dataset.edit); return; }
-  /* 삭제는 chat_popup 쪽에서 두 번 누르기(확인)까지 맡는다 */
-  const del=e.target.closest('.cpDel[data-del]');
-  if(del){ cpDelClick(del); return; }
+  /* ⋮ — 고정·이름 변경·삭제를 한자리에 모은 메뉴 (2026-09-14).
+     메뉴가 뜨고 닫히는 것과 그 안의 선택은 chat_popup 쪽이 맡는다. */
+  const menu=e.target.closest('.cpKebab[data-menu]');
+  if(menu){ e.stopPropagation(); cpOpenMenu(menu); return; }
   const item=e.target.closest('.cpItem[data-cid]'); if(!item)return;
+  cpCloseMenu();
   cpStore().activeId=+item.dataset.cid;
   cpRenderList(); cpRenderThread(); cpSave();
 });

@@ -108,7 +108,8 @@ class DraftHandoffTests(unittest.TestCase):
 
     def test_community_action_carries_the_draft(self):
         acts = server.actions_for(
-            {"terms": [], "item_draft": {"title": "벌룬 카고 미디 스커트",
+            {"question": "이 스커트 사도 될까?", "intent": "buy.verdict",
+             "terms": [], "item_draft": {"title": "벌룬 카고 미디 스커트",
                                          "brand": "허그유어스킨", "price": 89000,
                                          "source": "챗봇이 확인한 값"}},
             mode="salmal")
@@ -116,10 +117,36 @@ class DraftHandoffTests(unittest.TestCase):
         self.assertEqual(community["draft"]["brand"], "허그유어스킨")
         self.assertEqual(community["draft"]["price"], 89000)
 
-    def test_community_action_without_draft_stays_plain(self):
-        acts = server.actions_for({"terms": []}, mode="salmal")
+    def test_salmal_actions_do_not_appear_without_relevant_context(self):
+        acts = server.actions_for(
+            {"question": "소재는 뭐야?", "intent": "agent", "terms": []},
+            mode="salmal")
+        self.assertEqual(acts, [])
+
+    def test_explicit_opinion_request_gets_a_plain_community_action(self):
+        acts = server.actions_for(
+            {"question": "다른 사람들 의견도 궁금해", "intent": "buy.opinion",
+             "terms": []}, mode="salmal")
         community = [a for a in acts if a.get("type") == "community"][0]
         self.assertNotIn("draft", community)
+
+    def test_photo_purchase_gets_tryon_but_not_unrelated_buttons(self):
+        acts = server.actions_for(
+            {"question": "이거 사도 될까?", "intent": "vision.salmal", "terms": [],
+             "visual_context": {"item": "미디 스커트"}}, mode="salmal")
+        self.assertEqual([a["type"] for a in acts], ["virtual_fit"])
+
+    def test_general_actions_follow_the_answer_intent(self):
+        term = {"canonical": "발레코어", "facet": "style", "available": True}
+        style = server.actions_for(
+            {"question": "발레코어 뜻이 뭐야?", "intent": "agent",
+             "terms": [term]}, mode="general")
+        trend = server.actions_for(
+            {"question": "발레코어 요즘 유효해?", "intent": "metric.level",
+             "terms": [term]}, mode="general")
+        self.assertEqual([a["type"] for a in style], ["view"])
+        self.assertEqual(style[0]["view"], "style")
+        self.assertEqual([a["view"] for a in trend], ["trend"])
 
 
 class TasteContextTests(unittest.TestCase):

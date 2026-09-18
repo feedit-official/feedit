@@ -351,3 +351,12 @@ class ReadOnlyStore:
             "SELECT canonical,facet,raw_count,temp,pct_rank FROM metric_term_daily "
             "WHERE " + " AND ".join(where) +
             " ORDER BY temp DESC, raw_count DESC LIMIT ?", tuple(args))
+
+
+def default_store():
+    """운영 기본값은 RDS. SQLite는 명시한 로컬 회귀 테스트에서만 쓴다."""
+    from .config import DATA_BACKEND
+    if DATA_BACKEND == "sqlite":
+        return ReadOnlyStore()
+    from .rds_store import RDSStore
+    return RDSStore()
