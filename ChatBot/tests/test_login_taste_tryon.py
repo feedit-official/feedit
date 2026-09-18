@@ -62,3 +62,18 @@ def test_tryon_offered_for_photo_in_salmal():
 def test_no_tryon_for_plain_trend_question():
     assert "입혀보기" not in labels({"question": "고프코어 요즘 어때?", "intent": "agent"}, "general")
     assert "입혀보기" not in labels({"question": "고프코어 살까?", "intent": "agent"}, "salmal")
+
+
+def test_link_product_style_tags_feed_the_taste_axis():
+    """링크 상품도 스타일 태그를 받아 취향과 비교한다 — 예전엔 늘 '취향: 빠진 신호'."""
+    from app import salmal_index
+    b = box({"user_id": "31", "taste_context": TASTE})
+    b.t_get_metric = lambda term, parts: {"온도": {"temp": 80}, "as_of": "2026-09-08"}
+    hit = b.t_get_salmal_index("재킷", "아톰 후디", "아크테릭스", None, ["고프코어"])
+    assert {s["key"]: s["score"] for s in hit["signals"]}["taste"] == 100
+    far = b.t_get_salmal_index("재킷", None, None, None, ["미니멀"])
+    assert {s["key"]: s["score"] for s in far["signals"]}["taste"] == 25
+    none = b.t_get_salmal_index("재킷", None, None, None, None)
+    assert "taste" in none["missing"]
+    assert "스타일을 확인하지 못해" in none["missing_why"]["taste"]
+    assert salmal_index.calculate(term="재킷", taste_context={})["missing_why"]["taste"].startswith("로그인")

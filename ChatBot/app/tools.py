@@ -222,8 +222,14 @@ SPECS: list[dict] = [
                        "description": "확인한 상품명(브랜드 제외). 모르면 null"},
          "brand": {"type": ["string", "null"], "description": "확인한 브랜드명. 모르면 null"},
          "price": {"type": ["integer", "null"],
-                   "description": "확인한 원화 판매가(숫자만). 확인 못 했으면 null"}},
-        ["term", "item_name", "brand", "price"],
+                   "description": "확인한 원화 판매가(숫자만). 확인 못 했으면 null"},
+         # ★ 2026-09-18 — 취향 축은 '상품의 스타일' 과 '가입 때 고른 스타일' 을 비교한다.
+         #   예전에는 살말 카드의 태그만 봐서, 링크·질문으로 온 상품은 늘 '취향: 빠진 신호' 였다.
+         "style_tags": {"type": ["array", "null"], "items": {"type": "string"},
+                        "description": ("이 상품이 속하는 패션 스타일 1~3개 (예: 고프코어, 아메카지, "
+                                        "스트릿웨어, 미니멀). 상품 페이지·검색 결과·상품 종류로 판단한다. "
+                                        "판단할 근거가 없으면 null")}},
+        ["term", "item_name", "brand", "price", "style_tags"],
     ),
     _fn(
         "get_user_taste",
@@ -857,7 +863,7 @@ class Toolbox:
         return self.salmal.search(term, limit=max(1, min(int(limit or 5), 10)))
 
     def t_get_salmal_index(self, term: str, item_name=None, brand=None,
-                           price=None) -> dict:
+                           price=None, style_tags=None) -> dict:
         if self.product:
             item_name = item_name or self.product.get("item_name")
             brand = brand or self.product.get("brand")
@@ -870,15 +876,18 @@ class Toolbox:
         if card_id and self.salmal is not None:
             card = self.salmal.card(int(card_id))
         product = (card or {}).get("product") or {}
+        card_tags = product.get("tags") or (card or {}).get("card", {}).get("tags") or []
+        guessed = [str(t).strip() for t in (style_tags or []) if str(t).strip()][:3]
         result = salmal_index.calculate(
             term=term,
-            product_tags=product.get("tags") or (card or {}).get("card", {}).get("tags") or [],
+            product_tags=list(dict.fromkeys([*card_tags, *guessed])),
             taste_context=self.ctx.get("taste_context"),
             trend=trend,
             price=(card or {}).get("price_snapshot"),
             community=(card or {}).get("vote_summary"),
         )
-        result.update({"term": term, "as_of": (card or {}).get("as_of") or metric.get("as_of"),
+        result.update({"term": term, "style_tags": guessed,
+                       "as_of": (card or {}).get("as_of") or metric.get("as_of"),
                        "card": (card or {}).get("card"), "product": product or None,
                        "price_snapshot": (card or {}).get("price_snapshot"),
                        "vote_summary": (card or {}).get("vote_summary"),

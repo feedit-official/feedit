@@ -21,7 +21,7 @@
       "maxDuration": 300
     },
     "api/v1/[name].js": {
-      "maxDuration": 60
+      "maxDuration": 120
     },
     "api/**/*.js": {
       "maxDuration": 30

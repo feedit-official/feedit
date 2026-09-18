@@ -151,11 +151,20 @@ def calculate(*, term: str = "", product_tags: list[str] | None = None,
         signals["community"] = {"score": buy_pct, "label": "커뮤니티 참고",
                                 "why": f"살 의견 {round(buy_pct)}% · {votes:,}표 (참고 신호)"}
 
+    # ★ 왜 빠졌는지를 같이 준다 (2026-09-18). 로그인해서 스타일을 골랐는데도 '취향: 빠진
+    #   신호' 만 보이면, 사용자는 로그인이 안 잡힌 줄 안다. 실제로는 상품의 스타일을 몰라
+    #   비교할 대상이 없었던 것이다.
+    why_missing: dict[str, str] = {}
+    if "taste" not in signals:
+        why_missing["taste"] = ("상품의 스타일을 확인하지 못해 즐겨입는 스타일과 비교하지 못했습니다"
+                                if style_vocab else
+                                "로그인하지 않았거나 가입할 때 고른 스타일이 없습니다")
+
     available_weight = sum(WEIGHTS[k] for k in signals)
     if not available_weight:
         return {"score": None, "recommendation": "판단 자료 부족", "confidence": "낮음",
                 "coverage": 0, "signals": [], "missing": list(WEIGHTS),
-                "recommendation_allowed": False}
+                "missing_why": why_missing, "recommendation_allowed": False}
 
     score = round(sum(v["score"] * WEIGHTS[k] for k, v in signals.items()) / available_weight)
     coverage = round(available_weight / sum(WEIGHTS.values()) * 100)
@@ -173,6 +182,7 @@ def calculate(*, term: str = "", product_tags: list[str] | None = None,
         "coverage": coverage, "signals": [dict(key=k, weight=WEIGHTS[k], **v)
                                            for k, v in signals.items()],
         "missing": [k for k in WEIGHTS if k not in signals],
+        "missing_why": why_missing,
         "recommendation_allowed": allowed,
         "formula": "취향 35 · 검색/찜 25 · 트렌드 20 · 가격 15 · 커뮤니티 5",
     }

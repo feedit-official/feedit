@@ -40,7 +40,7 @@ class ItemDraftArgTests(unittest.TestCase):
     def test_index_tool_takes_the_identity_in_the_same_call(self):
         spec = [s for s in tools.SPECS if s.get("name") == "get_salmal_index"][0]
         props = set(spec["parameters"]["properties"])
-        self.assertEqual(props, {"term", "item_name", "brand", "price"})
+        self.assertEqual(props, {"term", "item_name", "brand", "price", "style_tags"})
         # 초안 전용 도구를 따로 두지 않는다 — 바퀴를 하나 더 쓴다.
         self.assertNotIn("record_item_identity", {s.get("name") for s in tools.SPECS})
 

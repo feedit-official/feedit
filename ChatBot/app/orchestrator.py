@@ -59,7 +59,7 @@ MAX_ROUNDS = 5          # 한 질문에 도구를 부를 수 있는 바퀴 수
 #   ① 링크 확인 ② 지표·지수 ③ 결측 기록 ④ compose_report — 네 바퀴를 다 쓰고
 #   **답을 쓰는 다섯 번째 바퀴가 없었다.** 예산은 남았는데 바퀴가 모자란 것이다.
 LINK_EXTRA_ROUNDS = 1
-MAX_CALLS = 10          # 바퀴를 합쳐 도구 호출 총량
+MAX_CALLS = 14          # 바퀴를 합쳐 도구 호출 총량 (2026-09-18: 바퀴 5·6 에 맞춰 10 → 14)
 # ★ 2026-09-09 추가 — 같은 도구를 인자만 바꿔 계속 부르는 것을 막는다.
 #   _sig() 는 **동일 인자**만 걸러서, search_terms("살로몬 XT-6") →
 #   ("XT-6") → ("살로몬") 처럼 조금씩 바꾸면 그대로 통과했다.
@@ -95,7 +95,11 @@ ASK_BUDGET = 1          # 한 대화에서 되물을 수 있는 횟수
 #   이제 TIME_BUDGET 은 **답변 하나의 전체 벽시계**다.
 #   기본값을 8 → 17 로 올린 것은 뜻이 바뀌었기 때문이지 느슨해진 것이 아니다:
 #   루프 8 + _finish 5 + verify 4 = 예전에 **실제로 쓰던** 시간에 상한을 씌운 것.
-TIME_BUDGET = float(os.getenv("FEEDIT_CHAT_TIME_BUDGET") or 17.0)
+# ★ 2026-09-18 — 17 → 45초. Terra 로 올린 뒤 한 바퀴가 2~7초라, 살말 질문(검색 → 지표 →
+#   지수 → 리포트)이 17~25초 안에서 자꾸 "조회를 끝까지 하지 못했다" 로 끝났다.
+#   답이 빨리 끝나면 그만큼만 쓴다 — 상한은 모델이 멈췄을 때 무한 대기를 막는 용도다.
+#   버셀 중계 함수 한도(api/v1/[name].js maxDuration)보다 넉넉히 작아야 한다.
+TIME_BUDGET = float(os.getenv("FEEDIT_CHAT_TIME_BUDGET") or 45.0)
 # 뒷단계 몫. 루프가 예산을 다 써 버리면 답을 쓸 시간이 남지 않는다.
 # ★ 2026-09-10 실측으로 값을 낮췄다. 처음엔 _finish 5 + verify 4 = 9초를 뗐는데,
 #   예산 14초에서 루프가 7초밖에 못 써서 "살로몬 XT-6 …"(10.1초)와
@@ -144,9 +148,9 @@ WRITE_MIN = 6.5
 #   ①은 링크 질문에만 있는 비용이고, 그 탓에 ③이 예산 밖으로 밀린다.
 #   질문마다 다른 일을 시키면서 같은 시계를 주면, 링크 질문은 구조적으로
 #   답을 못 쓴다. 그 한 바퀴만큼을 더 준다.
-LINK_EXTRA = float(os.getenv("FEEDIT_CHAT_LINK_EXTRA") or 8.0)
+LINK_EXTRA = float(os.getenv("FEEDIT_CHAT_LINK_EXTRA") or 15.0)
 _URL = re.compile(r"https?://|\bwww\.[^\s]+", re.I)
-CALL_TIMEOUT = 20       # 한 번의 모델 호출 상한
+CALL_TIMEOUT = 30       # 한 번의 모델 호출 상한 (2026-09-18: 20 → 30, Terra·웹검색 여유)
 MIN_CALL = 2.5          # 이보다 적게 남으면 부르지 않는다 — 못 끝낼 호출은 기다림만 늘린다
 FINISH_MAX_TOKENS = 700 # 마무리 답변 길이 상한. 안 묶으면 쓰다가 끊긴다
 
