@@ -45,6 +45,12 @@ assert.match(cards[0].textContent,/159,000원/);
 assert.equal(cards[0].dataset.productUrl,'https://shop.example/51');
 assert.equal(document.getElementById('stItemCount').textContent,'1 ITEMS');
 assert.match(document.getElementById('stMore').textContent,/모든 상품/);
+assert.equal(document.getElementById('stMore').disabled,true);
+/* 기본 정렬은 FEEDiT 추천순이고, 추천순 최상단 상품에는 'FEEDiT Pick!' 라벨이 붙는다 */
+assert.equal(document.getElementById('stSort').dataset.sort,'recommend');
+assert.equal(document.getElementById('stSortLabel').textContent,'FEEDiT 추천순');
+assert.ok(document.getElementById('stSortInfoBtn'),'추천순 기준 설명 버튼이 있다');
+assert.match(cards[0].querySelector('.pickTag').textContent,/FEEDiT Pick!/);
 
 console.log('✅ 스타일 상세에 API 실상품 카드가 그려진다');
 process.exit(0);

@@ -140,6 +140,7 @@ export function itemCard(o){
     '<div class="itemFig">' +
       (img?'<img src="'+cardEsc(img)+'" alt="'+cardEsc(o.nm||'')+'" loading="lazy">':'<div class="itemNoImage">이미지 없음</div>') +
       (o.tag ? '<span class="matchTag">' + cardEsc(o.tag) + '</span>' : '') +
+      (o.pick ? '<span class="pickTag">FEEDiT Pick!</span>' : '') +
       (o.id ? '<button type="button" class="likeBtn' + (liked ? ' on' : '') + '" data-like-id="' + cardEsc(o.id) + '" aria-label="찜하기">' +
         '<svg viewBox="0 0 24 24"><path d="M12 21s-7.6-4.6-10.3-9.1C.2 9 1 5.5 4 4.1c2.4-1.1 5-.2 6.5 1.8L12 8l1.5-2.1c1.5-2 4.1-2.9 6.5-1.8 3 1.4 3.8 4.9 2.3 7.8C19.6 16.4 12 21 12 21z"/></svg></button>' : '') +
     '</div>' +

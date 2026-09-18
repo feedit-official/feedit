@@ -394,15 +394,18 @@
       </div></section>
       <section><div class="mwrap"><div class="stAbout" id="stAbout"></div></div></section>
       <section class="mSec" style="padding-bottom:clamp(40px,6vh,70px)"><div class="mwrap">
-        <div class="mSecHead"><div><h2 style="font-size:clamp(20px,2.2vw,30px)">Virtual Fitting</h2></div>
-          <span>Who wears it</span></div>
+        <div class="mSecHead"><div><h2 style="font-size:clamp(20px,2.2vw,30px)">Virtual Fitting</h2></div></div>
         <div class="infFeed" id="stInf"></div>
       </div></section>
       <section style="padding-bottom:clamp(60px,9vh,110px)"><div class="mwrap">
-        <div class="mSecHead"><div><h2 style="font-size:clamp(20px,2.2vw,30px)">이 스타일의 아이템</h2></div>
-          <span id="stItemCount">Items</span></div>
+        <div class="mSecHead"><div><h2 style="font-size:clamp(20px,2.2vw,30px)">이 스타일의 아이템 <span class="stItemCount" id="stItemCount">Items</span></h2></div>
+          <div class="stSortWrap" id="stSort" data-sort="recommend">
+            <button type="button" class="stSortBtn" id="stSortBtn" aria-haspopup="listbox" aria-expanded="false">
+              <span id="stSortLabel">FEEDiT 추천순</span><i class="stSortCaret" aria-hidden="true"></i></button>
+            <div class="stSortMenu" id="stSortMenu" role="listbox" aria-label="아이템 정렬"></div>
+          </div></div>
         <div class="itGrid" id="stItems"></div>
-        <div class="itMore" id="stMore">스크롤하면 더 불러옵니다</div>
+        <div class="itMoreWrap"><button type="button" class="itMore" id="stMore">더 보기</button></div>
       </div></section>
     </div>
   </section>

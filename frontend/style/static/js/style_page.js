@@ -1,10 +1,15 @@
 import { $, $$, HAS_A, aAnimate, aStagger } from '../../../core/static/js/dom.js';
 import { IMG, itemCard, STYLES } from '../../../home/static/js/chat.js';
-import { ST_ITEM_PAGE_SIZE, styleProductCard, styleProductsURL } from './products.js';
+import { ST_ITEM_PAGE_SIZE, ST_PICK_COUNT, ST_RECOMMEND_NOTE, ST_SORTS, styleProductCard, styleProductsURL } from './products.js';
 
 /* ── Style ──────────────────────────────────────────── */
 export var stShowI=0, stItemPage=0, stCur=null;
+let stSort='recommend';   /* 아이템 정렬 — 스타일에 들어갈 때마다 FEEDiT 추천순으로 돌아간다 */
+/* 'FEEDiT Pick!' — 그 스타일의 추천순 최상단 6개. 스타일마다 한 번 받아 두고,
+   다른 정렬로 바꿔도 같은 상품이면 라벨을 그대로 붙인다. */
+let stPicks=Promise.resolve(new Set());
 let stItemsLoading=false, stItemsDone=false, stItemsError=false, stRequestSeq=0;
+let stTotal=null;   /* 이 스타일의 전체 상품 수 — '더 보기 (24 / 312)' 에 쓴다 */
 /* 스타일 사진 — 전용 컷(ph)이 있으면 그걸 쓰고, 없으면 공용 라이브러리로 떨어진다 */
 export const SIMG=s=>s.ph||IMG(s.img);
 export function stBuild(){
@@ -39,9 +44,12 @@ export function stBuild(){
   $('#styleFitModal')&&$('#styleFitModal').addEventListener('click',e=>{
     if(e.target.id==='styleFitModal')stCloseFit();
   });
+  stSortBuild();
+  /* '더 보기' — 무한 스크롤 대신 누를 때만 다음 24개를 붙인다 */
   $('#stMore')&&$('#stMore').addEventListener('click',()=>{
-    if(!stItemsError)return;
-    stItemsError=false; stItemsDone=false; stMoreItems();
+    if(stItemsError){ stItemsError=false; stItemsDone=false }
+    else if(stItemsDone||stItemsLoading)return;
+    stMoreItems();
   });
 }
 /* '이 스타일 더 보기' — 스타일 상세로 이동하지 않고, 그 스타일의 Virtual Fitting
@@ -89,7 +97,7 @@ export function infCards(s){
 }
 export function stOpen(id){
   const s=STYLES.find(x=>x.id===id)||STYLES[0];
-  stCur=s; stItemPage=0; stItemsLoading=false; stItemsDone=false; stItemsError=false;
+  stCur=s; stSort='recommend'; stPicks=stLoadPicks(s.n); stTotal=null; stItemPage=0; stItemsLoading=false; stItemsDone=false; stItemsError=false;
   const requestSeq=++stRequestSeq;
   $('#styleHome').style.display='none'; $('#styleDetail').style.display='';
   $$('#stCats .stCat').forEach(b=>b.classList.toggle('on',b.dataset.style===s.id));
@@ -103,16 +111,95 @@ export function stOpen(id){
     '<div><dt>확산 계기</dt><dd>'+s.by+'</dd></div>'+
     '<div><dt>핵심 키워드</dt><dd>'+s.kw.join(' · ')+'</dd></div></dl>';
   $('#stInf').innerHTML=infCards(s);
+  stPaintSort();
   $('#stItems').innerHTML='<div class="itState">상품을 불러오는 중…</div>';
   $('#stItemCount').textContent='0 ITEMS';
   stMoreItems(requestSeq);
   if(HAS_A)aAnimate('#stHero .in',{opacity:[0,1],translateY:[22,0],duration:900,ease:'out(3)'});
   scrollTo(0,0);
 }
-function stMoreState(text,retry=false){
+/* 정렬 드롭다운 — 'FEEDiT 추천순' 줄에는 ⓘ 버튼을 달아 점수 기준을 펼쳐 보여 준다.
+   기본 select 로는 줄 안에 버튼을 넣을 수 없어 목록을 직접 그린다. */
+function stSortBuild(){
+  const wrap=$('#stSort'), btn=$('#stSortBtn'), menu=$('#stSortMenu');
+  if(!wrap||!btn||!menu)return;
+  /* 안내창은 ⓘ 가 있는 줄 안에 두고, ⓘ 왼쪽 아래로 펼친다 */
+  const info='<button type="button" class="stSortInfoBtn" id="stSortInfoBtn" aria-expanded="false"'+
+    ' aria-label="FEEDiT 추천순 기준 보기">i</button>'+
+    '<div class="stSortInfo" id="stSortInfo" role="tooltip" hidden>'+
+    ST_RECOMMEND_NOTE.join('<br>')+'</div>';
+  menu.innerHTML=ST_SORTS.map(([k,l])=>
+    '<div class="stSortRow'+(k==='recommend'?' hasInfo':'')+'">'+
+    (k==='recommend'?info:'')+
+    '<button type="button" class="stSortOpt" role="option" data-sort="'+k+'">'+l+'</button>'+
+    '</div>').join('');
+
+  btn.addEventListener('click',()=>stSortOpen(!wrap.classList.contains('open')));
+  menu.addEventListener('click',e=>{
+    const info=e.target.closest('.stSortInfoBtn');
+    if(info){   /* ⓘ 는 정렬을 고르는 것이 아니라 설명만 여닫는다 */
+      const box=$('#stSortInfo'), on=box.hasAttribute('hidden');
+      box.toggleAttribute('hidden',!on);
+      info.setAttribute('aria-expanded',String(on));
+      return;
+    }
+    const opt=e.target.closest('.stSortOpt');
+    if(!opt)return;
+    stSortOpen(false);
+    if(opt.dataset.sort===stSort)return;
+    stSort=opt.dataset.sort;
+    stResetItems();
+  });
+  /* 바깥을 누르면 닫힌다 */
+  addEventListener('click',e=>{ if(!e.target.closest('#stSort'))stSortOpen(false) });
+  addEventListener('keydown',e=>{ if(e.key==='Escape')stSortOpen(false) });
+  stPaintSort();
+}
+function stSortOpen(on){
+  const wrap=$('#stSort'), btn=$('#stSortBtn');
+  if(!wrap)return;
+  wrap.classList.toggle('open',on);
+  if(btn)btn.setAttribute('aria-expanded',String(on));
+  if(!on){
+    const box=$('#stSortInfo'), info=$('#stSortInfoBtn');
+    if(box)box.setAttribute('hidden','');
+    if(info)info.setAttribute('aria-expanded','false');
+  }
+}
+function stPaintSort(){
+  const wrap=$('#stSort'), label=$('#stSortLabel');
+  const cur=ST_SORTS.find(([k])=>k===stSort)||ST_SORTS[0];
+  if(wrap)wrap.dataset.sort=stSort;
+  if(label)label.textContent=cur[1];
+  $$('#stSortMenu .stSortOpt').forEach(b=>b.classList.toggle('on',b.dataset.sort===stSort));
+}
+function stLoadPicks(styleName){
+  return fetch(styleProductsURL(styleName,0,ST_PICK_COUNT,'recommend'))
+    .then(r=>r.ok?r.json():null)
+    .then(j=>new Set((j&&j.status==='ok'&&j.data&&Array.isArray(j.data.items)?j.data.items:[])
+      .slice(0,ST_PICK_COUNT).map(it=>styleProductCard(it,styleName).id)))
+    .catch(()=>new Set());   /* 라벨을 못 받아도 상품 목록은 그대로 보여 준다 */
+}
+/* 정렬을 바꾸면 이미 받은 카드를 비우고 첫 페이지부터 다시 받는다 */
+function stResetItems(){
+  if(!stCur)return;
+  stItemPage=0; stTotal=null; stItemsLoading=false; stItemsDone=false; stItemsError=false;
+  const requestSeq=++stRequestSeq;
+  stPaintSort();
+  $('#stItems').innerHTML='<div class="itState">상품을 불러오는 중…</div>';
+  $('#stItemCount').textContent='0 ITEMS';
+  stMoreItems(requestSeq);
+}
+function stMoreState(text,{retry=false,disabled=false}={}){
   const more=$('#stMore'); if(!more)return;
   more.textContent=text;
   more.classList.toggle('retry',retry);
+  more.disabled=disabled;
+}
+/* '더 보기 (24 / 312)' — 전체 개수를 모르면 개수 없이 '더 보기' 만 보여 준다 */
+function stMorePaint(loaded){
+  if(stItemsDone){ stMoreState('모든 상품을 불러왔습니다',{disabled:true}); return }
+  stMoreState('더 보기'+(stTotal?' ('+loaded+' / '+stTotal+')':''));
 }
 
 export async function stMoreItems(requestSeq=stRequestSeq){
@@ -123,12 +210,12 @@ export async function stMoreItems(requestSeq=stRequestSeq){
   stItemsLoading=true; stItemsError=false;
   stMoreState('상품을 불러오는 중…');
   try{
-    const res=await fetch(styleProductsURL(styleName,offset));
+    const [res,picks]=await Promise.all([fetch(styleProductsURL(styleName,offset,ST_ITEM_PAGE_SIZE,stSort)),stPicks]);
     const body=await res.text();
     if(!res.ok)throw new Error('HTTP '+res.status);
     let json;
     try{ json=JSON.parse(body) }catch(e){ throw new Error('JSON 응답이 아닙니다') }
-    if(requestSeq!==stRequestSeq||!stCur||stCur.n!==styleName)return;
+    if(requestSeq!==stRequestSeq||!stCur||stCur.n!==styleName)return;   /* 스타일·정렬이 바뀐 뒤 늦게 온 응답은 버린다 */
     if(json.status==='error')throw new Error(json.reason||'상품 API 오류');
 
     const items=json.status==='ok'&&json.data&&Array.isArray(json.data.items)
@@ -139,18 +226,22 @@ export async function stMoreItems(requestSeq=stRequestSeq){
       if(!host.querySelector('.itemCard')){
         host.innerHTML='<div class="itState">이 스타일 태그가 연결된 상품이 아직 없습니다.</div>';
       }
-      stMoreState('불러올 상품이 없습니다');
+      stMoreState('불러올 상품이 없습니다',{disabled:true});
       return;
     }
 
     const frag=document.createElement('div');
-    frag.innerHTML=items.map(item=>itemCard(styleProductCard(item,styleName))).join('');
+    frag.innerHTML=items.map(item=>{
+      const card=styleProductCard(item,styleName);
+      return itemCard({...card,pick:picks.has(card.id)});
+    }).join('');
     const els=[...frag.children]; els.forEach(el=>host.appendChild(el));
     stItemPage++;
+    if(Number.isFinite(json.data.total))stTotal=json.data.total;
     stItemsDone=json.data.has_more===false||items.length<ST_ITEM_PAGE_SIZE;
     const loaded=host.querySelectorAll('.itemCard').length;
-    $('#stItemCount').textContent=loaded+' ITEMS';
-    stMoreState(stItemsDone?'모든 상품을 불러왔습니다':'스크롤하면 더 불러옵니다');
+    $('#stItemCount').textContent=(stTotal||loaded)+' ITEMS';
+    stMorePaint(loaded);
     if(HAS_A)aAnimate(els,{opacity:[0,1],translateY:[18,0],duration:760,delay:aStagger(50),ease:'out(3)'});
   }catch(e){
     if(requestSeq!==stRequestSeq)return;
@@ -160,7 +251,7 @@ export async function stMoreItems(requestSeq=stRequestSeq){
       host.innerHTML='<div class="itState">상품을 불러오지 못했습니다.<br>'+
         String(e&&e.message||e).replace(/[<>&]/g,'')+'</div>';
     }
-    stMoreState('다시 시도',true);
+    stMoreState('다시 시도',{retry:true});
   }finally{
     if(requestSeq===stRequestSeq)stItemsLoading=false;
   }

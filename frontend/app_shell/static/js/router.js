@@ -6,7 +6,7 @@ import { mPaintVote, mVote, smBuild } from '../../../salmal/static/js/nav_widget
 import { prBuild } from '../../../pricing/static/js/pricing.js';
 import { renderDeck } from '../../../intro/static/js/deck.js';
 import { salmalBoot } from '../../../salmal/static/js/vote_app.js';
-import { stBuild, stItemPage, stMoreItems, stOpen, stOpenFit } from '../../../style/static/js/style_page.js';
+import { stBuild, stOpen, stOpenFit } from '../../../style/static/js/style_page.js';
 import { trBuild, trRender } from '../../../trend/static/js/dispatch.js';
 
 /* ============================================================
@@ -329,11 +329,4 @@ addEventListener('popstate', e=>{
   goView(st.view);
 });
 
-/* 아이템 무한 스크롤 */
-addEventListener('scroll',()=>{
-  if(!mainMode)return;
-  if(curView==='style'&&$('#styleDetail').style.display!=='none'){
-    const m=$('#stMore');
-    if(m&&m.getBoundingClientRect().top<innerHeight+240&&stItemPage<9)stMoreItems();
-  }
-},{passive:true});
+/* 아이템 목록은 '더 보기' 버튼으로 넘긴다 — 무한 스크롤은 걷어냈다(2026-09-18) */
