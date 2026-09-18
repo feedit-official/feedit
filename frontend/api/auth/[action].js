@@ -46,12 +46,7 @@ export default async function handler(req, res) {
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 10000);
-<<<<<<< Updated upstream
-    // ?id= · ?term= 같은 질의도 그대로 넘긴다 (예전에는 떨어져 weekly-videos?term 이 무시됐다)
-    const upstream = await fetch(`${base}/auth/${action}${url.search}`, {
-=======
     const upstream = await fetch(`${base}/auth/${action}${query}`, {
->>>>>>> Stashed changes
       method, headers, body, signal:controller.signal, redirect:'manual',
     });
     clearTimeout(timer);
