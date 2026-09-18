@@ -30,6 +30,7 @@ urlpatterns = [
     path("auth/event", activity_views.event, name="auth-event"),                    # 검색 · 챗봇 사용
     path("auth/vote", activity_views.vote, name="auth-vote"),                       # 살!말? 투표
     path("auth/vote-comment", activity_views.vote_comment, name="auth-vote-comment"),
+    path("auth/vote-report", activity_views.vote_report, name="auth-vote-report"),
     path("auth/saved", activity_views.saved, name="auth-saved"),                    # 찜 / 찜 해제
     path("auth/weekly-report", activity_views.weekly_report, name="auth-weekly-report"),
 

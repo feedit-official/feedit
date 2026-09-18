@@ -2,17 +2,34 @@
 
 from __future__ import annotations
 
+import json
+import math
+import re
+import secrets
 from datetime import timedelta
+from urllib.parse import urlsplit
 
+from django.db.models import Q
 from django.http import JsonResponse
 from django.utils import timezone
-from django.views.decorators.http import require_GET
+from django.views.decorators.http import require_http_methods
 
-from apps.core.models import AppUser, ProductSourceSnapshot, UserTaste, VoteBallot, VoteCard
+from apps.core.models import (
+    AppUser,
+    DictionaryTerm,
+    ProductSourceSnapshot,
+    UserTaste,
+    VoteBallot,
+    VoteCard,
+)
+
+from .salmal_storage import VoteImageError, delete_vote_image, upload_vote_image, vote_image_url
+
+VISIBLE_CARD_FILTER = Q(seed_key__startswith="youtube:") | Q(seed_key__startswith="user:")
 
 
-def _ok(data):
-    return JsonResponse({"status": "ok", "data": data})
+def _ok(data, status=200):
+    return JsonResponse({"status": "ok", "data": data}, status=status)
 
 
 def _error(reason, status=400):
@@ -23,6 +40,28 @@ def _profile(request):
     if not request.user.is_authenticated:
         return None
     return AppUser.objects.filter(user=request.user).first()
+
+
+def _request_data(request):
+    try:
+        data = json.loads(request.body.decode("utf-8") or "{}")
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _clean_text(value, limit):
+    return re.sub(r"\s+", " ", str(value or "")).strip()[:limit]
+
+
+def _close_expired_cards(now=None):
+    """마감 시각이 지난 진행 중 카드를 종료 상태로 동기화한다."""
+    now = now or timezone.now()
+    return VoteCard.objects.filter(
+        status=VoteCard.Status.ACTIVE,
+        closes_at__isnull=False,
+        closes_at__lte=now,
+    ).update(status=VoteCard.Status.CLOSED)
 
 
 def _comment_time(value):
@@ -148,9 +187,14 @@ def _card_payload(card, profile, tastes_by_user, taste_names_by_user):
     if snapshot:
         raw_price = snapshot["sale_price"] if snapshot["sale_price"] is not None else snapshot["list_price"]
         price = int(raw_price) if raw_price is not None else None
+    elif metadata.get("price") is not None:
+        try:
+            price = int(metadata["price"])
+        except (TypeError, ValueError):
+            price = None
     remaining = 0
     if card.status == VoteCard.Status.ACTIVE and card.closes_at:
-        remaining = max(1, int((card.closes_at - timezone.now()).total_seconds() // 3600))
+        remaining = max(1, math.ceil((card.closes_at - timezone.now()).total_seconds() / 3600))
     comments = []
     for comment in card.comments.filter(is_deleted=False).select_related("user", "user__user").order_by("-created_at"):
         user_meta = comment.user.profile_metadata or {}
@@ -179,6 +223,8 @@ def _card_payload(card, profile, tastes_by_user, taste_names_by_user):
         category = category or (
             source.source_category.source_category_name if source.source_category_id else None
         )
+    brand = brand or _clean_text(metadata.get("brand"), 120) or None
+    category = category or _clean_text(metadata.get("category"), 120) or None
     return {
         "id": card.id,
         "seed_key": card.seed_key,
@@ -187,7 +233,7 @@ def _card_payload(card, profile, tastes_by_user, taste_names_by_user):
         "brand": brand,
         "category": category,
         "price": price,
-        "image_url": card.image_url or (source.thumbnail_url if source else None),
+        "image_url": vote_image_url(card.image_url) or (source.thumbnail_url if source else None),
         "product_source_id": source.id if source else None,
         "product_url": source.product_url if source else None,
         "gender_target": card.gender_target,
@@ -207,16 +253,25 @@ def _card_payload(card, profile, tastes_by_user, taste_names_by_user):
         "taste_match_count": taste_match_count,
         "taste_match_tags": taste_match_tags,
         "my_choice": my_choice,
+        "mine": bool(profile and card.user_id == profile.id),
+        "deletable": bool(
+            profile
+            and card.user_id == profile.id
+            and str(card.seed_key or "").startswith("user:")
+        ),
         "comments": comments,
     }
 
 
-@require_GET
+@require_http_methods(["GET", "POST"])
 def cards(request):
+    _close_expired_cards()
+    if request.method == "POST":
+        return _create_card(request)
     profile = _profile(request)
     tab = (request.GET.get("tab") or "latest").strip().lower()
     queryset = (
-        VoteCard.objects.filter(seed_key__startswith="youtube:")
+        VoteCard.objects.filter(VISIBLE_CARD_FILTER)
         .select_related(
             "user",
             "user__user",
@@ -266,16 +321,120 @@ def cards(request):
     })
 
 
-@require_GET
+@require_http_methods(["GET", "DELETE"])
 def card(request, card_id):
+    _close_expired_cards()
     profile = _profile(request)
     row = (
-        VoteCard.objects.filter(id=card_id, seed_key__startswith="youtube:")
+        VoteCard.objects.filter(VISIBLE_CARD_FILTER, id=card_id)
         .select_related("user", "user__user", "product", "product__brand", "product__category", "product_source")
         .prefetch_related("ballots", "ballots__user", "comments", "comments__user", "comments__user__user")
         .first()
     )
     if row is None:
         return _error("카드를 찾지 못했습니다.", 404)
+    if request.method == "DELETE":
+        if profile is None:
+            return _error("로그인이 필요합니다.", 401)
+        if row.user_id != profile.id or not str(row.seed_key or "").startswith("user:"):
+            return _error("본인이 작성한 카드만 삭제할 수 있습니다.", 403)
+        try:
+            delete_vote_image(row.image_url)
+        except VoteImageError as exc:
+            return _error(str(exc), 502)
+        deleted_id = row.id
+        row.delete()
+        return _ok({"id": deleted_id, "deleted": True})
     tastes_by_user, taste_names_by_user = _taste_context([row], profile)
     return _ok(_card_payload(row, profile, tastes_by_user, taste_names_by_user))
+
+
+def _create_card(request):
+    if not request.user.is_authenticated:
+        return _error("로그인이 필요합니다.", 401)
+    data = _request_data(request)
+    if data is None:
+        return _error("요청 형식이 올바른 JSON이 아닙니다.")
+
+    title = _clean_text(data.get("title"), 300)
+    brand = _clean_text(data.get("brand"), 120)
+    description = _clean_text(data.get("description"), 1000)
+    if not title:
+        return _error("상품명을 입력해 주세요.")
+    if not brand:
+        return _error("브랜드를 입력해 주세요.")
+    try:
+        price = int(data.get("price"))
+    except (TypeError, ValueError):
+        return _error("가격은 숫자로 입력해 주세요.")
+    if price < 0 or price > 1_000_000_000:
+        return _error("가격은 0원 이상 10억원 이하로 입력해 주세요.")
+
+    raw_tags = data.get("tags") or []
+    if not isinstance(raw_tags, list) or len(raw_tags) > 3:
+        return _error("스타일 태그는 최대 3개까지 등록할 수 있습니다.")
+    tags = []
+    for value in raw_tags:
+        tag = _clean_text(value, 80)
+        if tag and tag not in tags:
+            tags.append(tag)
+    valid_tags = set(
+        DictionaryTerm.objects.filter(
+            status=DictionaryTerm.Status.ACTIVE,
+            term_type=DictionaryTerm.TermType.STYLE,
+            canonical_name__in=tags,
+        ).values_list("canonical_name", flat=True)
+    )
+    if set(tags) != valid_tags:
+        return _error("지원하지 않는 스타일 태그가 포함되어 있습니다.")
+
+    uploaded_image = None
+    image_url = None
+    image_data_url = str(data.get("image_data_url") or "").strip()
+    if image_data_url:
+        try:
+            uploaded_image = upload_vote_image(image_data_url)
+            image_url = uploaded_image.uri
+        except VoteImageError as exc:
+            return _error(str(exc), 502)
+    else:
+        external_image_url = _clean_text(data.get("image_url"), 2000)
+        if external_image_url:
+            parsed_image_url = urlsplit(external_image_url)
+            if (
+                parsed_image_url.scheme != "https"
+                or not parsed_image_url.netloc
+                or any(char in external_image_url for char in ('"', "'", "\\"))
+            ):
+                return _error("상품 이미지 주소는 안전한 HTTPS 주소만 사용할 수 있습니다.")
+            image_url = external_image_url
+
+    profile, _ = AppUser.objects.get_or_create(
+        user=request.user,
+        defaults={"nickname": request.user.first_name or request.user.username[:12]},
+    )
+    metadata = {"source": "USER", "brand": brand, "price": price}
+    if uploaded_image is not None:
+        metadata["image_s3_key"] = uploaded_image.key
+    try:
+        card = VoteCard.objects.create(
+            user=profile,
+            seed_key=f"user:{secrets.token_hex(16)}",
+            gender_target=profile.gender or None,
+            title=title,
+            description=description or None,
+            image_url=image_url,
+            tags=tags,
+            status=VoteCard.Status.ACTIVE,
+            closes_at=timezone.now() + timedelta(hours=48),
+            source_metadata=metadata,
+        )
+    except Exception:
+        if uploaded_image is not None:
+            try:
+                delete_vote_image(uploaded_image.uri)
+            except VoteImageError:
+                pass
+        raise
+    tastes_by_user, taste_names_by_user = _taste_context([card], profile)
+    return _ok(_card_payload(card, profile, tastes_by_user, taste_names_by_user), 201)

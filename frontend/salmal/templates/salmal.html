@@ -21,9 +21,9 @@
 
     <div class="smTabsRow">
       <div class="smTabs" id="smTabs">
-        <button class="on" data-tab="taste">내 취향</button>
-        <button data-tab="popular" class="">인기순</button>
+        <button class="on" data-tab="popular">인기순</button>
         <button data-tab="latest" class="">최신순</button>
+        <button data-tab="taste">내 취향</button>
         <button data-tab="closing">마감임박</button>
       </div>
       <button class="addItemBtn" id="addItemBtn">＋ 살까말까 물어보기</button>
@@ -125,7 +125,7 @@
         <div class="commentsList" id="commentsList"></div>
         <div class="commentForm">
           <div class="commentInputRow">
-            <textarea id="commentInput" placeholder="댓글을 남겨보세요"></textarea>
+            <textarea id="commentInput" maxlength="1000" placeholder="댓글을 남겨보세요"></textarea>
             <button class="commentSend" id="commentSend" aria-label="등록">→</button>
           </div>
         </div>

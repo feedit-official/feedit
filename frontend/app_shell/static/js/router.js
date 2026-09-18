@@ -201,8 +201,7 @@ document.addEventListener('click',e=>{
   const st=e.target.closest('[data-style]');
   if(st&&st.dataset.style)return goStyle(st.dataset.style);
   const v=e.target.closest('[data-v]');
-  /* data-sm 이 붙어 있으면 살!말? 로 갈 때 그 탭에서 시작한다 —
-     내 피드에서 넘어온 건 언제나 '내 취향' 이어야 하니까. */
+  /* data-sm 이 붙어 있으면 살!말? 로 갈 때 지정한 탭에서 시작한다. */
   if(v){
     /* 로그인·회원가입 링크는 href="#" 를 갖는다. 기본 앵커 이동을 그대로 두면
        goView 가 pushState 한 직후 빈 hash 기록이 하나 더 생기고, popstate 가 그
@@ -220,6 +219,8 @@ document.addEventListener('click',e=>{
 
 document.addEventListener('keydown',e=>{
   if(e.key!=='Enter'&&e.key!==' ')return;
+  const salmalCard=e.target.closest&&e.target.closest('[data-v="salmal"][data-sm]');
+  if(salmalCard){ e.preventDefault(); salmalCard.click(); return; }
   const product=e.target.closest&&e.target.closest('[data-product-url]');
   if(!product)return;
   e.preventDefault();

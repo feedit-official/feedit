@@ -1,4 +1,4 @@
-/* 살!말? 읽기 API를 Django로 중계한다. 세션 쿠키도 전달해 취향 태그를 적용한다. */
+/* 살!말? 조회·카드 생성을 Django로 중계한다. */
 import { backendBase, backendToken } from '../_lib/db.js';
 
 const ALLOWED = new Set(['cards']);
@@ -6,7 +6,8 @@ const ALLOWED = new Set(['cards']);
 export default async function handler(req, res) {
   const url = new URL(req.url, 'http://x');
   const action = url.pathname.replace(/^\/api\/salmal\//, '').split('/')[0];
-  if (!ALLOWED.has(action) || String(req.method || 'GET').toUpperCase() !== 'GET') {
+  const method = String(req.method || 'GET').toUpperCase();
+  if (!ALLOWED.has(action) || !['GET', 'POST', 'DELETE'].includes(method)) {
     return send(res, 404, { status:'error', reason:'없는 살말 주소입니다.', data:null });
   }
   const base = backendBase();
@@ -17,12 +18,21 @@ export default async function handler(req, res) {
   const token = backendToken();
   if (token) headers['X-FEEDiT-Token'] = token;
   if (req.headers.cookie) headers.Cookie = req.headers.cookie;
+  if (req.headers['x-csrftoken']) headers['X-CSRFToken'] = req.headers['x-csrftoken'];
+  if (req.headers.origin) headers.Origin = req.headers.origin;
+  if (req.headers.referer) headers.Referer = req.headers.referer;
+  let body;
+  if (method === 'POST') {
+    headers['Content-Type'] = 'application/json';
+    body = typeof req.body === 'string' ? req.body : JSON.stringify(req.body || {});
+  }
   const query = url.searchParams.toString();
+  const upstreamPath = url.pathname.replace(/^\/api/, '');
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 10000);
-    const upstream = await fetch(`${base}/salmal/cards${query ? `?${query}` : ''}`, {
-      headers, signal:controller.signal,
+    const upstream = await fetch(`${base}${upstreamPath}${query ? `?${query}` : ''}`, {
+      method, headers, body, signal:controller.signal, redirect:'manual',
     });
     clearTimeout(timer);
     return sendText(res, upstream.status, await upstream.text());

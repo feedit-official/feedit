@@ -92,7 +92,10 @@
 .cardMenuBtn:hover{transform:scale(1.08);color:var(--pink-0);background:#fff}
 .modalFig .modalMenuBtn{position:absolute;right:14px;top:14px;z-index:4}
 .voteCard .body{padding:19px 20px 21px}
-.voteCard h4{font-size:15px;font-weight:600;letter-spacing:-.03em;margin-bottom:5px}
+.voteCard h4{
+  font-size:15px;font-weight:600;letter-spacing:-.03em;margin-bottom:5px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
 .voteCard .cap{
   font-family:var(--num);font-size:10.5px;letter-spacing:.14em;color:var(--pink-2);
   text-transform:uppercase;margin-bottom:16px;font-feature-settings:'tnum' 1,'zero' 0;
@@ -118,10 +121,14 @@
      달려 있어 신호가 늦게 오면(스프링 정착 지연, 2026-09 실측) 그 사이 글씨가
      칸 안에 파묻혀 있다가 뒤늦게 튀어나오는 것처럼 보였다. 타이밍에 기대지 않고
      항상 켜 두면 어떤 순간에 봐도 절대 안 묻힌다. */
-  overflow:visible;position:relative;z-index:2;
+  /* 막대 조각 자체는 stacking context를 만들지 않는다. 그래야 양쪽 라벨의
+     z-index가 전체 게이지를 기준으로 적용돼 반대편 색상 위에서도 보인다. */
+  overflow:visible;position:relative;z-index:auto;
 }
 .smBar i > span{position:absolute;top:50%;transform:translateY(-50%);z-index:3}
-.smBar .buy{background:var(--coral);color:#fff;justify-content:flex-start;flex:0 0 auto}
+.smBar .buy{
+  background:var(--coral);color:#fff;justify-content:flex-start;flex:0 0 auto;
+}
 .smBar .buy > span{left:13px}
 /* .no 는 애니메이션으로 폭을 직접 받지 않는다 — flex:1 로 .buy 가 차지하고 남은
    자리를 통째로 먹는다. 그래야 두 조각의 폭 합이 프레임마다 항상 정확히 100%다. */

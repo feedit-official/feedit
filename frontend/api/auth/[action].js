@@ -4,7 +4,7 @@ import { backendBase, backendToken } from '../_lib/db.js';
 
 const ALLOWED = new Set(['me', 'signup', 'login', 'logout', 'profile', 'weekly-videos', 'google', 'google-signup',
   // 활동 기록 · 금주의 리포트 (backend/apps/api/activity_views.py)
-  'event', 'vote', 'saved', 'weekly-report']);
+  'event', 'vote', 'vote-comment', 'vote-report', 'saved', 'weekly-report']);
 
 export default async function handler(req, res) {
   const url = new URL(req.url, 'http://x');
@@ -16,7 +16,7 @@ export default async function handler(req, res) {
   });
 
   const method = String(req.method || 'GET').toUpperCase();
-  if (!['GET', 'POST'].includes(method)) {
+  if (!['GET', 'POST', 'DELETE'].includes(method)) {
     return send(res, 405, { status:'error', reason:'지원하지 않는 요청 방식입니다.', data:null });
   }
   const headers = { Accept:'application/json' };
@@ -30,7 +30,7 @@ export default async function handler(req, res) {
   if (req.headers.origin) headers.Origin = req.headers.origin;
   if (req.headers.referer) headers.Referer = req.headers.referer;
   let body;
-  if (method === 'POST') {
+  if (method === 'POST' || method === 'DELETE') {
     headers['Content-Type'] = 'application/json';
     body = typeof req.body === 'string' ? req.body : JSON.stringify(req.body || {});
   }

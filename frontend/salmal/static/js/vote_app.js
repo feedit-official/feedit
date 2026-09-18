@@ -4,7 +4,7 @@ import { rkClamp, rkRingHTML } from '../../../account/static/js/rank.js';
 import { jobBadgeHTML, jobShown } from '../../../account/static/js/job.js';
 import { smBarFill, smBarLabels } from '../../../trend/static/js/discount_resale.js';
 import { STYLES } from '../../../home/static/js/chat.js';
-import { saveVote, saveVoteComment } from '../../../account/static/js/account_api.js';
+import { createVoteCard, deleteVoteCard, deleteVoteComment, reportVoteTarget, saveVote, saveVoteComment } from '../../../account/static/js/account_api.js';
 
 /* ══════════════ 살!말? (feedit-salmal_2 이식) ══════════════
    이름 충돌을 막기 위해 통째로 자기 범위 안에서 돌린다. */
@@ -39,6 +39,8 @@ function cardFromApi(card,i){
     youtubeId:source.video_id||'', upload_date:source.upload_date||'',
     productSourceId:card.product_source_id,
     closed:Boolean(card.closed), st:Array.isArray(card.style_tags)?card.style_tags:[],
+    mine:Boolean(card.mine),
+    deletable:Boolean(card.deletable),
     authorNote:{name:card.author?.name||'FEEDiT 사용자',text:card.author?.story||card.description||''},
     voted:card.my_choice==='BUY'?0:card.my_choice==='PASS'?1:null,
     comments:(card.comments||[]).map(comment=>({
@@ -62,6 +64,29 @@ async function loadVotes(){
   VOTES=[...unique.values()].map(cardFromApi);
   BRAND_LIST=[...new Set(VOTES.map(v=>v.b))].sort();
 }
+
+/* 페이지를 계속 열어 둔 상태에서도 마감 시간이 지나면 즉시 종료 영역으로 옮긴다. */
+function syncExpiredCards(){
+  const now=Date.now();
+  let changed=false;
+  VOTES.forEach(v=>{
+    if(v.closed||!Number.isFinite(v.closesAt))return;
+    const remaining=v.closesAt-now;
+    if(remaining<=0){
+      v.closed=true;
+      v.hours=0;
+      changed=true;
+      return;
+    }
+    const hours=Math.max(1,Math.ceil(remaining/3600000));
+    if(v.hours!==hours){ v.hours=hours; changed=true; }
+  });
+  if(changed){
+    if(modalState.i!==null) updateModalVote();
+    renderGrid();
+    renderClosedGrid();
+  }
+}
 const TONE_PALETTE=[['#332e2a','#75695c'],['#2c2c2e','#5f5f63'],['#302f2c','#6a655c'],
   ['#2b2c2d','#585d60'],['#33322d','#736c5e'],['#2e2a2c','#5c5459']];
 const randomTone=()=>TONE_PALETTE[Math.floor(Math.random()*TONE_PALETTE.length)];
@@ -73,7 +98,7 @@ const fmtHours=h=>Number.isFinite(h)?(h>=24?Math.round(h/24)+'일':h+'시간'):'
 const fmtNum=n=>n.toLocaleString('ko-KR');
 /* 등록할 때 고른 스타일 이름 — 고르지 않았으면 빈 문자열 */
 const styleNameOf=v=>(v&&Array.isArray(v.st)?v.st:[])
-  .map(id=>STYLES.find(x=>x.id===id)?.n||id).filter(Boolean).join(' · ');
+  .map(id=>STYLES.find(x=>x.id===id)?.n||id).find(Boolean)||'';
 const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
 /* 비슷한 사용자들의 살 비율. 표본이 없으면 null — 숫자를 만들어 내지 않는다. */
 const simA=v=>v.simHas?v.simPct:null;
@@ -170,10 +195,10 @@ function cardHTML(i){
       <div class="plate" style="${plateStyle(v)}"></div>
       <div class="vig"></div>
       <span class="pricep">${fmtWon(v.p)}</span>
-      <span class="tagp"><b>${v.b}</b></span>
+      <span class="tagp"><b>${escapeHtml(v.b)}</b></span>
     </div>
     <div class="body">
-      <h4>${v.t}</h4>
+      <h4>${escapeHtml(v.t)}</h4>
       <div class="cap">${capText}</div>
       <div class="smBar"><i class="buy" data-w="${v.a}" style="width:${v.a}%"><span>살 ${v.a}%</span></i><i class="no" data-w="${100-v.a}" style="width:${100-v.a}%"><span>${100-v.a}% 말</span></i></div>
       ${btnsHTML}
@@ -182,7 +207,7 @@ function cardHTML(i){
 }
 
 const PAGE_SIZE=8;
-const state={tab:'taste', page:1};
+const state={tab:'popular', page:1};
 
 function renderGrid(){
   const order=orderFor(state.tab);
@@ -363,6 +388,18 @@ let ctxTarget=null; /* {type:'card', i} | {type:'comment', i, commentId} */
 function openCtxMenu(triggerEl, target){
   ctxTarget=target;
   const menu=$('#ctxMenu');
+  const deleteButton=$('[data-action="delete"]',menu);
+  const reportButton=$('[data-action="report"]',menu);
+  if(target.type==='card'){
+    const mine=Boolean(VOTES[target.i]?.mine);
+    deleteButton.hidden=!VOTES[target.i]?.deletable;
+    reportButton.hidden=mine;
+  }else{
+    const comment=VOTES[target.i]?.comments.find(item=>item.id===target.commentId);
+    const mine=Boolean(comment?.me);
+    deleteButton.hidden=!mine;
+    reportButton.hidden=mine;
+  }
   const r=triggerEl.getBoundingClientRect();
   const mw=menu.offsetWidth||150, mh=menu.offsetHeight||90;
   const vw=window.innerWidth, vh=window.innerHeight, pad=10;
@@ -378,27 +415,43 @@ function closeCtxMenu(){
   $('#ctxMenu').classList.remove('on');
   ctxTarget=null;
 }
-function deleteCard(i){
-  VOTES[i].deleted=true;
-  if(modalState.i===i) closeModal();
-  if(VOTES[i].closed){ renderClosedGrid(); }
-  else renderGrid();
-  showToast('게시글이 삭제됐어요.');
+async function deleteCard(i){
+  if(!VOTES[i]?.deletable){ showToast('직접 등록한 내 카드만 삭제할 수 있어요.'); return; }
+  try{
+    await deleteVoteCard(VOTES[i].id);
+    VOTES[i].deleted=true;
+    if(modalState.i===i) closeModal();
+    if(VOTES[i].closed){ renderClosedGrid(); }
+    else renderGrid();
+    showToast('게시글이 삭제됐어요.');
+  }catch(error){ showToast(error.message||'카드를 삭제하지 못했습니다.'); }
 }
-function deleteComment(i,commentId){
+async function deleteComment(i,commentId){
   if(i===null)return;
-  VOTES[i].comments=VOTES[i].comments.filter(c=>c.id!==commentId);
-  renderComments();
-  showToast('댓글이 삭제됐어요.');
+  const comment=VOTES[i]?.comments.find(c=>c.id===commentId);
+  if(!comment?.me){ showToast('내가 작성한 댓글만 삭제할 수 있어요.'); return; }
+  try{
+    await deleteVoteComment(commentId);
+    VOTES[i].comments=VOTES[i].comments.filter(c=>c.id!==commentId);
+    if(modalState.i===i)renderComments();
+    showToast('댓글이 삭제됐어요.');
+  }catch(error){ showToast(error.message||'댓글을 삭제하지 못했습니다.'); }
 }
 $$('#ctxMenu button').forEach(btn=>{
-  btn.addEventListener('click',()=>{
+  btn.addEventListener('click',async()=>{
     const action=btn.dataset.action;
     const target=ctxTarget;
     closeCtxMenu();
     if(!target)return;
     if(action==='report'){
-      showToast(target.type==='card' ? '신고가 접수됐어요. 검토 후 조치할게요.' : '댓글 신고가 접수됐어요.');
+      const targetType=target.type==='card'?'CARD':'COMMENT';
+      const targetId=target.type==='card'?VOTES[target.i]?.id:target.commentId;
+      try{
+        const saved=await reportVoteTarget({targetType,targetId});
+        showToast(saved?.created
+          ? (targetType==='CARD'?'카드 신고가 접수됐어요.':'댓글 신고가 접수됐어요.')
+          : '이미 접수한 신고예요.');
+      }catch(error){ showToast(error.message||'신고를 접수하지 못했습니다.'); }
       return;
     }
     if(action==='delete'){
@@ -434,16 +487,30 @@ $('#modalMenuBtn').addEventListener('click',e=>{
 /* ============================================================
    상세 모달 — 이미지 · 투표현황(전체/유사세그먼트) · 댓글 · AI 리포트
    ============================================================ */
-const modalState={i:null};
+const modalState={i:null,version:0};
+const pendingCommentCards=new Set();
 
 function escapeHtml(s){
   return s.replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 }
 
+function resetCommentComposer(card=null){
+  const input=$('#commentInput');
+  const sendButton=$('#commentSend');
+  const isClosed=Boolean(card?.closed);
+  const isPending=Boolean(card&&pendingCommentCards.has(card.id));
+  input.value='';
+  input.disabled=isClosed||isPending;
+  sendButton.disabled=isClosed||isPending;
+  input.placeholder=isClosed?'마감된 투표에는 댓글을 달 수 없어요':'댓글을 남겨보세요';
+}
+
 function openModal(i){
   if(!requireAuth())return;
+  modalState.version+=1;
   modalState.i=i;
   const v=VOTES[i];
+  resetCommentComposer(v);
   const plate=$('#modalPlate');
   if(v.imgURL){
     plate.style.background='';
@@ -473,7 +540,9 @@ function openModal(i){
 function closeModal(){
   $('#modalOverlay').classList.remove('on');
   document.body.style.overflow='';
+  modalState.version+=1;
   modalState.i=null;
+  resetCommentComposer();
   closeAiModal();
 }
 
@@ -553,19 +622,39 @@ function renderComments(){
 
 async function sendComment(){
   const i=modalState.i; if(i===null)return;
+  const modalVersion=modalState.version;
+  if(!requireAuth())return;
+  const card=VOTES[i];
+  if(card.closed){ showToast('마감된 투표에는 댓글을 달 수 없어요.'); return; }
   const ta=$('#commentInput');
+  const sendButton=$('#commentSend');
   const text=ta.value.trim();
   if(!text)return;
+  const cardId=card.id;
+  if(pendingCommentCards.has(cardId))return;
+  pendingCommentCards.add(cardId);
+  ta.disabled=true;
+  sendButton.disabled=true;
   try{
-    const saved=await saveVoteComment({cardId:VOTES[i].id,content:text});
-    VOTES[i].comments.unshift({
+    const saved=await saveVoteComment({cardId,content:text});
+    card.comments.unshift({
       name:'나',rk:ME.rank,job:jobShown(ME)||'Basic',me:true,text,time:'1시간 전',
       tag:saved?.choice==='BUY'?0:saved?.choice==='PASS'?1:null,id:saved?.id||nextCommentId()
     });
-    ta.value='';
-    renderComments();
-    $('#commentsList').scrollTop=0;
+    if(modalState.i!==null && VOTES[modalState.i].id===cardId){
+      if(modalState.version===modalVersion)ta.value='';
+      renderComments();
+      $('#commentsList').scrollTop=0;
+    }
   }catch(error){ showToast(error.message||'댓글을 저장하지 못했습니다.'); }
+  finally{
+    pendingCommentCards.delete(cardId);
+    if(modalState.i!==null && VOTES[modalState.i].id===cardId){
+      ta.disabled=false;
+      sendButton.disabled=false;
+      ta.focus();
+    }
+  }
 }
 
 /* 모달 내 정적 요소 바인딩 (한 번만) */
@@ -617,7 +706,7 @@ window.addEventListener('resize',()=>{ if($('#aiChatBubble').classList.contains(
 
 $('#commentSend').addEventListener('click',sendComment);
 $('#commentInput').addEventListener('keydown',e=>{
-  if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); sendComment(); }
+  if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){ e.preventDefault(); sendComment(); }
 });
 
 /* ── 탭 전환 ─────────────────────────────────────────── */
@@ -667,8 +756,8 @@ const brandCombo=(function(){
   }
   function paint(){
     list.innerHTML=shown.map((b,i)=>
-      '<li role="option" class="cComboItem'+(i===cursor?' on':'')+'" data-brand="'+b.replace(/"/g,'&quot;')+'"'+
-      ' aria-selected="'+(i===cursor)+'">'+b+'</li>').join('');
+      '<li role="option" class="cComboItem'+(i===cursor?' on':'')+'" data-brand="'+escapeHtml(b)+'"'+
+      ' aria-selected="'+(i===cursor)+'">'+escapeHtml(b)+'</li>').join('');
   }
   function show(q){
     shown=match(q);
@@ -713,6 +802,7 @@ const brandCombo=(function(){
 })();
 
 let createImgURL=null;
+let createImgFile=null;
 /* 스타일 드롭다운 — 스타일 페이지와 같은 핵심 스타일 10종을 그대로 쓴다 */
 (function fillStyleSelect(){
   const sel=$('#cStyle'); if(!sel)return;
@@ -727,6 +817,7 @@ function resetCreateForm(){
   $('#cNote').value='';
   $('#imgInput').value='';
   if(createImgURL){ URL.revokeObjectURL(createImgURL); createImgURL=null; }
+  createImgFile=null;
   $('#imgPreview').hidden=true;
   $('#imgPreview').src='';
   $('#imgDropInner').style.display='';
@@ -745,6 +836,7 @@ function openCreateModal(draft){
     }
     if(draft.image){
       createImgURL=String(draft.image);
+      createImgFile=null;
       $('#imgPreview').src=createImgURL;
       $('#imgPreview').hidden=false;
       $('#imgDropInner').style.display='none';
@@ -766,7 +858,18 @@ $('#imgDrop').addEventListener('click',()=>$('#imgInput').click());
 $('#imgInput').addEventListener('change',e=>{
   const file=e.target.files[0];
   if(!file)return;
+  if(!['image/jpeg','image/png','image/webp'].includes(file.type)){
+    e.target.value='';
+    showToast('JPEG, PNG, WebP 이미지만 등록할 수 있어요.');
+    return;
+  }
+  if(file.size>1024*1024){
+    e.target.value='';
+    showToast('이미지는 1MB 이하만 등록할 수 있어요.');
+    return;
+  }
   if(createImgURL) URL.revokeObjectURL(createImgURL);
+  createImgFile=file;
   createImgURL=URL.createObjectURL(file);
   const img=$('#imgPreview');
   img.src=createImgURL;
@@ -779,7 +882,14 @@ $('#cPrice').addEventListener('input',()=>{
   $('#cPrice').value=$('#cPrice').value.replace(/[^0-9]/g,'');
 });
 
-$('#createSubmit').addEventListener('click',()=>{
+const fileDataUrl=file=>new Promise((resolve,reject)=>{
+  const reader=new FileReader();
+  reader.onload=()=>resolve(String(reader.result||''));
+  reader.onerror=()=>reject(new Error('이미지 파일을 읽지 못했습니다.'));
+  reader.readAsDataURL(file);
+});
+
+$('#createSubmit').addEventListener('click',async()=>{
   const title=$('#cTitle').value.trim();
   const brand=$('#cBrand').value.replace(/\s+/g,' ').trim();
   const priceRaw=$('#cPrice').value.trim();
@@ -790,27 +900,33 @@ $('#createSubmit').addEventListener('click',()=>{
   if(!brand){ showToast('브랜드를 입력해주세요'); return; }
   if(!priceRaw){ showToast('가격을 입력해주세요'); return; }
 
-  const seq=VOTES.length?VOTES[VOTES.length-1].seq+1:0;
-  const item={
-    t:title, b:brand, p:parseInt(priceRaw,10),
-    base:50, a:50, votes:0, hours:48, taste:50,
-    simHas:false, simPct:null, simUsers:0,
-    simReason:'방금 올린 고민이라 아직 투표가 없습니다.',
-    tasteMatch:0, tasteTags:[],
-    tone:randomTone(), voted:null, comments:[], closed:false, seq,
-    imgURL:createImgURL||null,
-    st:style?[style]:[],
-    authorNote: note ? {name:'나', text:note} : null
-  };
-  createImgURL=null; /* 소유권을 item으로 넘겨 reset 시 URL이 해제되지 않도록 함 */
-  VOTES.push(item);
-
-  closeCreateModal();
-  showToast('살까말까 물어보기 등록 완료!');
-
-  state.tab='latest'; state.page=1;
-  $$('#smTabs button').forEach(b=>b.classList.toggle('on', b.dataset.tab==='latest'));
-  renderGrid();
+  const submit=$('#createSubmit');
+  submit.disabled=true;
+  const originalText=submit.textContent;
+  submit.textContent='등록 중...';
+  try{
+    const styleName=STYLES.find(item=>item.id===style)?.n||'';
+    const imageData=createImgFile?await fileDataUrl(createImgFile):'';
+    const externalImage=!createImgFile&&createImgURL&&!createImgURL.startsWith('blob:')?createImgURL:'';
+    const saved=await createVoteCard({
+      title,brand,price:parseInt(priceRaw,10),description:note,
+      tags:styleName?[styleName]:[],image_data_url:imageData,image_url:externalImage
+    });
+    VOTES.push(cardFromApi(saved,VOTES.length));
+    if(!BRAND_LIST.includes(brand)) BRAND_LIST.push(brand);
+    BRAND_LIST.sort();
+    closeCreateModal();
+    resetCreateForm();
+    showToast('살까말까 물어보기 등록 완료!');
+    state.tab='latest'; state.page=1;
+    $$('#smTabs button').forEach(b=>b.classList.toggle('on',b.dataset.tab==='latest'));
+    renderGrid();
+  }catch(error){
+    showToast(error.message||'카드를 저장하지 못했습니다.');
+  }finally{
+    submit.disabled=false;
+    submit.textContent=originalText;
+  }
 });
 
 /* ── 실시간 인원 카운터 미세 변동 ────────────────────── */
@@ -830,8 +946,10 @@ setInterval(()=>{
 /* ── 초기 렌더 ───────────────────────────────────────── */
 $('#voteGrid').innerHTML='<div class="smDataState">살!말? 데이터를 불러오는 중이에요.</div>';
 loadVotes().then(()=>{
+  syncExpiredCards();
   renderGrid();
   renderClosedGrid();
+  setInterval(syncExpiredCards,30000);
 }).catch(error=>{
   $('#voteGrid').innerHTML=`<div class="smDataState">${escapeHtml(error.message||'살!말? 데이터를 불러오지 못했습니다.')}</div>`;
   $('#closedGrid').innerHTML='';

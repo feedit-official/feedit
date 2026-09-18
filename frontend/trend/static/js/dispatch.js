@@ -626,7 +626,7 @@ export function trRender(id){
        매칭 이유와 태그만 카드 바깥의 내 취향 전용 정보로 덧붙인다. */
     const salCard=p=>
       '<div class="tpPickWrap">'+
-        '<article class="voteCard in">'+
+        '<article class="voteCard in" role="button" tabindex="0" data-v="salmal" data-sm="taste">'+
           '<div class="fig">'+
             '<div class="plate" style="background-image:url('+p.imgURL+');background-size:cover;background-position:center"></div>'+
             '<div class="vig"></div>'+

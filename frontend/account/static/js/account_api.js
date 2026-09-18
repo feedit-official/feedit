@@ -3,14 +3,14 @@
 let csrfToken = '';
 let sessionPromise = null;
 
-async function request(path, { method='GET', body, bootstrap=true } = {}) {
+async function request(path, { method='GET', body, bootstrap=true, base='/api/auth/' } = {}) {
   if (method !== 'GET' && bootstrap && !csrfToken) await session();
   const headers = { Accept:'application/json' };
   if (body !== undefined) headers['Content-Type'] = 'application/json';
   if (method !== 'GET' && csrfToken) headers['X-CSRFToken'] = csrfToken;
   let response;
   try {
-    response = await fetch('/api/auth/' + path, {
+    response = await fetch(base + path, {
       method,
       credentials:'same-origin',
       headers,
@@ -76,6 +76,21 @@ export const saveVote = ({ cardKey, title = '', brand = '', style = '', choice =
 
 export const saveVoteComment = ({ cardId, content }) =>
   request('vote-comment', { method:'POST', body:{ card_id:cardId, content } });
+
+export const deleteVoteComment = commentId =>
+  request('vote-comment', { method:'DELETE', body:{ comment_id:commentId } });
+
+export const reportVoteTarget = ({ targetType, targetId, reason='' }) =>
+  request('vote-report', {
+    method:'POST',
+    body:{ target_type:targetType, target_id:targetId, reason },
+  });
+
+export const createVoteCard = data =>
+  request('cards', { method:'POST', body:data, base:'/api/salmal/' });
+
+export const deleteVoteCard = cardId =>
+  request(`cards/${cardId}`, { method:'DELETE', body:{}, base:'/api/salmal/' });
 
 export const saveLiked = ({ itemId, liked, name = '', brand = '', style = '' }) =>
   quiet(request('saved', { method:'POST', body:{ item_id:itemId, liked, name, brand, style } }));

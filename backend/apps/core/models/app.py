@@ -523,6 +523,73 @@ class VoteComment(models.Model):
         return f"{self.card} / {self.user}"
 
 
+class VoteReport(models.Model):
+    """살말 카드 또는 댓글에 접수된 사용자 신고 기록."""
+
+    class TargetType(models.TextChoices):
+        CARD = "CARD", "카드"
+        COMMENT = "COMMENT", "댓글"
+
+    class Status(models.TextChoices):
+        PENDING = "PENDING", "검토 대기"
+        REVIEWED = "REVIEWED", "검토 완료"
+        DISMISSED = "DISMISSED", "기각"
+
+    reporter = models.ForeignKey(
+        AppUser,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="vote_reports",
+        verbose_name="신고자",
+    )
+    target_type = models.CharField(max_length=10, choices=TargetType.choices, verbose_name="신고 대상")
+    target_id = models.PositiveBigIntegerField(verbose_name="신고 대상 ID")
+    card = models.ForeignKey(
+        VoteCard,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="reports",
+        verbose_name="대상 카드",
+    )
+    comment = models.ForeignKey(
+        VoteComment,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="reports",
+        verbose_name="대상 댓글",
+    )
+    reason = models.CharField(max_length=500, blank=True, default="", verbose_name="신고 사유")
+    target_snapshot = models.JSONField(default=dict, blank=True, verbose_name="대상 스냅샷")
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.PENDING,
+        verbose_name="처리 상태",
+    )
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="신고일시")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="수정일시")
+
+    class Meta:
+        db_table = '"app"."vote_report"'
+        verbose_name = "살말 신고"
+        verbose_name_plural = "살말 신고"
+        indexes = [
+            models.Index(fields=["target_type", "target_id"], name="idx_vote_report_target"),
+            models.Index(fields=["status", "-created_at"], name="idx_vote_report_status"),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["reporter", "target_type", "target_id"],
+                name="uq_vote_report_target",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.get_target_type_display()} #{self.target_id} / {self.get_status_display()}"
+
+
 class ChatSession(models.Model):
     """
     사용자와 AI 챗봇의 대화 세션.
