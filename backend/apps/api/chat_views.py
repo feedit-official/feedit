@@ -35,7 +35,11 @@ from django.db.models import Q
 from django.http import JsonResponse
 from django.views.decorators.http import require_http_methods
 
-from apps.core.models import ChatMessage, ChatSession
+from datetime import timedelta
+
+from django.utils import timezone
+
+from apps.core.models import ChatMessage, ChatSession, UserEvent
 
 from .activity_views import _body, _error, _login_profile, _text
 
@@ -164,6 +168,34 @@ def _write_turn(session, turn_in):
     return user_msg.id, ai_msg.id
 
 
+def _record_answer_time(profile, session, answer_ms):
+    """금주의 리포트 '챗봇 사용 시간'용 — 이 질문의 CHAT 이벤트에 응답 시간을 붙인다.
+
+    질문할 때 프론트가 /api/auth/event(CHAT) 로 남긴 행(at = 질문 시각)을 찾아 answer_ms 를 채운다.
+    그 행이 없으면(기록 요청이 실패했으면) 질문 시각으로 되짚어 새로 만든다.
+    user_event 는 대화방을 지워도 남으므로 사용 시간 누적이 유지된다 (activity._chat_block).
+    """
+    try:
+        ms = int(answer_ms)
+    except (TypeError, ValueError):
+        return
+    ms = max(0, min(ms, 3 * 60 * 1000))
+    conv = (session.context or {}).get("conversation_id")
+    ev = (UserEvent.objects.filter(user=profile, event_type=UserEvent.EventType.CHAT,
+                                   metadata__conversation_id=conv,
+                                   created_at__gte=timezone.now() - timedelta(minutes=10))
+          .order_by("-created_at").first())
+    # 이 대화의 가장 최근 질문 기록이 아직 응답 시간이 없을 때만 그 행이 '이번 질문'이다
+    if ev is not None and "answer_ms" not in (ev.metadata or {}):
+        meta = dict(ev.metadata or {}); meta["answer_ms"] = ms; meta["chat_session_id"] = session.id
+        UserEvent.objects.filter(id=ev.id).update(metadata=meta)
+        return
+    ev = UserEvent.objects.create(user=profile, event_type=UserEvent.EventType.CHAT,
+                                  metadata={"conversation_id": conv, "chat_session_id": session.id,
+                                            "answer_ms": ms})
+    UserEvent.objects.filter(id=ev.id).update(created_at=timezone.now() - timedelta(milliseconds=ms))
+
+
 @require_http_methods(["GET", "POST", "DELETE"])
 def chats(request):
     profile = _login_profile(request)
@@ -209,6 +241,7 @@ def chats(request):
         if op == "turn":
             s = _get_or_create(profile, mode, key, data.get("title"))
             uid, aid = _write_turn(s, data)
+            _record_answer_time(profile, s, data.get("answer_ms"))
             return JsonResponse({"status": "ok", "data": {"session": _session_row(s),
                                                           "user_message_id": uid, "ai_message_id": aid}})
         if op == "import":

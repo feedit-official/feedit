@@ -48,6 +48,31 @@ class WeeklyReportTest(unittest.TestCase):
         c = build_weekly_report([], sessions, NOW)["chat"]
         self.assertEqual((c["minutes"], c["sessions"], c["avg_minutes"]), (13, 2, 6))
 
+    def test_chat_minutes_from_turns_not_session_span(self):
+        """월요일에 묻고 일요일에 한 번 더 물어도 6일이 아니다 — 질문·응답·읽기 시간만 센다."""
+        mon = datetime(2026, 9, 14, 10, 0, tzinfo=KST)
+        chat = lambda at, ms, conv="c1": {"type": "CHAT", "at": at, "meta": {"conversation_id": conv, "answer_ms": ms}, "style": None}
+        events = [chat(mon, 20_000),
+                  chat(mon + timedelta(minutes=3), 40_000),          # 앞 답 끝나고 2분 40초 뒤 → 이어서 셈
+                  chat(mon + timedelta(days=3), 30_000)]             # 3일 뒤 → 공백은 안 셈
+        sessions = [{"started_at": mon, "updated_at": mon + timedelta(days=3)}]
+        c = build_weekly_report(events, sessions, NOW)["chat"]
+        # 첫 묶음 10:00:00 ~ 10:03:40 = 220초, 둘째 30초 → 250초 ≈ 4분
+        self.assertEqual((c["minutes"], c["sessions"]), (4, 1))
+
+    def test_chat_minutes_overlap_and_idle(self):
+        t = datetime(2026, 9, 15, 20, 0, tzinfo=KST)
+        chat = lambda at, ms, conv: {"type": "CHAT", "at": at, "meta": {"conversation_id": conv, "answer_ms": ms}, "style": None}
+        events = [chat(t, 60_000, "a"), chat(t + timedelta(seconds=10), 60_000, "b"),   # 두 방 동시 → 겹침은 한 번
+                  chat(t + timedelta(minutes=30), 0, "a")]                            # 30분 뒤 · 응답 기록 없음
+        c = build_weekly_report(events, [], NOW)["chat"]
+        self.assertEqual((c["minutes"], c["sessions"], c["avg_minutes"]), (1, 2, 1))
+
+    def test_chat_legacy_session_capped(self):
+        t = NOW - timedelta(days=2)
+        c = build_weekly_report([], [{"started_at": t, "updated_at": t + timedelta(days=1)}], NOW)["chat"]
+        self.assertEqual(c["minutes"], 30)
+
     def test_activity_days_and_hours(self):
         events = [ev("SEARCH", 0, q="a", hour=21), ev("CHAT", 3, hour=9)]   # 목 21시 · 월 9시
         a = build_weekly_report(events, [], NOW)["activity"]

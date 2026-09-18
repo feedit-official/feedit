@@ -237,7 +237,8 @@ async function cpPersistTurn(c,me,ai){
   let d=null;
   try{
     d=await chatSaveTurn({mode:cpModeOf(c),key:c.key,title:c.title||'',
-      question:me.text||'',images:(me.images||[]).length,answer:cpAnswerPayload(ai)});
+      question:me.text||'',images:(me.images||[]).length,answer:cpAnswerPayload(ai),
+      answer_ms:ai.t0?Math.max(0,Date.now()-ai.t0):null});
   }finally{ c.saving-=1 }
   if(!d||!d.session)return;
   c.sid=d.session.id; if(c.loaded===undefined)c.loaded=true;
@@ -1222,6 +1223,7 @@ function cpAskInto(c,text,key,images){
   if(AUTH.in)logChat(cpConvId(c), c.title);
   const directFit=wantsVirtualFit(text,images);
   const aiMsg={role:'ai', html:'', key, pending:!directFit};
+  aiMsg.t0=Date.now();   /* 응답 시간 — 금주의 리포트 '챗봇 사용 시간'에 쓴다 (저장은 안 함) */
   if(directFit)aiMsg.fit=cpNewFit(images,text);
   c.messages.push(aiMsg);
   cpRenderList();

@@ -126,6 +126,8 @@ await t('이어 물으면 앞 턴이 챗봇 history 로 가고, 새 턴이 서�
   assert.equal(s.messages[2].content, '그럼 고프코어는?');
   const ev = calls.find(c => c[0] === 'event');
   assert.equal(ev[1].conversation_id, 'cp-general-dev2', '금주의 리포트 기록도 같은 대화 id');
+  const turn = calls.filter(c => c[1] === 'turn').pop();
+  assert.ok(Number.isFinite(turn[2].answer_ms) && turn[2].answer_ms >= 0, '응답 시간(answer_ms)을 같이 보낸다');
 });
 await t('고정 · 이름 변경이 서버로 간다', async () => {
   const c = dev2();
