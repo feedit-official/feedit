@@ -5,6 +5,12 @@
   "outputDirectory": "dist",
   "installCommand": "npm install",
   "cleanUrls": true,
+  "rewrites": [
+    {
+      "source": "/api/discount/facets",
+      "destination": "/api/discount?__facets=1"
+    }
+  ],
   "headers": [
     {
       "source": "/assets/(.*)",

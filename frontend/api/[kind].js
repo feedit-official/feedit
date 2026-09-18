@@ -30,8 +30,14 @@ export default async function handler(req, res) {
 
   const qs = new URLSearchParams(url.search);
   qs.delete('kind');
+  // Vercel은 /api/discount/facets를 이 기존 함수로 재작성한다.
+  // 재작성 전/후 어느 URL이 req.url에 남아도 같은 Django 경로로 보낸다.
+  const discountFacets = url.pathname === '/api/discount/facets'
+    || (kind === 'discount' && qs.get('__facets') === '1');
+  qs.delete('__facets');
   const q = qs.toString();
-  const relayed = await viaBackend(`/${kind}` + (q ? `?${q}` : ''));
+  const backendPath = discountFacets ? '/discount/facets' : `/${kind}`;
+  const relayed = await viaBackend(backendPath + (q ? `?${q}` : ''));
   if (!relayed) {
     return failed(
       res,
@@ -40,6 +46,8 @@ export default async function handler(req, res) {
   }
   res.statusCode = 200;
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
-  res.setHeader('Cache-Control', 's-maxage=300, stale-while-revalidate=600');
+  res.setHeader('Cache-Control', discountFacets
+    ? 's-maxage=120, stale-while-revalidate=600'
+    : 's-maxage=300, stale-while-revalidate=600');
   return res.end(JSON.stringify(relayed));
 }
