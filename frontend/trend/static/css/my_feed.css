@@ -79,6 +79,9 @@
 .tpTags span{font-size:10px;padding:5px 8px;border-radius:999px;border:1px solid var(--pink-3);
   color:var(--pink-2)}
 .tpTags span.hit{color:var(--coral);border-color:rgba(255,107,74,.35);background:rgba(255,107,74,.06)}
+/* 카드를 못 그릴 때 그 자리에 쓰는 한 줄 — 빈 화면도, 가짜 카드도 아니다. */
+.tpSalState{grid-column:1/-1;padding:34px 16px;text-align:center;line-height:1.7;
+  font-size:11.5px;color:var(--pink-2);border:1px dashed var(--pink-3);border-radius:10px}
 .tpEmptyMore{text-align:center;padding:22px 0 6px;font-family:var(--num);font-size:9px;letter-spacing:.14em;
   color:var(--pink-2)}
 @media(max-width:1080px){.tpPulseGrid{grid-template-columns:1fr}}

@@ -1,6 +1,5 @@
 import { $, $$, HAS_A, aAnimate, aStagger } from '../../../core/static/js/dom.js';
 import { IMG, STYLES } from '../../../home/static/js/chat.js';
-import YOUTUBE_SALMAL_DATA from '../../../salmal/data/youtube_salmal_cards.json' with { type: 'json' };
 
 /* ── 금주의 리포트 데이터 ──
    실제로 셀 수 없는 것(판단 적중률 · 아낀 돈 · 재고 변화 · 내 결정이 옳았는지)은
@@ -22,65 +21,109 @@ export const WK={
 };
 
 /* ── 내 피드 · 살!말? 취향 매칭 큐레이션 ────────────────────────
-   본 화면과 같은 JSON을 읽는다. 별도 카드 목록을 복사해 두지 않아 상품·이미지·
-   투표 비율이 바뀌면 내 피드에도 즉시 같은 값이 반영된다. 같은 상품은 한 번만 둔다. */
-const ACTIVE_SALMAL=YOUTUBE_SALMAL_DATA.cards
-  .map((card,seq)=>{
-    const summary=card.comment_summary;
-    return {
-      t:card.product_name,
-      b:card.brand,
-      p:card.price,
-      votes:summary.sal+summary.mal+summary.neutral,
-      hours:card.hours_remaining,
-      a:summary.sal_ratio,
-      tone:['#302d2b','#6e6660'],
-      st:card.style_tags,
-      cat:card.category,
-      imgURL:card.representative_image_url||card.product_image_url,
-      catalogId:card.catalog_product_id||card.product_name,
-      seq,
-      featured:seq===0,
-      closed:card.closed
-    };
-  })
-  .filter(card=>!card.closed);
-const FEED_SM_POOL=[...new Map(ACTIVE_SALMAL.map(card=>[card.catalogId,card])).values()];
+ *
+ * ★ 2026-09-18 — 목업 JSON을 끊고 살!말? 본 화면과 같은 API를 읽는다.
+ *
+ *   전에는 `salmal/data/youtube_salmal_cards.json` 을 import 해서 썼다.
+ *   그 파일은 유튜브 댓글에서 뽑은 **고정값**이라, 같은 상품인데도
+ *   살!말? 페이지(실제 투표)는 62%, 내 피드(JSON)는 100% 로 갈렸다.
+ *   이제 둘 다 `/api/salmal/cards` 하나만 본다.
+ *
+ *   ★ 값이 없으면 지어내지 않는다. API가 실패하면 카드를 그리지 않고
+ *     왜 못 그렸는지를 말한다(dispatch.js 의 salmalGridHTML).
+ */
+const SALMAL_API='/api/salmal/cards?tab=latest';
+let FEED_SM_CACHE=null;      /* 성공한 목록 — 탭을 오갈 때 다시 부르지 않는다 */
+
+function smCardFromApi(card,seq){
+  const summary=card.vote_summary||{};
+  const similar=card.similar_user_summary||{};
+  return {
+    t:card.title,
+    b:card.brand||'브랜드 미확인',
+    p:card.price,
+    votes:summary.total||0,
+    hours:card.hours_remaining,
+    a:summary.buy_pct??50,
+    tone:['#302d2b','#6e6660'],
+    st:Array.isArray(card.style_tags)?card.style_tags:[],
+    cat:card.category||'',
+    imgURL:card.image_url,
+    catalogId:card.product_source_id??card.id,
+    /* 나와 비슷한 사용자들 — 표본이 없으면 has_sample:false 다.
+       그때 비율(simPct)은 null 이고, 화면은 숫자 대신 이유를 쓴다. */
+    simHas:Boolean(similar.has_sample),
+    simPct:similar.has_sample?similar.buy_pct:null,
+    simUsers:similar.sample_users||0,
+    simReason:similar.reason||'',
+    tasteHits:Array.isArray(card.taste_match_tags)?card.taste_match_tags:[],
+    seq,
+    closed:Boolean(card.closed)
+  };
+}
+
+/** 살!말? 카드 목록을 한 번만 불러 온다. 실패하면 이유를 담아 던진다. */
+export async function feedSmLoad(){
+  if(FEED_SM_CACHE)return FEED_SM_CACHE;
+  const response=await fetch(SALMAL_API,
+    {credentials:'same-origin',headers:{Accept:'application/json'}});
+  /* 배포본에서 백엔드가 안 붙으면 여기로 HTML(404 페이지)이 온다.
+     그대로 JSON.parse 하면 "Unexpected token '<'" 만 남아 원인을 못 찾는다. */
+  const type=response.headers.get('content-type')||'';
+  if(!type.includes('json'))
+    throw new Error('살말 서버가 JSON을 주지 않았습니다 ('+response.status+').');
+  const payload=await response.json();
+  if(!response.ok||payload.status!=='ok')
+    throw new Error(payload.reason||'살말 데이터를 불러오지 못했습니다.');
+  const items=(payload.data&&payload.data.items)||[];
+  const cards=items.map(smCardFromApi).filter(card=>!card.closed);
+  /* 같은 상품은 한 번만 둔다 */
+  FEED_SM_CACHE=[...new Map(cards.map(card=>[card.catalogId,card])).values()];
+  return FEED_SM_CACHE;
+}
+
+/* 내 취향 태그(STYLES id)와 카드 태그를 맞춘다.
+   카드 태그는 DB 에 한글 이름('클래식')으로 들어갈 수도, id('classic')로
+   들어갈 수도 있어 양쪽을 다 본다. */
+const styleLabel=id=>(STYLES.find(s=>s.id===id)||{}).n||id;
+function cardHits(card,ids){
+  const wanted=new Set();
+  ids.forEach(id=>{ wanted.add(id); wanted.add(styleLabel(id)) });
+  return card.st.filter(tag=>wanted.has(tag));
+}
+
 /* 고른 스타일 순서대로 한 장씩 돌아가며 뽑는다 — 한 스타일이 4장을 독차지하지 않게.
    각 스타일 안에서는 투표가 많은 카드부터. 맞는 카드가 모자라면 인기순으로 채우되
    그 카드에는 '일치' 표시를 붙이지 않는다(맞지 않는 것을 맞는다고 쓰지 않는다). */
-export function feedSmPicks(styleIds){
+export function feedSmPicks(styleIds,pool){
+  const cards=pool||FEED_SM_CACHE||[];
+  if(!cards.length)return [];
   const ids=STYLES.map(s=>s.id).filter(id=>styleIds.has(id)).slice(0,3);
-  const nameOf=id=>(STYLES.find(s=>s.id===id)||{}).n||id;
-  const byVotes=FEED_SM_POOL.slice().sort((x,y)=>y.votes-x.votes);
+  const byVotes=cards.slice().sort((x,y)=>y.votes-x.votes);
   const used=new Set(), out=[];
-  const featured=FEED_SM_POOL.find(card=>card.featured);
-  if(featured){
-    used.add(featured);
-    out.push({o:featured,hit:featured.st.filter(id=>ids.includes(id))});
-  }
-  for(let round=0; out.length<4 && round<FEED_SM_POOL.length; round++){
+  for(let round=0; out.length<4 && round<cards.length; round++){
     let added=false;
     for(const id of ids){
       if(out.length>=4)break;
-      const c=byVotes.find(o=>!used.has(o)&&o.st.indexOf(id)>=0);
-      if(c){ used.add(c); out.push({o:c,hit:c.st.filter(x=>ids.indexOf(x)>=0)}); added=true }
+      const want=new Set([id,styleLabel(id)]);
+      const c=byVotes.find(o=>!used.has(o)&&o.st.some(tag=>want.has(tag)));
+      if(c){ used.add(c); out.push(c); added=true }
     }
     if(!added)break;
   }
-  for(const o of byVotes){ if(out.length>=4)break; if(!used.has(o)){ used.add(o); out.push({o,hit:[]}) } }
-  return out.map((x,i)=>{
-    const o=x.o, main=x.hit[0]||o.st[0];
+  for(const o of byVotes){ if(out.length>=4)break; if(!used.has(o)){ used.add(o); out.push(o) } }
+  return out.map(o=>{
+    const hit=cardHits(o,ids);
+    const main=hit[0]||o.st[0]||o.cat;
     const tags=[
-      {tx:'#'+nameOf(main), hit:!!x.hit.length},
-      {tx:'#'+o.cat, hit:!!x.hit.length},
-      {tx:'#'+nameOf(x.hit[1]||o.st.find(s=>s!==main)||o.b), hit:x.hit.length>1}
-    ];
+      {tx:'#'+styleLabel(main), hit:hit.length>0},
+      {tx:'#'+(o.cat||o.b), hit:false},
+      {tx:'#'+styleLabel(hit[1]||o.st.find(s=>s!==main)||o.b), hit:hit.length>1}
+    ].filter(t=>t.tx!=='#');
     return Object.assign({},o,{
       title:o.t,
-      seg:x.hit.length?Math.max(70,94-i*2-(x.hit.length>1?0:3)):62,
-      itemTag:nameOf(main)+' · '+o.cat,
-      matched:!!x.hit.length,
+      itemTag:hit.map(styleLabel).join(' · ')||styleLabel(main),
+      matched:hit.length>0,
       tags
     });
   });

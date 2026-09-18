@@ -61,17 +61,43 @@ def _taste_context(cards, profile):
     return tastes_by_user, names_by_user
 
 
+def _empty_similar(reason):
+    """비슷한 사용자 표본이 없을 때 돌려줄 값.
+
+    예전에는 표본이 0명이면 **전체 투표 결과를 그대로 돌려줬다**. 그러면 화면은
+    "나와 비슷한 사용자들"이라 써 놓고 실제로는 전체 숫자를 보여 준다 —
+    숫자를 지어내지 않는다는 원칙에 어긋난다. 그래서 비율은 None 으로 두고
+    **왜 없는지**를 함께 보낸다. 화면은 이 reason 을 그대로 쓴다.
+    """
+    return {
+        "total": 0,
+        "buy": 0,
+        "pass": 0,
+        "buy_pct": None,
+        "pass_pct": None,
+        "sample_users": 0,
+        "has_sample": False,
+        "reason": reason,
+    }
+
+
 def _similar_summary(card, profile, tastes_by_user):
+    """성별·체형·나이(±5년)·취향 중 둘 이상이 겹치는 투표자만 모아 비율을 낸다."""
     ballots = list(card.ballots.all())
     if profile is None:
-        return _vote_summary(card, ballots)
+        return _empty_similar("로그인하면 나와 비슷한 사용자들의 결과를 볼 수 있습니다.")
     style_ids = tastes_by_user.get(profile.id, set())
+    # 비교할 기준이 하나도 없으면 '비슷하다'를 판정할 방법이 없다.
+    if not (profile.gender or profile.body_type or profile.birth_year or style_ids):
+        return _empty_similar(
+            "마이페이지에서 성별·체형·출생연도나 즐겨입는 스타일을 채우면 "
+            "비슷한 사용자를 찾을 수 있습니다."
+        )
     candidates = []
     for ballot in ballots:
         other = ballot.user
-        if other_id := getattr(other, "id", None):
-            if other_id == profile.id:
-                continue
+        if getattr(other, "id", None) == profile.id:
+            continue
         score = 0
         if profile.gender and other.gender == profile.gender:
             score += 1
@@ -84,7 +110,13 @@ def _similar_summary(card, profile, tastes_by_user):
             score += 1
         if score >= 2:
             candidates.append(ballot)
-    return _vote_summary(card, candidates or ballots)
+    if not candidates:
+        return _empty_similar("아직 나와 비슷한 사용자가 이 카드에 투표하지 않았습니다.")
+    summary = _vote_summary(card, candidates)
+    summary["sample_users"] = len(candidates)
+    summary["has_sample"] = True
+    summary["reason"] = ""
+    return summary
 
 
 def _card_payload(card, profile, tastes_by_user, taste_names_by_user):
@@ -103,10 +135,14 @@ def _card_payload(card, profile, tastes_by_user, taste_names_by_user):
     similar = _similar_summary(card, profile, tastes_by_user)
     my_choice = None
     taste_match_count = 0
+    # 몇 개가 맞았는지만이 아니라 **무엇이 맞았는지**도 보낸다.
+    # 화면이 "취향 2개 일치"라고만 쓰면 사용자는 근거를 확인할 길이 없다.
+    taste_match_tags = []
     if profile is not None:
         my_choice = next((row.choice for row in ballots if row.user_id == profile.id), None)
         taste_names = taste_names_by_user.get(profile.id, set())
-        taste_match_count = len(taste_names.intersection(card.tags or []))
+        taste_match_tags = sorted(taste_names.intersection(card.tags or []))
+        taste_match_count = len(taste_match_tags)
     metadata = card.source_metadata or {}
     price = None
     if snapshot:
@@ -169,6 +205,7 @@ def _card_payload(card, profile, tastes_by_user, taste_names_by_user):
         "vote_summary": summary,
         "similar_user_summary": similar,
         "taste_match_count": taste_match_count,
+        "taste_match_tags": taste_match_tags,
         "my_choice": my_choice,
         "comments": comments,
     }

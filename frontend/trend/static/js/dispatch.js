@@ -1,5 +1,5 @@
 import { $, $$, HAS_A, aAnimate, aSpring, aStagger, aUtils } from '../../../core/static/js/dom.js';
-import { WK, feedSmPicks } from './my_feed.js';
+import { WK, feedSmPicks, feedSmLoad } from './my_feed.js';
 import { STYLES } from '../../../home/static/js/chat.js';
 import { SIMG } from '../../../style/static/js/style_page.js';
 import { FS, FS_COLS, fsBuild, fsChipsPaint, fsDropDisallowed, fsHideSug, fsLoadDictionary, fsReset } from '../../../style/static/js/search.js';
@@ -647,11 +647,17 @@ export function trRender(id){
           '</div>'+
         '</article>'+
         '<div class="tpReason">'+
-          '<div class="tpReasonLine"><span class="tpCheck">✓</span>'+
-            '<span><strong>세그먼트 일치</strong> · 체형/스타일 유사도 '+p.seg+'%</span></div>'+
+          /* ★ 유사도 %를 지어내지 않는다. 실제로 이 카드에 투표한 사람 중
+               나와 성별·체형·나이·취향이 겹치는 사람 수와 그들의 살 비율만 쓴다.
+               표본이 없으면 그렇다고 말한다(API 의 reason 을 그대로). */
+          (p.simHas
+            ? '<div class="tpReasonLine"><span class="tpCheck">✓</span>'+
+                '<span><strong>나와 비슷한 사용자 '+p.simUsers+'명</strong> · 이 중 살 '+p.simPct+'%</span></div>'
+            : '<div class="tpReasonLine"><span class="tpCheck">·</span>'+
+                '<span><strong>비슷한 사용자 표본 없음</strong> · '+trEsc(p.simReason||'아직 비슷한 사용자의 투표가 없습니다')+'</span></div>')+
           (p.matched
             ? '<div class="tpReasonLine"><span class="tpCheck">✓</span>'+
-                '<span><strong>아이템 취향 일치</strong> · '+p.itemTag+'</span></div>'
+                '<span><strong>아이템 취향 일치</strong> · '+trEsc(p.itemTag)+'</span></div>'
             : '<div class="tpReasonLine"><span class="tpCheck">·</span>'+
                 '<span><strong>인기 카드</strong> · 내 스타일과 겹치는 카드가 모자라 채웠습니다</span></div>')+
         '</div>'+
@@ -672,11 +678,37 @@ export function trRender(id){
           '동시에 고민 중인 아이템도 내 취향 태그와 겹치는 글만 선별했습니다.</p></div>'+
           '<div class="tpFilterLogic"><span class="tpLogicChip">TOP 4</span></div>'+
         '</div>'+
-        '<div class="tpSalGrid" id="tpSalGrid">'+feedSmPicks(ME.styles).map(salCard).join('')+'</div>'+
-        '<div class="tpEmptyMore">'+(ME.styles.size
-          ? STYLES.filter(s=>ME.styles.has(s.id)).map(s=>s.n).join(' · ')+' 기준으로 고른 고민 4건만 표시 중'
-          : '즐겨입는 스타일이 없어 인기 고민 4건을 표시 중')+'</div>'+
+        '<div class="tpSalGrid" id="tpSalGrid">'+
+          '<div class="tpSalState">살!말? 카드를 불러오는 중입니다…</div></div>'+
+        '<div class="tpEmptyMore" id="tpSalNote"></div>'+
       '</div>';
+    /* ★ 살!말? 카드는 본 화면과 같은 API(/api/salmal/cards)에서 온다.
+         목업 JSON을 쓰지 않으므로 여기서만 값이 다를 일이 없다.
+         못 불러오면 카드를 그리지 않고 이유를 쓴다 — 빈 화면도, 가짜 카드도 아니다. */
+    feedSmLoad().then(pool=>{
+      const grid=$('#tpSalGrid'), note=$('#tpSalNote');
+      if(!grid)return;
+      const picks=feedSmPicks(ME.styles,pool);
+      if(!picks.length){
+        grid.innerHTML='<div class="tpSalState">지금 진행 중인 살!말? 고민이 없습니다.</div>';
+        if(note)note.textContent='';
+        return;
+      }
+      grid.innerHTML=picks.map(salCard).join('');
+      if(note)note.textContent=ME.styles.size
+        ? STYLES.filter(s=>ME.styles.has(s.id)).map(s=>s.n).join(' · ')+' 기준으로 고른 고민 '+picks.length+'건 표시 중'
+        : '즐겨입는 스타일이 없어 인기 고민 '+picks.length+'건을 표시 중';
+      if(HAS_A){
+        aAnimate($$('#tpSalGrid .tpPickWrap'),
+          {opacity:[0,1],translateY:[16,0],duration:620,delay:aStagger(52),ease:'out(3)'});
+        smBarFill($$('#tpSalGrid .smBar i'),{duration:920,step:44,start:120});
+      }
+    }).catch(error=>{
+      const grid=$('#tpSalGrid'), note=$('#tpSalNote');
+      if(grid)grid.innerHTML='<div class="tpSalState">살!말? 카드를 불러오지 못했습니다.<br>'+
+        trEsc(String(error&&error.message||error))+'</div>';
+      if(note)note.textContent='';
+    });
     /* 버튼을 눌러도 여기서 투표를 완결시키지 않는다 — 살!/말! 버튼은
        data-v="salmal" 을 달아 살!말? 페이지로 보내고, 실제 투표는
        거기서만 일어난다(문서 전역 [data-v] 클릭 위임을 그대로 탄다). */

@@ -269,6 +269,9 @@
 .voteBlock .smBar{height:30px;margin-bottom:0}
 .voteBlock .smBar i{font-size:10.5px}
 .voteBlock.similar{background:#fff}
+/* 표본이 없을 때 막대를 대신하는 한 줄 */
+.smNote{margin:0;padding:9px 12px;border:1px dashed var(--pink-3);border-radius:8px;
+  font-size:11px;line-height:1.6;color:var(--pink-2)}
 .voteBlock:first-child{border-top:0}
 .aiChatBubble{
   position:fixed;top:0;left:0;

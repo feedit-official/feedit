@@ -25,8 +25,16 @@ function cardFromApi(card,i){
     hours:card.closed?0:card.hours_remaining,
     createdAt:Date.parse(card.created_at)||0,
     closesAt:Date.parse(card.closes_at)||Number.POSITIVE_INFINITY,
-    taste:similar.buy_pct??summary.buy_pct??50,
+    /* 나와 비슷한 사용자들 — 표본이 0명이면 has_sample:false 이고 비율은 null 이다.
+       예전에는 이때 전체 투표 비율이 그대로 내려와 "비슷한 사용자"라는 말이
+       거짓이 됐다. 이제 없으면 없다고 쓴다. */
+    simHas:Boolean(similar.has_sample),
+    simPct:similar.has_sample?similar.buy_pct:null,
+    simUsers:similar.sample_users||0,
+    simReason:similar.reason||'',
+    taste:similar.has_sample?similar.buy_pct:(summary.buy_pct??50),
     tasteMatch:card.taste_match_count||0,
+    tasteTags:Array.isArray(card.taste_match_tags)?card.taste_match_tags:[],
     tone:['#302d2b','#6e6660'], imgURL:card.image_url,
     youtubeId:source.video_id||'', upload_date:source.upload_date||'',
     productSourceId:card.product_source_id,
@@ -67,7 +75,8 @@ const fmtNum=n=>n.toLocaleString('ko-KR');
 const styleNameOf=v=>(v&&Array.isArray(v.st)?v.st:[])
   .map(id=>STYLES.find(x=>x.id===id)?.n||id).filter(Boolean).join(' · ');
 const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
-const simA=v=>v.youtubeId?v.taste:clamp(v.a+Math.round((v.taste-70)/4),3,97);
+/* 비슷한 사용자들의 살 비율. 표본이 없으면 null — 숫자를 만들어 내지 않는다. */
+const simA=v=>v.simHas?v.simPct:null;
 const satisfaction=v=>clamp(v.taste+Math.round((v.base-70)/5),30,99);
 /* ── 댓글 시드 데이터 ─────────────────────────────────── */
 /* rk: 작성자 등급(0~4) — 아바타 링(rkPaintAv)이 여기서 색을 가져온다
@@ -484,25 +493,40 @@ function updateModalVote(){
     b.classList.toggle('tight',a<28); n.classList.toggle('tight',(100-a)<28);
   };
   setPair($('#modalBarAll'), v.a);
-  setPair($('#modalBarSim'), simA(v));
+  /* 표본이 있을 때만 막대를 그린다. 없으면 막대를 감추고 이유를 쓴다. */
+  const sim=simA(v), simBar=$('#modalBarSim'), simNote=$('#modalSimNote');
+  if(sim==null){
+    simBar.hidden=true;
+    if(simNote){
+      simNote.hidden=false;
+      simNote.textContent=v.simReason||'아직 나와 비슷한 사용자가 이 카드에 투표하지 않았습니다.';
+    }
+  }else{
+    simBar.hidden=false;
+    if(simNote)simNote.hidden=true;
+    setPair(simBar, sim);
+  }
 
   if($('#aiChatBubble').classList.contains('on')) buildAIReport(i);
 }
 
 function buildAIReport(i){
   const v=VOTES[i], sim=simA(v), sat=satisfaction(v);
+  const simTx=sim==null
+    ? '나와 비슷한 사용자의 투표가 아직 없어 이 부분은 비교하지 못했습니다.'
+    : `성별·체형·나이·취향이 겹치는 사용자 ${v.simUsers}명 중 ${sim}%가 구매에 동의했습니다.`;
   const verdictBuy=v.a>=55;
   const el=$('#aiVerdict');
   el.textContent=verdictBuy?'지금 사도 좋아요':'조금 더 지켜보세요';
   el.classList.toggle('buy',verdictBuy);
   $('#aiWhy').textContent=
     `전체 투표에서는 ${v.a>=50?'살':'말'} 의견이 우세합니다. `+
-    `체형·스타일·나이가 비슷한 목업 사용자 집단에서는 ${sim}%가 구매에 동의했습니다. `+
+    `${simTx} `+
     `구매자 만족도는 ${sat}%로 ${sat>=80?'높은 편':sat>=60?'무난한 편':'다소 낮은 편'}입니다. `+
     (v.closed?'투표가 종료되어 최종 결과를 보여드립니다.':`마감까지 ${fmtHours(v.hours)} 남았습니다.`);
   $('#aiStats').innerHTML=`
     <div><div class="k">전체 살 비율</div><div class="v">${v.a}%</div></div>
-    <div><div class="k">유사 세그먼트</div><div class="v">${sim}%</div></div>
+    <div><div class="k">유사 세그먼트</div><div class="v">${sim==null?'–':sim+'%'}</div></div>
     <div><div class="k">구매자 만족도</div><div class="v">${sat}%</div></div>`;
 }
 
@@ -769,7 +793,10 @@ $('#createSubmit').addEventListener('click',()=>{
   const seq=VOTES.length?VOTES[VOTES.length-1].seq+1:0;
   const item={
     t:title, b:brand, p:parseInt(priceRaw,10),
-    base:50, a:50, votes:0, hours:48, taste:70,
+    base:50, a:50, votes:0, hours:48, taste:50,
+    simHas:false, simPct:null, simUsers:0,
+    simReason:'방금 올린 고민이라 아직 투표가 없습니다.',
+    tasteMatch:0, tasteTags:[],
     tone:randomTone(), voted:null, comments:[], closed:false, seq,
     imgURL:createImgURL||null,
     st:style?[style]:[],
