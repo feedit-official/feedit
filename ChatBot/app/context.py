@@ -108,7 +108,7 @@ def resolve(question: str, history: list[dict], intent_choices: list[str],
         {"question": question, "mode": mode, "recent_turns": turns,
          "candidate_terms": term_choices, "candidate_intents": intent_choices},
         _schema(term_choices, intent_choices),
-        effort="low", timeout=timeout, max_output_tokens=300)
+        timeout=timeout, max_output_tokens=300, **llm.role("context"))
     if not got:
         return None
 

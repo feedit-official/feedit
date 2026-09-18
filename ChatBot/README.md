@@ -228,17 +228,20 @@ chat_api.js        블록 타입별로 그린다. 모르는 타입은 조용히 
 블록을 새로 만들 때는 **CSS 에 그 클래스가 있는지 먼저 확인한다.**
 `blocks.test.mjs` 가 쓰는 클래스를 전부 CSS 와 대조하므로, 없는 걸 쓰면 시험이 잡는다.
 
-## Luna(LLM)를 쓰는 곳 — 세 자리뿐
+## 모델 역할 — Terra · Luna · Sol (2026-09-18)
 
-```
-① 의도 분류    app/nlu.py        규칙이 못 잡을 때만 부른다
-② 어투 다듬기  app/polish.py     값을 다 꽂은 뒤 문장만
-③ 웹 검색      app/websearch.py  지식 질문. 출처 없으면 안 올린다
-```
+모든 호출은 `llm.role("<역할>")` 로 모델을 고른다 (`app/llm.py` 의 `ROLES`).
 
-모델은 역할별로 나눈다. 도구 선택·해석·살말 판단·비전처럼 판단이 필요한 자리는
-`gpt-5.6-terra`, 발췌·검증·형식 정리처럼 출력이 닫힌 자리는
-`gpt-5.6-luna`를 쓴다. 기본 모델은 예외 역할의 폴백이다.
+| 모델 | 역할 | 자리 |
+| --- | --- | --- |
+| **Terra** `gpt-5.6-terra` | 판단 | `orchestrator` 도구 선택·살말 판단 · `vision` 사진 · `general` 사전 밖 지식 설명(websearch.py) |
+| **Luna** `gpt-5.6-luna` | 닫힌 출력 | `classify` 의도 분류(nlu.py) · `context` 앞 턴 이어받기 · `polish` 다듬기 · `extract` 상품 링크·매거진 · `verify` 숫자 대조 · `finish` 마무리 |
+| **Sol** `gpt-5.6-sol` | 막혔을 때만 | 오케스트레이터 · 마무리 · 검증 수정이 **실패(모델 오류·무응답)하거나 결과가 깨졌을 때** 남은 예산 안에서 한 번 더 |
+
+Sol 은 같은 역할의 추론 강도를 그대로 쓰고 모델만 올린다. 키 없음·일부러 끔·인증 실패(401/403)는
+올려도 소용없어 올리지 않는다. 올린 자리는 응답 report 의 `trace.escalated` 에 남는다
+(예: `["orchestrator:NET_ReadTimeout"]`). `FEEDIT_LLM_ESCALATE=0` 이면 끈다.
+`FEEDIT_LLM_MODEL` 은 목록에 없는 역할 이름이 왔을 때의 폴백이다.
 
 설정은 전부 `.env` 로 뺐다 — 코드를 고쳐 모델을 바꾸면 누가 언제 바꿨는지 기록에 안 남는다.
 
@@ -246,9 +249,10 @@ chat_api.js        블록 타입별로 그린다. 모르는 타입은 조용히 
 | --- | --- | --- |
 | `OPENAI_API_KEY` | — | 각자 발급. 없으면 규칙으로만 돈다 |
 | `FEEDIT_LLM_MODEL` | `gpt-5.6-luna` | 팀 표준. 바꾸면 팀에 알린다 |
-| `FEEDIT_LLM_MODEL_LARGE` | `gpt-5.6-sol` | 복잡한 전문 작업용 예비 등급 |
-| `FEEDIT_LLM_MODEL_MID` | `gpt-5.6-terra` | 오케스트레이션·해석·살말 판단·비전 |
-| `FEEDIT_LLM_MODEL_SMALL` | `gpt-5.6-luna` | 발췌·검증·형식 정리·마무리 |
+| `FEEDIT_LLM_MODEL_LARGE` | `gpt-5.6-sol` | 막혔을 때 재시도 |
+| `FEEDIT_LLM_MODEL_MID` | `gpt-5.6-terra` | 오케스트레이션·살말 판단·비전·지식 설명 |
+| `FEEDIT_LLM_MODEL_SMALL` | `gpt-5.6-luna` | 분류·이어받기·다듬기·추출·검증·마무리 |
+| `FEEDIT_LLM_ESCALATE` | `1` | `0` 이면 Sol 재시도를 끈다 |
 | `FEEDIT_LLM_EFFORT` | `low` | `none`·`low`·`medium`·`high`·`xhigh`·`max` |
 | `FEEDIT_LLM_DISABLED` | `0` | `1` 이면 LLM 을 아예 안 부른다 |
 | `OPENAI_BASE_URL` | OpenAI | 사내 게이트웨이를 쓸 때만 |

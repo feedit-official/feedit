@@ -41,10 +41,10 @@ def inspect(url: str, *, timeout: int = 18) -> dict:
         INSTRUCTIONS,
         {"url": value, "task": "상품명·브랜드·현재 원화 판매가를 한 번에 확인"},
         SCHEMA,
-        effort="low",
         timeout=timeout,
         tools=[{"type": "web_search"}],
         max_output_tokens=500,
+        **llm.role("extract"),
     )
     if not got:
         return {"found": False, "url": value,

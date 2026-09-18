@@ -169,7 +169,7 @@ def find(term: str, *, timeout: int = 25) -> dict:
 
     started = time.time()
     got = llm.respond(INSTRUCTIONS, {"term": term, "search_hint": f"{term} 패션 매거진 기사"},
-                      _SCHEMA, effort="low", timeout=timeout, tools=TOOLS, max_output_tokens=1200)
+                      _SCHEMA, timeout=timeout, tools=TOOLS, max_output_tokens=1200, **llm.role("extract"))
     if got is None:
         # 실패는 캐시하지 않는다 — 잠깐 끊긴 것이면 다음에 다시 찾는다.
         return {"term": term, "articles": [], "found": False,

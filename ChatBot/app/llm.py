@@ -81,6 +81,11 @@ ROLES: dict[str, tuple[str, str]] = {
     "verify":         (MODEL_SMALL, "none"),     # 숫자 대조 — 일치 확인
     "polish":         (MODEL_SMALL, "none"),     # 형식 변환
     "ask":            (MODEL_SMALL, "none"),     # 되묻는 한 문장
+    # ★ 2026-09-18 — 역할 없이 기본 모델(FEEDIT_LLM_MODEL)로 떨어지던 자리들을 설계대로 묶었다.
+    #   닫힌 출력(분류·추출·형식)은 Luna, 열린 답(사전 밖 지식 설명)은 Terra.
+    "classify":       (MODEL_SMALL, "low"),      # 의도 분류 (nlu.py) — 목록 중 하나 고르기
+    "context":        (MODEL_SMALL, "low"),      # 앞 턴 이어받기 (context.py) — 후보 중 고르기
+    "extract":        (MODEL_SMALL, "low"),      # 상품 링크 · 매거진 기사 찾기 (웹검색 + 값 뽑기)
     # ★ 2026-09-10 — 마무리(_finish)는 **판단이 아니라 정리**다.
     #   무엇을 볼지는 루프에서 이미 정했고, 값도 이미 손에 있다. 남은 일은
     #   그것을 문장으로 옮기는 것뿐인데 orchestrator 역할(medium)로 부르니
@@ -93,6 +98,37 @@ ROLES: dict[str, tuple[str, str]] = {
     #   한 번짜리 호출이라 medium 대신 low로 둔다.
     "vision":         (MODEL_MID,   "low"),      # 사진을 보고 답한다
 }
+
+
+# ── Sol: 막혔을 때만 (2026-09-18) ─────────────────────────────
+#   평소 답은 Terra·Luna 가 낸다. Terra/Luna 호출이 **실패했거나(모델 오류·응답 없음)
+#   결과가 깨졌을 때** 남은 예산이 있으면 Sol 로 한 번만 더 부른다.
+#   · 같은 역할의 추론 강도를 그대로 쓰고 모델만 올린다 — 할 일은 같다
+#   · 키가 없거나(NO_KEY) 일부러 끈 것(DISABLED) · 인증 실패(401/403)는 올려도 소용없다
+#   · 한 답변 안에서 자리마다 한 번뿐이다 (부르는 쪽이 센다)
+#   FEEDIT_LLM_ESCALATE=0 이면 끈다. 비용은 실패한 호출에만 붙는다.
+ESCALATE = os.getenv("FEEDIT_LLM_ESCALATE", "1").strip() not in ("0", "false", "no", "")
+_NO_ESCALATE = ("DISABLED", "NO_KEY", "NO_REQUESTS")
+
+
+def can_escalate(*, bad_output: bool = False) -> bool:
+    """Sol 로 다시 불러 볼 만한가.
+
+    bad_output=True 는 모델은 답했지만 결과를 못 쓰는 경우(빈 답·깨진 수정)다.
+    그때는 LAST_ERROR 가 비어 있어도 올린다.
+    """
+    if not ESCALATE or not MODEL_LARGE or DISABLED:
+        return False
+    err = LAST_ERROR or ""
+    if err in _NO_ESCALATE or err.startswith(("HTTP_401", "HTTP_403")):
+        return False
+    return bad_output or bool(err)
+
+
+def escalate(name: str) -> dict:
+    """역할은 그대로, 모델만 Sol 로.  llm.respond(..., **llm.escalate("orchestrator"))"""
+    _, effort = ROLES.get(name, (MODEL, DEFAULT_EFFORT))
+    return {"model": MODEL_LARGE, "effort": effort}
 
 
 def role(name: str) -> dict:

@@ -398,6 +398,9 @@ class Result:
         #   그렇다면 답은 온전하다 — 화면에 "조회를 끝까지 못 했다" 고 적으면
         #   멀쩡한 답에 경고가 붙는다.
         self.recovered: bool = False
+        # ★ Sol 로 다시 부른 자리 (2026-09-18) — "어디서 막혔나" 가 여기 남는다.
+        #   예: ["orchestrator:NET_ReadTimeout", "finish:empty"]
+        self.escalated: list[str] = []
 
 
 def _recent_terms(history: list[dict] | None, limit: int = 5) -> list[str]:
@@ -650,6 +653,16 @@ def run(question: str, *, store, gate, ctx: dict | None = None,
             timeout=max(2.0, min(float(CALL_TIMEOUT), left)),
             **llm.role("orchestrator"),
         )
+        if res is None and "orchestrator" not in " ".join(out.escalated) and llm.can_escalate():
+            # ★ Terra 가 막혔다 — 남은 시간이 한 바퀴를 쓸 만하면 Sol 로 같은 바퀴를 다시 돈다.
+            left = deadline - VERIFY_RESERVE - time.monotonic()
+            if left >= WRITE_MIN:
+                out.escalated.append(f"orchestrator:{llm.LAST_ERROR}")
+                res = llm.respond(
+                    INSTRUCTIONS, items, tools=tools, raw_flag=True,
+                    timeout=max(2.0, min(float(CALL_TIMEOUT), left)),
+                    **llm.escalate("orchestrator"),
+                )
         if res is None:
             # 모델에 못 닿았다. 지금까지 모은 것이 있으면 그걸로라도 답한다.
             out.round_ms.append(int((time.monotonic() - t_round) * 1000))
@@ -931,4 +944,15 @@ def _finish(items: list[Any], out: Result, deadline: float | None = None) -> str
                       **llm.role("finish"))
     if res and res.get("text"):
         return res["text"].strip()
+    # ★ Luna 가 막혔거나 빈 답을 냈다 — 시간이 남으면 Sol 로 한 번 (2026-09-18).
+    left = (deadline - time.monotonic()) if deadline else float(CALL_TIMEOUT)
+    budget = left - reserve(left, VERIFY_RESERVE)
+    if budget >= MIN_CALL and llm.can_escalate(bad_output=res is not None):
+        out.escalated.append("finish:" + (llm.LAST_ERROR or "empty"))
+        res = llm.respond(_FINISH_INSTRUCTIONS, items,
+                          timeout=min(float(CALL_TIMEOUT), budget),
+                          max_output_tokens=FINISH_MAX_TOKENS,
+                          **llm.escalate("finish"))
+        if res and res.get("text"):
+            return res["text"].strip()
     return _stop_say(out)

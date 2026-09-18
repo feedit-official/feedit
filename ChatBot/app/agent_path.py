@@ -328,6 +328,8 @@ def ask(question: str, *, store, gate, mode: str = "general",
             #   어느 층이 예산 밖에서 모델을 부르고 있다는 뜻이다.
             "budget_ms": int(budget * 1000),
             "over_budget": ms > int(budget * 1000) + OVER_GRACE_MS,
+            # ★ Terra·Luna 가 막혀 Sol 로 다시 부른 자리 (2026-09-18). 비어 있으면 평소대로.
+            "escalated": res.escalated + ([rep.escalated] if rep.escalated else []),
         },
         "nlu": {"intent": "agent", "source": "orchestrator",
                 "model": llm.role("orchestrator")["model"]},
