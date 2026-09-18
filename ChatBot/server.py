@@ -47,7 +47,7 @@ from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
-from app import plans
+from app import llm, plans
 from app.adapters import SalmalHTTPAdapter
 from app.engine import ChatEngine
 from app import vton
@@ -379,7 +379,9 @@ class Handler(BaseHTTPRequestHandler):
                                         "metric_version": e.store.version,
                                         "terms": len(e.gate.prefer)})
             except Exception as ex:                       # noqa: BLE001
-                return self._json(500, {"ok": False, "error": type(ex).__name__})
+                # 비밀값이 섞일 수 있어 메시지는 싣지 않는다 — 자세한 건 docker logs
+                return self._json(503, {"ok": False, "error": type(ex).__name__,
+                                        "hint": "docker logs feedit-chatbot 에 원인이 있습니다"})
         if u.path == "/v1/llm":
             # 배선 진단. **키 값은 절대 안 나간다** — 있나 없나와 길이뿐이다.
             from app import llm
@@ -702,11 +704,19 @@ def main():
         print("\n자세한 진단:  python3 tools_env_check.py")
         return 2
 
-    engine()                                        # 사전을 미리 읽어 첫 요청을 빠르게
+    # 사전을 미리 읽어 첫 요청을 빠르게 한다.
+    # ★ 여기서 실패해도(RDS 가 잠깐 안 닿는 등) 죽지 않는다. 죽으면 컨테이너가
+    #   재시작을 반복하고 앞단 nginx 는 502 만 돌려줘 원인이 안 보인다(2026-09-18).
+    #   떠 있으면 /v1/health 가 실패 종류를 말하고, 다음 요청 때 엔진을 다시 만든다.
     srv = ThreadingHTTPServer((HOST, port), Handler)
-    e = engine()
     print(f"feedit-chat  http://{HOST}:{port}")
-    print(f"  기준일 {e.store.latest_day()} · 지표 term {len(e.gate.prefer):,}개")
+    try:
+        e = engine()
+        print(f"  기준일 {e.store.latest_day()} · 지표 term {len(e.gate.prefer):,}개")
+    except Exception as ex:                           # noqa: BLE001
+        import traceback
+        traceback.print_exc()
+        print(f"  ⚠ 엔진을 만들지 못했습니다 ({type(ex).__name__}) — 서버는 띄우고 요청 때 다시 시도합니다.")
     print(f"  모델 {llm.MODEL} · 키 {llm.key_hint()}")
     print(f"  허용 오리진 {sorted(ALLOW_ORIGINS)}")
     access = "공개 베타(토큰 검사 안 함)" if plans.PUBLIC_BETA else (
