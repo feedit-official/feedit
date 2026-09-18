@@ -1100,11 +1100,11 @@ def _term_rows(qs, term_type, keep, limit):
 def _item_with_thumb_rows(qs, expr, keep, limit):
     out = _count_rows(qs, expr, keep, limit)
     labels = [o["label"] for o in out if not o.get("picked_only")]
-    
+
     thumb_map = {}
     if labels:
         from apps.core.models import ProductSource
-        
+
         # 1. Check ProductSource by product__canonical_name (fast join)
         prod_thumbs = ProductSource.objects.filter(product__canonical_name__in=labels)\
             .exclude(thumbnail_url__isnull=True).exclude(thumbnail_url="")\
@@ -1112,7 +1112,7 @@ def _item_with_thumb_rows(qs, expr, keep, limit):
         for k, v in prod_thumbs:
             if k not in thumb_map:
                 thumb_map[k] = v
-                
+
         # 2. For remaining labels, check ProductSource by source_name (fast index)
         missing_labels = [L for L in labels if L not in thumb_map]
         if missing_labels:
@@ -1122,10 +1122,10 @@ def _item_with_thumb_rows(qs, expr, keep, limit):
             for k, v in ps_thumbs:
                 if k not in thumb_map:
                     thumb_map[k] = v
-                    
+
     for o in out:
         o["thumb"] = thumb_map.get(o["label"])
-        
+
     return out
 
 

@@ -546,7 +546,7 @@ export function fsPaintPop(){
     if(col){
       col.hidden=!ok;
       const ch = col.querySelector('.fsColH'); if(ch) ch.textContent = c.ax;
-      const inp = col.querySelector('input'); 
+      const inp = col.querySelector('input');
       if(inp) {
         inp.dataset.ax = c.ax;
         inp.placeholder = c.ax + ' 찾기';
