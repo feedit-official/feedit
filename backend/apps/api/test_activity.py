@@ -48,11 +48,65 @@ class WeeklyReportTest(unittest.TestCase):
         c = build_weekly_report([], sessions, NOW)["chat"]
         self.assertEqual((c["minutes"], c["sessions"], c["avg_minutes"]), (13, 2, 6))
 
+    def test_chat_minutes_from_turns_not_session_span(self):
+        """월요일에 묻고 일요일에 한 번 더 물어도 6일이 아니다 — 질문·응답·읽기 시간만 센다."""
+        mon = datetime(2026, 9, 14, 10, 0, tzinfo=KST)
+        chat = lambda at, ms, conv="c1": {"type": "CHAT", "at": at, "meta": {"conversation_id": conv, "answer_ms": ms}, "style": None}
+        events = [chat(mon, 20_000),
+                  chat(mon + timedelta(minutes=3), 40_000),          # 앞 답 끝나고 2분 40초 뒤 → 이어서 셈
+                  chat(mon + timedelta(days=3), 30_000)]             # 3일 뒤 → 공백은 안 셈
+        sessions = [{"started_at": mon, "updated_at": mon + timedelta(days=3)}]
+        c = build_weekly_report(events, sessions, NOW)["chat"]
+        # 첫 묶음 10:00:00 ~ 10:03:40 = 220초, 둘째 30초 → 250초 ≈ 4분
+        self.assertEqual((c["minutes"], c["sessions"]), (4, 1))
+
+    def test_chat_minutes_overlap_and_idle(self):
+        t = datetime(2026, 9, 15, 20, 0, tzinfo=KST)
+        chat = lambda at, ms, conv: {"type": "CHAT", "at": at, "meta": {"conversation_id": conv, "answer_ms": ms}, "style": None}
+        events = [chat(t, 60_000, "a"), chat(t + timedelta(seconds=10), 60_000, "b"),   # 두 방 동시 → 겹침은 한 번
+                  chat(t + timedelta(minutes=30), 0, "a")]                            # 30분 뒤 · 응답 기록 없음
+        c = build_weekly_report(events, [], NOW)["chat"]
+        self.assertEqual((c["minutes"], c["sessions"], c["avg_minutes"]), (1, 2, 1))
+
+    def test_chat_legacy_session_capped(self):
+        t = NOW - timedelta(days=2)
+        c = build_weekly_report([], [{"started_at": t, "updated_at": t + timedelta(days=1)}], NOW)["chat"]
+        self.assertEqual(c["minutes"], 30)
+
     def test_activity_days_and_hours(self):
         events = [ev("SEARCH", 0, q="a", hour=21), ev("CHAT", 3, hour=9)]   # 목 21시 · 월 9시
         a = build_weekly_report(events, [], NOW)["activity"]
         self.assertEqual(a["days"], [1, 0, 0, 1, 0, 0, 0])
         self.assertEqual((a["hours"][21], a["hours"][9]), (1, 1))
+
+    def test_activity_drops_quick_undo(self):
+        """★ 30초 안에 취소한 찜 · 투표는 활동량에서 뺀다.
+
+        잘못 눌러 곧바로 취소한 것까지 세면 막대가 실제 관심보다 부풀어 보인다.
+        대신 한참 뒤에 취소한 것은 진짜 활동이므로 그대로 센다.
+        """
+        def at(hour, minute, second=0, days_ago=0):
+            return NOW.replace(hour=hour, minute=minute, second=second) - timedelta(days=days_ago)
+
+        events = [
+            # ① 찜 → 10초 뒤 취소 = 없던 일 (2건 모두 빠진다)
+            {"type": "SAVE", "at": at(10, 0, 0), "meta": {"item_id": "a", "liked": True}, "style": None},
+            {"type": "SAVE", "at": at(10, 0, 10), "meta": {"item_id": "a", "liked": False}, "style": None},
+            # ② 찜 → 5분 뒤 취소 = 실제 활동 (2건 다 센다)
+            {"type": "SAVE", "at": at(11, 0, 0), "meta": {"item_id": "b", "liked": True}, "style": None},
+            {"type": "SAVE", "at": at(11, 5, 0), "meta": {"item_id": "b", "liked": False}, "style": None},
+            # ③ 투표 → 10초 뒤 취소 = 없던 일
+            {"type": "VOTE", "at": at(12, 0, 0), "meta": {"card_key": "c", "choice": "BUY"}, "style": None},
+            {"type": "VOTE", "at": at(12, 0, 10), "meta": {"card_key": "c", "choice": None}, "style": None},
+            # ④ 취소하지 않은 찜 = 그대로 센다
+            {"type": "SAVE", "at": at(13, 0, 0), "meta": {"item_id": "d", "liked": True}, "style": None},
+        ]
+        a = build_weekly_report(events, [], NOW)["activity"]
+        self.assertEqual(sum(a["days"]), 3)          # ② 2건 + ④ 1건
+        self.assertEqual(a["hours"][10], 0)          # ① 빠짐
+        self.assertEqual(a["hours"][11], 2)          # ② 남음
+        self.assertEqual(a["hours"][12], 0)          # ③ 빠짐
+        self.assertEqual(a["hours"][13], 1)          # ④ 남음
 
     def test_taste_share_vs_last_week(self):
         """검색한 키워드 중 스타일만 센다 — 투표 · 찜 · 스타일 아닌 검색은 빠진다."""

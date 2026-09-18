@@ -395,7 +395,7 @@ function fsOptsFor(ax){
   const col = getFsCols().find(c => c.ax === ax);
   const key = col ? col.param : null;
   if(FS.opts&&key&&Array.isArray(FS.opts[key]))return {list:FS.opts[key],from:'db'};
-  if(['stock', 'resale', 'life'].indexOf(FS.id) >= 0) return {list:[], from:'db'};
+  if(FS.id === 'stock') return {list:[], from:'db'};
   return {list:fsLocalOpts(ax).map(l=>({label:l,count:null})),from:'local'};
 }
 
@@ -449,7 +449,9 @@ export function fsLoadFacets(){
       FS.loading=false;
       if(j&&j.__fail){
         FS.opts=null; FS.narrowed=false; FS.matched=null;
-        FS.err=j.__fail+' 아래는 화면에 박아 둔 목록입니다.';
+        FS.err=j.__fail+(FS.id === 'stock'
+          ? ' 할인률 상품 후보는 서버가 복구되면 다시 표시됩니다.'
+          : ' 아래는 화면에 박아 둔 목록입니다.');
         if(window.console&&console.warn)console.warn('[facets]',j.__fail);
         fsPaintPop();
         return;
@@ -498,7 +500,7 @@ function fsColHTML(col){
   const {list,from}=fsOptsFor(ax);
   const q=fsNorm(FS.colq[ax]||'');
   const hit=q?list.filter(o=>fsNorm(o.label).indexOf(q)>=0):[...list];
-  hit.sort((a,b) => a.label.localeCompare(b.label, 'ko-KR'));
+  if(FS.id === 'stock') hit.sort((a,b) => a.label.localeCompare(b.label, 'ko-KR'));
   const picked=fsPickedOf(ax);
 
   if(!hit.length){

@@ -20,6 +20,11 @@ from zoneinfo import ZoneInfo
 KST = ZoneInfo("Asia/Seoul")
 TASTE_LIMIT = 4
 
+# 켰다가 이 시간 안에 다시 끈 것은 '없던 일'로 본다 (초).
+# 잘못 눌러 바로 취소한 것까지 활동량으로 세면, 화면의 막대가 실제 관심보다 부풀어 보인다.
+# 값을 바꾸고 싶으면 여기 한 줄만 고치면 된다.
+UNDO_WINDOW = 30
+
 
 def week_bounds(now: datetime):
     """이번 주 월요일 00:00(KST), 다음 주 월요일 00:00, 지난주 월요일 00:00 을 돌려준다."""
@@ -96,25 +101,107 @@ def _saved_block(events, start, end):
     return {"new": sum(1 for at in state.values() if start <= at < end), "total": len(state)}
 
 
-def _chat_block(sessions, start, end):
-    """chat_session 의 started_at ~ updated_at 을 사용 시간으로 본다.
+IDLE_GAP_SEC = 5 * 60        # 이보다 오래 비면 자리를 비운 것으로 보고 끊는다
+ANSWER_MAX_SEC = 3 * 60      # 응답 시간 상한 — 멈춘 요청 하나가 시간을 부풀리지 않게
 
-    질문 한 번만 하고 끝난 대화도 0분이 되지 않게 1분으로 올려 센다.
+
+def _chat_block(events, sessions, start, end):
+    """챗봇 '실제 사용 시간'.
+
+    예전에는 chat_session 의 started_at ~ updated_at 을 셌다. 그러면 월요일에 한 번 묻고
+    일요일에 한 번 더 물은 대화가 6일이 된다. 이제는 질문 단위로 센다.
+
+      · 질문 하나 = [질문 시각, 질문 시각 + 응답 시간(answer_ms)] 구간
+        (CHAT 이벤트의 at 이 질문 시각, meta.answer_ms 는 답이 끝났을 때 chat_views 가 채운다)
+      · 앞 구간이 끝나고 5분 안에 다음 질문을 했으면 그 사이(답을 읽고 다음 질문을 쓰는 시간)도 사용 중으로 본다
+      · 5분 넘게 비면 끊는다 — 그 공백은 세지 않는다
+      · 다른 대화방을 동시에 써도 겹치는 시간은 한 번만 센다
+
+    질문을 한 번이라도 했으면 최소 1분으로 올린다.
+    CHAT 이벤트가 하나도 없던 옛 기록만 예전 방식(세션 시작~끝, 대화당 30분 상한)으로 센다.
     """
+    turns = sorted((r for r in events if r["type"] == "CHAT" and _in(r, start, end)), key=lambda r: r["at"])
+    if turns:
+        spans, convs = [], set()
+        for r in turns:
+            meta = r["meta"] or {}
+            try:
+                ans = float(meta.get("answer_ms") or 0) / 1000
+            except (TypeError, ValueError):
+                ans = 0.0
+            ans = max(0.0, min(ans, ANSWER_MAX_SEC))
+            spans.append((r["at"], r["at"] + timedelta(seconds=ans)))
+            convs.add(meta.get("conversation_id") or id(r))
+        total = 0.0
+        g_start, g_end = spans[0]
+        for a, b in spans[1:]:
+            if (a - g_end).total_seconds() <= IDLE_GAP_SEC:
+                g_end = max(g_end, b)
+            else:
+                total += (g_end - g_start).total_seconds()
+                g_start, g_end = a, b
+        total += (g_end - g_start).total_seconds()
+        minutes = max(1, round(total / 60))
+        n = len(convs)
+        return {"minutes": minutes, "sessions": n, "avg_minutes": max(1, round(total / 60 / n)) if n else 0}
+
     mins = []
     for s in sessions:
         if not (start <= s["updated_at"] < end):
             continue
         began = max(s["started_at"], start)
-        mins.append(max(1, round((s["updated_at"] - began).total_seconds() / 60)))
+        mins.append(min(30, max(1, round((s["updated_at"] - began).total_seconds() / 60))))
     total = sum(mins)
     return {"minutes": total, "sessions": len(mins), "avg_minutes": round(total / len(mins)) if mins else 0}
 
 
+# 토글형 기록(찜·투표)의 켬/끔 판정. (이벤트 종류, 대상 키, 켜짐인가) 로 읽는다.
+TOGGLES = (
+    ("SAVE", "item_id", lambda m: bool(m.get("liked"))),
+    ("VOTE", "card_key", lambda m: m.get("choice") in ("BUY", "PASS")),
+)
+
+
+def _undone(events):
+    """켰다가 UNDO_WINDOW 안에 끈 쌍을 찾아 그 두 행을 돌려준다.
+
+    왜 필요한가
+    -----------
+    찜을 잘못 눌러 곧바로 취소해도 user_event 에는 두 행(liked True → False)이 남는다.
+    '찜한 것' KPI 는 마지막 상태만 보므로 0으로 맞지만, 요일별 활동 막대는 행 수를
+    그대로 세기 때문에 왕복 한 번이 활동 2건이 된다. 사람은 그 막대를
+    "내가 이만큼 관심을 보였다"로 읽으므로, 없던 일은 빼는 편이 정직하다.
+
+    같은 대상을 여러 번 켜고 끄면 각 쌍을 따로 본다. 창을 넘겨 끈 것(진짜로 한동안
+    찜해 두었다가 나중에 취소한 것)은 **빼지 않는다** — 그건 실제 활동이다.
+    반환: 제외할 행의 id 집합(파이썬 객체 식별자).
+    """
+    drop = set()
+    for kind, key_name, is_on in TOGGLES:
+        rows = sorted((r for r in events if r["type"] == kind), key=lambda r: r["at"])
+        pending = {}   # 대상 키 → 아직 짝을 못 찾은 '켬' 행
+        for row in rows:
+            key = str(row["meta"].get(key_name) or "")
+            if not key:
+                continue
+            if is_on(row["meta"]):
+                pending[key] = row
+                continue
+            opened = pending.pop(key, None)
+            if opened is None:
+                continue
+            if (row["at"] - opened["at"]).total_seconds() <= UNDO_WINDOW:
+                drop.add(id(opened))
+                drop.add(id(row))
+    return drop
+
+
 def _activity_block(events, start, end):
+    """요일별 · 시간대별 활동량. 30초 안에 취소한 찜·투표는 세지 않는다."""
+    drop = _undone(events)
     days, hours = [0] * 7, [0] * 24
     for r in events:
-        if _in(r, start, end):
+        if _in(r, start, end) and id(r) not in drop:
             local = r["at"].astimezone(KST)
             days[local.weekday()] += 1
             hours[local.hour] += 1
@@ -157,7 +244,7 @@ def build_weekly_report(events, sessions, now):
         "search": _search_block(events, start, end, prev),
         "vote": _vote_block(events, start, end, prev),
         "saved": _saved_block(events, start, end),
-        "chat": _chat_block(sessions, start, end),
+        "chat": _chat_block(events, sessions, start, end),
         "activity": _activity_block(events, start, end),
         "taste": _taste_block(events, start, end, prev),
     }

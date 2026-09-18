@@ -28,6 +28,9 @@ from . import llm
 
 CACHE_TTL = 6 * 60 * 60
 LIMIT = 4
+# 웹 검색이 끝난 뒤, 주소가 실제로 있는지 확인하는 데 더 쓸 수 있는 시간(초).
+# 전체가 이 값 + llm timeout 안에 끝나야 버셀 함수(api/_v1/magazines.js, 55초)가 기다려 준다.
+VERIFY_BUDGET = 18
 _cache: dict[str, tuple[float, dict]] = {}
 _lock = threading.Lock()
 
@@ -114,8 +117,15 @@ def _page_exists(url: str, timeout: float = 6.0) -> bool:
     return _is_article(r.url or url)
 
 
-def _pick(term: str, got: dict | None) -> list[dict]:
-    """모델 답 중 확인된 기사 주소만 남긴다 (인용 출처에 있거나 · 직접 열어 확인)."""
+def _pick(term: str, got: dict | None, deadline: float | None = None) -> list[dict]:
+    """모델 답 중 확인된 기사 주소만 남긴다 (인용 출처에 있거나 · 직접 열어 확인).
+
+    ★ deadline — 여기까지만 주소를 열어 본다 (time.time() 기준).
+      주소 확인은 한 편에 최대 6초라, 인용이 없는 기사가 여럿이면 30초를 더 쓴다.
+      그러면 버셀 함수가 먼저 끊겨 사용자는 아무것도 못 본다.
+      시간이 다 되면 **남은 기사는 확인 없이 버린다** — 있지도 않은 주소를 올리느니
+      확인된 것만 내보낸다.
+    """
     if not got:
         return []
     cited = {}
@@ -127,8 +137,11 @@ def _pick(term: str, got: dict | None) -> list[dict]:
         shown, key = llm._clean_url(str(a.get("url") or "").strip())
         if key in seen or not _is_article(shown):
             continue
-        if key not in cited and not _page_exists(shown):
-            continue
+        if key not in cited:
+            if deadline is not None and time.time() >= deadline:
+                break
+            if not _page_exists(shown):
+                continue
         seen.add(key)
         url = cited[key]["url"] if key in cited else shown
         title = str(a.get("title") or "").strip() or (cited.get(key) or {}).get("title") or shown
@@ -154,13 +167,15 @@ def find(term: str, *, timeout: int = 25) -> dict:
         return {"term": term, "articles": [], "found": False,
                 "reason": "웹 검색을 쓸 수 없는 상태입니다 (LLM 키 확인 필요)."}
 
+    started = time.time()
     got = llm.respond(INSTRUCTIONS, {"term": term, "search_hint": f"{term} 패션 매거진 기사"},
-                      _SCHEMA, effort="low", timeout=timeout, tools=TOOLS, max_output_tokens=1200)
+                      _SCHEMA, timeout=timeout, tools=TOOLS, max_output_tokens=1200, **llm.role("extract"))
     if got is None:
         # 실패는 캐시하지 않는다 — 잠깐 끊긴 것이면 다음에 다시 찾는다.
         return {"term": term, "articles": [], "found": False,
                 "reason": "웹 검색에 실패했습니다. 잠시 뒤 다시 확인해 주세요."}
-    articles = _pick(term, got)
+    # 웹 검색에 쓴 시간을 빼고, 주소 확인에 쓸 수 있는 만큼만 남긴다.
+    articles = _pick(term, got, deadline=started + timeout + VERIFY_BUDGET)
     result = {"term": term, "articles": articles, "found": bool(articles),
               "reason": "" if articles else f"‘{term}’을 다룬 웹매거진 기사를 찾지 못했습니다."}
     # ★ 찾은 결과만 캐시한다 — '없음'까지 6시간 묶어 두면 한 번 빗나간 검색이 계속 '없음'으로 보인다.

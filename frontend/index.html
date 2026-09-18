@@ -214,6 +214,15 @@
           </div>
 
           <div class="chatWrap">
+            <button class="vtonQuick vtonQuickHome" id="homeVtonQuick" type="button"
+                    aria-label="Virtual Try On 열기">
+              <span class="vtonQuickIcon" aria-hidden="true">✦</span>
+              <span class="vtonQuickCopy">
+                <b>Virtual Try On</b>
+                <small>지금 입혀보세요</small>
+              </span>
+              <span class="vtonQuickArrow" aria-hidden="true">→</span>
+            </button>
             <div class="imgAttach" id="mImgAttach" hidden></div>
             <div class="chatbar">
               <button class="salmalBtn" id="smToggle" type="button" aria-pressed="false">
@@ -340,9 +349,9 @@
 
     <div class="smTabsRow">
       <div class="smTabs" id="smTabs">
-        <button class="on" data-tab="taste">내 취향</button>
-        <button data-tab="popular" class="">인기순</button>
+        <button class="on" data-tab="popular">인기순</button>
         <button data-tab="latest" class="">최신순</button>
+        <button data-tab="taste">내 취향</button>
         <button data-tab="closing">마감임박</button>
       </div>
       <button class="addItemBtn" id="addItemBtn">＋ 살까말까 물어보기</button>
@@ -394,15 +403,18 @@
       </div></section>
       <section><div class="mwrap"><div class="stAbout" id="stAbout"></div></div></section>
       <section class="mSec" style="padding-bottom:clamp(40px,6vh,70px)"><div class="mwrap">
-        <div class="mSecHead"><div><h2 style="font-size:clamp(20px,2.2vw,30px)">Virtual Fitting</h2></div>
-          <span>Who wears it</span></div>
+        <div class="mSecHead"><div><h2 style="font-size:clamp(20px,2.2vw,30px)">Virtual Fitting</h2></div></div>
         <div class="infFeed" id="stInf"></div>
       </div></section>
       <section style="padding-bottom:clamp(60px,9vh,110px)"><div class="mwrap">
-        <div class="mSecHead"><div><h2 style="font-size:clamp(20px,2.2vw,30px)">이 스타일의 아이템</h2></div>
-          <span id="stItemCount">Items</span></div>
+        <div class="mSecHead"><div><h2 style="font-size:clamp(20px,2.2vw,30px)">이 스타일의 아이템 <span class="stItemCount" id="stItemCount">Items</span></h2></div>
+          <div class="stSortWrap" id="stSort" data-sort="recommend">
+            <button type="button" class="stSortBtn" id="stSortBtn" aria-haspopup="listbox" aria-expanded="false">
+              <span id="stSortLabel">FEEDiT 추천순</span><i class="stSortCaret" aria-hidden="true"></i></button>
+            <div class="stSortMenu" id="stSortMenu" role="listbox" aria-label="아이템 정렬"></div>
+          </div></div>
         <div class="itGrid" id="stItems"></div>
-        <div class="itMore" id="stMore">스크롤하면 더 불러옵니다</div>
+        <div class="itMoreWrap"><button type="button" class="itMore" id="stMore">더 보기</button></div>
       </div></section>
     </div>
   </section>
@@ -555,7 +567,7 @@
         <div class="commentsList" id="commentsList"></div>
         <div class="commentForm">
           <div class="commentInputRow">
-            <textarea id="commentInput" placeholder="댓글을 남겨보세요"></textarea>
+            <textarea id="commentInput" maxlength="1000" placeholder="댓글을 남겨보세요"></textarea>
             <button class="commentSend" id="commentSend" aria-label="등록">→</button>
           </div>
         </div>
@@ -652,6 +664,15 @@
         <button type="button" class="cpNewBtn" id="cpNewBtn"><i>＋</i>새로운 대화</button>
         <div class="cpListLabel">대화 목록</div>
         <div class="cpList" id="cpList"></div>
+        <button class="vtonQuick cpVtonQuick" id="cpVtonQuick" type="button"
+                aria-label="Virtual Try On 열기">
+          <span class="vtonQuickIcon" aria-hidden="true">✦</span>
+          <span class="vtonQuickCopy">
+            <b>Virtual Try On</b>
+            <small>지금 입혀보세요</small>
+          </span>
+          <span class="vtonQuickArrow" aria-hidden="true">→</span>
+        </button>
       </aside>
       <div class="cpMain">
         <div class="cpThreadWrap" id="cpThreadWrap">
@@ -822,8 +843,15 @@
         </div>
         <div class="myCol">
           <div class="panel" id="todayRecPanel">
-            <div class="panelHead"><h3>오늘의 추천</h3><span class="sub" id="recSub">매칭도 순</span></div>
-            <div class="recGrid" id="recGrid"></div>
+            <div class="panelHead"><h3>오늘의 추천</h3></div>
+            <div class="recBlock">
+              <div class="recBlockHead" id="recMineTitle">내 취향 0개 기준</div>
+              <div class="recGrid" id="recMine"></div>
+            </div>
+            <div class="recBlock">
+              <div class="recBlockHead">지금 뜨는 코어 기준</div>
+              <div class="recGrid" id="recHot"></div>
+            </div>
           </div>
         </div>
       </div>

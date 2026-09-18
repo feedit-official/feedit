@@ -44,7 +44,7 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         dry_run = options["dry_run"]
         metric_version = "feedit-l2-v1"
-        
+
         date_str = options.get("date")
         if date_str:
             metric_date = timezone.datetime.strptime(date_str, "%Y-%m-%d").date()
@@ -63,13 +63,13 @@ class Command(BaseCommand):
                 key = _norm(value)
                 if key:
                     by_name.setdefault(key, row["id"])
-        
+
         for alias in TermAlias.objects.filter(term_id__in=by_id).values("term_id", "alias", "normalized_alias"):
             for value in (alias["alias"], alias["normalized_alias"]):
                 key = _norm(value)
                 if key:
                     by_name.setdefault(key, alias["term_id"])
-                    
+
         active_term_ids = set(by_id.keys())
         self.stdout.write(f"Loaded {len(active_term_ids)} active terms.")
 
@@ -88,7 +88,7 @@ class Command(BaseCommand):
         for row in ProductTerm.objects.values("product_source_id", "term_id").iterator(chunk_size=5000):
             if row["term_id"] in active_term_ids:
                 prod_terms[row["product_source_id"]].add(row["term_id"])
-                
+
         for row in ProductSource.objects.filter(product__style__term__isnull=False).values("id", "product__style__term_id"):
             term_id = row["product__style__term_id"]
             if term_id in active_term_ids:
@@ -120,7 +120,7 @@ class Command(BaseCommand):
 
         # 4. Calculate N(A, B)
         cooc = defaultdict(lambda: defaultdict(int))
-        
+
         def add_cooc(t_set):
             t_list = list(t_set)
             for i in range(len(t_list)):
@@ -135,27 +135,27 @@ class Command(BaseCommand):
 
         # 5. Compute Lift and PMI and Rank
         self.stdout.write(f"Total N = {N}. Calculating Lift and PMI...")
-        
+
         records_to_save = []
         for source_id, targets in cooc.items():
             n_A = term_counts[source_id]
             if n_A == 0: continue
-            
+
             scored_targets = []
             for target_id, n_AB in targets.items():
                 n_B = term_counts[target_id]
                 if n_B == 0: continue
-                
+
                 # lift = N * n(A,B) / (n(A) * n(B))
                 lift = (N * n_AB) / (n_A * n_B)
                 # pmi = log2(lift)
                 pmi = math.log2(lift) if lift > 0 else 0
-                
+
                 scored_targets.append((target_id, n_AB, lift, pmi))
-                
+
             # Sort by PMI desc, then cooc desc
             scored_targets.sort(key=lambda x: (x[3], x[1]), reverse=True)
-            
+
             for rank, (target_id, n_AB, lift, pmi) in enumerate(scored_targets[:options["limit_per_term"]], 1):
                 records_to_save.append(TermAssocDaily(
                     source_term_id=source_id,
@@ -179,11 +179,11 @@ class Command(BaseCommand):
             return
 
         self.stdout.write("Saving to DB...")
-        
+
         with transaction.atomic():
             # Delete existing records for this date and version
             TermAssocDaily.objects.filter(metric_date=metric_date, metric_version=metric_version).delete()
-            
+
             # Bulk create
             TermAssocDaily.objects.bulk_create(records_to_save, batch_size=2000)
 

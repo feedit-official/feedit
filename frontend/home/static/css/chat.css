@@ -128,6 +128,40 @@
 /* 챗바 — 예시 질문이 안에서 굴러간다 */
 /* 챗바 위: 이미지 미리보기 자리. 비어 있으면 [hidden]이라 간격도 같이 사라진다 */
 .chatWrap{width:100%;position:relative;display:flex;flex-direction:column;gap:12px}
+/* Virtual Try On 바로가기 — 홈과 팝업에서 같은 버튼 언어를 쓴다.
+   평소에는 숨고 살!말? 모드에서만 보인다. */
+.vtonQuick{
+  display:none;position:relative;isolation:isolate;overflow:hidden;align-items:center;
+  gap:10px;border:1px solid rgba(255,107,74,.28);border-radius:14px;
+  background:rgba(255,255,255,.78);color:var(--pink-0);text-align:left;
+  box-shadow:0 12px 30px -24px rgba(255,107,74,.9);
+  transition:transform .28s var(--ease),border-color .28s,background .28s,box-shadow .28s;
+}
+.vtonQuick::after{
+  content:"";position:absolute;z-index:-1;inset:-80% -45%;pointer-events:none;
+  background:linear-gradient(105deg,transparent 38%,rgba(255,107,74,.12) 50%,transparent 62%);
+  transform:translateX(-70%);animation:vtonQuickSheen 5.2s ease-in-out infinite;
+}
+.vtonQuick:hover{
+  transform:translateY(-2px);border-color:rgba(255,107,74,.62);background:#fff;
+  box-shadow:0 18px 34px -24px rgba(255,107,74,.95);
+}
+.vtonQuick:active{transform:translateY(0)}
+.vtonQuickIcon{
+  width:30px;height:30px;border-radius:10px;display:grid;place-items:center;flex:0 0 auto;
+  background:var(--coral);color:#fff;font-size:14px;box-shadow:0 8px 18px -10px var(--coral);
+  animation:vtonQuickStar 3.8s var(--ease) infinite;
+}
+.vtonQuickCopy{display:flex;flex-direction:column;gap:2px;min-width:0;line-height:1.1}
+.vtonQuickCopy b{font-family:var(--num);font-size:12px;font-weight:600;letter-spacing:.04em}
+.vtonQuickCopy small{font-size:10.5px;color:var(--pink-2);letter-spacing:-.01em}
+.vtonQuickArrow{margin-left:auto;color:var(--coral);font-size:13px;transition:transform .28s var(--ease)}
+.vtonQuick:hover .vtonQuickArrow{transform:translateX(3px)}
+.vtonQuickHome{align-self:flex-end;padding:8px 11px 8px 9px;min-width:182px}
+#v-home.smMode .vtonQuickHome{display:flex;animation:vtonQuickIn .52s var(--ease) both}
+@keyframes vtonQuickIn{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:none}}
+@keyframes vtonQuickSheen{0%,68%{transform:translateX(-70%)}88%,100%{transform:translateX(70%)}}
+@keyframes vtonQuickStar{0%,76%,100%{transform:rotate(0) scale(1)}84%{transform:rotate(18deg) scale(1.08)}92%{transform:rotate(-8deg) scale(1)}}
 .chatbar{
   display:flex;align-items:center;gap:8px;position:relative;width:100%;min-width:0;
   background:#fff;border:1px solid var(--pink-3);border-radius:999px;
@@ -228,6 +262,10 @@
   display:grid;place-items:center;transition:background .2s;
 }
 .imgChip button:hover{background:rgba(20,18,17,.86)}
+
+@media(prefers-reduced-motion:reduce){
+  .vtonQuick,.vtonQuick::after,.vtonQuickIcon{animation:none!important;transition:none}
+}
 
 .sendBtn{
   width:40px;height:40px;border-radius:50%;background:var(--pink-0);color:var(--paper);

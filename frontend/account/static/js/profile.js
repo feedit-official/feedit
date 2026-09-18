@@ -2,6 +2,7 @@ import { $, $$, HAS_A, aAnimate, aStagger } from '../../../core/static/js/dom.js
 import { BADGES, bgDetail, bgRender } from './badges.js';
 import { IMG, itemCard, LIKED, STYLES, toggleLike } from '../../../home/static/js/chat.js';
 import { SIMG } from '../../../style/static/js/style_page.js';
+import { styleProductCard, styleProductsURL } from '../../../style/static/js/products.js';
 import { goView } from '../../../app_shell/static/js/router.js';
 import { rkLevelOf, rkPaintAll, rkPaintAv, xpPaint } from './rank.js';
 import { trRender } from '../../../trend/static/js/dispatch.js';
@@ -27,6 +28,7 @@ Object.defineProperty(ME,'rank',{get(){ return rkLevelOf(ME.xp) }, enumerable:tr
    마크업과 렌더 함수는 그대로 두고, 값의 출처만 목업에서 API로 바꾼다. */
 function applyAccount(user){
   if(!user)return;
+  ME.id=user.id==null?null:user.id;   /* 챗봇에 로그인 사실을 알릴 때 쓴다 (2026-09-18) */
   ME.name=user.nickname||user.username||ME.name;
   ME.initial=ME.name[0]||'F';
   ME.mail=user.email||user.username||'';
@@ -305,6 +307,93 @@ export function openStyleSelect(){
 
 /* 아이템 카드 — '스타일' 상세와 마이페이지가 같은 chat.js 의 itemCard() 를 그대로 쓴다 */
 
+/* ── 오늘의 추천 (실데이터) ─────────────────────────── */
+const REC_PER_BLOCK = 8;       /* 칸마다 보여 줄 카드 수 */
+const REC_POOL = 16;           /* 스타일마다 받아 오는 후보 수 — 여기서 날짜별로 골라 쓴다 */
+const REC_RISE = ['확산','재상승','재점화','정점 통과'];
+const recCache = new Map();    /* 스타일명 → 상품 목록 Promise. 칩을 누를 때마다 다시 받지 않는다 */
+let recSeq = 0;
+
+function recFetch(styleName){
+  if(!recCache.has(styleName)){
+    const job = fetch(styleProductsURL(styleName, 0, REC_POOL))
+      .then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)))
+      .then(j => (j && j.status === 'ok' && j.data && Array.isArray(j.data.items)) ? j.data.items : [])
+      .catch(e => { recCache.delete(styleName); throw e });   /* 실패는 캐시하지 않는다 */
+    recCache.set(styleName, job);
+  }
+  return recCache.get(styleName);
+}
+
+/* 날짜를 씨앗으로 섞는다 — 같은 날에는 같은 순서, 다음 날에는 다른 상품이 앞에 선다 */
+function recDayShuffle(list, salt){
+  const d = new Date();
+  let h = (d.getFullYear() * 400 + d.getMonth() * 31 + d.getDate()) ^ salt;
+  const rnd = () => { h = (h * 1103515245 + 12345) & 0x7fffffff; return h / 0x7fffffff };
+  const out = list.slice();
+  for(let i = out.length - 1; i > 0; i--){ const j = Math.floor(rnd() * (i + 1)); [out[i], out[j]] = [out[j], out[i]] }
+  return out;
+}
+
+/* 여러 스타일의 상품을 번갈아 뽑아 한 칸을 만든다. used 에 든 상품은 건너뛴다(두 칸 중복 방지) */
+async function recPick(styles, used){
+  const lists = await Promise.all(styles.map(s => recFetch(s.n).then(
+    items => recDayShuffle(items, s.id.length * 7919).map(it => ({ it, s })),
+    () => [])));
+  const out = [];
+  for(let round = 0; out.length < REC_PER_BLOCK; round++){
+    let any = false;
+    for(const l of lists){
+      if(round >= l.length) continue;
+      any = true;
+      const { it, s } = l[round];
+      const card = styleProductCard(it, s.n);
+      if(used.has(card.id)) continue;
+      used.add(card.id);
+      out.push({ ...card, style: s.id });
+      if(out.length >= REC_PER_BLOCK) break;
+    }
+    if(!any) break;
+  }
+  return out;
+}
+
+function recBlockHTML(host, cards, emptyText){
+  host.innerHTML = cards.length
+    ? cards.map(itemCard).join('')
+    : '<div class="itState">' + emptyText + '</div>';
+}
+
+async function recRender(){
+  const mineHost = $('#recMine'), hotHost = $('#recHot');
+  if(!mineHost || !hotHost) return;
+  const seq = ++recSeq;
+  const picked = STYLES.filter(s => ME.styles.has(s.id)).slice(0, 3);
+  const rising = STYLES.filter(s => REC_RISE.includes(s.pk) && !ME.styles.has(s.id));
+
+  const mineTitle = $('#recMineTitle');
+  if(mineTitle) mineTitle.textContent = '내 취향 ' + picked.length + '개 기준';
+
+  if(!picked.length) mineHost.innerHTML = '<div class="itState recEmpty">즐겨입는 스타일을 추가해 보세요.</div>';
+  else mineHost.innerHTML = '<div class="itState">상품을 불러오는 중…</div>';
+  hotHost.innerHTML = '<div class="itState">상품을 불러오는 중…</div>';
+
+  const used = new Set();
+  try{
+    const mine = picked.length ? await recPick(picked, used) : [];
+    const hot = await recPick(rising, used);
+    if(seq !== recSeq) return;   /* 그 사이 취향이 또 바뀌었으면 늦게 온 결과는 버린다 */
+    if(picked.length) recBlockHTML(mineHost, mine, '고른 스타일에 연결된 상품이 아직 없습니다.');
+    recBlockHTML(hotHost, hot, '지금 뜨는 스타일에 연결된 상품이 아직 없습니다.');
+  }catch(e){
+    if(seq !== recSeq) return;
+    const msg = '<div class="itState">상품을 불러오지 못했습니다.</div>';
+    if(picked.length) mineHost.innerHTML = msg;
+    hotHost.innerHTML = msg;
+  }
+  syncTodayRecHeight();
+}
+
 export function myRender(){
   /* 프로필 */
   const av = $('#avatarInitial'), nm = $('#profileName'), em = $('#profileEmail');
@@ -325,22 +414,11 @@ export function myRender(){
   const badgeN = $('#statBadgeN');
   if(badgeN) badgeN.textContent = BADGES.filter(b => b.earned).length;
 
-  /* 추천 — 고른 취향(최대 3개)을 먼저 채우고, 모자란 자리는 지금 뜨는 코어로 채워
-     왼쪽 프로필·필터 두 패널을 합친 높이만큼 카드가 넉넉히 들어차게 한다.
-     '무난템 · 국밥템' 패널은 없앴고, 그 자리는 이 카드들이 대신 채운다. */
-  const picked = STYLES.filter(s => ME.styles.has(s.id));
-  const rise = ['확산','재상승','재점화','정점 통과'];
-  const seen = new Set();
-  const rec = [...picked, ...STYLES.filter(s => rise.includes(s.pk))]
-    .filter(s => (seen.has(s.id) ? false : (seen.add(s.id), true)))
-    .slice(0, 8);
-  const g1 = $('#recGrid');
-  if(g1) g1.innerHTML = rec.map((s, i) => itemCard({
-    id: 'rec-' + s.id, style: s.id, img: SIMG(s), tag: '매칭 ' + (96 - i * 3) + '%',
-    br: s.en, nm: s.kw[(i + 1) % s.kw.length], pr: (45 + ((i * 29 + s.img * 7) % 53)) + '9,000원'
-  })).join('');
-  const sub = $('#recSub');
-  if(sub) sub.textContent = picked.length ? '내 취향 ' + picked.length + '개 기준' : '지금 뜨는 코어 기준';
+  /* 오늘의 추천 — 실데이터(/api/products) 상품으로 두 칸을 나눠 채운다(2026-09-17).
+     · 내 취향 N개 기준 : 즐겨입는 스타일(최대 3개)에 태그된 상품
+     · 지금 뜨는 코어 기준 : 추세 단계가 확산·재상승·재점화·정점 통과인 스타일의 상품
+     매칭도(%) 표기는 계산 근거가 없어 뺐다. */
+  recRender();
   syncTodayRecHeight();
 
   if(HAS_A){

@@ -356,8 +356,11 @@ def salmal_blocks(res: dict | None) -> list[dict]:
     if missing:
         labels = {"taste": "취향", "behavior": "검색·찜", "trend": "트렌드",
                   "price": "가격", "community": "커뮤니티"}
-        blocks.append({"type": "note", "slot": "full",
-                       "text": "이번 판단에 빠진 신호: " + " · ".join(labels.get(x, x) for x in missing)})
+        text = "이번 판단에 빠진 신호: " + " · ".join(labels.get(x, x) for x in missing)
+        why = (res.get("missing_why") or {}).get("taste")
+        if "taste" in missing and why:
+            text += f" (취향: {why})"
+        blocks.append({"type": "note", "slot": "full", "text": text})
     return blocks
 
 

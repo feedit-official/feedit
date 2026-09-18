@@ -1,51 +1,92 @@
 import { HAS_A, aAnimate, aSpring, aStagger, aUtils } from '../../../core/static/js/dom.js';
-import { ME, requireAuth } from '../../../account/static/js/profile.js';
+import { AUTH, ME, requireAuth } from '../../../account/static/js/profile.js';
 import { rkClamp, rkRingHTML } from '../../../account/static/js/rank.js';
 import { jobBadgeHTML, jobShown } from '../../../account/static/js/job.js';
 import { smBarFill, smBarLabels } from '../../../trend/static/js/discount_resale.js';
 import { STYLES } from '../../../home/static/js/chat.js';
-import { saveVote } from '../../../account/static/js/account_api.js';
-import YOUTUBE_SALMAL_DATA from '../../data/youtube_salmal_cards.json' with { type: 'json' };
+import { createVoteCard, deleteVoteCard, deleteVoteComment, reportVoteTarget, saveVote, saveVoteComment } from '../../../account/static/js/account_api.js';
 
 /* ══════════════ 살!말? (feedit-salmal_2 이식) ══════════════
    이름 충돌을 막기 위해 통째로 자기 범위 안에서 돌린다. */
 export function salmalBoot(){
 
-/* 실제 카드의 단일 원본은 youtube_salmal_cards.json이다. */
-const VOTES=YOUTUBE_SALMAL_DATA.cards.map((card,i)=>{
-  const summary=card.closed?card.closed_vote_summary:card.comment_summary;
-  const totalCount=card.closed?summary.total:summary.sal+summary.mal+summary.neutral;
+/* 카드·투표·댓글의 단일 원본은 Django API와 PostgreSQL이다. */
+let VOTES=[];
+let BRAND_LIST=[];
+function cardFromApi(card,i){
+  const summary=card.vote_summary||{};
+  const similar=card.similar_user_summary||summary;
+  const source=card.source||{};
   return {
-    ...card,
-    t:card.product_name,
-    b:card.brand||'브랜드 미확인',
-    p:card.price,
-    base:summary.sal_ratio,
-    baseSal:summary.sal,
-    baseMal:summary.mal,
-    votes:totalCount,
+    id:card.id, cardKey:String(card.id), t:card.title,
+    b:card.brand||'브랜드 미확인', p:card.price,
+    base:summary.buy_pct??50, baseSal:summary.buy||0, baseMal:summary.pass||0,
+    a:summary.buy_pct??50, votes:summary.total||0,
     hours:card.closed?0:card.hours_remaining,
-    taste:card.similar_user_ratio.sal,
-    tone:['#302d2b','#6e6660'],
-    /* 상품 상세 URL이 아니라 DB ProductSource의 대표 썸네일만 카드/모달에 쓴다. */
-    imgURL:card.representative_image_url||card.product_image_url,
-    youtubeId:card.video_id,
-    closed:card.closed,
-    st:card.style_tags,
-    authorNote:{name:card.mock_author.name, text:card.mock_author.story},
-    comments:card.representative_comments.map((comment,j)=>({
-      name:comment.display_name,
-      tag:comment.vote==='살'?0:comment.vote==='말'?1:null,
-      rk:comment.rank,
-      job:comment.job,
-      text:comment.display_text||comment.text,
-      time:comment.time||relativeCommentTime(i,j)
+    createdAt:Date.parse(card.created_at)||0,
+    closesAt:Date.parse(card.closes_at)||Number.POSITIVE_INFINITY,
+    /* 나와 비슷한 사용자들 — 표본이 0명이면 has_sample:false 이고 비율은 null 이다.
+       예전에는 이때 전체 투표 비율이 그대로 내려와 "비슷한 사용자"라는 말이
+       거짓이 됐다. 이제 없으면 없다고 쓴다. */
+    simHas:Boolean(similar.has_sample),
+    simPct:similar.has_sample?similar.buy_pct:null,
+    simUsers:similar.sample_users||0,
+    simReason:similar.reason||'',
+    taste:similar.has_sample?similar.buy_pct:(summary.buy_pct??50),
+    tasteMatch:card.taste_match_count||0,
+    tasteTags:Array.isArray(card.taste_match_tags)?card.taste_match_tags:[],
+    tone:['#302d2b','#6e6660'], imgURL:card.image_url,
+    youtubeId:source.video_id||'', upload_date:source.upload_date||'',
+    productSourceId:card.product_source_id,
+    closed:Boolean(card.closed), st:Array.isArray(card.style_tags)?card.style_tags:[],
+    mine:Boolean(card.mine),
+    deletable:Boolean(card.deletable),
+    authorNote:{name:card.author?.name||'FEEDiT 사용자',text:card.author?.story||card.description||''},
+    voted:card.my_choice==='BUY'?0:card.my_choice==='PASS'?1:null,
+    comments:(card.comments||[]).map(comment=>({
+      id:comment.id, name:comment.name,
+      tag:comment.choice==='BUY'?0:comment.choice==='PASS'?1:null,
+      rk:comment.rank, job:comment.job, text:comment.text, time:comment.time,
+      me:Boolean(comment.mine)
     })),
     seq:i
   };
-});
-VOTES.forEach((v,i)=>{v.a=v.base; v.voted=null; v.comments=Array.isArray(v.comments)?v.comments:[]; v.seq=i;});
-const BRAND_LIST=[...new Set(VOTES.map(v=>v.b))].sort();
+}
+async function loadVotes(){
+  const groups=await Promise.all(['latest','result'].map(tab=>
+    fetch('/api/salmal/cards?tab='+tab,{credentials:'same-origin',headers:{Accept:'application/json'}})
+      .then(async response=>{
+        const payload=await response.json();
+        if(!response.ok||payload.status!=='ok') throw new Error(payload.reason||'살말 데이터를 불러오지 못했습니다.');
+        return payload.data.items||[];
+      })));
+  const unique=new Map([...groups[0],...groups[1]].map(card=>[card.id,card]));
+  VOTES=[...unique.values()].map(cardFromApi);
+  BRAND_LIST=[...new Set(VOTES.map(v=>v.b))].sort();
+}
+
+/* 페이지를 계속 열어 둔 상태에서도 마감 시간이 지나면 즉시 종료 영역으로 옮긴다. */
+function syncExpiredCards(){
+  const now=Date.now();
+  let changed=false;
+  VOTES.forEach(v=>{
+    if(v.closed||!Number.isFinite(v.closesAt))return;
+    const remaining=v.closesAt-now;
+    if(remaining<=0){
+      v.closed=true;
+      v.hours=0;
+      changed=true;
+      return;
+    }
+    const hours=Math.max(1,Math.ceil(remaining/3600000));
+    if(v.hours!==hours){ v.hours=hours; changed=true; }
+  });
+  if(changed){
+    if(modalState.i!==null) updateModalVote();
+    renderGrid();
+    renderClosedGrid();
+  }
+}
 const TONE_PALETTE=[['#332e2a','#75695c'],['#2c2c2e','#5f5f63'],['#302f2c','#6a655c'],
   ['#2b2c2d','#585d60'],['#33322d','#736c5e'],['#2e2a2c','#5c5459']];
 const randomTone=()=>TONE_PALETTE[Math.floor(Math.random()*TONE_PALETTE.length)];
@@ -57,22 +98,11 @@ const fmtHours=h=>Number.isFinite(h)?(h>=24?Math.round(h/24)+'일':h+'시간'):'
 const fmtNum=n=>n.toLocaleString('ko-KR');
 /* 등록할 때 고른 스타일 이름 — 고르지 않았으면 빈 문자열 */
 const styleNameOf=v=>(v&&Array.isArray(v.st)?v.st:[])
-  .map(id=>STYLES.find(x=>x.id===id)).filter(Boolean).map(s=>s.n).join(' · ');
+  .map(id=>STYLES.find(x=>x.id===id)?.n||id).find(Boolean)||'';
 const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
-const simA=v=>v.youtubeId?v.taste:clamp(v.a+Math.round((v.taste-70)/4),3,97);
+/* 비슷한 사용자들의 살 비율. 표본이 없으면 null — 숫자를 만들어 내지 않는다. */
+const simA=v=>v.simHas?v.simPct:null;
 const satisfaction=v=>clamp(v.taste+Math.round((v.base-70)/5),30,99);
-function relativeCommentTime(cardIndex,commentIndex){
-  /* 목업 댓글 시각은 모두 시간 단위로 통일한다. 24시간을 넘어도 '일 전'으로
-     바꾸지 않아 카드마다 표시 형식이 섞이지 않게 한다. */
-  const hours=1+((cardIndex*7+commentIndex*5)%72);
-  return `${hours}시간 전`;
-}
-function salRatioWithUserVote(v){
-  const sal=v.baseSal+(v.voted===0?1:0);
-  const mal=v.baseMal+(v.voted===1?1:0);
-  return sal+mal?Math.round(sal*100/(sal+mal)):50;
-}
-
 /* ── 댓글 시드 데이터 ─────────────────────────────────── */
 /* rk: 작성자 등급(0~4) — 아바타 링(rkPaintAv)이 여기서 색을 가져온다
    job: 관리자 승인이 끝난 직업 — 닉네임 오른쪽 배지. 없으면 Basic(검정) */
@@ -123,8 +153,8 @@ function orderFor(tab){
   /* 그 외 탭은 진행 중인 게시글만 노출 */
   idx=idx.filter(i=>!VOTES[i].closed);
   if(tab==='closing'){
-    /* 마감임박: 마감까지 12시간 이하 남은 게시글만 */
-    return idx.filter(i=>Number.isFinite(VOTES[i].hours)&&VOTES[i].hours<=12).sort((a,b)=>VOTES[a].hours-VOTES[b].hours);
+    /* 마감임박: 진행 중인 게시글을 실제 마감 시각이 가까운 순서로 */
+    return idx.sort((a,b)=>VOTES[a].closesAt-VOTES[b].closesAt||VOTES[b].createdAt-VOTES[a].createdAt);
   }
   if(tab==='popular'){
     /* 인기순: 참여수(투표수) 많은 순 */
@@ -132,12 +162,12 @@ function orderFor(tab){
   }
   if(tab==='taste'){
     /* 내 취향: 취향 매칭도 높은 순 */
-    return idx.sort((a,b)=>VOTES[b].taste-VOTES[a].taste);
+    const matched=idx.filter(i=>VOTES[i].tasteMatch>0);
+    return (matched.length?matched:idx).sort((a,b)=>
+      VOTES[b].tasteMatch-VOTES[a].tasteMatch||VOTES[b].taste-VOTES[a].taste);
   }
   /* 최신순: 가장 최근에 등록된 게시글 먼저 */
-  return idx.sort((a,b)=>VOTES[a].youtubeId&&VOTES[b].youtubeId
-    ? VOTES[b].upload_date.localeCompare(VOTES[a].upload_date)||VOTES[a].seq-VOTES[b].seq
-    : VOTES[b].seq-VOTES[a].seq);
+  return idx.sort((a,b)=>VOTES[b].createdAt-VOTES[a].createdAt||VOTES[b].seq-VOTES[a].seq);
 }
 
 function plateStyle(v){
@@ -149,7 +179,7 @@ function plateStyle(v){
 function cardHTML(i){
   const v=VOTES[i];
   const buyOn=v.voted===0, noOn=v.voted===1;
-  const votesShown=v.votes+(v.voted!==null?1:0);
+  const votesShown=v.votes;
   const capText=v.closed
     ? `${fmtNum(votesShown)}표 · 투표 종료`
     : `${fmtNum(votesShown)}표 · 마감까지 ${fmtHours(v.hours)}${v.voted!==null?' · <em>투표함</em>':''}`;
@@ -165,10 +195,10 @@ function cardHTML(i){
       <div class="plate" style="${plateStyle(v)}"></div>
       <div class="vig"></div>
       <span class="pricep">${fmtWon(v.p)}</span>
-      <span class="tagp"><b>${v.b}</b></span>
+      <span class="tagp"><b>${escapeHtml(v.b)}</b></span>
     </div>
     <div class="body">
-      <h4>${v.t}</h4>
+      <h4>${escapeHtml(v.t)}</h4>
       <div class="cap">${capText}</div>
       <div class="smBar"><i class="buy" data-w="${v.a}" style="width:${v.a}%"><span>살 ${v.a}%</span></i><i class="no" data-w="${100-v.a}" style="width:${100-v.a}%"><span>${100-v.a}% 말</span></i></div>
       ${btnsHTML}
@@ -177,9 +207,21 @@ function cardHTML(i){
 }
 
 const PAGE_SIZE=8;
-const state={tab:'taste', page:1};
+const state={tab:'popular', page:1};
 
 function renderGrid(){
+  /* ★ '내 취향'은 로그인해야 고를 수 있다.
+       예전에는 비로그인일 때 tasteMatch 가 전부 0 이라 orderFor 의
+       `matched.length?matched:idx` 가 **전체 카드로 떨어져**, 로그아웃 상태에서도
+       내 취향 추천이 있는 것처럼 보였다. 맞지 않는 것을 맞는다고 쓰지 않는다. */
+  const gate=$('#smGate'), grid0=$('#voteGrid'), pager0=$('#pager');
+  const locked=state.tab==='taste'&&!AUTH.in;
+  if(gate)gate.hidden=!locked;
+  if(locked){
+    if(grid0)grid0.innerHTML='';
+    if(pager0)pager0.innerHTML='';
+    return;
+  }
   const order=orderFor(state.tab);
   const totalPages=Math.max(1,Math.ceil(order.length/PAGE_SIZE));
   if(state.page>totalPages) state.page=totalPages;
@@ -314,21 +356,25 @@ function updateCard(i){
     const side=+btn.dataset.vote;
     btn.classList.toggle('picked', v.voted===side);
   });
-  const votesShown=v.votes+(v.voted!==null?1:0);
+  const votesShown=v.votes;
   $('.cap',card).innerHTML=`${fmtNum(votesShown)}표 · 마감까지 ${fmtHours(v.hours)}${v.voted!==null?' · <em>투표함</em>':''}`;
 }
 
 function castVote(i,side){
   if(!requireAuth())return;
   const v=VOTES[i];
-  v.voted = (v.voted===side) ? null : side;
-  v.a=salRatioWithUserVote(v);
+  const before=v.voted;
+  const after=before===side?null:side;
+  if(before===0)v.baseSal=Math.max(0,v.baseSal-1);
+  if(before===1)v.baseMal=Math.max(0,v.baseMal-1);
+  if(after===0)v.baseSal++;
+  if(after===1)v.baseMal++;
+  v.voted=after;
+  v.votes=v.baseSal+v.baseMal;
+  v.a=v.votes?Math.round(v.baseSal*100/v.votes):50;
   updateCard(i);
   smVoteBeat($(`.voteCard[data-i="${i}"]`), side);
-  /* 서버에 투표를 남긴다 — 카드는 youtube_salmal_cards.json 이라 app.vote_card id 가 없다.
-     그래서 영상 id + 카탈로그 상품 id 로 카드를 식별한다.
-     (DB 카드로 바뀌면 cardKey 에 vote_card id(숫자)를 넣으면 vote_ballot 에도 저장된다) */
-  saveVote({ cardKey:'yt:'+(v.video_id||'')+':'+(v.catalog_product_id||v.t), title:v.t, brand:v.b,
+  saveVote({ cardKey:v.cardKey, title:v.t, brand:v.b,
     style:styleNameOf(v), choice:v.voted===null?null:(v.voted===0?'BUY':'PASS') })
     .then(r=>{ if(r&&Number.isFinite(+r.vote_count))ME.votes=+r.vote_count; });
 }
@@ -354,6 +400,18 @@ let ctxTarget=null; /* {type:'card', i} | {type:'comment', i, commentId} */
 function openCtxMenu(triggerEl, target){
   ctxTarget=target;
   const menu=$('#ctxMenu');
+  const deleteButton=$('[data-action="delete"]',menu);
+  const reportButton=$('[data-action="report"]',menu);
+  if(target.type==='card'){
+    const mine=Boolean(VOTES[target.i]?.mine);
+    deleteButton.hidden=!VOTES[target.i]?.deletable;
+    reportButton.hidden=mine;
+  }else{
+    const comment=VOTES[target.i]?.comments.find(item=>item.id===target.commentId);
+    const mine=Boolean(comment?.me);
+    deleteButton.hidden=!mine;
+    reportButton.hidden=mine;
+  }
   const r=triggerEl.getBoundingClientRect();
   const mw=menu.offsetWidth||150, mh=menu.offsetHeight||90;
   const vw=window.innerWidth, vh=window.innerHeight, pad=10;
@@ -369,27 +427,43 @@ function closeCtxMenu(){
   $('#ctxMenu').classList.remove('on');
   ctxTarget=null;
 }
-function deleteCard(i){
-  VOTES[i].deleted=true;
-  if(modalState.i===i) closeModal();
-  if(VOTES[i].closed){ renderClosedGrid(); }
-  else renderGrid();
-  showToast('게시글이 삭제됐어요.');
+async function deleteCard(i){
+  if(!VOTES[i]?.deletable){ showToast('직접 등록한 내 카드만 삭제할 수 있어요.'); return; }
+  try{
+    await deleteVoteCard(VOTES[i].id);
+    VOTES[i].deleted=true;
+    if(modalState.i===i) closeModal();
+    if(VOTES[i].closed){ renderClosedGrid(); }
+    else renderGrid();
+    showToast('게시글이 삭제됐어요.');
+  }catch(error){ showToast(error.message||'카드를 삭제하지 못했습니다.'); }
 }
-function deleteComment(i,commentId){
+async function deleteComment(i,commentId){
   if(i===null)return;
-  VOTES[i].comments=VOTES[i].comments.filter(c=>c.id!==commentId);
-  renderComments();
-  showToast('댓글이 삭제됐어요.');
+  const comment=VOTES[i]?.comments.find(c=>c.id===commentId);
+  if(!comment?.me){ showToast('내가 작성한 댓글만 삭제할 수 있어요.'); return; }
+  try{
+    await deleteVoteComment(commentId);
+    VOTES[i].comments=VOTES[i].comments.filter(c=>c.id!==commentId);
+    if(modalState.i===i)renderComments();
+    showToast('댓글이 삭제됐어요.');
+  }catch(error){ showToast(error.message||'댓글을 삭제하지 못했습니다.'); }
 }
 $$('#ctxMenu button').forEach(btn=>{
-  btn.addEventListener('click',()=>{
+  btn.addEventListener('click',async()=>{
     const action=btn.dataset.action;
     const target=ctxTarget;
     closeCtxMenu();
     if(!target)return;
     if(action==='report'){
-      showToast(target.type==='card' ? '신고가 접수됐어요. 검토 후 조치할게요.' : '댓글 신고가 접수됐어요.');
+      const targetType=target.type==='card'?'CARD':'COMMENT';
+      const targetId=target.type==='card'?VOTES[target.i]?.id:target.commentId;
+      try{
+        const saved=await reportVoteTarget({targetType,targetId});
+        showToast(saved?.created
+          ? (targetType==='CARD'?'카드 신고가 접수됐어요.':'댓글 신고가 접수됐어요.')
+          : '이미 접수한 신고예요.');
+      }catch(error){ showToast(error.message||'신고를 접수하지 못했습니다.'); }
       return;
     }
     if(action==='delete'){
@@ -425,16 +499,30 @@ $('#modalMenuBtn').addEventListener('click',e=>{
 /* ============================================================
    상세 모달 — 이미지 · 투표현황(전체/유사세그먼트) · 댓글 · AI 리포트
    ============================================================ */
-const modalState={i:null};
+const modalState={i:null,version:0};
+const pendingCommentCards=new Set();
 
 function escapeHtml(s){
   return s.replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 }
 
+function resetCommentComposer(card=null){
+  const input=$('#commentInput');
+  const sendButton=$('#commentSend');
+  const isClosed=Boolean(card?.closed);
+  const isPending=Boolean(card&&pendingCommentCards.has(card.id));
+  input.value='';
+  input.disabled=isClosed||isPending;
+  sendButton.disabled=isClosed||isPending;
+  input.placeholder=isClosed?'마감된 투표에는 댓글을 달 수 없어요':'댓글을 남겨보세요';
+}
+
 function openModal(i){
   if(!requireAuth())return;
+  modalState.version+=1;
   modalState.i=i;
   const v=VOTES[i];
+  resetCommentComposer(v);
   const plate=$('#modalPlate');
   if(v.imgURL){
     plate.style.background='';
@@ -464,14 +552,16 @@ function openModal(i){
 function closeModal(){
   $('#modalOverlay').classList.remove('on');
   document.body.style.overflow='';
+  modalState.version+=1;
   modalState.i=null;
+  resetCommentComposer();
   closeAiModal();
 }
 
 function updateModalVote(){
   const i=modalState.i; if(i===null)return;
   const v=VOTES[i];
-  const votesShown=v.votes+(v.voted!==null?1:0);
+  const votesShown=v.votes;
   $('#modalCntAll').textContent=v.closed
     ? `${fmtNum(votesShown)}표 · 투표 종료`
     : `${fmtNum(votesShown)}표 · 마감까지 ${fmtHours(v.hours)}`;
@@ -484,25 +574,40 @@ function updateModalVote(){
     b.classList.toggle('tight',a<28); n.classList.toggle('tight',(100-a)<28);
   };
   setPair($('#modalBarAll'), v.a);
-  setPair($('#modalBarSim'), simA(v));
+  /* 표본이 있을 때만 막대를 그린다. 없으면 막대를 감추고 이유를 쓴다. */
+  const sim=simA(v), simBar=$('#modalBarSim'), simNote=$('#modalSimNote');
+  if(sim==null){
+    simBar.hidden=true;
+    if(simNote){
+      simNote.hidden=false;
+      simNote.textContent=v.simReason||'아직 나와 비슷한 사용자가 이 카드에 투표하지 않았습니다.';
+    }
+  }else{
+    simBar.hidden=false;
+    if(simNote)simNote.hidden=true;
+    setPair(simBar, sim);
+  }
 
   if($('#aiChatBubble').classList.contains('on')) buildAIReport(i);
 }
 
 function buildAIReport(i){
   const v=VOTES[i], sim=simA(v), sat=satisfaction(v);
+  const simTx=sim==null
+    ? '나와 비슷한 사용자의 투표가 아직 없어 이 부분은 비교하지 못했습니다.'
+    : `성별·체형·나이·취향이 겹치는 사용자 ${v.simUsers}명 중 ${sim}%가 구매에 동의했습니다.`;
   const verdictBuy=v.a>=55;
   const el=$('#aiVerdict');
   el.textContent=verdictBuy?'지금 사도 좋아요':'조금 더 지켜보세요';
   el.classList.toggle('buy',verdictBuy);
   $('#aiWhy').textContent=
     `전체 투표에서는 ${v.a>=50?'살':'말'} 의견이 우세합니다. `+
-    `체형·스타일·나이가 비슷한 목업 사용자 집단에서는 ${sim}%가 구매에 동의했습니다. `+
+    `${simTx} `+
     `구매자 만족도는 ${sat}%로 ${sat>=80?'높은 편':sat>=60?'무난한 편':'다소 낮은 편'}입니다. `+
     (v.closed?'투표가 종료되어 최종 결과를 보여드립니다.':`마감까지 ${fmtHours(v.hours)} 남았습니다.`);
   $('#aiStats').innerHTML=`
     <div><div class="k">전체 살 비율</div><div class="v">${v.a}%</div></div>
-    <div><div class="k">유사 세그먼트</div><div class="v">${sim}%</div></div>
+    <div><div class="k">유사 세그먼트</div><div class="v">${sim==null?'–':sim+'%'}</div></div>
     <div><div class="k">구매자 만족도</div><div class="v">${sat}%</div></div>`;
 }
 
@@ -527,15 +632,41 @@ function renderComments(){
   }).join('');
 }
 
-function sendComment(){
+async function sendComment(){
   const i=modalState.i; if(i===null)return;
+  const modalVersion=modalState.version;
+  if(!requireAuth())return;
+  const card=VOTES[i];
+  if(card.closed){ showToast('마감된 투표에는 댓글을 달 수 없어요.'); return; }
   const ta=$('#commentInput');
+  const sendButton=$('#commentSend');
   const text=ta.value.trim();
   if(!text)return;
-  VOTES[i].comments.unshift({name:'나', rk:ME.rank, me:true, text, time:'1시간 전', id:nextCommentId()});
-  ta.value='';
-  renderComments();
-  $('#commentsList').scrollTop=0;
+  const cardId=card.id;
+  if(pendingCommentCards.has(cardId))return;
+  pendingCommentCards.add(cardId);
+  ta.disabled=true;
+  sendButton.disabled=true;
+  try{
+    const saved=await saveVoteComment({cardId,content:text});
+    card.comments.unshift({
+      name:'나',rk:ME.rank,job:jobShown(ME)||'Basic',me:true,text,time:'1시간 전',
+      tag:saved?.choice==='BUY'?0:saved?.choice==='PASS'?1:null,id:saved?.id||nextCommentId()
+    });
+    if(modalState.i!==null && VOTES[modalState.i].id===cardId){
+      if(modalState.version===modalVersion)ta.value='';
+      renderComments();
+      $('#commentsList').scrollTop=0;
+    }
+  }catch(error){ showToast(error.message||'댓글을 저장하지 못했습니다.'); }
+  finally{
+    pendingCommentCards.delete(cardId);
+    if(modalState.i!==null && VOTES[modalState.i].id===cardId){
+      ta.disabled=false;
+      sendButton.disabled=false;
+      ta.focus();
+    }
+  }
 }
 
 /* 모달 내 정적 요소 바인딩 (한 번만) */
@@ -587,7 +718,7 @@ window.addEventListener('resize',()=>{ if($('#aiChatBubble').classList.contains(
 
 $('#commentSend').addEventListener('click',sendComment);
 $('#commentInput').addEventListener('keydown',e=>{
-  if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); sendComment(); }
+  if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){ e.preventDefault(); sendComment(); }
 });
 
 /* ── 탭 전환 ─────────────────────────────────────────── */
@@ -637,8 +768,8 @@ const brandCombo=(function(){
   }
   function paint(){
     list.innerHTML=shown.map((b,i)=>
-      '<li role="option" class="cComboItem'+(i===cursor?' on':'')+'" data-brand="'+b.replace(/"/g,'&quot;')+'"'+
-      ' aria-selected="'+(i===cursor)+'">'+b+'</li>').join('');
+      '<li role="option" class="cComboItem'+(i===cursor?' on':'')+'" data-brand="'+escapeHtml(b)+'"'+
+      ' aria-selected="'+(i===cursor)+'">'+escapeHtml(b)+'</li>').join('');
   }
   function show(q){
     shown=match(q);
@@ -683,6 +814,7 @@ const brandCombo=(function(){
 })();
 
 let createImgURL=null;
+let createImgFile=null;
 /* 스타일 드롭다운 — 스타일 페이지와 같은 핵심 스타일 10종을 그대로 쓴다 */
 (function fillStyleSelect(){
   const sel=$('#cStyle'); if(!sel)return;
@@ -697,6 +829,7 @@ function resetCreateForm(){
   $('#cNote').value='';
   $('#imgInput').value='';
   if(createImgURL){ URL.revokeObjectURL(createImgURL); createImgURL=null; }
+  createImgFile=null;
   $('#imgPreview').hidden=true;
   $('#imgPreview').src='';
   $('#imgDropInner').style.display='';
@@ -715,6 +848,7 @@ function openCreateModal(draft){
     }
     if(draft.image){
       createImgURL=String(draft.image);
+      createImgFile=null;
       $('#imgPreview').src=createImgURL;
       $('#imgPreview').hidden=false;
       $('#imgDropInner').style.display='none';
@@ -736,7 +870,18 @@ $('#imgDrop').addEventListener('click',()=>$('#imgInput').click());
 $('#imgInput').addEventListener('change',e=>{
   const file=e.target.files[0];
   if(!file)return;
+  if(!['image/jpeg','image/png','image/webp'].includes(file.type)){
+    e.target.value='';
+    showToast('JPEG, PNG, WebP 이미지만 등록할 수 있어요.');
+    return;
+  }
+  if(file.size>1024*1024){
+    e.target.value='';
+    showToast('이미지는 1MB 이하만 등록할 수 있어요.');
+    return;
+  }
   if(createImgURL) URL.revokeObjectURL(createImgURL);
+  createImgFile=file;
   createImgURL=URL.createObjectURL(file);
   const img=$('#imgPreview');
   img.src=createImgURL;
@@ -749,7 +894,14 @@ $('#cPrice').addEventListener('input',()=>{
   $('#cPrice').value=$('#cPrice').value.replace(/[^0-9]/g,'');
 });
 
-$('#createSubmit').addEventListener('click',()=>{
+const fileDataUrl=file=>new Promise((resolve,reject)=>{
+  const reader=new FileReader();
+  reader.onload=()=>resolve(String(reader.result||''));
+  reader.onerror=()=>reject(new Error('이미지 파일을 읽지 못했습니다.'));
+  reader.readAsDataURL(file);
+});
+
+$('#createSubmit').addEventListener('click',async()=>{
   const title=$('#cTitle').value.trim();
   const brand=$('#cBrand').value.replace(/\s+/g,' ').trim();
   const priceRaw=$('#cPrice').value.trim();
@@ -760,24 +912,33 @@ $('#createSubmit').addEventListener('click',()=>{
   if(!brand){ showToast('브랜드를 입력해주세요'); return; }
   if(!priceRaw){ showToast('가격을 입력해주세요'); return; }
 
-  const seq=VOTES.length?VOTES[VOTES.length-1].seq+1:0;
-  const item={
-    t:title, b:brand, p:parseInt(priceRaw,10),
-    base:50, a:50, votes:0, hours:48, taste:70,
-    tone:randomTone(), voted:null, comments:[], closed:false, seq,
-    imgURL:createImgURL||null,
-    st:style?[style]:[],
-    authorNote: note ? {name:'나', text:note} : null
-  };
-  createImgURL=null; /* 소유권을 item으로 넘겨 reset 시 URL이 해제되지 않도록 함 */
-  VOTES.push(item);
-
-  closeCreateModal();
-  showToast('살까말까 물어보기 등록 완료!');
-
-  state.tab='latest'; state.page=1;
-  $$('#smTabs button').forEach(b=>b.classList.toggle('on', b.dataset.tab==='latest'));
-  renderGrid();
+  const submit=$('#createSubmit');
+  submit.disabled=true;
+  const originalText=submit.textContent;
+  submit.textContent='등록 중...';
+  try{
+    const styleName=STYLES.find(item=>item.id===style)?.n||'';
+    const imageData=createImgFile?await fileDataUrl(createImgFile):'';
+    const externalImage=!createImgFile&&createImgURL&&!createImgURL.startsWith('blob:')?createImgURL:'';
+    const saved=await createVoteCard({
+      title,brand,price:parseInt(priceRaw,10),description:note,
+      tags:styleName?[styleName]:[],image_data_url:imageData,image_url:externalImage
+    });
+    VOTES.push(cardFromApi(saved,VOTES.length));
+    if(!BRAND_LIST.includes(brand)) BRAND_LIST.push(brand);
+    BRAND_LIST.sort();
+    closeCreateModal();
+    resetCreateForm();
+    showToast('살까말까 물어보기 등록 완료!');
+    state.tab='latest'; state.page=1;
+    $$('#smTabs button').forEach(b=>b.classList.toggle('on',b.dataset.tab==='latest'));
+    renderGrid();
+  }catch(error){
+    showToast(error.message||'카드를 저장하지 못했습니다.');
+  }finally{
+    submit.disabled=false;
+    submit.textContent=originalText;
+  }
 });
 
 /* ── 실시간 인원 카운터 미세 변동 ────────────────────── */
@@ -795,8 +956,16 @@ setInterval(()=>{
 },2600);
 
 /* ── 초기 렌더 ───────────────────────────────────────── */
-renderGrid();
-renderClosedGrid();
+$('#voteGrid').innerHTML='<div class="smDataState">살!말? 데이터를 불러오는 중이에요.</div>';
+loadVotes().then(()=>{
+  syncExpiredCards();
+  renderGrid();
+  renderClosedGrid();
+  setInterval(syncExpiredCards,30000);
+}).catch(error=>{
+  $('#voteGrid').innerHTML=`<div class="smDataState">${escapeHtml(error.message||'살!말? 데이터를 불러오지 못했습니다.')}</div>`;
+  $('#closedGrid').innerHTML='';
+});
 
 /* 이 화면을 다시 열 때 등장 모션만 되돌려 준다.
    salmalBoot 은 한 번만 도니까, 바깥에서 부를 손잡이를 남긴다.

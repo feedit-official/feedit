@@ -1,12 +1,12 @@
 import { $, $$, HAS_A, aAnimate, aSpring, aStagger, aTimeline, aUtils } from '../../../core/static/js/dom.js';
 import { AUTH, acctBoot, dropPendingAuth, likeClick, myRender, requireAuth, resetSignupForm } from '../../../account/static/js/profile.js';
 import { SM_ON, hotBuild, mImgInit, newChat, qRoll, sendChat, smSwitch } from '../../../home/static/js/chat.js';
-import { closeChatPopup, cpDelClick, cpEditTitle, cpImgInit, cpNewConvo, cpRenderList, cpRenderThread, cpSave, cpSend, cpStore, cpToggleMode, openChatWith } from '../../../home/static/js/chat_popup.js';
+import { closeChatPopup, cpCloseMenu, cpImgInit, cpNewConvo, cpOpenMenu, cpRenderList, cpRenderThread, cpSave, cpSend, cpStore, cpToggleMode, openChatWith, openVirtualTryOn } from '../../../home/static/js/chat_popup.js';
 import { mPaintVote, mVote, smBuild } from '../../../salmal/static/js/nav_widget.js';
 import { prBuild } from '../../../pricing/static/js/pricing.js';
 import { renderDeck } from '../../../intro/static/js/deck.js';
 import { salmalBoot } from '../../../salmal/static/js/vote_app.js';
-import { stBuild, stItemPage, stMoreItems, stOpen, stOpenFit } from '../../../style/static/js/style_page.js';
+import { stBuild, stOpen, stOpenFit } from '../../../style/static/js/style_page.js';
 import { trBuild, trRender } from '../../../trend/static/js/dispatch.js';
 
 /* ============================================================
@@ -201,8 +201,7 @@ document.addEventListener('click',e=>{
   const st=e.target.closest('[data-style]');
   if(st&&st.dataset.style)return goStyle(st.dataset.style);
   const v=e.target.closest('[data-v]');
-  /* data-sm 이 붙어 있으면 살!말? 로 갈 때 그 탭에서 시작한다 —
-     내 피드에서 넘어온 건 언제나 '내 취향' 이어야 하니까. */
+  /* data-sm 이 붙어 있으면 살!말? 로 갈 때 지정한 탭에서 시작한다. */
   if(v){
     /* 로그인·회원가입 링크는 href="#" 를 갖는다. 기본 앵커 이동을 그대로 두면
        goView 가 pushState 한 직후 빈 hash 기록이 하나 더 생기고, popstate 가 그
@@ -220,6 +219,8 @@ document.addEventListener('click',e=>{
 
 document.addEventListener('keydown',e=>{
   if(e.key!=='Enter'&&e.key!==' ')return;
+  const salmalCard=e.target.closest&&e.target.closest('[data-v="salmal"][data-sm]');
+  if(salmalCard){ e.preventDefault(); salmalCard.click(); return; }
   const product=e.target.closest&&e.target.closest('[data-product-url]');
   if(!product)return;
   e.preventDefault();
@@ -227,6 +228,7 @@ document.addEventListener('keydown',e=>{
 });
 $('#mHome')&&$('#mHome').addEventListener('click',()=>goView('home'));
 $('#chatFab')&&$('#chatFab').addEventListener('click',()=>openChatWith('',null));
+$('#homeVtonQuick')&&$('#homeVtonQuick').addEventListener('click',openVirtualTryOn);
 $('#mSend')&&$('#mSend').addEventListener('click',sendChat);
 /* 살!말? 버튼은 이제 뷰 이동이 아니라 모드 전환이다 */
 $('#smToggle')&&$('#smToggle').addEventListener('click',e=>{ e.stopPropagation(); smSwitch(!SM_ON,e) });
@@ -244,6 +246,7 @@ $('#mInput')&&$('#mInput').addEventListener('keydown',e=>{
    있어야 한다. salmalBoot 안에 두면 살!말? 탭을 한 번도 안 들어간 채로
    홈에서 팝업을 열었을 때 닫기·전송·새 대화가 전부 먹통이 된다. */
 $('#cpAv')&&$('#cpAv').addEventListener('click',cpToggleMode);
+$('#cpVtonQuick')&&$('#cpVtonQuick').addEventListener('click',openVirtualTryOn);
 /* 마크가 버튼 역할을 하므로 키보드로도 눌린다 — Enter · Space */
 $('#cpAv')&&$('#cpAv').addEventListener('keydown',e=>{
   if(e.key==='Enter'||e.key===' '){ e.preventDefault(); cpToggleMode(); }
@@ -253,12 +256,12 @@ $('#cpNewBtn')&&$('#cpNewBtn').addEventListener('click',()=>{
   const ta=$('#cpInput'); if(ta)ta.focus();
 });
 $('#cpList')&&$('#cpList').addEventListener('click',e=>{
-  const edit=e.target.closest('.cpEdit[data-edit]');
-  if(edit){ cpEditTitle(+edit.dataset.edit); return; }
-  /* 삭제는 chat_popup 쪽에서 두 번 누르기(확인)까지 맡는다 */
-  const del=e.target.closest('.cpDel[data-del]');
-  if(del){ cpDelClick(del); return; }
+  /* ⋮ — 고정·이름 변경·삭제를 한자리에 모은 메뉴 (2026-09-14).
+     메뉴가 뜨고 닫히는 것과 그 안의 선택은 chat_popup 쪽이 맡는다. */
+  const menu=e.target.closest('.cpKebab[data-menu]');
+  if(menu){ e.stopPropagation(); cpOpenMenu(menu); return; }
   const item=e.target.closest('.cpItem[data-cid]'); if(!item)return;
+  cpCloseMenu();
   cpStore().activeId=+item.dataset.cid;
   cpRenderList(); cpRenderThread(); cpSave();
 });
@@ -329,11 +332,4 @@ addEventListener('popstate', e=>{
   goView(st.view);
 });
 
-/* 아이템 무한 스크롤 */
-addEventListener('scroll',()=>{
-  if(!mainMode)return;
-  if(curView==='style'&&$('#styleDetail').style.display!=='none'){
-    const m=$('#stMore');
-    if(m&&m.getBoundingClientRect().top<innerHeight+240&&stItemPage<9)stMoreItems();
-  }
-},{passive:true});
+/* 아이템 목록은 '더 보기' 버튼으로 넘긴다 — 무한 스크롤은 걷어냈다(2026-09-18) */

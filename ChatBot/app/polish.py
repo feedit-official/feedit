@@ -113,7 +113,7 @@ def polish(text: str, *, context: dict | None = None, timeout: int = 12) -> tupl
     got = llm.respond(
         INSTRUCTIONS,
         {"sentence": sealed_in, "context": context or {}},
-        _SCHEMA, effort="low", timeout=timeout, max_output_tokens=400)
+        _SCHEMA, timeout=timeout, max_output_tokens=400, **llm.role("polish"))
     if not got:
         return text, "rule"
 

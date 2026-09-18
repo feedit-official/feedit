@@ -80,7 +80,7 @@ def ask(canonical: str, facet: str, question: str, *, timeout: int = 30,
         INSTRUCTIONS,
         {"term": canonical, "facet": facet, "question": question,
          "focus": focus, "search_hint": hint},
-        _SCHEMA, effort="low", timeout=timeout, tools=TOOLS, max_output_tokens=900)
+        _SCHEMA, timeout=timeout, tools=TOOLS, max_output_tokens=900, **llm.role("general"))
     if not got:
         return None
 

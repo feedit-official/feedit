@@ -48,16 +48,20 @@ def main() -> int:
         print("      의도 분류·어투 다듬기·웹 검색 세 가지가 빠집니다.")
 
     # ── 2. 데이터 ─────────────────────────────────────────
-    print("\n[2] 챗봇 데이터·코드 (크롤러 저장소)")
-    print(f"   FEEDIT_CRAWLER_DIR  {config.CRAWLER}")
+    print("\n[2] 챗봇 데이터·코드")
+    print(f"   FEEDIT_DATA_BACKEND  {config.DATA_BACKEND}")
+    if config.DATA_BACKEND == "rds":
+        print(f"   RDS  {__import__('os').getenv('DB_HOST','(없음)')}:{__import__('os').getenv('DB_PORT','5432')}")
+    else:
+        print(f"   FEEDIT_CRAWLER_DIR  {config.CRAWLER}")
     gaps = config.missing_inputs()
     if not gaps:
-        print(OK, "네 가지 준비물이 모두 있습니다.")
+        print(OK, "RDS 연결 설정과 질문 추출 코드가 준비됐습니다."
+              if config.DATA_BACKEND == "rds" else "SQLite 회귀 테스트 준비물이 모두 있습니다.")
     else:
         for g in gaps:
             print(NO, g)
-        print("\n      크롤러 저장소를 받은 뒤 .env 에 적어 주세요:")
-        print("        FEEDIT_CRAWLER_DIR=/절대/경로/feedit-crawler")
+        print("\n      위에 표시된 환경변수 또는 파일 경로를 .env에 채워 주세요.")
 
     # ── 3. 서버 ───────────────────────────────────────────
     print("\n[3] 챗봇 서버")
@@ -71,7 +75,7 @@ def main() -> int:
     # ── 정리 ──────────────────────────────────────────────
     print("\n" + "─" * 62)
     if gaps:
-        print(" 지금 상태: 엔진을 켤 수 없습니다 (크롤러 저장소 필요).")
+        print(" 지금 상태: 엔진을 켤 수 없습니다 (데이터 연결 설정 필요).")
         print(" 다음 할 일: 위 [2] 를 채우고 다시 돌리세요.")
         return 1
     print(" 지금 상태: 켤 수 있습니다.")

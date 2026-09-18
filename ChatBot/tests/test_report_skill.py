@@ -2,7 +2,7 @@ import json
 import unittest
 from unittest.mock import patch
 
-from app import agent_blocks, blocks, orchestrator, report_skill
+from app import agent_blocks, agent_path, blocks, orchestrator, report_skill, verify
 from app.tools import Toolbox, specs_for
 
 
@@ -166,17 +166,92 @@ class ReportSkillTest(unittest.TestCase):
         self.assertNotIn("12", box.trace.numbers())
 
     @patch("app.orchestrator.llm.respond")
-    def test_orchestrator_allows_plain_answer_when_design_is_unnecessary(self, respond):
+    def test_orchestrator_requests_design_after_structured_metric(self, respond):
+        spec = {
+            "title": "지금 뜨는 흐름", "accent": "coral", "surface": "paper",
+            "density": "balanced", "modules": [{"kind": "ranking", "term": None,
+            "presentation": "hero", "span": 12, "emphasis": "strong"}],
+        }
         respond.side_effect = [
             {"_raw": {"output": [{"type": "function_call", "call_id": "c1",
               "name": "rank_terms", "arguments": json.dumps({"facet": None, "limit": 5})}]},
              "text": ""},
             {"_raw": {"output": [{"type": "message"}]}, "text": "고프코어가 가장 높아요."},
+            {"_raw": {"output": [{"type": "function_call", "call_id": "c2",
+              "name": "compose_report", "arguments": json.dumps(spec)}]}, "text": ""},
         ]
         result = orchestrator.run("요즘 뭐가 핫해?", store=Store(), gate=Gate())
         self.assertEqual(result.answer, "고프코어가 가장 높아요.")
+        self.assertIn("compose_report", [c["tool"] for c in result.trace.calls])
+        self.assertEqual(respond.call_count, 3)
+
+    @patch("app.orchestrator.llm.respond")
+    def test_orchestrator_allows_plain_answer_without_report_material(self, respond):
+        respond.return_value = {
+            "_raw": {"output": [{"type": "message"}]}, "text": "반가워요.",
+        }
+        result = orchestrator.run("안녕", store=Store(), gate=Gate())
+        self.assertEqual(result.answer, "반가워요.")
         self.assertNotIn("compose_report", [c["tool"] for c in result.trace.calls])
-        self.assertEqual(respond.call_count, 2)
+        self.assertEqual(respond.call_count, 1)
+
+    @patch("app.agent_path.agent_blocks.build", return_value=[{"type": "generative_report"}])
+    @patch("app.agent_path.verify.verify")
+    @patch("app.agent_path.orchestrator.run")
+    def test_agent_path_builds_fallback_when_complex_report_omits_design(
+            self, run, verify_answer, build):
+        result = orchestrator.Result()
+        result.answer = "고프코어의 여러 신호를 함께 봤습니다."
+        result.stopped = "done"
+        result.trace = Trace([{
+            "tool": "get_metric", "args": {"term": "고프코어",
+                                             "axes": ["온도", "모멘텀", "출처별"]},
+            "result": {"term": "고프코어", "has_metric": True,
+                       "as_of": "2026-09-09", "온도": {"temp": 21}},
+        }])
+        run.return_value = result
+        verify_answer.return_value = (result.answer, verify.Report())
+
+        out = agent_path.ask("고프코어 자세히 분석해줘", store=Store(), gate=Gate())
+
+        build.assert_called_once()
+        self.assertEqual(out["blocks"], [{"type": "generative_report"}])
+
+    @patch("app.agent_path.agent_blocks.build")
+    @patch("app.agent_path.verify.verify")
+    @patch("app.agent_path.orchestrator.run")
+    def test_agent_path_keeps_a_single_metric_as_conversation(
+            self, run, verify_answer, build):
+        result = orchestrator.Result()
+        result.answer = "고프코어 온도는 21점으로 차가운 편입니다."
+        result.stopped = "done"
+        result.trace = Trace([{
+            "tool": "get_metric", "args": {"term": "고프코어", "axes": ["온도"]},
+            "result": {"term": "고프코어", "has_metric": True,
+                       "as_of": "2026-09-09", "온도": {"temp": 21}},
+        }])
+        run.return_value = result
+        verify_answer.return_value = (result.answer, verify.Report())
+
+        out = agent_path.ask("고프코어 온도만 알려줘", store=Store(), gate=Gate())
+
+        build.assert_not_called()
+        self.assertEqual(out["blocks"], [])
+
+    def test_report_safety_net_matches_information_complexity(self):
+        one = Trace([{"tool": "get_metric",
+                      "args": {"term": "고프코어", "axes": ["온도"]},
+                      "result": {"term": "고프코어", "has_metric": True}}])
+        many = Trace([{"tool": "get_metric",
+                       "args": {"term": "고프코어",
+                                "axes": ["온도", "모멘텀", "출처별"]},
+                       "result": {"term": "고프코어", "has_metric": True}}])
+        ranking = Trace([{"tool": "rank_terms", "args": {},
+                          "result": {"items": [{"term": "고프코어"}]}}])
+        self.assertFalse(orchestrator.report_required("온도만 알려줘", one))
+        self.assertTrue(orchestrator.report_required("자세히 분석해줘", one))
+        self.assertTrue(orchestrator.report_required("요즘 뭐가 핫해?", ranking))
+        self.assertTrue(orchestrator.report_required("흐름을 여러 축으로 봐줘", many))
 
     @patch("app.orchestrator.llm.respond")
     def test_orchestrator_stops_before_model_call_when_cancelled(self, respond):

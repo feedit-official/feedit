@@ -77,6 +77,11 @@ let fail=0;
 const ok=(c,m)=>{ console.log((c?'  OK  ':'  X!! ')+m); if(!c) fail++; };
 const thread = () => document.getElementById('cpThread');
 
+console.log('=== 0. 피드백은 간헐적으로만 묻나 ===');
+const feedbackTurns=Array.from({length:13},(_,i)=>i+1).filter(cp.cpFeedbackSample);
+ok(JSON.stringify(feedbackTurns)===JSON.stringify([3,8,13]),
+   `3·8·13번째 답만 묻는다 (${feedbackTurns.join(',')})`);
+
 console.log('=== 1. 서버가 살아 있을 때 — 실데이터 리포트가 뜨나 ===');
 cp.openChatWith('발레코어 어때?');
 await wait(2600);

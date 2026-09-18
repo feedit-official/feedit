@@ -21,9 +21,9 @@
 
     <div class="smTabsRow">
       <div class="smTabs" id="smTabs">
-        <button class="on" data-tab="taste">내 취향</button>
-        <button data-tab="popular" class="">인기순</button>
+        <button class="on" data-tab="popular">인기순</button>
         <button data-tab="latest" class="">최신순</button>
+        <button data-tab="taste">내 취향</button>
         <button data-tab="closing">마감임박</button>
       </div>
       <button class="addItemBtn" id="addItemBtn">＋ 살까말까 물어보기</button>
@@ -31,6 +31,13 @@
   </section>
 
   <section class="voteSection">
+    <!-- '내 취향' 탭은 내가 누구인지 알아야 고를 수 있다.
+         로그인 전에는 카드를 감추고 여기에 안내를 띄운다. -->
+    <div class="smGate" id="smGate" hidden>
+      <b>내 취향 추천은 로그인해야 볼 수 있어요.</b>
+      <span>즐겨입는 스타일과 체형을 알아야 나와 맞는 고민을 골라 드릴 수 있습니다.</span>
+      <button type="button" data-v="login">로그인하러 가기 →</button>
+    </div>
     <div class="voteGrid" id="voteGrid"></div>
     <div class="pager" id="pager">
     <button class="pagerBtn" id="pagerPrev" disabled="" aria-label="이전 페이지">←</button>
@@ -116,13 +123,16 @@
           <div class="smBar" id="modalBarSim">
             <i class="buy"></i><i class="no"></i>
           </div>
+          <!-- 비슷한 사용자 표본이 없을 때 — 막대 대신 이유를 쓴다.
+               전체 투표 숫자를 대신 보여 주면 "비슷한 사용자"라는 말이 거짓이 된다. -->
+          <p class="smNote" id="modalSimNote" hidden></p>
         </div>
 
         <div class="commentsHead">댓글 <span id="commentCount"></span></div>
         <div class="commentsList" id="commentsList"></div>
         <div class="commentForm">
           <div class="commentInputRow">
-            <textarea id="commentInput" placeholder="댓글을 남겨보세요"></textarea>
+            <textarea id="commentInput" maxlength="1000" placeholder="댓글을 남겨보세요"></textarea>
             <button class="commentSend" id="commentSend" aria-label="등록">→</button>
           </div>
         </div>

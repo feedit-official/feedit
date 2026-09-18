@@ -5,5 +5,6 @@
 
 requests==2.34.2     # llm.py — OpenAI Responses API 호출
 PyYAML==6.0.3        # 크롤러 lexicon.yaml 읽기 (lexicon_gate 가 간접 사용)
+psycopg[binary]==3.3.4  # 운영 AWS RDS(PostgreSQL) 읽기
 
 # .env 는 app/env.py 가 표준 라이브러리로 읽는다. python-dotenv 는 필요 없다.

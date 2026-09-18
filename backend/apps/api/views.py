@@ -31,8 +31,8 @@ from collections import defaultdict
 from datetime import timedelta
 
 from django.db import connection
-from django.db.models import Count, F, Max, Min, Q, Sum
-from django.db.models.functions import Coalesce
+from django.db.models import Case, Count, F, FloatField, Max, Min, OuterRef, Q, Subquery, Sum, Value, When
+from django.db.models.functions import Cast, Coalesce, Ln
 from django.http import JsonResponse
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
@@ -616,7 +616,7 @@ def _sentiment_evidence(term, is_brand=False, variants=None):
     """긍부정 신호 유형별 근거 문장 추출"""
     evidence = defaultdict(list)
     intents = ["QUESTION", "PURCHASE", "EXPERIENCE", "PRAISE", "CRITIQUE", "CHITCHAT"]
-    
+
     if is_brand:
         docs = TextDocument.objects.filter(
             document_type=TextDocument.DocumentType.COMMENT
@@ -629,12 +629,12 @@ def _sentiment_evidence(term, is_brand=False, variants=None):
             term=term, document__document_type=TextDocument.DocumentType.COMMENT,
             intent_code__in=intents
         ).exclude(mention_text__isnull=True)
-        
+
     rows = (
         qs.order_by("-created_at")
         .values("intent_code", "mention_text", "document__source__name", "document__document_type")[:1000]
     )
-    
+
     for row in rows:
         intent = str(row["intent_code"]).upper()
         if not intent or intent == "NONE":
@@ -1651,7 +1651,54 @@ def products(request):
     if brand:
         qs = qs.filter(Q(product__brand__name=brand) | Q(product__brand__english_name__iexact=brand)
                        | Q(source_brand__name=brand) | Q(source_brand__brand__name=brand))
+    # 정렬 — 값은 모두 최신 스냅샷 한 줄에서 온다. 값이 없는 상품은 어느 정렬이든 맨 뒤.
+    # recommend(FEEDiT 추천순): 리뷰·좋아요·판매량(로그) + 평점 + 할인율 + 이미지·가격 보유 가산점.
+    # 계산식은 api/products.js(Node) 와 같게 유지한다.
+    sort = (request.GET.get("sort") or "latest").strip()
+    snap = ProductSourceSnapshot.objects.filter(product_source_id=OuterRef("pk")).order_by("-observed_at")
+
+    def last(field):
+        return Cast(Subquery(snap.values(field)[:1]), FloatField())
+
+    zero = Value(0.0, output_field=FloatField())
+    extra = {"_price": Cast(Subquery(snap.annotate(_p=Coalesce("sale_price", "list_price")).values("_p")[:1]),
+                            FloatField())}
+    tail = ("-last_seen_at", "-id")
+    simple = {"reviews": "review_count", "rating": "rating", "likes": "like_count", "sales": "sales_count"}
+    if sort == "price_desc":
+        ordering = (F("_price").desc(nulls_last=True), "-id")
+    elif sort == "price_asc":
+        ordering = (F("_price").asc(nulls_last=True), "-id")
+    elif sort in simple:
+        extra["_key"] = last(simple[sort])
+        ordering = (F("_key").desc(nulls_last=True),) + (
+            (F("_rv").desc(nulls_last=True),) if sort == "rating" else ()) + tail
+        if sort == "rating":
+            extra["_rv"] = last("review_count")
+    elif sort in ("discount", "recommend"):
+        extra["_dc_raw"] = last("discount_rate")
+        disc = Case(When(_dc_raw__lte=1, then=F("_dc_raw") * 100), default=F("_dc_raw"), output_field=FloatField())
+        if sort == "discount":
+            extra["_key"] = disc
+            ordering = (F("_key").desc(nulls_last=True),) + tail
+        else:
+            extra.update({"_rv": last("review_count"), "_lk": last("like_count"),
+                          "_sl": last("sales_count"), "_rt": last("rating")})
+            extra["_key"] = (
+                Coalesce(Ln(F("_rv") + 1.0), zero) * 1.0
+                + Coalesce(Ln(F("_lk") + 1.0), zero) * 0.8
+                + Coalesce(Ln(F("_sl") + 1.0), zero) * 0.8
+                + Coalesce(F("_rt"), zero) * 0.6
+                + Coalesce(disc, zero) * 0.03
+                + Case(When(thumbnail_url__isnull=False, then=Value(0.5)), default=zero, output_field=FloatField())
+                + Case(When(_price__isnull=False, then=Value(0.5)), default=zero, output_field=FloatField())
+            )
+            ordering = (F("_key").desc(),) + tail
+    else:
+        ordering = tail
+    sort_fields = [k for k in extra]
     rows = list(qs.annotate(
+        **extra,
         _brand=BRAND_EXPR,
         _name=ITEM_EXPR,
         _category=Coalesce(
@@ -1661,14 +1708,15 @@ def products(request):
         ),
     ).values(
         "id", "product_id", "_name", "_brand", "_category", "source__code",
-        "product_url", "thumbnail_url", "market_type",
-    ).order_by("-last_seen_at", "-id")[offset:offset + limit + 1])
+        "product_url", "thumbnail_url", "market_type", *sort_fields,
+    ).order_by(*ordering)[offset:offset + limit + 1])
     if not rows:
         label = kw or brand or (sel["style"] or [None])[0]
         return _empty(f"조건에 맞는 상품이 없습니다 (검색어 ‘{label}’)."
                       if label else "commerce.product_source 가 비어 있습니다.")
     has_more = len(rows) > limit
     rows = rows[:limit]
+    total = qs.count()   # '더 보기' 버튼이 "24 / 312" 를 보여 주려면 전체 개수가 필요하다
     snaps = {}
     for s in (ProductSourceSnapshot.objects.filter(product_source_id__in=[r["id"] for r in rows])
               .order_by("product_source_id", "-observed_at")
@@ -1698,6 +1746,7 @@ def products(request):
         "offset": offset,
         "next_offset": offset + len(items),
         "has_more": has_more,
+        "total": total,
         "style": sel["style"],
     })
 

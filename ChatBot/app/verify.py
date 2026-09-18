@@ -113,6 +113,7 @@ class Report:
         self.changed: bool = False
         self.removed: list[str] = []           # 모델이 지웠다고 말한 것
         self.skipped: str = ""                 # 고쳐 쓰기를 건너뛴 이유
+        self.escalated: str = ""               # Luna 가 막혀 Sol 로 다시 부른 이유 (2026-09-18)
 
     @property
     def clean(self) -> bool:
@@ -124,7 +125,7 @@ class Report:
                 "missing_axes": self.missing_axes,
                 "bad_recommend": self.bad_recommend,
                 "changed": self.changed, "removed": self.removed,
-                "skipped": self.skipped}
+                "skipped": self.skipped, "escalated": self.escalated}
 
 
 def _numbers_in(text: str) -> set[str]:
@@ -293,6 +294,26 @@ _FIX_INSTRUCTIONS = """너는 FEEDiT 답변의 사실 검증관이다.
 원문 그대로 두어도 되면 ok=true 로 하고 answer 에 원문을 그대로 넣어라."""
 
 
+def _read_fix(answer: str, res: dict | None) -> tuple[str | None, str]:
+    """모델 응답 → (고친 답 | None, 실패 사유).  (None, "") 는 '원문 그대로 두어도 된다'."""
+    if not res:
+        return None, f"llm_{llm.LAST_ERROR or 'unknown'}"
+    if res.get("ok"):
+        return None, ""
+    fixed = (res.get("answer") or "").strip()
+    if not fixed:
+        return None, "empty_fix"
+    # ★ 고친 답을 그대로 믿지 않는다 (2026-09-14).
+    #   실측: "감성 지표는 아직 측정 자료가 없습니다.keletal" 이 화면에 떴다.
+    #   규칙 2 가 시킨 대로 문장은 바꿨는데, 소형 모델이 끝에 영문 조각을
+    #   흘렸다. 검증관의 일은 **지우는 것**이지 쓰는 것이 아니므로(규칙 3),
+    #   원문에 없던 영문 낱말이 새로 생겼다면 그 재작성은 깨진 것이다.
+    strays = _new_latin_words(answer, fixed)
+    if strays:
+        return None, "fix_garbled:" + ",".join(strays[:3])
+    return fixed, ""
+
+
 def fix(answer: str, trace, rep: Report, question: str = "",
         deadline: float | None = None) -> str:
     """② 의심되는 게 있을 때만 부른다. 소형 모델."""
@@ -315,22 +336,47 @@ def fix(answer: str, trace, rep: Report, question: str = "",
     res = llm.respond(_FIX_INSTRUCTIONS, payload, _SCHEMA,
                       timeout=min(float(FIX_TIMEOUT), left),
                       **llm.role("verify"))
-    if not res:
+    fixed, why = _read_fix(answer, res)
+    # ★ Luna 가 못 닿았거나(res 없음) 고친 답이 깨졌다 — 시간이 남으면 Sol 로 한 번 (2026-09-18).
+    #   의심 숫자를 그대로 두고 경고만 붙이는 것(_hedge)보다 제대로 고친 답이 낫다.
+    if why:
+        left = (deadline - time.monotonic()) if deadline else float(FIX_TIMEOUT)
+        if left >= MIN_CALL and llm.can_escalate(bad_output=res is not None):
+            rep.escalated = "verify:" + (llm.LAST_ERROR or why)
+            res = llm.respond(_FIX_INSTRUCTIONS, payload, _SCHEMA,
+                              timeout=min(float(FIX_TIMEOUT), left),
+                              **llm.escalate("verify"))
+            fixed, why = _read_fix(answer, res)
+    if why:
         # ★ 검증을 못 했으면 통과시키지 않는다.
         #   모델에 못 닿았다고 지어낸 숫자를 그대로 내보내면
         #   이 층이 있으나 마나다. 의심 구간을 알리는 쪽이 낫다.
-        rep.skipped = f"llm_{llm.LAST_ERROR or 'unknown'}"
+        rep.skipped = why
         return _hedge(answer, rep)
-
-    if res.get("ok"):
+    if fixed is None:                    # ok=true — 원문 그대로 둬도 된다
         return answer
-    fixed = (res.get("answer") or "").strip()
-    if not fixed:
-        rep.skipped = "empty_fix"
-        return _hedge(answer, rep)
     rep.changed = fixed != answer
     rep.removed = [str(x) for x in (res.get("removed") or [])]
     return fixed
+
+
+_LATIN_WORD = re.compile(r"[A-Za-z]{3,}")
+
+
+def _new_latin_words(before: str, after: str) -> list[str]:
+    """고친 답에만 새로 생긴 영문 낱말.
+
+    왜 영문만 보나 — 검증관이 하는 일은 숫자를 지우고 문장을 정해진 한국어
+    문구로 바꾸는 것뿐이다. 브랜드명 같은 영문은 원문에 이미 있으므로 통과하고,
+    원문에 없던 영문이 튀어나오면 생성이 깨진 것이다. 한국어로 새 문장을
+    지어내는 경우까지 잡지는 못한다 — 그건 이 검사가 노리는 것이 아니다.
+    """
+    had = {w.lower() for w in _LATIN_WORD.findall(before)}
+    out = []
+    for w in _LATIN_WORD.findall(after):
+        if w.lower() not in had and w.lower() not in out:
+            out.append(w.lower())
+    return out
 
 
 def _hedge(answer: str, rep: Report) -> str:

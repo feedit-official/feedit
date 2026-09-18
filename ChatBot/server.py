@@ -47,7 +47,7 @@ from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
-from app import plans
+from app import llm, plans
 from app.adapters import SalmalHTTPAdapter
 from app.engine import ChatEngine
 from app import vton
@@ -174,13 +174,21 @@ def engine() -> ChatEngine:
     if _engine is None:
         with _engine_lock:
             if _engine is None:
-                _engine = ChatEngine(salmal=SalmalHTTPAdapter())
+                _engine = ChatEngine(use_llm=not llm.DISABLED, salmal=SalmalHTTPAdapter())
     return _engine
+
+
+def _json_default(value):
+    """json 이 모르는 값(Decimal · 날짜)은 숫자나 문자열로 — 모양 때문에 답이 죽지 않게."""
+    from decimal import Decimal
+    if isinstance(value, Decimal):
+        return int(value) if value == value.to_integral_value() else float(value)
+    return str(value)
 
 
 def sse(event: str, data) -> bytes:
     return (f"event: {event}\n"
-            f"data: {json.dumps(data, ensure_ascii=False)}\n\n").encode("utf-8")
+            f"data: {json.dumps(data, ensure_ascii=False, default=_json_default)}\n\n").encode("utf-8")
 
 
 def _log_turn(question: str, rep: dict) -> None:
@@ -270,33 +278,77 @@ def clean_taste_context(raw: dict) -> dict:
     return out
 
 
+_TREND_ACTION_INTENTS = {"metric.level", "metric.direction", "metric.platform",
+                         "metric.assoc", "metric.sentiment", "metric.lifecycle"}
+_STYLE_DETAIL_ASK = re.compile(r"뜻|유래|기원|정의|어떤\s*스타일|무슨\s*스타일|설명해", re.I)
+_TREND_DETAIL_ASK = re.compile(
+    r"지표|온도|트렌드|유행|인기|요즘|핫|유효|추이|상승|하락|꺾", re.I)
+_COMMUNITY_ASK = re.compile(r"투표|사람들|다들|의견|후기|커뮤니티|물어", re.I)
+_TRYON_ASK = re.compile(r"입혀|입어|착용|어울|핏(?:은|이|을|을까)?|코디", re.I)
+_PURCHASE_ASK = re.compile(r"살까|사도|말까|살지|구매|지를까|추천|고민|어때", re.I)
+
+
 def actions_for(rep: dict, mode: str = "general") -> list[dict]:
-    """다음에 무엇을 할 수 있는지. 화면에 실제로 있는 곳으로만 보낸다."""
+    """답에서 바로 이어 할 가치가 있는 행동만 보낸다.
+
+    버튼은 기능 목록이 아니다. 매 답변마다 같은 네 개를 붙이면 사용자는 본문보다
+    버튼을 먼저 무시하게 된다. 현재 질문·의도·확인된 상품/사진이 실제로 다음 행동과
+    이어질 때만 노출한다.
+    """
     acts = []
     terms = rep.get("terms") or []
     first = terms[0] if terms else None
-    if first and first.get("facet") == "style":
-        acts.append({"label": "Style 탭에서 자세히", "type": "view",
-                     "view": "style", "style": first.get("canonical")})
-    if first and first.get("available"):
-        acts.append({"label": "지표로 보기", "type": "view", "view": "trend",
-                     "part": "temp", "keyword": first.get("canonical")})
+    question = str(rep.get("question") or "")
+    intent = str(rep.get("intent") or "")
+
+    if mode == "general" and len(terms) == 1:
+        # 뜻·유래를 설명한 뒤에는 Style 페이지가 자연스러운 다음 단계다.
+        if (first and first.get("facet") == "style"
+                and (intent == "knowledge.origin" or _STYLE_DETAIL_ASK.search(question))):
+            acts.append({"label": "Style 탭에서 자세히", "type": "view",
+                         "view": "style", "style": first.get("canonical")})
+        # 수치·방향·플랫폼을 물은 경우에만 상세 지표 페이지를 제안한다.
+        if (first and first.get("available")
+                and (intent in _TREND_ACTION_INTENTS
+                     or _TREND_DETAIL_ASK.search(question))):
+            acts.append({"label": "지표로 보기", "type": "view", "view": "trend",
+                         "part": "temp", "keyword": first.get("canonical")})
     if rep.get("hint", {}).get("code") == "MODE_MISMATCH":
         acts.append(rep["hint"]["action"] | {"label": "살!말? 모드로"})
     if mode == "salmal":
         # 물어보기 카드는 **확인한 것만** 들고 간다. 확인하지 못한 칸은 비워 두고
         # 사용자가 직접 적는다 — 짐작으로 채우면 사용자가 확인한 값으로 읽는다.
-        community = {"label": "물어보기", "type": "community"}
         draft = rep.get("item_draft")
+        keep = {}
         if isinstance(draft, dict):
             keep = {k: draft.get(k) for k in ("title", "brand", "price", "source")
                     if draft.get(k) not in (None, "")}
+        # 실제 상품을 확인했거나 사용자가 다른 사람의 의견을 요청했을 때만 커뮤니티로.
+        if keep or intent == "buy.opinion" or _COMMUNITY_ASK.search(question):
+            community = {"label": "물어보기", "type": "community"}
             if keep:
                 community["draft"] = keep
-        acts.extend([
-            community,
-            {"label": "입혀보기", "type": "virtual_fit"},
-        ])
+            acts.append(community)
+
+    # ── 입혀보기 (2026-09-18: 조건을 넓혔다) ─────────────────────
+    #   예전에는 살말 모드에서 "입혀/착용" 을 말하거나 사진을 올려 구매를 물을 때만 떴다.
+    #   그래서 링크로 옷을 보내 "살까 말까" 를 물어도 한 번도 안 나왔다.
+    #   이제는 **입어 볼 대상이 분명할 때** 모드와 관계없이 제안한다.
+    #     ① 입혀/착용/어울려 같은 말을 했거나 의도가 buy.tryon
+    #     ② 이번 답이 사진 속 옷을 봤고, 구매·코디 얘기다
+    #     ③ 살말 모드에서 링크로 실제 상품을 확인했다(상품명이 확인됨)
+    has_visual = isinstance(rep.get("visual_context"), dict) and bool(rep["visual_context"])
+    wants_tryon = intent == "buy.tryon" or bool(_TRYON_ASK.search(question))
+    photo_item = has_visual and (intent == "vision.salmal" or mode == "salmal"
+                                 or bool(_PURCHASE_ASK.search(question)))
+    draft = rep.get("item_draft") if isinstance(rep.get("item_draft"), dict) else {}
+    # ★ 출처 문구로 판단하지 않는다 — 지수 도구가 같은 상품을 "챗봇이 확인한 값" 으로 다시
+    #   적으면서 '링크' 가 사라져 버튼이 한 번도 안 떴다(2026-09-18). 질문에 링크가 있고
+    #   상품명이 확인됐으면 충분하다.
+    linked_item = (mode == "salmal" and bool(draft.get("title"))
+                   and bool(re.search(r"https?://|www\.", question, re.I)))
+    if wants_tryon or photo_item or linked_item:
+        acts.append({"label": "입혀보기", "type": "virtual_fit"})
     return acts
 
 
@@ -347,7 +399,9 @@ class Handler(BaseHTTPRequestHandler):
                                         "metric_version": e.store.version,
                                         "terms": len(e.gate.prefer)})
             except Exception as ex:                       # noqa: BLE001
-                return self._json(500, {"ok": False, "error": type(ex).__name__})
+                # 비밀값이 섞일 수 있어 메시지는 싣지 않는다 — 자세한 건 docker logs
+                return self._json(503, {"ok": False, "error": type(ex).__name__,
+                                        "hint": "docker logs feedit-chatbot 에 원인이 있습니다"})
         if u.path == "/v1/llm":
             # 배선 진단. **키 값은 절대 안 나간다** — 있나 없나와 길이뿐이다.
             from app import llm
@@ -511,6 +565,10 @@ class Handler(BaseHTTPRequestHandler):
                     category=str(req.get("category") or "상의"),
                     # 착장 옵션(아우터 레이어드·열림/닫힘). 없으면 예전과 같다.
                     options=req.get("options") if isinstance(req.get("options"), dict) else None,
+                    # 포즈 (2026-09-14). 비우면 준비된 포즈 중에서 무작위로
+                    # 뽑는다 — 같은 옷을 다시 입혀 봐도 다른 컷이 나온다.
+                    # 앞선 결과의 pose 를 그대로 보내면 같은 자세로 다시 낸다.
+                    pose=str(req.get("pose") or "") or None,
                 )
             except (ValueError, RuntimeError) as exc:
                 return self._json(400, {"ok": False, "error": type(exc).__name__,
@@ -616,8 +674,6 @@ class Handler(BaseHTTPRequestHandler):
                 for d in split_deltas(rep["message"]):
                     push("text", {"delta": d})
                     time.sleep(0.012)
-                if images:
-                    push("actions", [{"label": "바로 입혀보기", "type": "virtual_fit"}])
                 push("done", {"ok": True})
                 return
 
@@ -627,8 +683,6 @@ class Handler(BaseHTTPRequestHandler):
             push("report", rep)
             _log_turn(question, rep)
             acts = actions_for(rep, mode=mode)
-            if images and not any(a.get("type") == "virtual_fit" for a in acts):
-                acts.append({"label": "바로 입혀보기", "type": "virtual_fit"})
             if acts:
                 push("actions", acts)
             push("done", {"ok": True, "intent": rep.get("intent"),
@@ -637,10 +691,18 @@ class Handler(BaseHTTPRequestHandler):
         except BrokenPipeError:
             pass                                   # 사용자가 창을 닫았다. 정상이다.
         except Exception as ex:                    # noqa: BLE001
+            # ★ 삼키지 않는다 (2026-09-18). 예전에는 종류만 화면에 보내고 로그엔 아무것도
+            #   안 남겨, "서버에서 답을 만들지 못했습니다" 의 원인을 찾을 길이 없었다.
+            import traceback
+            traceback.print_exc()
+            tb = traceback.extract_tb(ex.__traceback__)
+            where_ = next((f"{Path(f.filename).name}:{f.lineno}" for f in reversed(tb)
+                           if "/app/" in f.filename or f.filename.endswith("server.py")), "")
             try:
                 push("error", {"ok": False, "reason": "SERVER_ERROR",
                                "message": "서버에서 답을 만들지 못했습니다.",
-                               "detail": type(ex).__name__})
+                               # 종류와 위치만 — 예외 문구에는 값이 섞일 수 있어 싣지 않는다
+                               "detail": type(ex).__name__ + (f" @ {where_}" if where_ else "")})
                 push("done", {"ok": False})
             except OSError:
                 pass
@@ -670,11 +732,19 @@ def main():
         print("\n자세한 진단:  python3 tools_env_check.py")
         return 2
 
-    engine()                                        # 사전을 미리 읽어 첫 요청을 빠르게
+    # 사전을 미리 읽어 첫 요청을 빠르게 한다.
+    # ★ 여기서 실패해도(RDS 가 잠깐 안 닿는 등) 죽지 않는다. 죽으면 컨테이너가
+    #   재시작을 반복하고 앞단 nginx 는 502 만 돌려줘 원인이 안 보인다(2026-09-18).
+    #   떠 있으면 /v1/health 가 실패 종류를 말하고, 다음 요청 때 엔진을 다시 만든다.
     srv = ThreadingHTTPServer((HOST, port), Handler)
-    e = engine()
     print(f"feedit-chat  http://{HOST}:{port}")
-    print(f"  기준일 {e.store.latest_day()} · 지표 term {len(e.gate.prefer):,}개")
+    try:
+        e = engine()
+        print(f"  기준일 {e.store.latest_day()} · 지표 term {len(e.gate.prefer):,}개")
+    except Exception as ex:                           # noqa: BLE001
+        import traceback
+        traceback.print_exc()
+        print(f"  ⚠ 엔진을 만들지 못했습니다 ({type(ex).__name__}) — 서버는 띄우고 요청 때 다시 시도합니다.")
     print(f"  모델 {llm.MODEL} · 키 {llm.key_hint()}")
     print(f"  허용 오리진 {sorted(ALLOW_ORIGINS)}")
     access = "공개 베타(토큰 검사 안 함)" if plans.PUBLIC_BETA else (

@@ -21,9 +21,10 @@ import re
 from datetime import timedelta
 
 from django.db import transaction
+from django.db.models import Q
 from django.http import JsonResponse
 from django.utils import timezone
-from django.views.decorators.http import require_GET, require_POST
+from django.views.decorators.http import require_GET, require_POST, require_http_methods
 
 from apps.core.models import (
     AppUser,
@@ -34,12 +35,15 @@ from apps.core.models import (
     UserSavedItem,
     VoteBallot,
     VoteCard,
+    VoteComment,
+    VoteReport,
 )
 
 from .activity import build_weekly_report, latest_state, week_bounds
 
 TEXT_MAX = 120
 DB_ITEM_RE = re.compile(r"^db-(\d+)$")
+VISIBLE_VOTE_CARD = Q(seed_key__startswith="youtube:") | Q(seed_key__startswith="user:")
 
 
 # ── 공용 도우미 ─────────────────────────────────────────────
@@ -68,6 +72,18 @@ def _login_profile(request):
         user=request.user, defaults={"nickname": request.user.first_name or request.user.username[:12]},
     )
     return profile
+
+
+def _card_is_closed(card, now=None):
+    """마감 시각이 지난 카드는 즉시 종료 상태로 동기화한다."""
+    now = now or timezone.now()
+    if card.status == VoteCard.Status.CLOSED:
+        return True
+    if card.closes_at is not None and card.closes_at <= now:
+        card.status = VoteCard.Status.CLOSED
+        card.save(update_fields=["status", "updated_at"])
+        return True
+    return False
 
 
 def _style_term(name):
@@ -186,6 +202,13 @@ def vote(request):
     if choice not in (None, "BUY", "PASS"):
         return _error("choice 는 BUY · PASS · null 중 하나여야 합니다.")
     style_term = _style_term(data.get("style"))
+    card = None
+    if card_key.isdigit():
+        card = VoteCard.objects.filter(VISIBLE_VOTE_CARD, id=int(card_key)).first()
+        if card is None:
+            return _error("카드를 찾지 못했습니다.", status=404)
+        if _card_is_closed(card):
+            return _error("마감된 투표에는 참여할 수 없습니다.", status=409)
 
     with transaction.atomic():
         UserEvent.objects.create(
@@ -195,14 +218,141 @@ def vote(request):
                       "style": style_term.canonical_name if style_term else ""},
         )
         # 실제 DB 카드면 vote_ballot 에도 반영한다.
-        if card_key.isdigit() and VoteCard.objects.filter(id=int(card_key)).exists():
+        if card is not None:
             if choice is None:
-                VoteBallot.objects.filter(card_id=int(card_key), user=profile).delete()
+                VoteBallot.objects.filter(card=card, user=profile).delete()
             else:
                 VoteBallot.objects.update_or_create(
-                    card_id=int(card_key), user=profile, defaults={"choice": choice})
+                    card=card, user=profile, defaults={"choice": choice})
     return JsonResponse({"status": "ok", "data": {"card_key": card_key, "choice": choice,
                                                    "vote_count": active_vote_count(profile)}})
+
+
+@require_http_methods(["POST", "DELETE"])
+def vote_comment(request):
+    """실제 DB 살!말? 댓글을 저장하거나 작성자 본인이 삭제한다."""
+    profile = _login_profile(request)
+    if profile is None:
+        return _error("로그인이 필요합니다.", status=401)
+    data = _body(request)
+    if data is None:
+        return _error("요청 형식이 올바른 JSON이 아닙니다.")
+    if request.method == "DELETE":
+        try:
+            comment_id = int(data.get("comment_id"))
+        except (TypeError, ValueError):
+            return _error("comment_id가 올바르지 않습니다.")
+        comment = VoteComment.objects.filter(id=comment_id, is_deleted=False).first()
+        if comment is None:
+            return _error("댓글을 찾지 못했습니다.", status=404)
+        if comment.user_id != profile.id:
+            return _error("본인이 작성한 댓글만 삭제할 수 있습니다.", status=403)
+        comment.is_deleted = True
+        comment.save(update_fields=["is_deleted", "updated_at"])
+        return JsonResponse({"status": "ok", "data": {"id": comment.id, "deleted": True}})
+
+    try:
+        card_id = int(data.get("card_id"))
+    except (TypeError, ValueError):
+        return _error("card_id가 올바르지 않습니다.")
+    card = VoteCard.objects.filter(VISIBLE_VOTE_CARD, id=card_id).first()
+    if card is None:
+        return _error("카드를 찾지 못했습니다.", status=404)
+    if _card_is_closed(card):
+        return _error("마감된 투표에는 댓글을 작성할 수 없습니다.", status=409)
+    content = _text(data.get("content"), 1000)
+    if not content:
+        return _error("댓글 내용을 입력해 주세요.")
+    ballot = VoteBallot.objects.filter(card=card, user=profile).first()
+    comment = VoteComment.objects.create(
+        card=card,
+        user=profile,
+        choice=ballot.choice if ballot else "NEUTRAL",
+        content=content,
+        source_metadata={"source": "USER"},
+    )
+    return JsonResponse({
+        "status": "ok",
+        "data": {"id": comment.id, "choice": comment.choice, "content": comment.content},
+    })
+
+
+@require_POST
+def vote_report(request):
+    """카드·댓글 신고를 검토 대기 상태로 기록한다."""
+    profile = _login_profile(request)
+    if profile is None:
+        return _error("로그인이 필요합니다.", status=401)
+    data = _body(request)
+    if data is None:
+        return _error("요청 형식이 올바른 JSON이 아닙니다.")
+    target_type = _text(data.get("target_type"), 10).upper()
+    if target_type not in (VoteReport.TargetType.CARD, VoteReport.TargetType.COMMENT):
+        return _error("target_type은 CARD 또는 COMMENT여야 합니다.")
+    try:
+        target_id = int(data.get("target_id"))
+    except (TypeError, ValueError):
+        return _error("target_id가 올바르지 않습니다.")
+    if target_id <= 0:
+        return _error("target_id가 올바르지 않습니다.")
+
+    reason = _text(data.get("reason"), 500)
+    card = None
+    comment = None
+    if target_type == VoteReport.TargetType.CARD:
+        card = VoteCard.objects.filter(VISIBLE_VOTE_CARD, id=target_id).select_related("user").first()
+        if card is None:
+            return _error("카드를 찾지 못했습니다.", status=404)
+        if card.user_id == profile.id:
+            return _error("본인이 작성한 카드는 신고할 수 없습니다.", status=403)
+        snapshot = {"card_id": card.id, "title": card.title, "author_id": card.user_id}
+    else:
+        comment = (
+            VoteComment.objects.filter(
+                card__in=VoteCard.objects.filter(VISIBLE_VOTE_CARD),
+                id=target_id,
+                is_deleted=False,
+            )
+            .select_related("card", "user")
+            .first()
+        )
+        if comment is None:
+            return _error("댓글을 찾지 못했습니다.", status=404)
+        if comment.user_id == profile.id:
+            return _error("본인이 작성한 댓글은 신고할 수 없습니다.", status=403)
+        card = comment.card
+        snapshot = {
+            "card_id": card.id,
+            "card_title": card.title,
+            "comment_id": comment.id,
+            "comment_author_id": comment.user_id,
+            "comment_content": _text(comment.content, 1000),
+        }
+
+    report, created = VoteReport.objects.get_or_create(
+        reporter=profile,
+        target_type=target_type,
+        target_id=target_id,
+        defaults={
+            "card": card,
+            "comment": comment,
+            "reason": reason,
+            "target_snapshot": snapshot,
+        },
+    )
+    return JsonResponse(
+        {
+            "status": "ok",
+            "data": {
+                "id": report.id,
+                "target_type": report.target_type,
+                "target_id": report.target_id,
+                "report_status": report.status,
+                "created": created,
+            },
+        },
+        status=201 if created else 200,
+    )
 
 
 # ── ③ 찜 ────────────────────────────────────────────────────

@@ -1,6 +1,6 @@
 # feedit-chat
 
-FEEDiT 챗봇 — **따로 선다.** 크롤러도 Django 도 고치지 않는다.
+FEEDiT 챗봇 — 별도 서비스로 서되 운영 데이터는 AWS RDS를 함께 본다.
 
 프론트(`feedit-web`)와 먼저 붙이고, 나중에 백엔드로 그대로 넘겨 합친다.
 그래서 합칠 때 갈아 끼울 곳을 한 군데로 모아 뒀다 — `app/config.py` 와 `app/store.py`.
@@ -10,14 +10,14 @@ FEEDiT 챗봇 — **따로 선다.** 크롤러도 Django 도 고치지 않는다
 ## 지금 어디서 데이터를 읽나
 
 ```
-feedit-crawler/data/feedit.db   (SQLite, 읽기 전용)
+AWS RDS PostgreSQL   (dictionary · analysis · commerce · app)
 ```
 
-여기가 **지표계산 설계서의 값이 실제로 있는 유일한 곳**이다.
-AWS RDS(Django)에는 `temp` · `momentum` · `ma7` · `ma28` 컬럼이 아예 없다.
-합칠 때 `store.py` 의 SQL 만 Django ORM 으로 바꾸면 나머지는 그대로 간다.
+DB 팀이 크롤링·지표를 RDS에 직접 적재하고, 챗봇은 `rds_store.py`로 읽는다.
+운영 지표 컬럼 `trend_temperature` · `momentum` · `ma7` · `ma28`을 기존
+챗봇 계약(`temp` 등)으로 바꿔 주므로 응답 조립 로직은 그대로 간다.
 
-**쓰지 않는다.** `mode=ro` 로 열어 실수로도 못 쓰게 해 뒀다.
+**지표는 쓰지 않는다.** 챗봇 DB 사용자는 조회 권한만 부여한다.
 **계산하지 않는다.** 온도·연관어는 `crawler/metrics.py` 가 원본이다.
 여기서 다시 계산하면 화면과 챗봇이 다른 숫자를 말한다.
 
@@ -33,11 +33,12 @@ cp .env.example .env          # ① 값을 채운다 (아래 두 줄이 핵심)
 python3 ChatBot/tools_env_check.py   # ② 무엇이 없는지 화면에 나온다
 ```
 
-`.env` 에서 **반드시** 채워야 하는 두 줄:
+`.env` 에서 **반드시** 채워야 하는 값:
 
 ```bash
 OPENAI_API_KEY=sk-...                          # 각자 발급 (platform.openai.com)
-FEEDIT_CRAWLER_DIR=/절대/경로/feedit-crawler     # 크롤러 저장소를 받아 둔 곳
+FEEDIT_DATA_BACKEND=rds
+DB_HOST=... DB_NAME=... DB_USER=... DB_PASSWORD=...
 ```
 
 `tools_env_check.py` 가 ✔ 만 찍으면 그때 켠다.
@@ -47,24 +48,11 @@ python3 ChatBot/tools_llm_check.py   # 모델을 실제로 한 번 불러 본다
 cd ChatBot && python3 server.py      # http://127.0.0.1:8770
 ```
 
-### ★ 왜 크롤러 저장소가 따로 필요한가
+### 질문 추출 코드
 
-이 저장소에는 **지표 데이터도, 어휘 사전도 없다.** 챗봇은 크롤러 쪽의
-네 가지를 그대로 쓴다 — 데이터 둘, **코드 둘**이다.
-
-| 필요한 것 | 어디에 쓰나 |
-| --- | --- |
-| `data/feedit.db` | 지표 (`store.py` 가 읽기 전용으로 연다) |
-| `config/lexicon.yaml` | 어휘 사전 |
-| `feedit_crawler/lexicon.py` | `lexicon_gate.py` 가 **import** 한다 |
-| `tools/question_extract.py` | 어휘 추출기 — 복사하지 않고 재사용한다 |
-
-없으면 `server.py` 가 무엇이 없는지 찍고 멈춘다. 조용히 죽지 않는다.
-
-> RDS 로 옮기는 길은 아직 열려 있지 않다. `docs_RDS_격차분석.md` 기준으로
-> `analysis.term_metric_daily` 는 **컬럼만 있고 적재 코드가 없어 비어 있고**,
-> `metric_term_sentiment_daily` · `text_entity_opinion` · `text_entity_mention` 은
-> 표 자체가 없다. 그 셋이 채워지기 전까지는 크롤러 SQLite 가 유일한 원본이다.
+사전 데이터는 RDS의 `dictionary_term`·`term_alias`·`brand`에서 읽는다.
+질문을 안전하게 토큰화하는 `tools/question_extract.py` 코드만 배포 묶음에 포함한다.
+SQLite 데이터와 YAML 사전은 운영 컨테이너에 마운트하지 않는다.
 
 ### 키가 없는 팀원도 화면은 본다
 
@@ -80,13 +68,7 @@ docker compose -f docker/compose.yml up chatbot
 ```
 
 `.env` 하나로 Django·Redis·챗봇이 같은 값을 본다.
-크롤러 저장소는 `FEEDIT_CRAWLER_DIR` 을 읽기 전용으로 마운트한다.
-
-크롤러가 없으면 챗봇만 빼고 쓴다:
-
-```bash
-docker compose -f docker/compose.yml up ssm-tunnel redis web
-```
+챗봇 EC2 보안 그룹이 RDS 보안 그룹의 5432 인바운드 소스로 허용돼 있어야 한다.
 
 > ★ 포트는 `127.0.0.1:8770` 에만 묶여 있다. **인증이 없기 때문이다.**
 > 배포용 `compose.prod.yml` 에서도 챗봇은 밖으로 열지 않았다 —
@@ -104,7 +86,7 @@ python3 smoke.py            # 진짜 DB 로 10개 질문을 돌린다 (서버 �
 python3 server.py           # http://127.0.0.1:8770
 ```
 
-의존성은 두 개뿐이다 (`requests` · `PyYAML` — `ChatBot/requirements.txt`).
+의존성은 세 개다 (`requests` · `PyYAML` · `psycopg` — `ChatBot/requirements.txt`).
 서버도 표준 라이브러리로만 짰다 — FastAPI 를 안 쓴 이유는 `server.py` 맨 위에 적어 뒀다.
 `.env` 는 `app/env.py` 가 표준 라이브러리로 읽는다. python-dotenv 도 필요 없다.
 
@@ -178,7 +160,8 @@ node fallback_leak.test.mjs  # 목업이 진짜 답 위로 새지 않는가 (회
 app/
   env.py          저장소 .env 읽기 (표준 라이브러리).  ← 키가 들어오는 유일한 문
   config.py       경로 · 임계값 한 곳.  ← 합칠 때 여기부터 본다
-  store.py        크롤러 SQLite 읽기 전용 어댑터
+  rds_store.py    운영 AWS RDS 읽기 전용 어댑터
+  store.py        SQLite 회귀 테스트용 어댑터
   coverage.py     "이 term 에 대해 무엇을 말해도 되는가"  ← 정직함이 여기서 나온다
   lexicon_gate.py 어휘 게이트 (tools/question_extract.py 재사용)
   intents.py      의도 분류 (규칙)
@@ -245,15 +228,20 @@ chat_api.js        블록 타입별로 그린다. 모르는 타입은 조용히 
 블록을 새로 만들 때는 **CSS 에 그 클래스가 있는지 먼저 확인한다.**
 `blocks.test.mjs` 가 쓰는 클래스를 전부 CSS 와 대조하므로, 없는 걸 쓰면 시험이 잡는다.
 
-## Luna(LLM)를 쓰는 곳 — 세 자리뿐
+## 모델 역할 — Terra · Luna · Sol (2026-09-18)
 
-```
-① 의도 분류    app/nlu.py        규칙이 못 잡을 때만 부른다
-② 어투 다듬기  app/polish.py     값을 다 꽂은 뒤 문장만
-③ 웹 검색      app/websearch.py  지식 질문. 출처 없으면 안 올린다
-```
+모든 호출은 `llm.role("<역할>")` 로 모델을 고른다 (`app/llm.py` 의 `ROLES`).
 
-모델은 크롤러와 같은 `gpt-5.6-luna` 다. 두 곳이 다른 모델을 쓰면 "왜 답이 다르지" 를 못 쫓는다.
+| 모델 | 역할 | 자리 |
+| --- | --- | --- |
+| **Terra** `gpt-5.6-terra` | 판단 | `orchestrator` 도구 선택·살말 판단 · `vision` 사진 · `general` 사전 밖 지식 설명(websearch.py) |
+| **Luna** `gpt-5.6-luna` | 닫힌 출력 | `classify` 의도 분류(nlu.py) · `context` 앞 턴 이어받기 · `polish` 다듬기 · `extract` 상품 링크·매거진 · `verify` 숫자 대조 · `finish` 마무리 |
+| **Sol** `gpt-5.6-sol` | 막혔을 때만 | 오케스트레이터 · 마무리 · 검증 수정이 **실패(모델 오류·무응답)하거나 결과가 깨졌을 때** 남은 예산 안에서 한 번 더 |
+
+Sol 은 같은 역할의 추론 강도를 그대로 쓰고 모델만 올린다. 키 없음·일부러 끔·인증 실패(401/403)는
+올려도 소용없어 올리지 않는다. 올린 자리는 응답 report 의 `trace.escalated` 에 남는다
+(예: `["orchestrator:NET_ReadTimeout"]`). `FEEDIT_LLM_ESCALATE=0` 이면 끈다.
+`FEEDIT_LLM_MODEL` 은 목록에 없는 역할 이름이 왔을 때의 폴백이다.
 
 설정은 전부 `.env` 로 뺐다 — 코드를 고쳐 모델을 바꾸면 누가 언제 바꿨는지 기록에 안 남는다.
 
@@ -261,6 +249,10 @@ chat_api.js        블록 타입별로 그린다. 모르는 타입은 조용히 
 | --- | --- | --- |
 | `OPENAI_API_KEY` | — | 각자 발급. 없으면 규칙으로만 돈다 |
 | `FEEDIT_LLM_MODEL` | `gpt-5.6-luna` | 팀 표준. 바꾸면 팀에 알린다 |
+| `FEEDIT_LLM_MODEL_LARGE` | `gpt-5.6-sol` | 막혔을 때 재시도 |
+| `FEEDIT_LLM_MODEL_MID` | `gpt-5.6-terra` | 오케스트레이션·살말 판단·비전·지식 설명 |
+| `FEEDIT_LLM_MODEL_SMALL` | `gpt-5.6-luna` | 분류·이어받기·다듬기·추출·검증·마무리 |
+| `FEEDIT_LLM_ESCALATE` | `1` | `0` 이면 Sol 재시도를 끈다 |
 | `FEEDIT_LLM_EFFORT` | `low` | `none`·`low`·`medium`·`high`·`xhigh`·`max` |
 | `FEEDIT_LLM_DISABLED` | `0` | `1` 이면 LLM 을 아예 안 부른다 |
 | `OPENAI_BASE_URL` | OpenAI | 사내 게이트웨이를 쓸 때만 |

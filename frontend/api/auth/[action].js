@@ -4,11 +4,19 @@ import { backendBase, backendToken } from '../_lib/db.js';
 
 const ALLOWED = new Set(['me', 'signup', 'login', 'logout', 'profile', 'weekly-videos', 'google', 'google-signup',
   // 활동 기록 · 금주의 리포트 (backend/apps/api/activity_views.py)
-  'event', 'vote', 'saved', 'weekly-report']);
+  'event', 'vote', 'vote-comment', 'vote-report', 'saved', 'weekly-report',
+  // 챗봇 대화 기록 (backend/apps/api/chat_views.py)
+  'chats']);
 
 export default async function handler(req, res) {
   const url = new URL(req.url, 'http://x');
   const action = url.pathname.replace(/^\/api\/auth\//, '').split('/')[0];
+  /* ★ 물음표 뒤(질의 문자열)를 반드시 같이 넘긴다.
+       예전에는 `${base}/auth/${action}` 만 불러서 **?term=… 이 통째로 사라졌다.**
+       그래서 금주의 리포트가 '민소매'로 영상을 찾아 달라고 해도 Django 는 term 을
+       못 받고 취향·찜 기반으로 떨어져, 한 줄 요약은 '민소매'인데 영상은 신발이
+       나왔다(2026-09-18). salmal/[action].js 는 원래 넘기고 있었다. */
+  const query = url.search || '';
   if (!ALLOWED.has(action)) return send(res, 404, { status:'error', reason:'없는 인증 주소입니다.', data:null });
   const base = backendBase();
   if (!base) return send(res, 503, {
@@ -16,7 +24,7 @@ export default async function handler(req, res) {
   });
 
   const method = String(req.method || 'GET').toUpperCase();
-  if (!['GET', 'POST'].includes(method)) {
+  if (!['GET', 'POST', 'DELETE'].includes(method)) {
     return send(res, 405, { status:'error', reason:'지원하지 않는 요청 방식입니다.', data:null });
   }
   const headers = { Accept:'application/json' };
@@ -30,7 +38,7 @@ export default async function handler(req, res) {
   if (req.headers.origin) headers.Origin = req.headers.origin;
   if (req.headers.referer) headers.Referer = req.headers.referer;
   let body;
-  if (method === 'POST') {
+  if (method === 'POST' || method === 'DELETE') {
     headers['Content-Type'] = 'application/json';
     body = typeof req.body === 'string' ? req.body : JSON.stringify(req.body || {});
   }
@@ -38,7 +46,7 @@ export default async function handler(req, res) {
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 10000);
-    const upstream = await fetch(`${base}/auth/${action}`, {
+    const upstream = await fetch(`${base}/auth/${action}${query}`, {
       method, headers, body, signal:controller.signal, redirect:'manual',
     });
     clearTimeout(timer);

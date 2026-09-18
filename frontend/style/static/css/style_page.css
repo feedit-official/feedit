@@ -102,20 +102,66 @@
 .itemCard:hover .itemFig img{transform:scale(1.06);filter:grayscale(0)}
 .matchTag{position:absolute;left:9px;top:9px;background:rgba(10,10,10,.78);color:#fff;
   font-family:var(--num);font-size:10px;letter-spacing:.02em;padding:4px 9px;border-radius:999px;z-index:2}
-.likeBtn{position:absolute;right:9px;top:9px;z-index:3;width:29px;height:29px;border-radius:50%;
-  border:none;background:rgba(255,255,255,.9);display:grid;place-items:center;cursor:pointer;
-  transition:transform .25s var(--ease),background .25s var(--ease)}
-.likeBtn:hover{transform:scale(1.08);background:#fff}
-.likeBtn svg{width:15px;height:15px;fill:none;stroke:#1c1a17;stroke-width:1.8px;transition:fill .2s,stroke .2s}
-.likeBtn.on svg{fill:var(--coral);stroke:var(--coral)}
+/* 찜 — 원형 배경 없이 사진 위에 하트만 올린다. 하트 안쪽은 불투명한 흰색으로 꽉 채우고,
+   높이는 왼쪽 'FEEDiT Pick!' 라벨과 같은 줄에 맞춘다(둘 다 top:9px · 높이 23px) */
+.likeBtn{position:absolute;right:9px;top:9px;z-index:3;width:26px;height:23px;
+  border:none;background:none;padding:0;display:grid;place-items:center;cursor:pointer;
+  transition:transform .25s var(--ease)}
+.likeBtn:hover{transform:scale(1.1)}
+.likeBtn svg{width:23px;height:23px;display:block;fill:#fff;stroke:none;
+  filter:drop-shadow(0 1px 2px rgba(0,0,0,.28));transition:fill .2s}
+.likeBtn.on svg{fill:#e8352b}   /* 찜하면 빨간색 */
+.pickTag{position:absolute;left:9px;top:9px;z-index:2;display:inline-flex;align-items:center;height:23px;
+  background:var(--coral);color:#fff;
+  font-size:10.5px;font-weight:700;letter-spacing:.01em;padding:0 10px;border-radius:999px;
+  box-shadow:0 2px 8px rgba(255,107,74,.35)}
 .itemBody{padding:13px 15px}
 .itemBody .br{font-family:var(--num);font-size:9.5px;letter-spacing:.16em;color:var(--pink-2);
   text-transform:uppercase;margin-bottom:6px}
-.itemBody .nm{font-size:13.5px;font-weight:500;letter-spacing:-.025em;margin-bottom:7px;line-height:1.35}
+.itemBody .nm{font-size:13.5px;font-weight:500;letter-spacing:-.025em;margin-bottom:7px;line-height:1.35;
+  /* 상품명은 최대 두 줄 — 넘치면 둘째 줄 끝에 … . 한 줄짜리도 두 줄 높이를 잡아 카드 높이를 맞춘다 */
+  display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden;
+  min-height:calc(1.35em * 2);word-break:break-all}
 .itemBody .pr{font-family:var(--num);font-size:12.5px;font-weight:600;
   font-feature-settings:'tnum' 1,'zero' 0}
-.itMore{display:flex;justify-content:center;padding:34px 0 8px;
-  font-family:var(--num);font-size:10px;letter-spacing:.24em;color:var(--pink-2)}
-.itMore.retry{cursor:pointer;color:var(--coral);text-decoration:underline;text-underline-offset:4px}
+.itMoreWrap{display:flex;justify-content:center;padding:34px 0 8px}
+.itMore{font:inherit;font-size:12.5px;letter-spacing:-.01em;color:var(--pink-0);background:#fff;
+  border:1px solid var(--pink-2);border-radius:999px;padding:12px 30px;cursor:pointer;transition:.2s var(--ease)}
+.itMore:hover:not(:disabled){background:var(--pink-0);color:#fff;border-color:var(--pink-0)}
+.itMore:disabled{cursor:default;border-color:var(--pink-3);color:var(--pink-2);background:none;
+  font-family:var(--num);font-size:10.5px;letter-spacing:.18em}
+.itMore.retry{color:var(--coral);border-color:var(--coral)}
 .itState{grid-column:1/-1;min-height:180px;display:grid;place-items:center;text-align:center;
   color:var(--pink-2);font-size:13px;line-height:1.7;border:1px dashed var(--pink-3);border-radius:9px}
+
+/* ── 이 스타일의 아이템 — 개수는 제목 옆에 작게, 오른쪽 자리는 정렬 드롭다운 ── */
+.stItemCount{margin-left:8px;font-family:var(--num);font-size:11px;font-weight:500;letter-spacing:.14em;color:var(--pink-2);vertical-align:middle}
+.stSortWrap{position:relative;display:inline-block;text-align:left}
+.stSortBtn{display:inline-flex;align-items:center;gap:10px;font:inherit;font-size:12.5px;color:var(--pink-0);
+  background:#fff;border:1px solid var(--pink-3);border-radius:999px;padding:8px 15px;cursor:pointer;transition:border-color .2s}
+.stSortBtn:hover,.stSortWrap.open .stSortBtn{border-color:var(--pink-1)}
+.stSortCaret{width:6px;height:6px;border-right:1.5px solid var(--pink-1);border-bottom:1.5px solid var(--pink-1);
+  transform:rotate(45deg) translate(-2px,-2px);transition:transform .2s}
+.stSortWrap.open .stSortCaret{transform:rotate(-135deg)}
+.stSortMenu{display:none;position:absolute;right:0;top:calc(100% + 8px);z-index:20;min-width:152px;
+  background:#fff;border:1px solid var(--pink-3);border-radius:12px;padding:6px;
+  box-shadow:0 14px 34px rgba(10,10,10,.14)}
+.stSortWrap.open .stSortMenu{display:block}
+.stSortRow{display:flex;align-items:center;gap:4px}
+/* 글자는 오른쪽 정렬, ⓘ 는 줄 맨 왼쪽 */
+.stSortOpt{flex:1;text-align:right;font:inherit;font-size:12.5px;color:var(--pink-1);background:none;border:none;
+  border-radius:8px;padding:9px 11px;cursor:pointer;transition:.18s}
+.stSortOpt:hover{background:rgba(10,10,10,.05);color:var(--pink-0)}
+.stSortOpt.on{color:var(--pink-0);font-weight:600}
+.stSortRow.hasInfo{position:relative}
+.stSortInfoBtn{flex:none;width:20px;height:20px;margin-left:7px;border:none;border-radius:50%;
+  background:var(--pink-2);color:#fff;font-family:var(--num);font-size:11px;font-weight:700;
+  line-height:1;cursor:pointer;transition:.18s}
+.stSortInfoBtn:hover,.stSortInfoBtn[aria-expanded="true"]{background:var(--pink-0)}
+/* 안내창 — 검은 말풍선. ⓘ 아래에서 왼쪽으로 펼쳐진다 */
+.stSortInfo{position:absolute;z-index:30;left:auto;right:calc(100% - 34px);top:calc(100% + 9px);
+  width:max-content;max-width:min(272px,74vw);
+  background:#101010;color:#fff;border-radius:12px;padding:13px 15px;
+  font-size:11.5px;line-height:1.7;letter-spacing:-.01em;box-shadow:0 16px 36px rgba(10,10,10,.28)}
+.stSortInfo::before{content:'';position:absolute;right:16px;top:-6px;width:13px;height:13px;
+  background:#101010;border-radius:2px;transform:rotate(45deg)}

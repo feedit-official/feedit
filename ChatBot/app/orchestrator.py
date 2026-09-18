@@ -47,13 +47,19 @@ from . import llm
 from .tools import Toolbox, progress_say, specs_for
 
 # ── 안전장치 값 ────────────────────────────────────────────
-MAX_ROUNDS = 4          # 한 질문에 도구를 부를 수 있는 바퀴 수
+MAX_ROUNDS = 5          # 한 질문에 도구를 부를 수 있는 바퀴 수
+# ★ 2026-09-18 — 4 → 5. 살말 질문은 검색 → 지표 → 지수 → 결측 기록 → 리포트로
+#   바퀴를 딱 맞게 쓰는 일이 흔해서, 도구 하나만 더 부르면 **시간은 남았는데**
+#   답을 못 쓰고 끝났다(실측: 예산 33초 중 21초 사용, 링크 질문 5바퀴 전부 사용).
+#   진짜 상한은 시간 예산(TIME_BUDGET)이고, 바퀴는 무한 반복을 막는 안전장치다.
+#   그리고 마지막 바퀴는 **답 쓰기 전용**으로 돌린다(run() 참고) — 바퀴가 바닥나도
+#   답 없이 끝나지 않는다.
 # ★ 링크 질문은 바퀴가 하나 더 든다 (2026-09-11 실측, 예산과 같은 이유).
 #   `33058ms/33000ms stopped=max_rounds 바퀴=4(5328+12387+4624+3006ms)`
 #   ① 링크 확인 ② 지표·지수 ③ 결측 기록 ④ compose_report — 네 바퀴를 다 쓰고
 #   **답을 쓰는 다섯 번째 바퀴가 없었다.** 예산은 남았는데 바퀴가 모자란 것이다.
 LINK_EXTRA_ROUNDS = 1
-MAX_CALLS = 10          # 바퀴를 합쳐 도구 호출 총량
+MAX_CALLS = 14          # 바퀴를 합쳐 도구 호출 총량 (2026-09-18: 바퀴 5·6 에 맞춰 10 → 14)
 # ★ 2026-09-09 추가 — 같은 도구를 인자만 바꿔 계속 부르는 것을 막는다.
 #   _sig() 는 **동일 인자**만 걸러서, search_terms("살로몬 XT-6") →
 #   ("XT-6") → ("살로몬") 처럼 조금씩 바꾸면 그대로 통과했다.
@@ -89,7 +95,11 @@ ASK_BUDGET = 1          # 한 대화에서 되물을 수 있는 횟수
 #   이제 TIME_BUDGET 은 **답변 하나의 전체 벽시계**다.
 #   기본값을 8 → 17 로 올린 것은 뜻이 바뀌었기 때문이지 느슨해진 것이 아니다:
 #   루프 8 + _finish 5 + verify 4 = 예전에 **실제로 쓰던** 시간에 상한을 씌운 것.
-TIME_BUDGET = float(os.getenv("FEEDIT_CHAT_TIME_BUDGET") or 17.0)
+# ★ 2026-09-18 — 17 → 45초. Terra 로 올린 뒤 한 바퀴가 2~7초라, 살말 질문(검색 → 지표 →
+#   지수 → 리포트)이 17~25초 안에서 자꾸 "조회를 끝까지 하지 못했다" 로 끝났다.
+#   답이 빨리 끝나면 그만큼만 쓴다 — 상한은 모델이 멈췄을 때 무한 대기를 막는 용도다.
+#   버셀 중계 함수 한도(api/v1/[name].js maxDuration)보다 넉넉히 작아야 한다.
+TIME_BUDGET = float(os.getenv("FEEDIT_CHAT_TIME_BUDGET") or 45.0)
 # 뒷단계 몫. 루프가 예산을 다 써 버리면 답을 쓸 시간이 남지 않는다.
 # ★ 2026-09-10 실측으로 값을 낮췄다. 처음엔 _finish 5 + verify 4 = 9초를 뗐는데,
 #   예산 14초에서 루프가 7초밖에 못 써서 "살로몬 XT-6 …"(10.1초)와
@@ -138,9 +148,9 @@ WRITE_MIN = 6.5
 #   ①은 링크 질문에만 있는 비용이고, 그 탓에 ③이 예산 밖으로 밀린다.
 #   질문마다 다른 일을 시키면서 같은 시계를 주면, 링크 질문은 구조적으로
 #   답을 못 쓴다. 그 한 바퀴만큼을 더 준다.
-LINK_EXTRA = float(os.getenv("FEEDIT_CHAT_LINK_EXTRA") or 8.0)
+LINK_EXTRA = float(os.getenv("FEEDIT_CHAT_LINK_EXTRA") or 15.0)
 _URL = re.compile(r"https?://|\bwww\.[^\s]+", re.I)
-CALL_TIMEOUT = 20       # 한 번의 모델 호출 상한
+CALL_TIMEOUT = 30       # 한 번의 모델 호출 상한 (2026-09-18: 20 → 30, Terra·웹검색 여유)
 MIN_CALL = 2.5          # 이보다 적게 남으면 부르지 않는다 — 못 끝낼 호출은 기다림만 늘린다
 FINISH_MAX_TOKENS = 700 # 마무리 답변 길이 상한. 안 묶으면 쓰다가 끊긴다
 
@@ -230,10 +240,19 @@ FEEDiT 는 SNS·커머스를 수집해 용어별 트렌드 지표를 계산하�
    형식: `[다음] 아디다스와 트랙탑 중 어느 쪽을 더 볼까요?` — 한 줄, 한 질문.
    물을 것이 없으면 안 써도 된다.
 
-12. **구조화 화면이 답을 더 쉽게 읽게 할 때만 compose_report 를 쓴다.** 순위·비교·
-   여러 지표·살말 근거처럼 정보 관계를 시각화할 가치가 있을 때, 데이터 조회를
-   모두 마친 뒤 최종 문장을 쓰기 직전에 한 번 부른다. 짧은 사실 확인, 인사, 간단한
-   설명, 거절처럼 문장만으로 충분하면 부르지 말고 바로 답한다. 이것은 완성 양식을
+12. **답만 읽는 편이 나은지, 리포트로 보는 편이 나은지 먼저 판단한다.**
+   compose_report 는 데이터를 조회했다는 표시가 아니라, 여러 결과의 관계를 눈으로
+   비교해야 할 때만 쓰는 UI 스킬이다. 짧은 질문이라고 무조건 생략하거나, 지표가
+   하나 있다고 무조건 부르지 마라.
+   - **문장만 답한다:** 인사·잡담·거절·되묻기, 용어 뜻, 사진의 소재·색·길이 같은
+     후속 설명, 한 용어의 한두 축/한 가지 사실, 간단한 코디·상담처럼 1~3문장으로
+     충분히 이해되는 답. get_metric 을 불렀어도 한 값만 설명하면 카드가 필요 없다.
+   - **리포트로 답한다:** 사용자가 리포트·표·차트·상세 근거를 직접 요청했을 때,
+     TOP/순위, 두 대상 비교, 여러 플랫폼·연관어·감성·근거, 3축 이상의 지표,
+     살말 지수처럼 결론을 만든 여러 신호를 함께 보여 줄 때.
+   - 애매하면 먼저 자연스러운 대화 문장으로 답한다. 카드는 장식이 아니다.
+   리포트가 필요한 경우 조회를 모두 마친 뒤 최종 문장을 쓰기 직전에
+   compose_report 를 정확히 한 번 부른다. 이것은 완성 양식을
    고르는 도구가 아니다. 이번 질문에 필요한 모듈만 고르고, 각 모듈의 표현 역할·
    12열 폭·강조도와 전체 색·표면·밀도를 조합하는 UI 스킬이다.
    - 이미 받은 도구 결과에 있는 kind 와 term 만 쓴다. 없는 지표를 화면에 만들지 마라.
@@ -250,8 +269,9 @@ FEEDiT 는 SNS·커머스를 수집해 용어별 트렌드 지표를 계산하�
      한국어로 쓴다. 수치는 제목에 넣지 않는다.
    - HTML·CSS·수치·상품명은 만들지 않는다. 데이터는 서버가 실제 결과와 결합한다.
    - compose_report 를 부른 뒤에는 다른 도구를 부르지 말고 바로 답을 쓴다.
-   - 조회 결과가 있어도 한두 문장으로 충분하면 부르지 않는다.
-   - 조회 결과가 전혀 없거나 ask_user 로 되묻는 경우에도 부르지 않는다.
+   - 답변이 한두 문장이어도 여러 신호를 비교해야 하면 쓴다. 반대로 구조화 결과가
+     있어도 한 값이면 생략한다. 문장 길이가 아니라 **시각 비교의 필요성**이 기준이다.
+   - 구조화 지표 결과가 전혀 없거나 ask_user 로 되묻는 경우에는 부르지 않는다.
    - **declare_missing 이 필요하면 compose_report 와 같은 바퀴에서 함께 불러라.**
      둘 다 조회가 끝난 뒤의 기록·구성이다. 따로 나누면 바퀴를 하나 더 쓰고,
      그만큼 답을 쓰는 바퀴가 밀린다(2026-09-11 실측: 네 바퀴를 다 쓰고도
@@ -265,6 +285,13 @@ FEEDiT 는 SNS·커머스를 수집해 용어별 트렌드 지표를 계산하�
     그 값으로 커뮤니티 카드를 채운다 — 적지 않으면 사용자가 친 원문(링크 주소)이
     상품명 칸에 그대로 들어간다. 확인하지 못한 칸은 null 로 둔다.
     이 때문에 도구를 한 번 더 부르지 마라. 바퀴가 모자라면 리포트가 통째로 사라진다.
+
+14. **직전 사진을 기억한다.** `[최근 이미지 분석]`이 있으면 "소재는?", "길이는?",
+    "위 아이템은?" 같은 질문의 대상은 그 사진 속 아이템이다. 무엇을 말하는지 다시
+    묻지 말고, 기록된 관찰값 안에서 바로 답한다. 기록에 없는 특징은 사진에서 확인하지
+    못했다고 말하고 지어내지 마라. 이미지 관찰값은 색·소재·실루엣·디테일 설명에만
+    쓰며 브랜드·가격·트렌드의 근거로 쓰지 않는다. 이처럼 **구매 판정이 아닌 사진 설명
+    후속 질문**에는 살말 모드여도 get_salmal_index를 다시 부를 필요가 없다.
 
 ## 도구 고르는 법
 - 질문이 용어를 지목했으면 → search_terms 로 정확한 표기를 얻고 get_metric
@@ -334,9 +361,23 @@ FEEDiT 는 SNS·커머스를 수집해 용어별 트렌드 지표를 계산하�
 - **"결론적으로" · "결론:" · "요약하면" 같은 머리말을 붙이지 마라.** 보고서가 아니다.
   숫자와 근거는 화면 카드가 이미 보여 주고 있고, 본문은 그 옆에서 말을 건네는 자리다.
   첫 문장에서 바로 답한다.
-- **문단을 나눈다.** 한 문단은 2~3문장까지. 문단 사이는 빈 줄로 띄운다.
-  항목이 둘 이상이면 `- ` 글머리표로 줄을 나눠라. 한 덩어리로 쏟으면 읽는 사람이
-  어디서 끊어야 할지 모른다.
+- **판단·분석 답은 이 틀로 쓴다** (살말 판단, 트렌드 분석, 비교 등 근거가 둘 이상인 답):
+  ```
+  **결론 한 문장**
+
+  - 근거 한 줄
+  - 근거 한 줄
+  - 근거 한 줄
+
+  아쉬운 점이나 주의할 점 한 줄 (있을 때만)
+  ```
+  · 결론은 첫 줄 한 문장, `**` 로 감싼다. 그 뒤 반드시 빈 줄.
+  · 근거는 `- ` 글머리표로 2~4개. **한 줄에 한 가지 사실, 한 문장.** 쉼표로 이어 붙이지 마라.
+  · "아직 측정 자료가 없습니다" 류는 항목마다 쓰지 말고 마지막 한 줄로 묶는다
+    (예: "가격·커뮤니티 신호는 아직 측정 자료가 없어 판단에서 뺐어요.").
+  · 문단 사이·목록 앞뒤에는 **빈 줄**을 둔다. 3문장 넘는 문단을 만들지 마라.
+  (2026-09-18 실측: 3문장짜리 문단 세 개를 이어 써서 화면이 빽빽하고 읽기 어려웠다.)
+- 인사·잡담·용어 뜻처럼 근거가 하나뿐인 답은 틀 없이 1~3문장으로 답한다.
 - **길어도 6문장.** 지표 숫자는 카드에 이미 그려지므로 본문에서 전부 되풀이하지
   마라 — 결론과 그 근거가 되는 값만 고른다.
 - **카드에 목록으로 실은 것을 본문에서 다시 나열하지 마라.** compose_report 를
@@ -381,6 +422,9 @@ class Result:
         #   그렇다면 답은 온전하다 — 화면에 "조회를 끝까지 못 했다" 고 적으면
         #   멀쩡한 답에 경고가 붙는다.
         self.recovered: bool = False
+        # ★ Sol 로 다시 부른 자리 (2026-09-18) — "어디서 막혔나" 가 여기 남는다.
+        #   예: ["orchestrator:NET_ReadTimeout", "finish:empty"]
+        self.escalated: list[str] = []
 
 
 def _recent_terms(history: list[dict] | None, limit: int = 5) -> list[str]:
@@ -428,6 +472,25 @@ def _ctx_block(question: str, ctx: dict, history: list[dict] | None) -> str:
     if seen:
         lines.append("[최근 본 용어] " + " · ".join(seen)
                      + "  ← '이거 · 아까 그거' 는 이 중 하나일 가능성이 높다")
+    visual = next((t.get("visual") for t in reversed(history or [])
+                   if isinstance(t, dict) and isinstance(t.get("visual"), dict)), None)
+    if visual:
+        bits = []
+        if visual.get("item"):
+            bits.append("아이템=" + str(visual["item"]))
+        labels = {"colors": "색", "materials": "소재", "silhouette": "실루엣",
+                  "details": "디테일", "styles": "스타일", "tags": "태그",
+                  "uncertainties": "불확실"}
+        for key, label in labels.items():
+            values = visual.get(key)
+            if isinstance(values, list) and values:
+                bits.append(label + "=" + "·".join(str(x) for x in values[:6]))
+        if bits:
+            lines.append("[최근 이미지 분석] " + "; ".join(bits))
+        # 브라우저가 돌려주는 history는 밖에서 온 값이다. 자유문장 summary를 시스템
+        # 문맥에 다시 넣지 않고, 길이·개수가 제한된 구조화 필드만 사용한다.
+        lines.append("[이미지 기억 범위] 위 값은 사진에서 본 특징에만 사용한다. "
+                     "브랜드·가격·트렌드는 별도 근거 없이는 추측하지 마라")
     for t in (history or [])[-3:]:
         q, a = t.get("q"), t.get("a")
         if q:
@@ -472,10 +535,67 @@ _REPORT_MATERIAL = {
     "season_fit", "similar_terms", "declare_missing",
 }
 
+_REPORT_EXPLICIT = re.compile(
+    r"(?:리포트|보고서|표(?:로|로\s*보)|차트|그래프|상세|자세히|근거|"
+    r"분석|비교|\bvs\b|순위|랭킹|\btop\s*\d*\b|플랫폼별|출처별|"
+    r"연관어|긍부정|감성|수명주기|아직\s*유효|유효해|추이)",
+    re.I,
+)
+_REPORT_ALWAYS_TOOLS = {"rank_terms", "get_salmal", "search_salmal",
+                        "get_salmal_index"}
+
 
 def _has_report_material(trace) -> bool:
     """문장뿐 아니라 구조화 화면으로 보여 줄 도구 결과가 있는가."""
     return any(c.get("tool") in _REPORT_MATERIAL for c in (trace.calls if trace else []))
+
+
+def report_required(question: str, trace) -> bool:
+    """모델이 카드를 빠뜨려도 반드시 복구해야 하는 복잡한 질의인가.
+
+    이것은 리포트를 *고르는* 1차 판단이 아니다. 1차 판단은 Terra 오케스트레이터가
+    대화 맥락까지 보고 compose_report 호출 여부로 남긴다. 이 함수는 TOP·비교·살말
+    처럼 문장만 나오면 정보 구조가 훼손되는 경우에만 안전망으로 작동한다.
+    """
+    calls = list(trace.calls if trace else [])
+    if not any(c.get("tool") in _REPORT_MATERIAL for c in calls):
+        return False
+    if _REPORT_EXPLICIT.search(str(question or "")):
+        return True
+
+    names = {c.get("tool") for c in calls}
+    if names & _REPORT_ALWAYS_TOOLS:
+        return True
+
+    metrics = [c for c in calls if c.get("tool") == "get_metric"
+               and isinstance(c.get("result"), dict)
+               and c["result"].get("has_metric") is not False]
+    metric_terms = {
+        str((c.get("result") or {}).get("term") or (c.get("args") or {}).get("term") or "")
+        for c in metrics
+    }
+    metric_terms.discard("")
+    if len(metric_terms) >= 2:
+        return True
+
+    axes = set()
+    for c in metrics:
+        raw = (c.get("args") or {}).get("axes")
+        if isinstance(raw, list):
+            axes.update(str(x) for x in raw if x)
+    if len(axes) >= 3:
+        return True
+
+    # 숫자와 원문 근거, 또는 여러 개의 연관 항목은 나란히 보는 편이 낫다.
+    if metrics and "get_evidence" in names:
+        return True
+    for c in calls:
+        if c.get("tool") == "similar_terms":
+            res = c.get("result") or {}
+            items = res.get("items") or res.get("terms") or res.get("similar") or []
+            if isinstance(items, list) and len(items) >= 3:
+                return True
+    return False
 
 
 def _has_report_design(trace) -> bool:
@@ -548,15 +668,42 @@ def run(question: str, *, store, gate, ctx: dict | None = None,
             })
             borrowed = False
 
+        # ★ 마지막 바퀴는 답 쓰기 전용 (2026-09-18).
+        #   예전에는 마지막 바퀴에도 도구를 다 줬다. 모델이 하나 더 부르면 바퀴가
+        #   바닥나 답 없이 끝났고, 화면엔 조회 목록과 "요약 문장을 쓸 시간이 모자라"
+        #   만 남았다. 마지막 바퀴에는 데이터 도구를 빼고(리포트 구성만 남김) 그 사실을 말한다.
+        round_tools = tools
+        if rnd == max_rounds - 1:
+            round_tools = ([t for t in tools if t.get("name") == "compose_report"]
+                           if not _has_report_design(box.trace) else [])
+            if not borrowed:
+                items.append({
+                    "role": "user",
+                    "content": ("이번이 마지막 차례입니다. 데이터 도구는 더 부를 수 없습니다. "
+                                "지금까지 받은 결과만으로 답을 쓰세요."
+                                + (" 시각 리포트가 필요하면 답과 함께 compose_report 를 한 번만 부르세요."
+                                   if round_tools else "")),
+                })
+
         t_round = time.monotonic()
         res = llm.respond(
-            INSTRUCTIONS, items, tools=tools, raw_flag=True,
+            INSTRUCTIONS, items, tools=round_tools or None, raw_flag=True,
             # ★ 남은 시간을 **실수 그대로** 상한으로 쓴다.
             #   int(left) 는 내림이라 2.9 초 남았을 때 2 초만 주고 끊었다.
             #   하한 2 초는 연결 자체가 안 되는 시간을 피하기 위한 것이다.
             timeout=max(2.0, min(float(CALL_TIMEOUT), left)),
             **llm.role("orchestrator"),
         )
+        if res is None and "orchestrator" not in " ".join(out.escalated) and llm.can_escalate():
+            # ★ Terra 가 막혔다 — 남은 시간이 한 바퀴를 쓸 만하면 Sol 로 같은 바퀴를 다시 돈다.
+            left = deadline - VERIFY_RESERVE - time.monotonic()
+            if left >= WRITE_MIN:
+                out.escalated.append(f"orchestrator:{llm.LAST_ERROR}")
+                res = llm.respond(
+                    INSTRUCTIONS, items, tools=round_tools or None, raw_flag=True,
+                    timeout=max(2.0, min(float(CALL_TIMEOUT), left)),
+                    **llm.escalate("orchestrator"),
+                )
         if res is None:
             # 모델에 못 닿았다. 지금까지 모은 것이 있으면 그걸로라도 답한다.
             out.round_ms.append(int((time.monotonic() - t_round) * 1000))
@@ -572,6 +719,19 @@ def run(question: str, *, store, gate, ctx: dict | None = None,
         if not calls:
             # 도구를 더 안 부른다 = 답할 준비가 됐다.
             candidate = (res.get("text") or "").strip()
+            # Terra가 문장만으로 충분하다고 판단했다면 그대로 끝낸다. 다만 TOP·비교·
+            # 살말처럼 카드가 없으면 정보 관계가 사라지는 질의만 안전망으로 복구한다.
+            if (candidate and report_required(question, box.trace)
+                    and not _has_report_design(box.trace) and rnd < max_rounds - 1):
+                pending_answer = candidate
+                items.extend(raw.get("output") or [])
+                items.append({
+                    "role": "user",
+                    "content": ("답변 본문은 준비됐습니다. 이번 질문은 순위·비교·다축 "
+                                "결과라 시각 리포트가 필요합니다. 새 데이터 도구는 부르지 말고, 실제 "
+                                "결과만 사용해 compose_report를 정확히 한 번 부르세요."),
+                })
+                continue
             out.answer = candidate
             out.stopped = "done"
             break
@@ -706,8 +866,9 @@ _FINISH_INSTRUCTIONS = """너는 FEEDiT 의 패션 트렌드 분석 상담원이
 4. 주소는 도구가 준 것만 쓴다. 없으면 "(원문 링크 없음)".
 5. 한국어. **사람과 대화하듯** 쓴다. "결론적으로" · "결론:" 같은 머리말을 붙이지 마라.
    첫 문장에서 바로 답한다. 숫자에는 기준일을 붙인다.
-6. **길어도 6문장.** 한 문단은 2~3문장까지, 문단 사이는 빈 줄. 항목이 둘 이상이면
-   `- ` 글머리표로 줄을 나눈다. 숫자는 카드에 이미 그려지니 전부 되풀이하지 마라.
+6. **길어도 6문장.** 판단·분석 답은 `**결론 한 문장**` → 빈 줄 → `- ` 근거 2~4줄
+   (한 줄에 한 사실) → 빈 줄 → 없는 자료를 묶은 한 줄. 3문장 넘는 문단을 만들지 마라.
+   숫자는 카드에 이미 그려지니 전부 되풀이하지 마라.
 7. 이어 갈 질문이 있으면 맨 마지막 줄에 `[다음] …` 한 줄로."""
 
 
@@ -764,8 +925,11 @@ def _recap(out: Result) -> str:
         lines.append("빠진 신호: " + " · ".join(missing) + ".")
     if not lines:
         return ""
-    lines.append("요약 문장을 쓸 시간이 모자라 조회한 것만 정리했습니다. "
-                 "어느 쪽을 더 볼까요?")
+    # ★ 사유를 사실대로 (2026-09-18). 바퀴가 바닥난 것을 "시간이 모자라" 라고 적으니
+    #   빨리 끝난 답에 시간 핑계가 붙어 어색했다.
+    why = ("요약 문장을 쓸 시간이 모자라" if out.stopped == "time_budget"
+           else "조회 단계가 길어져 요약 문장 대신")
+    lines.append(f"{why} 조회한 것만 정리했습니다. 어느 쪽을 더 볼까요?")
     return "\n\n".join(lines)
 
 
@@ -825,4 +989,15 @@ def _finish(items: list[Any], out: Result, deadline: float | None = None) -> str
                       **llm.role("finish"))
     if res and res.get("text"):
         return res["text"].strip()
+    # ★ Luna 가 막혔거나 빈 답을 냈다 — 시간이 남으면 Sol 로 한 번 (2026-09-18).
+    left = (deadline - time.monotonic()) if deadline else float(CALL_TIMEOUT)
+    budget = left - reserve(left, VERIFY_RESERVE)
+    if budget >= MIN_CALL and llm.can_escalate(bad_output=res is not None):
+        out.escalated.append("finish:" + (llm.LAST_ERROR or "empty"))
+        res = llm.respond(_FINISH_INSTRUCTIONS, items,
+                          timeout=min(float(CALL_TIMEOUT), budget),
+                          max_output_tokens=FINISH_MAX_TOKENS,
+                          **llm.escalate("finish"))
+        if res and res.get("text"):
+            return res["text"].strip()
     return _stop_say(out)

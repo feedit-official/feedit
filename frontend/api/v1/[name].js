@@ -16,7 +16,10 @@ import magazines from '../_v1/magazines.js';
 
 const ROUTES = { chat, feedback, 'fit-classify': fitClassify, health, magazines };
 
-export const config = { runtime: 'nodejs', maxDuration: 30 };
+/* ★ 챗봇 답변은 챗봇 쪽 시간 예산(최대 45+15초)보다 길게 열어 둔다 (2026-09-18).
+     예전 30초는 링크 질문 예산(33초)보다도 짧아, 끝나기 전에 버셀이 끊을 수 있었다.
+     vercel.json 의 같은 값과 맞춘다. */
+export const config = { runtime: 'nodejs', maxDuration: 120 };
 
 export default async function handler(req, res) {
   const url = new URL(req.url, 'http://x');

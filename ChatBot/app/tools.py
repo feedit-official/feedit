@@ -222,8 +222,14 @@ SPECS: list[dict] = [
                        "description": "확인한 상품명(브랜드 제외). 모르면 null"},
          "brand": {"type": ["string", "null"], "description": "확인한 브랜드명. 모르면 null"},
          "price": {"type": ["integer", "null"],
-                   "description": "확인한 원화 판매가(숫자만). 확인 못 했으면 null"}},
-        ["term", "item_name", "brand", "price"],
+                   "description": "확인한 원화 판매가(숫자만). 확인 못 했으면 null"},
+         # ★ 2026-09-18 — 취향 축은 '상품의 스타일' 과 '가입 때 고른 스타일' 을 비교한다.
+         #   예전에는 살말 카드의 태그만 봐서, 링크·질문으로 온 상품은 늘 '취향: 빠진 신호' 였다.
+         "style_tags": {"type": ["array", "null"], "items": {"type": "string"},
+                        "description": ("이 상품이 속하는 패션 스타일 1~3개 (예: 고프코어, 아메카지, "
+                                        "스트릿웨어, 미니멀). 상품 페이지·검색 결과·상품 종류로 판단한다. "
+                                        "판단할 근거가 없으면 null")}},
+        ["term", "item_name", "brand", "price", "style_tags"],
     ),
     _fn(
         "get_user_taste",
@@ -857,7 +863,7 @@ class Toolbox:
         return self.salmal.search(term, limit=max(1, min(int(limit or 5), 10)))
 
     def t_get_salmal_index(self, term: str, item_name=None, brand=None,
-                           price=None) -> dict:
+                           price=None, style_tags=None) -> dict:
         if self.product:
             item_name = item_name or self.product.get("item_name")
             brand = brand or self.product.get("brand")
@@ -870,15 +876,18 @@ class Toolbox:
         if card_id and self.salmal is not None:
             card = self.salmal.card(int(card_id))
         product = (card or {}).get("product") or {}
+        card_tags = product.get("tags") or (card or {}).get("card", {}).get("tags") or []
+        guessed = [str(t).strip() for t in (style_tags or []) if str(t).strip()][:3]
         result = salmal_index.calculate(
             term=term,
-            product_tags=product.get("tags") or (card or {}).get("card", {}).get("tags") or [],
+            product_tags=list(dict.fromkeys([*card_tags, *guessed])),
             taste_context=self.ctx.get("taste_context"),
             trend=trend,
             price=(card or {}).get("price_snapshot"),
             community=(card or {}).get("vote_summary"),
         )
-        result.update({"term": term, "as_of": (card or {}).get("as_of") or metric.get("as_of"),
+        result.update({"term": term, "style_tags": guessed,
+                       "as_of": (card or {}).get("as_of") or metric.get("as_of"),
                        "card": (card or {}).get("card"), "product": product or None,
                        "price_snapshot": (card or {}).get("price_snapshot"),
                        "vote_summary": (card or {}).get("vote_summary"),
@@ -891,8 +900,26 @@ class Toolbox:
             return {"logged_in": False,
                     "note": "비로그인 상태입니다. 취향을 근거로 말하지 마세요."}
         if self.taste is None:
-            return {"logged_in": True,
-                    "unavailable": "취향 데이터 연결이 아직 없습니다."}
+            # ★ 화면이 보낸 취향(가입 때 고른 즐겨입는 스타일 · 최근 검색 · 찜)을 쓴다
+            #   (2026-09-18). 원본은 RDS 계정 프로필이고, 브라우저가 로그인 때 받아 둔 값이다.
+            #   예전에는 여기서 '연결 없음'으로 끝나 로그인한 사용자도 취향을 못 썼다.
+            tc = self.ctx.get("taste_context") if isinstance(self.ctx.get("taste_context"), dict) else {}
+            styles = [str(s) for s in (tc.get("favorite_styles") or []) if str(s).strip()]
+            searched = [str(s) for s in (tc.get("searched_terms") or []) if str(s).strip()]
+            saved = [str(s) for s in (tc.get("saved_terms") or []) if str(s).strip()]
+            if not (styles or searched or saved):
+                return {"logged_in": True,
+                        "unavailable": "가입할 때 고른 스타일이나 검색·찜 기록이 아직 없습니다."}
+            items = ([{"name": s, "why": "즐겨입는 스타일"} for s in styles[:6]]
+                     + [{"name": s, "why": "찜"} for s in saved[:3]]
+                     + [{"name": s, "why": "최근 검색"} for s in searched[-3:]])
+            return {"logged_in": True, "source": "profile",
+                    "favorite_styles": styles[:10],
+                    "style_keywords": {p.get("name"): p.get("keywords") or []
+                                       for p in (tc.get("favorite_style_profiles") or [])
+                                       if isinstance(p, dict) and p.get("name")},
+                    "saved_terms": saved[:30], "searched_terms": searched[-20:],
+                    "items": items[:6]}
         return self.taste.of(uid)
 
     # ── 출력 디자인 스킬 ─────────────────────────────────

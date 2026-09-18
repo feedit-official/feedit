@@ -1,7 +1,7 @@
-"""Luna 클라이언트 — OpenAI Responses API.
+"""역할별 OpenAI 모델 클라이언트 — Responses API.
 
-크롤러의 `llm_analysis.py` 와 **같은 방식**을 쓴다. 모델도 같다.
-두 곳이 다른 모델을 쓰면 "왜 답이 다르지" 를 영영 못 쫓는다.
+전송 방식은 크롤러의 `llm_analysis.py` 와 같되, 챗봇 안에서는 역할별 모델을 쓴다.
+도구 선택·해석은 Terra, 값 대조·형식 정리는 Luna가 기본이다.
 
 ★ 이 모듈이 지키는 것
 
@@ -81,6 +81,11 @@ ROLES: dict[str, tuple[str, str]] = {
     "verify":         (MODEL_SMALL, "none"),     # 숫자 대조 — 일치 확인
     "polish":         (MODEL_SMALL, "none"),     # 형식 변환
     "ask":            (MODEL_SMALL, "none"),     # 되묻는 한 문장
+    # ★ 2026-09-18 — 역할 없이 기본 모델(FEEDIT_LLM_MODEL)로 떨어지던 자리들을 설계대로 묶었다.
+    #   닫힌 출력(분류·추출·형식)은 Luna, 열린 답(사전 밖 지식 설명)은 Terra.
+    "classify":       (MODEL_SMALL, "low"),      # 의도 분류 (nlu.py) — 목록 중 하나 고르기
+    "context":        (MODEL_SMALL, "low"),      # 앞 턴 이어받기 (context.py) — 후보 중 고르기
+    "extract":        (MODEL_SMALL, "low"),      # 상품 링크 · 매거진 기사 찾기 (웹검색 + 값 뽑기)
     # ★ 2026-09-10 — 마무리(_finish)는 **판단이 아니라 정리**다.
     #   무엇을 볼지는 루프에서 이미 정했고, 값도 이미 손에 있다. 남은 일은
     #   그것을 문장으로 옮기는 것뿐인데 orchestrator 역할(medium)로 부르니
@@ -93,6 +98,37 @@ ROLES: dict[str, tuple[str, str]] = {
     #   한 번짜리 호출이라 medium 대신 low로 둔다.
     "vision":         (MODEL_MID,   "low"),      # 사진을 보고 답한다
 }
+
+
+# ── Sol: 막혔을 때만 (2026-09-18) ─────────────────────────────
+#   평소 답은 Terra·Luna 가 낸다. Terra/Luna 호출이 **실패했거나(모델 오류·응답 없음)
+#   결과가 깨졌을 때** 남은 예산이 있으면 Sol 로 한 번만 더 부른다.
+#   · 같은 역할의 추론 강도를 그대로 쓰고 모델만 올린다 — 할 일은 같다
+#   · 키가 없거나(NO_KEY) 일부러 끈 것(DISABLED) · 인증 실패(401/403)는 올려도 소용없다
+#   · 한 답변 안에서 자리마다 한 번뿐이다 (부르는 쪽이 센다)
+#   FEEDIT_LLM_ESCALATE=0 이면 끈다. 비용은 실패한 호출에만 붙는다.
+ESCALATE = os.getenv("FEEDIT_LLM_ESCALATE", "1").strip() not in ("0", "false", "no", "")
+_NO_ESCALATE = ("DISABLED", "NO_KEY", "NO_REQUESTS")
+
+
+def can_escalate(*, bad_output: bool = False) -> bool:
+    """Sol 로 다시 불러 볼 만한가.
+
+    bad_output=True 는 모델은 답했지만 결과를 못 쓰는 경우(빈 답·깨진 수정)다.
+    그때는 LAST_ERROR 가 비어 있어도 올린다.
+    """
+    if not ESCALATE or not MODEL_LARGE or DISABLED:
+        return False
+    err = LAST_ERROR or ""
+    if err in _NO_ESCALATE or err.startswith(("HTTP_401", "HTTP_403")):
+        return False
+    return bad_output or bool(err)
+
+
+def escalate(name: str) -> dict:
+    """역할은 그대로, 모델만 Sol 로.  llm.respond(..., **llm.escalate("orchestrator"))"""
+    _, effort = ROLES.get(name, (MODEL, DEFAULT_EFFORT))
+    return {"model": MODEL_LARGE, "effort": effort}
 
 
 def role(name: str) -> dict:
@@ -371,24 +407,40 @@ _VISION_SALMAL = (
 )
 
 
-def vision(question: str, images: list[str], *, mode: str = "general") -> str | None:
-    """사진(들)을 보고 짧게 답한다. 실패하면 None — 부르는 쪽(engine.py)이
-    사용자에게 실패라고 말한다. 여러 장이면 한 메시지의 content 배열에 같이
-    싣는다 — Responses API 멀티모달 입력 형식 (input_text + input_image)."""
+def vision(question: str, images: list[str], *, mode: str = "general") -> dict | None:
+    """사진 설명과 다음 턴에 이어 쓸 관찰값을 한 번에 구조화한다.
+
+    예전에는 답변 문자열만 받아 아이템·소재가 다음 턴의 history에서 사라졌다.
+    숫자나 브랜드 추측은 받지 않고, 사진에서 직접 볼 수 있는 항목만 저장한다.
+    """
     r = role("vision")
     instr = _VISION_SALMAL if mode == "salmal" else _VISION_GENERAL
     content: list[dict] = [{"type": "input_text", "text": question or "이 사진을 봐 주세요."}]
     for u in images[:6]:
         content.append({"type": "input_image", "image_url": u})
     payload = [{"role": "user", "content": content}]
-    out = respond(instr, payload, effort=r["effort"], model=r["model"], timeout=30)
-    return out["text"] if out else None
+    schema = strict_schema("general_visual", {
+        "item": {"type": "string"},
+        "colors": {"type": "array", "items": {"type": "string"}},
+        "materials": {"type": "array", "items": {"type": "string"}},
+        "silhouette": {"type": "array", "items": {"type": "string"}},
+        "details": {"type": "array", "items": {"type": "string"}},
+        "styles": {"type": "array", "items": {"type": "string"}},
+        "uncertainties": {"type": "array", "items": {"type": "string"}},
+        "summary": {"type": "string"},
+    }, ["item", "colors", "materials", "silhouette", "details", "styles",
+        "uncertainties", "summary"])
+    return respond(instr + " 사진에서 직접 확인한 내용을 스키마에 나눠 담고, "
+                   "summary는 사용자에게 보여 줄 2~4문장 답변으로 작성하세요.",
+                   payload, schema, effort=r["effort"], model=r["model"], timeout=30)
 
 
 def vision_salmal(question: str, images: list[str]) -> dict | None:
-    """사진에서 보이는 상품명·스타일 태그·짧은 조언만 구조화한다.
+    """살말 판단과 후속 질문에 함께 쓸 시각 관찰값을 구조화한다.
 
     지수는 이 모델 출력 숫자가 아니라 salmal_index의 고정 계산식이 만든다.
+    색·소재·실루엣도 함께 받아야 다음 턴의 "소재는?" 같은 질문에서 사진을
+    다시 올리라고 하지 않는다.
     """
     content: list[dict] = [{"type": "input_text", "text": question or "이 아이템 살까 말까?"}]
     for u in images[:6]:
@@ -396,13 +448,22 @@ def vision_salmal(question: str, images: list[str]) -> dict | None:
     schema = strict_schema("salmal_visual", {
         "item": {"type": "string"},
         "tags": {"type": "array", "items": {"type": "string"}},
+        "colors": {"type": "array", "items": {"type": "string"}},
+        "materials": {"type": "array", "items": {"type": "string"}},
+        "silhouette": {"type": "array", "items": {"type": "string"}},
+        "details": {"type": "array", "items": {"type": "string"}},
+        "styles": {"type": "array", "items": {"type": "string"}},
+        "uncertainties": {"type": "array", "items": {"type": "string"}},
         "summary": {"type": "string"},
-    }, ["item", "tags", "summary"])
+    }, ["item", "tags", "colors", "materials", "silhouette", "details",
+        "styles", "uncertainties", "summary"])
     instructions = (
-        "FEEDiT 살말 분석용 시각 판독기입니다. 사진에서 직접 확인되는 의류 종류와 "
-        "스타일 태그만 반환하세요. 브랜드, 가격, 재고, 트렌드 수치나 점수는 추측하지 "
-        "마세요. tags는 한국어 명사 1~6개, summary는 보이는 특징과 구매 전 확인할 점을 "
-        "2~3문장으로 작성하세요."
+        "FEEDiT 살말 분석용 시각 판독기입니다. 사진에서 직접 확인되는 의류 종류, "
+        "색, 소재로 보이는 표면 특성, 실루엣·길이, 디테일과 스타일 태그를 각각 "
+        "반환하세요. 사진만으로 정확한 혼용률이나 소재를 확정할 수 없으면 materials에 "
+        "'광택 있는 직물로 보임'처럼 관찰 수준으로 쓰고 uncertainties에 한계를 적으세요. "
+        "브랜드, 가격, 재고, 트렌드 수치나 점수는 추측하지 마세요. tags는 한국어 명사 "
+        "1~6개, summary는 보이는 특징과 구매 전 확인할 점을 2~3문장으로 작성하세요."
     )
     return respond(instructions, [{"role": "user", "content": content}], schema,
                    timeout=30, **role("vision"))

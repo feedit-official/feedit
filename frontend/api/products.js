@@ -28,6 +28,29 @@ export default async function handler(req, res) {
   const style = (url.searchParams.get('style') || '').trim();
   const limit = Math.min(200, Math.max(1, Number(url.searchParams.get('limit') || 40)));
   const offset = Math.min(1000000, Math.max(0, Number(url.searchParams.get('offset') || 0)));
+  // 정렬 — 값은 모두 최신 스냅샷 한 줄에서 온다. 값이 없는 상품은 어느 정렬이든 맨 뒤.
+  //  recommend(FEEDiT 추천순, 기본): 리뷰·좋아요·판매량(로그) + 평점 + 할인율 + 이미지·가격 보유 가산점
+  const DISC = `(CASE WHEN s.discount_rate <= 1 THEN s.discount_rate * 100 ELSE s.discount_rate END)`;
+  const SCORE = `(COALESCE(LN(1 + s.review_count), 0) * 1.0
+     + COALESCE(LN(1 + s.like_count), 0) * 0.8
+     + COALESCE(LN(1 + s.sales_count), 0) * 0.8
+     + COALESCE(s.rating, 0) * 0.6
+     + COALESCE(${DISC}, 0) * 0.03
+     + CASE WHEN ps.thumbnail_url IS NOT NULL THEN 0.5 ELSE 0 END
+     + CASE WHEN s.observed_at IS NOT NULL THEN 0.5 ELSE 0 END)`;
+  const TAIL = 'ps.last_seen_at DESC NULLS LAST, ps.id DESC';
+  const ORDER = {
+    recommend: `${SCORE} DESC, ${TAIL}`,
+    latest: TAIL,
+    price_desc: `COALESCE(s.sale_price, s.list_price) DESC NULLS LAST, ps.id DESC`,
+    price_asc: `COALESCE(s.sale_price, s.list_price) ASC NULLS LAST, ps.id DESC`,
+    discount: `${DISC} DESC NULLS LAST, ${TAIL}`,
+    reviews: `s.review_count DESC NULLS LAST, ${TAIL}`,
+    rating: `s.rating DESC NULLS LAST, s.review_count DESC NULLS LAST, ${TAIL}`,
+    likes: `s.like_count DESC NULLS LAST, ${TAIL}`,
+    sales: `s.sales_count DESC NULLS LAST, ${TAIL}`,
+  };
+  const orderBy = ORDER[url.searchParams.get('sort')] || ORDER.latest;
 
   const where = ["ps.status = 'ACTIVE'"];
   const args = [];
@@ -59,14 +82,7 @@ export default async function handler(req, res) {
   args.push(offset);
   const offsetArg = args.length;
 
-  const r = await q(
-    `SELECT p.id, ps.id AS product_source_id,
-            COALESCE(p.canonical_name, ps.source_name) AS name,
-            COALESCE(b.name, bs.name) AS brand, b.english_name AS brand_en,
-            ps.source_product_id, ps.product_url, ps.thumbnail_url, ps.market_type,
-            cs.source_category_name,
-            src.code AS source_code, src.name AS source_name,
-            s.list_price, s.sale_price, s.discount_rate, s.stock_status, s.observed_at
+  const FROM_SQL = `
        FROM commerce.product_source ps
        LEFT JOIN commerce.product p ON p.id = ps.product_id
        LEFT JOIN dictionary.brand b ON b.id = p.brand_id
@@ -75,12 +91,23 @@ export default async function handler(req, res) {
        LEFT JOIN dictionary.dictionary_term direct_style ON direct_style.id = p.style_id
        LEFT JOIN collection.source src ON src.id = ps.source_id
        LEFT JOIN LATERAL (
-            SELECT list_price, sale_price, discount_rate, stock_status, observed_at
+            SELECT list_price, sale_price, discount_rate, stock_status, observed_at,
+                   rating, review_count, like_count, sales_count
               FROM snapshot.product_source_snapshot sn
              WHERE sn.product_source_id = ps.id
              ORDER BY observed_at DESC LIMIT 1) s ON true
-      WHERE ${where.join(' AND ')}
-      ORDER BY ps.last_seen_at DESC NULLS LAST, ps.id DESC
+      WHERE ${where.join(' AND ')}`;
+
+  const r = await q(
+    `SELECT p.id, ps.id AS product_source_id,
+            COALESCE(p.canonical_name, ps.source_name) AS name,
+            COALESCE(b.name, bs.name) AS brand, b.english_name AS brand_en,
+            ps.source_product_id, ps.product_url, ps.thumbnail_url, ps.market_type,
+            cs.source_category_name,
+            src.code AS source_code, src.name AS source_name,
+            s.list_price, s.sale_price, s.discount_rate, s.stock_status, s.observed_at
+       ${FROM_SQL}
+      ORDER BY ${orderBy}
       LIMIT $${limitArg} OFFSET $${offsetArg}`,
     args,
   );
@@ -94,6 +121,10 @@ export default async function handler(req, res) {
         : 'AWS RDS 의 commerce.product 가 비어 있습니다.',
     );
   }
+
+  // '더 보기' 버튼에 쓸 전체 개수 — 목록과 같은 조건으로 한 번 더 센다.
+  const cnt = await q(`SELECT COUNT(*)::int AS n ${FROM_SQL}`, args.slice(0, args.length - 2));
+  const total = cnt.ok && cnt.rows.length ? cnt.rows[0].n : null;
 
   const hasMore = r.rows.length > limit;
   const items = r.rows.slice(0, limit).map((x) => ({
@@ -128,6 +159,7 @@ export default async function handler(req, res) {
       offset,
       next_offset: offset + items.length,
       has_more: hasMore,
+      total,
       style: style ? [style] : [],
     },
     가격없음 ? { note: `${가격없음}건은 가격 기록이 아직 없습니다.` } : {},

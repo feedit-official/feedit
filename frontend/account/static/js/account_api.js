@@ -3,14 +3,14 @@
 let csrfToken = '';
 let sessionPromise = null;
 
-async function request(path, { method='GET', body, bootstrap=true } = {}) {
+async function request(path, { method='GET', body, bootstrap=true, base='/api/auth/' } = {}) {
   if (method !== 'GET' && bootstrap && !csrfToken) await session();
   const headers = { Accept:'application/json' };
   if (body !== undefined) headers['Content-Type'] = 'application/json';
   if (method !== 'GET' && csrfToken) headers['X-CSRFToken'] = csrfToken;
   let response;
   try {
-    response = await fetch('/api/auth/' + path, {
+    response = await fetch(base + path, {
       method,
       credentials:'same-origin',
       headers,
@@ -73,6 +73,24 @@ export const logChat = (conversationId, title = '') =>
 /* choice: 'BUY' | 'PASS' | null(투표 취소) */
 export const saveVote = ({ cardKey, title = '', brand = '', style = '', choice = null }) =>
   quiet(request('vote', { method:'POST', body:{ card_key:cardKey, title, brand, style, choice } }));
+
+export const saveVoteComment = ({ cardId, content }) =>
+  request('vote-comment', { method:'POST', body:{ card_id:cardId, content } });
+
+export const deleteVoteComment = commentId =>
+  request('vote-comment', { method:'DELETE', body:{ comment_id:commentId } });
+
+export const reportVoteTarget = ({ targetType, targetId, reason='' }) =>
+  request('vote-report', {
+    method:'POST',
+    body:{ target_type:targetType, target_id:targetId, reason },
+  });
+
+export const createVoteCard = data =>
+  request('cards', { method:'POST', body:data, base:'/api/salmal/' });
+
+export const deleteVoteCard = cardId =>
+  request(`cards/${cardId}`, { method:'DELETE', body:{}, base:'/api/salmal/' });
 
 export const saveLiked = ({ itemId, liked, name = '', brand = '', style = '' }) =>
   quiet(request('saved', { method:'POST', body:{ item_id:itemId, liked, name, brand, style } }));
@@ -167,3 +185,28 @@ export function googleLogin() {
 
 export const googleSignupAccount = data =>
   request('google-signup', { method:'POST', body:data }).finally(() => { sessionPromise = null; });
+
+/* ── 챗봇 대화 기록 (RDS app.chat_session · app.chat_message) ──────────
+ * 원본은 서버다. 브라우저 localStorage 는 화면을 빨리 그리는 사본일 뿐이다.
+ * 목록/본문 조회는 실패를 그대로 올린다(화면이 다시 시도). 쓰기는 조용히 실패한다 —
+ * 저장이 안 된다고 대화가 막히면 안 된다. */
+export const chatList = (mode = '') =>
+  request('chats' + (mode ? '?mode=' + encodeURIComponent(mode) : ''));
+
+export const chatLoad = sessionId =>
+  request('chats?id=' + encodeURIComponent(sessionId));
+
+export const chatSaveTurn = data =>
+  quiet(request('chats', { method:'POST', body:{ op:'turn', ...data } }));
+
+export const chatImport = data =>
+  quiet(request('chats', { method:'POST', body:{ op:'import', ...data } }));
+
+export const chatUpdate = data =>
+  quiet(request('chats', { method:'POST', body:{ op:'update', ...data } }));
+
+export const chatTruncate = data =>
+  quiet(request('chats', { method:'POST', body:{ op:'truncate', ...data } }));
+
+export const chatDelete = ({ mode, key }) =>
+  quiet(request('chats', { method:'DELETE', body:{ mode, key } }));

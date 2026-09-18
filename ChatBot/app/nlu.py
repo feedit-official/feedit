@@ -73,7 +73,7 @@ def classify(question: str, mode: str = GENERAL, *, use_llm: bool = True) -> dic
 
     codes = SALMAL_CODES if mode == SALMAL else GENERAL_CODES
     got = llm.respond(INSTRUCTIONS, {"question": question, "mode": mode},
-                      _schema(codes), effort="low", timeout=8, max_output_tokens=200)
+                      _schema(codes), timeout=8, max_output_tokens=200, **llm.role("classify"))
     if not got or got.get("intent") not in codes:
         out["source"] = "rule_fallback"
         return out

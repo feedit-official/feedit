@@ -253,10 +253,11 @@ def ask(question: str, *, store, gate, mode: str = "general",
     block_error = ""
     designed = any(c.get("tool") == "compose_report"
                    for c in (res.trace.calls if res.trace else []))
-    # 정상 완료된 답에서 디자인 도구를 고르지 않은 것은 모델의 명시적인 '문장만으로
-    # 충분함' 판단이다. 시간·호출 상한 때문에 도구를 못 부른 경우에만 안전망 카드로
-    # 조회 결과를 보존한다.
-    should_build = designed or res.stopped != "done"
+    # Terra가 compose_report 를 선택했거나, TOP·비교·다축·살말처럼 시각 구조가
+    # 반드시 필요한 질문만 카드를 만든다. 단일 지표·후속 설명까지 전부 카드로
+    # 감싸면 대화가 아니라 매번 같은 보고서처럼 보인다.
+    must_report = orchestrator.report_required(question, res.trace)
+    should_build = designed or must_report or res.stopped != "done"
     try:
         blks = (agent_blocks.build(res.trace, store, gate, question=question)
                 if should_build else [])
@@ -327,6 +328,8 @@ def ask(question: str, *, store, gate, mode: str = "general",
             #   어느 층이 예산 밖에서 모델을 부르고 있다는 뜻이다.
             "budget_ms": int(budget * 1000),
             "over_budget": ms > int(budget * 1000) + OVER_GRACE_MS,
+            # ★ Terra·Luna 가 막혀 Sol 로 다시 부른 자리 (2026-09-18). 비어 있으면 평소대로.
+            "escalated": res.escalated + ([rep.escalated] if rep.escalated else []),
         },
         "nlu": {"intent": "agent", "source": "orchestrator",
                 "model": llm.role("orchestrator")["model"]},

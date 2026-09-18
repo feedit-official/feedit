@@ -34,6 +34,16 @@ _ORDERED = re.compile(r"^\s{0,3}(\d{1,2})[.)]\s+", re.M)
 _RULE = re.compile(r"^\s{0,3}([-*_])\s*(?:\1\s*){2,}$", re.M)
 _TABLE_ROW = re.compile(r"^\s*\|.*\|\s*$", re.M)          # 표는 3~5문장 답변에 들어올 자리가 아니다
 _FOOTNOTE = re.compile(r"\[\^?\d{1,2}\]")
+# Responses API의 웹 검색 인용은 본문에 전용 표식으로 섞일 수 있다.
+# 출처 URL·제목은 llm._sources()가 별도로 보존하므로 화면 문장에서는 표식만 뺀다.
+_CITATION = re.compile(
+    r"\ue200cite\ue202.*?\ue201"
+    r"|(?:[▮▤▥▦▧▨▩█]+)?cite(?:[▮▤▥▦▧▨▩█]+)?"
+    r"turn\d+(?:search|fetch|open)\d+"
+    r"(?:(?:[▮▤▥▦▧▨▩█,;|·\s]+)turn\d+(?:search|fetch|open)\d+)*"
+    r"(?:[▮▤▥▦▧▨▩█]+)?",
+    re.I,
+)
 _BLANKS = re.compile(r"\n{3,}")
 _TRAIL = re.compile(r"[ \t]+$", re.M)
 
@@ -41,7 +51,7 @@ _TRAIL = re.compile(r"[ \t]+$", re.M)
 def convert(md: str | None) -> dict:
     if not md:
         return {"text": "", "links": []}
-    s = str(md)
+    s = _CITATION.sub("", str(md))
     links: list[dict] = []
     seen: set[str] = set()
 
@@ -153,7 +163,8 @@ def to_html(md: str | None) -> str:
     """
     if not md:
         return ""
-    src = _FENCE.sub(" ", str(md))
+    src = _CITATION.sub("", str(md))
+    src = _FENCE.sub(" ", src)
     src = _RULE.sub("", src)
     src = _TABLE_ROW.sub("", src)
 

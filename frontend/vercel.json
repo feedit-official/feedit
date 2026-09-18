@@ -20,6 +20,9 @@
     "api/v1/virtual-fitting.js": {
       "maxDuration": 300
     },
+    "api/v1/[name].js": {
+      "maxDuration": 120
+    },
     "api/**/*.js": {
       "maxDuration": 30
     }
