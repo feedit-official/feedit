@@ -237,7 +237,9 @@
 .cpOverlay .msg.ai .nextQ{font-size:15px;line-height:1.72;max-width:82ch}
 .cpOverlay .msg.ai .say p,
 .cpOverlay .msg.ai .say ul,
-.cpOverlay .msg.ai .say ol{margin-bottom:8px}
+.cpOverlay .msg.ai .say ol{margin-bottom:14px}
+/* 근거 목록은 한 줄에 한 사실 — 줄 사이를 조금 띄워 덩어리로 안 보이게 (2026-09-18) */
+.cpOverlay .msg.ai .say li{margin:6px 0}
 .cpOverlay .msg.ai .cue .cueRow{font-size:10.5px;line-height:1.55}
 .cpOverlay .msg.ai .who .cpStage{font-size:10.5px}
 

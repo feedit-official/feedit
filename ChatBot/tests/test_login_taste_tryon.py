@@ -50,6 +50,13 @@ def test_tryon_offered_for_linked_product_in_salmal():
     assert "입혀보기" in labels(rep, "salmal")
 
 
+def test_tryon_offered_for_link_even_after_index_rewrites_source():
+    """지수 도구가 출처를 '챗봇이 확인한 값' 으로 덮어써도 링크 질문이면 뜬다."""
+    rep = {"question": "https://www.musinsa.com/products/4652858 이 옷 살까말까?", "intent": "agent",
+           "item_draft": {"title": "라이트웨이트 윈드브레이커 재킷", "source": "챗봇이 확인한 값"}}
+    assert "입혀보기" in labels(rep, "salmal")
+
+
 def test_tryon_offered_when_asked_in_any_mode():
     assert "입혀보기" in labels({"question": "이거 나한테 입혀 줘", "intent": "agent"}, "general")
 

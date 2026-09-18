@@ -1641,54 +1641,78 @@ function cpPlainText(html){
 }
 /* 리포트 카드를 그림으로. html2canvas 는 누를 때 처음 불러온다 —
    쓰지 않는 사용자에게까지 번들을 지우지 않기 위해서다. */
+/* 리포트 카드를 이미지로 뜬다.
+   ★ 2026-09-18 — html2canvas → html-to-image.
+     html2canvas 는 CSS 를 스스로 다시 해석하는데, 리포트 카드가 쓰는 color-mix() 를
+     모른다. 만나면 예외를 던져서 저장·공유가 한 번도 된 적이 없었다
+     ("리포트 이미지를 만들지 못했습니다"). html-to-image 는 브라우저가 그린 그대로를
+     SVG 로 감싸 뜨므로 color-mix · 웹폰트 · 그림자까지 화면과 같게 나온다. */
 async function cpReportCanvas(card){
-  const mod=await import('html2canvas');
-  const html2canvas=mod.default||mod;
-  return html2canvas(card,{
+  const { toCanvas } = await import('html-to-image');
+  return toCanvas(card,{
     backgroundColor:'#ffffff',
-    scale:Math.min(2,window.devicePixelRatio||1),
-    useCORS:true,
+    pixelRatio:Math.min(2,window.devicePixelRatio||1),
+    cacheBust:true,
+    /* 다른 사이트 상품 사진이 CORS 로 막혀도 통째로 실패하지 않게 빈 칸으로 둔다 */
+    imagePlaceholder:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=',
     /* 저장·공유 버튼 자체는 그림에 넣지 않는다 */
-    ignoreElements:el=>!!(el&&el.classList&&el.classList.contains('rpTools')),
+    filter:el=>!(el&&el.classList&&el.classList.contains('rpTools')),
   });
 }
+const cpCanvasBlob=canvas=>new Promise(done=>canvas.toBlob(done,'image/png'));
 async function cpReportSave(btn){
   const card=btn.closest('.skillReport'); if(!card||btn.disabled)return;
   btn.disabled=true;
   try{
-    const canvas=await cpReportCanvas(card);
+    const blob=await cpCanvasBlob(await cpReportCanvas(card));
+    if(!blob)throw new Error('empty');
+    const url=URL.createObjectURL(blob);
     const a=document.createElement('a');
-    a.href=canvas.toDataURL('image/png');
+    a.href=url;
     a.download='feedit-report-'+Date.now().toString(36)+'.png';
     document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),4000);
     cpFlashBtn(btn); cpToast('리포트를 이미지로 저장했습니다.');
   }catch(_e){ cpToast('리포트 이미지를 만들지 못했습니다.'); }
   btn.disabled=false;
 }
-/* 공유 — 기기가 지원하면 이미지째 넘기고(모바일 공유 시트), 없으면 답변 글과
-   주소를 클립보드에 넣는다. 조용히 아무 일도 안 일어나는 경우를 만들지 않는다. */
+/* 공유 — 리포트를 **이미지째** 넘긴다 (2026-09-18).
+   예전에는 이미지를 못 만들어(cpReportCanvas 주석) 결국 답변 글 + 현재 주소를 복사했는데,
+   그 주소는 홈페이지일 뿐 리포트로 가는 링크가 아니었다. 리포트는 로그인한 사람의 대화
+   안에만 있어서 남이 열 수 있는 주소가 없다 — 그래서 주소 대신 이미지를 보낸다.
+     ① 모바일 등 파일 공유가 되면 공유 시트로 이미지 + 글
+     ② 아니면 클립보드에 이미지(+글) — 카톡·슬랙에 붙여 넣으면 그림이 들어간다
+     ③ 그것도 안 되면 글만 복사 */
 async function cpReportShare(btn){
-  const card=btn.closest('.skillReport');
+  const card=btn.closest('.skillReport'); if(!card||btn.disabled)return;
   const m=cpAIMessageFor(btn);
   const text=cpPlainText(m&&m.html);
-  const url=location.href;
+  btn.disabled=true;
+  let blob=null;
+  try{ blob=await cpCanvasBlob(await cpReportCanvas(card)) }catch(_e){ blob=null }
   try{
-    if(card&&navigator.share&&navigator.canShare){
-      const canvas=await cpReportCanvas(card);
-      const blob=await new Promise(done=>canvas.toBlob(done,'image/png'));
-      if(blob){
-        const file=new File([blob],'feedit-report.png',{type:'image/png'});
-        if(navigator.canShare({files:[file]})){
-          await navigator.share({files:[file],title:'FEEDiT 리포트',text});
-          return;
-        }
+    if(blob&&navigator.share&&navigator.canShare){
+      const file=new File([blob],'feedit-report.png',{type:'image/png'});
+      if(navigator.canShare({files:[file]})){
+        await navigator.share({files:[file],title:'FEEDiT 리포트',text});
+        btn.disabled=false; return;
       }
     }
-    if(navigator.share){ await navigator.share({title:'FEEDiT 리포트',text,url}); return; }
   }catch(err){
-    if(err&&err.name==='AbortError')return;      /* 사용자가 공유 시트를 닫았다 */
+    if(err&&err.name==='AbortError'){ btn.disabled=false; return; }   /* 공유 시트를 닫았다 */
   }
-  const ok=await cpCopyText((text?text+'\n\n':'')+url);
+  if(blob&&navigator.clipboard&&window.ClipboardItem){
+    for(const parts of [{'image/png':blob,'text/plain':new Blob([text],{type:'text/plain'})},
+                        {'image/png':blob}]){
+      try{
+        await navigator.clipboard.write([new ClipboardItem(parts)]);
+        cpFlashBtn(btn); cpToast('리포트 이미지를 복사했습니다. 붙여 넣어 공유하세요.');
+        btn.disabled=false; return;
+      }catch(_e){ /* 이 조합을 못 받는 브라우저 — 다음으로 */ }
+    }
+  }
+  const ok=text?await cpCopyText(text):false;
   if(ok)cpFlashBtn(btn);
-  cpToast(ok?'리포트 내용을 클립보드에 복사했습니다.':'공유하지 못했습니다.');
+  cpToast(ok?'리포트 이미지를 만들지 못해 답변 글만 복사했습니다.':'공유하지 못했습니다.');
+  btn.disabled=false;
 }

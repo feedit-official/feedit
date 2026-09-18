@@ -342,8 +342,11 @@ def actions_for(rep: dict, mode: str = "general") -> list[dict]:
     photo_item = has_visual and (intent == "vision.salmal" or mode == "salmal"
                                  or bool(_PURCHASE_ASK.search(question)))
     draft = rep.get("item_draft") if isinstance(rep.get("item_draft"), dict) else {}
+    # ★ 출처 문구로 판단하지 않는다 — 지수 도구가 같은 상품을 "챗봇이 확인한 값" 으로 다시
+    #   적으면서 '링크' 가 사라져 버튼이 한 번도 안 떴다(2026-09-18). 질문에 링크가 있고
+    #   상품명이 확인됐으면 충분하다.
     linked_item = (mode == "salmal" and bool(draft.get("title"))
-                   and "링크" in str(draft.get("source") or ""))
+                   and bool(re.search(r"https?://|www\.", question, re.I)))
     if wants_tryon or photo_item or linked_item:
         acts.append({"label": "입혀보기", "type": "virtual_fit"})
     return acts
