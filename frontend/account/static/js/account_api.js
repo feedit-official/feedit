@@ -74,6 +74,9 @@ export const logChat = (conversationId, title = '') =>
 export const saveVote = ({ cardKey, title = '', brand = '', style = '', choice = null }) =>
   quiet(request('vote', { method:'POST', body:{ card_key:cardKey, title, brand, style, choice } }));
 
+export const saveVoteComment = ({ cardId, content }) =>
+  request('vote-comment', { method:'POST', body:{ card_id:cardId, content } });
+
 export const saveLiked = ({ itemId, liked, name = '', brand = '', style = '' }) =>
   quiet(request('saved', { method:'POST', body:{ item_id:itemId, liked, name, brand, style } }));
 

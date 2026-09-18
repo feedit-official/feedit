@@ -34,6 +34,7 @@ from apps.core.models import (
     UserSavedItem,
     VoteBallot,
     VoteCard,
+    VoteComment,
 )
 
 from .activity import build_weekly_report, latest_state, week_bounds
@@ -203,6 +204,39 @@ def vote(request):
                     card_id=int(card_key), user=profile, defaults={"choice": choice})
     return JsonResponse({"status": "ok", "data": {"card_key": card_key, "choice": choice,
                                                    "vote_count": active_vote_count(profile)}})
+
+
+@require_POST
+def vote_comment(request):
+    """실제 DB 살!말? 카드에 로그인 사용자의 댓글을 저장한다."""
+    profile = _login_profile(request)
+    if profile is None:
+        return _error("로그인이 필요합니다.", status=401)
+    data = _body(request)
+    if data is None:
+        return _error("요청 형식이 올바른 JSON이 아닙니다.")
+    try:
+        card_id = int(data.get("card_id"))
+    except (TypeError, ValueError):
+        return _error("card_id가 올바르지 않습니다.")
+    card = VoteCard.objects.filter(id=card_id, seed_key__startswith="youtube:").first()
+    if card is None:
+        return _error("카드를 찾지 못했습니다.", status=404)
+    content = _text(data.get("content"), 1000)
+    if not content:
+        return _error("댓글 내용을 입력해 주세요.")
+    ballot = VoteBallot.objects.filter(card=card, user=profile).first()
+    comment = VoteComment.objects.create(
+        card=card,
+        user=profile,
+        choice=ballot.choice if ballot else "NEUTRAL",
+        content=content,
+        source_metadata={"source": "USER"},
+    )
+    return JsonResponse({
+        "status": "ok",
+        "data": {"id": comment.id, "choice": comment.choice, "content": comment.content},
+    })
 
 
 # ── ③ 찜 ────────────────────────────────────────────────────

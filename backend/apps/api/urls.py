@@ -6,7 +6,7 @@
 
 from django.urls import path
 
-from . import activity_views, auth_views, views
+from . import activity_views, auth_views, salmal_views, views
 from .crawl_views import (
     CrawlRunDetailAPIView,
     CrawlRunListAPIView,
@@ -29,6 +29,7 @@ urlpatterns = [
     # ── 사용자 활동 기록 · 금주의 리포트 (activity_views.py) ──
     path("auth/event", activity_views.event, name="auth-event"),                    # 검색 · 챗봇 사용
     path("auth/vote", activity_views.vote, name="auth-vote"),                       # 살!말? 투표
+    path("auth/vote-comment", activity_views.vote_comment, name="auth-vote-comment"),
     path("auth/saved", activity_views.saved, name="auth-saved"),                    # 찜 / 찜 해제
     path("auth/weekly-report", activity_views.weekly_report, name="auth-weekly-report"),
 
@@ -47,6 +48,8 @@ urlpatterns = [
     path("price-history", views.price_history, name="price-history"),  # 찜한 상품 가격 기록
     path("salmal/card", views.salmal_card, name="salmal-card"),
     path("salmal/search", views.salmal_search, name="salmal-search"),
+    path("salmal/cards", salmal_views.cards, name="salmal-cards"),
+    path("salmal/cards/<int:card_id>", salmal_views.card, name="salmal-card-detail"),
 
     # ── 관리자 수집 API (DRF) ──
     path("crawl-targets/", CrawlTargetListCreateAPIView.as_view(), name="crawl-target-list-create"),

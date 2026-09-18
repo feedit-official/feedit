@@ -4,48 +4,56 @@ import { rkClamp, rkRingHTML } from '../../../account/static/js/rank.js';
 import { jobBadgeHTML, jobShown } from '../../../account/static/js/job.js';
 import { smBarFill, smBarLabels } from '../../../trend/static/js/discount_resale.js';
 import { STYLES } from '../../../home/static/js/chat.js';
-import { saveVote } from '../../../account/static/js/account_api.js';
-import YOUTUBE_SALMAL_DATA from '../../data/youtube_salmal_cards.json' with { type: 'json' };
+import { saveVote, saveVoteComment } from '../../../account/static/js/account_api.js';
 
 /* ══════════════ 살!말? (feedit-salmal_2 이식) ══════════════
    이름 충돌을 막기 위해 통째로 자기 범위 안에서 돌린다. */
 export function salmalBoot(){
 
-/* 실제 카드의 단일 원본은 youtube_salmal_cards.json이다. */
-const VOTES=YOUTUBE_SALMAL_DATA.cards.map((card,i)=>{
-  const summary=card.closed?card.closed_vote_summary:card.comment_summary;
-  const totalCount=card.closed?summary.total:summary.sal+summary.mal+summary.neutral;
+/* 카드·투표·댓글의 단일 원본은 Django API와 PostgreSQL이다. */
+let VOTES=[];
+let BRAND_LIST=[];
+function cardFromApi(card,i){
+  const summary=card.vote_summary||{};
+  const similar=card.similar_user_summary||summary;
+  const source=card.source||{};
   return {
-    ...card,
-    t:card.product_name,
-    b:card.brand||'브랜드 미확인',
-    p:card.price,
-    base:summary.sal_ratio,
-    baseSal:summary.sal,
-    baseMal:summary.mal,
-    votes:totalCount,
+    id:card.id, cardKey:String(card.id), t:card.title,
+    b:card.brand||'브랜드 미확인', p:card.price,
+    base:summary.buy_pct??50, baseSal:summary.buy||0, baseMal:summary.pass||0,
+    a:summary.buy_pct??50, votes:summary.total||0,
     hours:card.closed?0:card.hours_remaining,
-    taste:card.similar_user_ratio.sal,
-    tone:['#302d2b','#6e6660'],
-    /* 상품 상세 URL이 아니라 DB ProductSource의 대표 썸네일만 카드/모달에 쓴다. */
-    imgURL:card.representative_image_url||card.product_image_url,
-    youtubeId:card.video_id,
-    closed:card.closed,
-    st:card.style_tags,
-    authorNote:{name:card.mock_author.name, text:card.mock_author.story},
-    comments:card.representative_comments.map((comment,j)=>({
-      name:comment.display_name,
-      tag:comment.vote==='살'?0:comment.vote==='말'?1:null,
-      rk:comment.rank,
-      job:comment.job,
-      text:comment.display_text||comment.text,
-      time:comment.time||relativeCommentTime(i,j)
+    createdAt:Date.parse(card.created_at)||0,
+    closesAt:Date.parse(card.closes_at)||Number.POSITIVE_INFINITY,
+    taste:similar.buy_pct??summary.buy_pct??50,
+    tasteMatch:card.taste_match_count||0,
+    tone:['#302d2b','#6e6660'], imgURL:card.image_url,
+    youtubeId:source.video_id||'', upload_date:source.upload_date||'',
+    productSourceId:card.product_source_id,
+    closed:Boolean(card.closed), st:Array.isArray(card.style_tags)?card.style_tags:[],
+    authorNote:{name:card.author?.name||'FEEDiT 사용자',text:card.author?.story||card.description||''},
+    voted:card.my_choice==='BUY'?0:card.my_choice==='PASS'?1:null,
+    comments:(card.comments||[]).map(comment=>({
+      id:comment.id, name:comment.name,
+      tag:comment.choice==='BUY'?0:comment.choice==='PASS'?1:null,
+      rk:comment.rank, job:comment.job, text:comment.text, time:comment.time,
+      me:Boolean(comment.mine)
     })),
     seq:i
   };
-});
-VOTES.forEach((v,i)=>{v.a=v.base; v.voted=null; v.comments=Array.isArray(v.comments)?v.comments:[]; v.seq=i;});
-const BRAND_LIST=[...new Set(VOTES.map(v=>v.b))].sort();
+}
+async function loadVotes(){
+  const groups=await Promise.all(['latest','result'].map(tab=>
+    fetch('/api/salmal/cards?tab='+tab,{credentials:'same-origin',headers:{Accept:'application/json'}})
+      .then(async response=>{
+        const payload=await response.json();
+        if(!response.ok||payload.status!=='ok') throw new Error(payload.reason||'살말 데이터를 불러오지 못했습니다.');
+        return payload.data.items||[];
+      })));
+  const unique=new Map([...groups[0],...groups[1]].map(card=>[card.id,card]));
+  VOTES=[...unique.values()].map(cardFromApi);
+  BRAND_LIST=[...new Set(VOTES.map(v=>v.b))].sort();
+}
 const TONE_PALETTE=[['#332e2a','#75695c'],['#2c2c2e','#5f5f63'],['#302f2c','#6a655c'],
   ['#2b2c2d','#585d60'],['#33322d','#736c5e'],['#2e2a2c','#5c5459']];
 const randomTone=()=>TONE_PALETTE[Math.floor(Math.random()*TONE_PALETTE.length)];
@@ -57,22 +65,10 @@ const fmtHours=h=>Number.isFinite(h)?(h>=24?Math.round(h/24)+'일':h+'시간'):'
 const fmtNum=n=>n.toLocaleString('ko-KR');
 /* 등록할 때 고른 스타일 이름 — 고르지 않았으면 빈 문자열 */
 const styleNameOf=v=>(v&&Array.isArray(v.st)?v.st:[])
-  .map(id=>STYLES.find(x=>x.id===id)).filter(Boolean).map(s=>s.n).join(' · ');
+  .map(id=>STYLES.find(x=>x.id===id)?.n||id).filter(Boolean).join(' · ');
 const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
 const simA=v=>v.youtubeId?v.taste:clamp(v.a+Math.round((v.taste-70)/4),3,97);
 const satisfaction=v=>clamp(v.taste+Math.round((v.base-70)/5),30,99);
-function relativeCommentTime(cardIndex,commentIndex){
-  /* 목업 댓글 시각은 모두 시간 단위로 통일한다. 24시간을 넘어도 '일 전'으로
-     바꾸지 않아 카드마다 표시 형식이 섞이지 않게 한다. */
-  const hours=1+((cardIndex*7+commentIndex*5)%72);
-  return `${hours}시간 전`;
-}
-function salRatioWithUserVote(v){
-  const sal=v.baseSal+(v.voted===0?1:0);
-  const mal=v.baseMal+(v.voted===1?1:0);
-  return sal+mal?Math.round(sal*100/(sal+mal)):50;
-}
-
 /* ── 댓글 시드 데이터 ─────────────────────────────────── */
 /* rk: 작성자 등급(0~4) — 아바타 링(rkPaintAv)이 여기서 색을 가져온다
    job: 관리자 승인이 끝난 직업 — 닉네임 오른쪽 배지. 없으면 Basic(검정) */
@@ -123,8 +119,8 @@ function orderFor(tab){
   /* 그 외 탭은 진행 중인 게시글만 노출 */
   idx=idx.filter(i=>!VOTES[i].closed);
   if(tab==='closing'){
-    /* 마감임박: 마감까지 12시간 이하 남은 게시글만 */
-    return idx.filter(i=>Number.isFinite(VOTES[i].hours)&&VOTES[i].hours<=12).sort((a,b)=>VOTES[a].hours-VOTES[b].hours);
+    /* 마감임박: 진행 중인 게시글을 실제 마감 시각이 가까운 순서로 */
+    return idx.sort((a,b)=>VOTES[a].closesAt-VOTES[b].closesAt||VOTES[b].createdAt-VOTES[a].createdAt);
   }
   if(tab==='popular'){
     /* 인기순: 참여수(투표수) 많은 순 */
@@ -132,12 +128,12 @@ function orderFor(tab){
   }
   if(tab==='taste'){
     /* 내 취향: 취향 매칭도 높은 순 */
-    return idx.sort((a,b)=>VOTES[b].taste-VOTES[a].taste);
+    const matched=idx.filter(i=>VOTES[i].tasteMatch>0);
+    return (matched.length?matched:idx).sort((a,b)=>
+      VOTES[b].tasteMatch-VOTES[a].tasteMatch||VOTES[b].taste-VOTES[a].taste);
   }
   /* 최신순: 가장 최근에 등록된 게시글 먼저 */
-  return idx.sort((a,b)=>VOTES[a].youtubeId&&VOTES[b].youtubeId
-    ? VOTES[b].upload_date.localeCompare(VOTES[a].upload_date)||VOTES[a].seq-VOTES[b].seq
-    : VOTES[b].seq-VOTES[a].seq);
+  return idx.sort((a,b)=>VOTES[b].createdAt-VOTES[a].createdAt||VOTES[b].seq-VOTES[a].seq);
 }
 
 function plateStyle(v){
@@ -149,7 +145,7 @@ function plateStyle(v){
 function cardHTML(i){
   const v=VOTES[i];
   const buyOn=v.voted===0, noOn=v.voted===1;
-  const votesShown=v.votes+(v.voted!==null?1:0);
+  const votesShown=v.votes;
   const capText=v.closed
     ? `${fmtNum(votesShown)}표 · 투표 종료`
     : `${fmtNum(votesShown)}표 · 마감까지 ${fmtHours(v.hours)}${v.voted!==null?' · <em>투표함</em>':''}`;
@@ -314,21 +310,25 @@ function updateCard(i){
     const side=+btn.dataset.vote;
     btn.classList.toggle('picked', v.voted===side);
   });
-  const votesShown=v.votes+(v.voted!==null?1:0);
+  const votesShown=v.votes;
   $('.cap',card).innerHTML=`${fmtNum(votesShown)}표 · 마감까지 ${fmtHours(v.hours)}${v.voted!==null?' · <em>투표함</em>':''}`;
 }
 
 function castVote(i,side){
   if(!requireAuth())return;
   const v=VOTES[i];
-  v.voted = (v.voted===side) ? null : side;
-  v.a=salRatioWithUserVote(v);
+  const before=v.voted;
+  const after=before===side?null:side;
+  if(before===0)v.baseSal=Math.max(0,v.baseSal-1);
+  if(before===1)v.baseMal=Math.max(0,v.baseMal-1);
+  if(after===0)v.baseSal++;
+  if(after===1)v.baseMal++;
+  v.voted=after;
+  v.votes=v.baseSal+v.baseMal;
+  v.a=v.votes?Math.round(v.baseSal*100/v.votes):50;
   updateCard(i);
   smVoteBeat($(`.voteCard[data-i="${i}"]`), side);
-  /* 서버에 투표를 남긴다 — 카드는 youtube_salmal_cards.json 이라 app.vote_card id 가 없다.
-     그래서 영상 id + 카탈로그 상품 id 로 카드를 식별한다.
-     (DB 카드로 바뀌면 cardKey 에 vote_card id(숫자)를 넣으면 vote_ballot 에도 저장된다) */
-  saveVote({ cardKey:'yt:'+(v.video_id||'')+':'+(v.catalog_product_id||v.t), title:v.t, brand:v.b,
+  saveVote({ cardKey:v.cardKey, title:v.t, brand:v.b,
     style:styleNameOf(v), choice:v.voted===null?null:(v.voted===0?'BUY':'PASS') })
     .then(r=>{ if(r&&Number.isFinite(+r.vote_count))ME.votes=+r.vote_count; });
 }
@@ -471,7 +471,7 @@ function closeModal(){
 function updateModalVote(){
   const i=modalState.i; if(i===null)return;
   const v=VOTES[i];
-  const votesShown=v.votes+(v.voted!==null?1:0);
+  const votesShown=v.votes;
   $('#modalCntAll').textContent=v.closed
     ? `${fmtNum(votesShown)}표 · 투표 종료`
     : `${fmtNum(votesShown)}표 · 마감까지 ${fmtHours(v.hours)}`;
@@ -527,15 +527,21 @@ function renderComments(){
   }).join('');
 }
 
-function sendComment(){
+async function sendComment(){
   const i=modalState.i; if(i===null)return;
   const ta=$('#commentInput');
   const text=ta.value.trim();
   if(!text)return;
-  VOTES[i].comments.unshift({name:'나', rk:ME.rank, me:true, text, time:'1시간 전', id:nextCommentId()});
-  ta.value='';
-  renderComments();
-  $('#commentsList').scrollTop=0;
+  try{
+    const saved=await saveVoteComment({cardId:VOTES[i].id,content:text});
+    VOTES[i].comments.unshift({
+      name:'나',rk:ME.rank,job:jobShown(ME)||'Basic',me:true,text,time:'1시간 전',
+      tag:saved?.choice==='BUY'?0:saved?.choice==='PASS'?1:null,id:saved?.id||nextCommentId()
+    });
+    ta.value='';
+    renderComments();
+    $('#commentsList').scrollTop=0;
+  }catch(error){ showToast(error.message||'댓글을 저장하지 못했습니다.'); }
 }
 
 /* 모달 내 정적 요소 바인딩 (한 번만) */
@@ -795,8 +801,14 @@ setInterval(()=>{
 },2600);
 
 /* ── 초기 렌더 ───────────────────────────────────────── */
-renderGrid();
-renderClosedGrid();
+$('#voteGrid').innerHTML='<div class="smDataState">살!말? 데이터를 불러오는 중이에요.</div>';
+loadVotes().then(()=>{
+  renderGrid();
+  renderClosedGrid();
+}).catch(error=>{
+  $('#voteGrid').innerHTML=`<div class="smDataState">${escapeHtml(error.message||'살!말? 데이터를 불러오지 못했습니다.')}</div>`;
+  $('#closedGrid').innerHTML='';
+});
 
 /* 이 화면을 다시 열 때 등장 모션만 되돌려 준다.
    salmalBoot 은 한 번만 도니까, 바깥에서 부를 손잡이를 남긴다.

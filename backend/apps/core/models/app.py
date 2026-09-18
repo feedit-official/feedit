@@ -329,6 +329,30 @@ class VoteCard(models.Model):
         verbose_name="상품",
     )
 
+    product_source = models.ForeignKey(
+        "core.ProductSource",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="vote_cards",
+        verbose_name="상품 출처",
+    )
+
+    seed_key = models.CharField(
+        max_length=160,
+        null=True,
+        blank=True,
+        unique=True,
+        verbose_name="시드 식별자",
+    )
+
+    gender_target = models.CharField(
+        max_length=20,
+        null=True,
+        blank=True,
+        verbose_name="성별 타깃",
+    )
+
     title = models.CharField(
         max_length=300,
         verbose_name="제목",
@@ -359,6 +383,18 @@ class VoteCard(models.Model):
         verbose_name="상태",
     )
 
+    closes_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="마감일시",
+    )
+
+    source_metadata = models.JSONField(
+        default=dict,
+        blank=True,
+        verbose_name="출처 메타데이터",
+    )
+
     created_at = models.DateTimeField(
         auto_now_add=True,
         verbose_name="생성일시",
@@ -378,6 +414,10 @@ class VoteCard(models.Model):
             models.Index(
                 fields=["status", "-created_at"],
                 name="idx_vote_card_status",
+            ),
+            models.Index(
+                fields=["gender_target", "status"],
+                name="idx_vote_gender_status",
             ),
         ]
 
@@ -450,7 +490,22 @@ class VoteComment(models.Model):
         related_name="vote_comments",
         verbose_name="작성자",
     )
+    seed_key = models.CharField(
+        max_length=190,
+        null=True,
+        blank=True,
+        unique=True,
+        verbose_name="시드 식별자",
+    )
+    choice = models.CharField(
+        max_length=10,
+        choices=[("BUY", "살"), ("PASS", "말"), ("NEUTRAL", "중립")],
+        null=True,
+        blank=True,
+        verbose_name="댓글 의견",
+    )
     content = models.TextField(verbose_name="댓글 내용")
+    source_metadata = models.JSONField(default=dict, blank=True, verbose_name="출처 메타데이터")
     is_deleted = models.BooleanField(default=False, db_index=True, verbose_name="삭제 여부")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="작성일시")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="수정일시")
