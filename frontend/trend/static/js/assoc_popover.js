@@ -30,13 +30,13 @@ export function assocOpenPop(triggerEl,cat,item){
 }
 export function assocClosePop(){
   $('#assocPop').classList.remove('on');
-  $$('#trBody .axList .axRow').forEach(t=>t.classList.remove('on'));
+  $$('#trBody .axList .axRow, #sigWrap tr').forEach(t=>t.classList.remove('on'));
 }
 $('#apClose').addEventListener('click',assocClosePop);
 document.addEventListener('click',e=>{
   const pop=$('#assocPop');
   if(!pop.classList.contains('on'))return;
-  if(e.target.closest('#assocPop')||e.target.closest('.axList .axRow'))return;
+  if(e.target.closest('#assocPop')||e.target.closest('.axList .axRow')||e.target.closest('#sigWrap tr'))return;
   assocClosePop();
 });
 document.addEventListener('keydown',e=>{ if(e.key==='Escape') assocClosePop(); });

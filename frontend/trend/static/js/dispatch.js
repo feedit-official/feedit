@@ -899,97 +899,195 @@ export function trRender(id){
   }
   /* ══════════════ 연관어 ══════════════
      값: /api/assoc → analysis.term_assoc_daily (lift · PMI · 백분위 · 순위) + 근거 문장 */
-  else if(id==='assoc'){
-    const kw=KW.q;
-    const A=editGate(body,'/api/assoc?term='+encodeURIComponent(kw),'‘'+trEsc(kw)+'’ 의 연관어를');
-    if(!A)return;
-    const AX_ORDER=['아이템','소재','색','디테일','TPO','스타일','브랜드','인물'];
-    const groups={};
-    (A.items||[]).forEach(it=>{ const c=it.facet_ko||it.facet; (groups[c]=groups[c]||[]).push(it) });
-    const cats=AX_ORDER.filter(c=>groups[c]).concat(Object.keys(groups).filter(c=>AX_ORDER.indexOf(c)<0));
-    cats.forEach(c=>{ groups[c]=groups[c].slice(0,10) });
-    const ALL=cats.reduce((a,c)=>a.concat(groups[c]),[]);
-    if(!ALL.length){
-      body.innerHTML=unavailableHTML('‘'+kw+'’ 의 연관어가 아직 없습니다.','함께 언급된 문서가 모자랍니다.');
+  else if (id === 'assoc') {
+    const kw = KW.q;
+    const A = editGate(body, '/api/assoc?term=' + encodeURIComponent(kw), '‘' + trEsc(kw) + '’ 의 연관어를');
+    if (!A) return;
+    const AX_ORDER = ['아이템', '소재', '색', '디테일', 'TPO', '스타일', '브랜드', '인물'];
+    const groups = {};
+    (A.items || []).forEach(it => { const c = it.facet_ko || it.facet; (groups[c] = groups[c] || []).push(it) });
+    const cats = AX_ORDER.filter(c => groups[c]).concat(Object.keys(groups).filter(c => AX_ORDER.indexOf(c) < 0));
+    /* PMI 상위 10개 + 동시출현 상위 10개의 합집합 → 두 정렬 모두에서 의미 있는 항목을 보존 */
+    cats.forEach(c => {
+      const all = groups[c];
+      if (all.length <= 10) return;
+      const byPmi = all.slice(0, 10);
+      const byCooc = all.slice().sort((a, b) => (b.cooccurrence || 0) - (a.cooccurrence || 0)).slice(0, 10);
+      const seen = new Set();
+      const merged = [];
+      byPmi.concat(byCooc).forEach(it => {
+        const k = it.term;
+        if (!seen.has(k)) { seen.add(k); merged.push(it); }
+      });
+      groups[c] = merged;
+    });
+    const ALL = cats.reduce((a, c) => a.concat(groups[c]), []);
+    if (!ALL.length) {
+      body.innerHTML = unavailableHTML('‘' + kw + '’ 의 연관어가 아직 없습니다.', '함께 언급된 문서가 모자랍니다.');
       return;
     }
-    const MAX_TAGS=50; /* 축 5개 × 축당 최대 10개 */
-    const density=Math.min(100,Math.round(ALL.length/MAX_TAGS*100));
-    const strength=a=>a.percentile!=null?a.percentile:(a.lift!=null?a.lift*10:a.cooccurrence);
-    const topTag=ALL.slice().sort((a,b)=>strength(b)-strength(a))[0];
-    const catTotals=cats.map(c=>[c,groups[c].reduce((s,a)=>s+(a.cooccurrence||0),0)]);
-    const topCat=catTotals.slice().sort((a,b)=>b[1]-a[1])[0][0];
-    const newCnt=ALL.filter(a=>a.change==='new').length;
-    const band=ALL.length>=38?0:ALL.length>=25?1:ALL.length>=13?2:3;
-    const RAMP=['#b23b3b','#c98a1b','#3d7fd6','#1f9e6e'].slice(0,4-band);
-    const BAND=[['#1f9e6e','폭발적 확산','여러 축에 걸쳐 연관어가 최대치에 가깝게 쌓였습니다. 소비자 언어가 이미 풍부하게 형성된 상태입니다.'],
-                ['#3d7fd6','활발한 확산','연관어가 절반 이상 채워졌습니다. 축마다 고르게 늘고 있는지 확인해볼 때입니다.'],
-                ['#c98a1b','완만한 확산','연관어가 서서히 쌓이고 있지만 아직 절반에 못 미칩니다. 확산 초반 구간입니다.'],
-                ['#b23b3b','정체','연관어 수가 아직 적어 판단하기엔 이릅니다. 소재가 한정적으로 소비되고 있을 가능성이 있습니다.']][band];
-    const badgeHtml=ch=>ch==='new'?'<span class="axChg up">NEW</span>':
-      ch==null?'':ch>0?'<span class="axChg up">▲'+ch+'</span>':ch<0?'<span class="axChg">▼'+Math.abs(ch)+'</span>':
-      '<span class="axChg">–</span>';
-    body.innerHTML=
-      '<div class="verdict" style="--sc:'+BAND[0]+'">'+
-        '<div class="dial"><svg viewBox="0 0 120 120">'+
-          '<circle class="trk" cx="60" cy="60" r="50"/>'+
-          '<circle class="val" cx="60" cy="60" r="50" data-ramp="'+RAMP.join(',')+'" data-score="'+density+'" '+
-            'stroke-dasharray="314.16" stroke-dashoffset="314.16"/></svg>'+
-          '<span class="num"><b data-count="'+density+'">0</b><small>연관어 포화도 %</small></span></div>'+
-        '<div class="vdTx">'+
-          '<h4><b>'+trEsc(kw)+'</b>'+josa(kw,'은','는')+' 지금 <em>'+BAND[1]+'</em> 단계입니다.</h4>'+
-          '<p>'+BAND[2]+'</p>'+
-          '<div class="vdBand">'+['정체','완만','활발','폭발'].map((s,i)=>'<div'+(i===(3-band)?' class="on"':'')+
-            '><span>'+s+'</span></div>').join('')+'</div>'+
-          '<div class="vdMeta">'+
-            '<div><b>'+ALL.length+'건</b><span>연관어 총량</span></div>'+
-            '<div><b>'+newCnt+'건</b><span>신규 연관어</span></div>'+
-            '<div><b>'+trEsc(A.as_of)+'</b><span>기준일</span></div>'+
-          '</div>'+
-        '</div></div>'+
-      '<div class="kpis" style="grid-template-columns:repeat(3,minmax(0,1fr))">'+
-        kpi('최다 연관어',trEsc(topTag.term),'',
-            topTag.lift!=null?'lift '+topTag.lift.toFixed(2)+(topTag.percentile!=null?' · 상위 '+Math.max(1,Math.round(100-topTag.percentile))+'%':''):'동시 언급 '+topTag.cooccurrence+'건',1)+
-        kpi('가장 뜨거운 축',trEsc(topCat),'','축별 동시 언급 문서 합산 1위',1)+
-        kpi('축당 평균 다양성',(ALL.length/cats.length).toFixed(1),'개','핵심 연관어 수',1)+'</div>'+
-      '<div class="trGrid">'+
-        '<div class="panelC"><div class="gHead"><h3>연관어 수 추이</h3></div>'+
-          '<div data-chart="assocMain"></div>'+
-          '<div class="note"><i>◆</i>연관어 수가 온도보다 먼저 꺾이면 화제성은 남았지만 다양성이 좁아지고 있다는 신호입니다.</div></div>'+
-        '<div class="panelC"><div class="ph"><h3>축별 비중</h3><em>KEYWORDS</em></div>'+
-          '<table class="mTable"><tr><th>축</th><th></th><th>키워드 수</th></tr>'+
-          catTotals.map(c=>{const cnt=groups[c[0]].length;
-            const pct=Math.round(cnt/ALL.length*100);
-            return '<tr><td>'+(c[0]===topCat?'<b>'+trEsc(c[0])+'</b>':trEsc(c[0]))+'</td>'+
-              '<td><span class="bar" style="display:block"><i class="'+(c[0]===topCat?'c':'')+'" style="width:'+Math.min(100,pct*2)+'%"></i></span></td>'+
-              '<td class="n">'+cnt+'개</td></tr>'}).join('')+
-          '</table><div class="note"><i>◆</i>축 하나에 몰릴수록 유행이 아니라 단일 아이템 소비일 확률이 높습니다.</div></div>'+
-      '</div>'+
-      '<div class="assocGrid" style="margin-top:12px">'+
-      cats.map((cat,ci)=>{const arr=groups[cat];
-        const max=Math.max.apply(null,arr.map(a=>a.cooccurrence||0))||1;
-        return '<div class="panelC"><div class="axHead"><span class="dot"></span><h3>'+trEsc(cat)+'</h3></div>'+
-          '<div class="axList">'+arr.map((a,ai)=>{const pct=Math.round((a.cooccurrence||0)/max*100);
-            return '<button class="axRow'+(ai===0?' top':'')+'" data-ci="'+ci+'" data-ai="'+ai+'">'+
-              '<span class="axNum">'+(ai+1)+'</span>'+
-              '<span class="axName">'+trEsc(a.term)+'</span>'+
-              '<span class="axBar"><i class="'+(ai===0?'c':'')+'" style="width:'+pct+'%"></i></span>'+
-              badgeHtml(a.change)+
-            '</button>'}).join('')+
-          '</div></div>'}).join('')+'</div>';
+    const MAX_TAGS = 50; /* 축 5개 × 축당 최대 10개 */
+    const density = Math.min(100, Math.round(ALL.length / MAX_TAGS * 100));
+    const strength = a => a.percentile != null ? a.percentile : (a.lift != null ? a.lift * 10 : a.cooccurrence);
+    const topTag = ALL.slice().sort((a, b) => strength(b) - strength(a))[0];
+    const catTotals = cats.map(c => [c, groups[c].reduce((s, a) => s + (a.cooccurrence || 0), 0)]);
+    const topCat = catTotals.slice().sort((a, b) => b[1] - a[1])[0][0];
+    const newCnt = ALL.filter(a => a.change === 'new').length;
+    const band = ALL.length >= 38 ? 0 : ALL.length >= 25 ? 1 : ALL.length >= 13 ? 2 : 3;
+    const RAMP = ['#b23b3b', '#c98a1b', '#3d7fd6', '#1f9e6e'].slice(0, 4 - band);
+    const BAND = [['#1f9e6e', '폭발적 확산', '여러 축에 걸쳐 연관어가 최대치에 가깝게 쌓였습니다. 소비자 언어가 이미 풍부하게 형성된 상태입니다.'],
+    ['#3d7fd6', '활발한 확산', '연관어가 절반 이상 채워졌습니다. 축마다 고르게 늘고 있는지 확인해볼 때입니다.'],
+    ['#c98a1b', '완만한 확산', '연관어가 서서히 쌓이고 있지만 아직 절반에 못 미칩니다. 확산 초반 구간입니다.'],
+    ['#b23b3b', '정체', '연관어 수가 아직 적어 판단하기엔 이릅니다. 소재가 한정적으로 소비되고 있을 가능성이 있습니다.']][band];
+    const badgeHtml = ch => ch === 'new' ? '<span class="axChg up">NEW</span>' :
+      ch == null ? '' : ch > 0 ? '<span class="axChg up">▲' + ch + '</span>' : ch < 0 ? '<span class="axChg">▼' + Math.abs(ch) + '</span>' :
+        '<span class="axChg">–</span>';
+    body.innerHTML =
+      '<div class="verdict" style="--sc:' + BAND[0] + '">' +
+      '<div class="dial"><svg viewBox="0 0 120 120">' +
+      '<circle class="trk" cx="60" cy="60" r="50"/>' +
+      '<circle class="val" cx="60" cy="60" r="50" data-ramp="' + RAMP.join(',') + '" data-score="' + density + '" ' +
+      'stroke-dasharray="314.16" stroke-dashoffset="314.16"/></svg>' +
+      '<span class="num"><b data-count="' + density + '">0</b><small>연관어 포화도 %</small></span></div>' +
+      '<div class="vdTx">' +
+      '<h4><b>' + trEsc(kw) + '</b>' + josa(kw, '은', '는') + ' 지금 <em>' + BAND[1] + '</em> 단계입니다.</h4>' +
+      '<p>' + BAND[2] + '</p>' +
+      '<div class="vdBand">' + ['정체', '완만', '활발', '폭발'].map((s, i) => '<div' + (i === (3 - band) ? ' class="on"' : '') +
+        '><span>' + s + '</span></div>').join('') + '</div>' +
+      '<div class="vdMeta">' +
+      '<div><b>' + ALL.length + '건</b><span>연관어 총량</span></div>' +
+      '<div><b>' + newCnt + '건</b><span>신규 연관어</span></div>' +
+      '<div><b>' + trEsc(A.as_of) + '</b><span>기준일</span></div>' +
+      '</div>' +
+      '</div></div>' +
+      '<div class="kpis" style="grid-template-columns:repeat(3,minmax(0,1fr))">' +
+      kpi('최다 연관어', trEsc(topTag.term), '',
+        topTag.lift != null ? 'lift ' + topTag.lift.toFixed(2) + (topTag.percentile != null ? ' · 상위 ' + Math.max(1, Math.round(100 - topTag.percentile)) + '%' : '') : '동시 언급 ' + topTag.cooccurrence + '건', 1) +
+      kpi('가장 뜨거운 축', trEsc(topCat), '', '축별 동시 언급 문서 합산 1위', 1) +
+      kpi('축당 평균 다양성', (ALL.length / cats.length).toFixed(1), '개', '핵심 연관어 수', 1) + '</div>' +
+      '<div class="trGrid">' +
+      '<div class="panelC"><div class="gHead"><h3>연관어 수 추이</h3></div>' +
+      '<div data-chart="assocMain"></div>' +
+      '<div class="note"><i>◆</i>연관어 수가 온도보다 먼저 꺾이면 화제성은 남았지만 다양성이 좁아지고 있다는 신호입니다.</div></div>' +
+      '<div class="panelC"><div class="ph"><h3>축별 비중</h3><em>KEYWORDS</em></div>' +
+      '<table class="mTable"><tr><th>축</th><th></th><th>키워드 수</th></tr>' +
+      catTotals.map(c => {
+        const cnt = groups[c[0]].length;
+        const pct = Math.round(cnt / ALL.length * 100);
+        return '<tr><td>' + (c[0] === topCat ? '<b>' + trEsc(c[0]) + '</b>' : trEsc(c[0])) + '</td>' +
+          '<td><span class="bar" style="display:block"><i class="' + (c[0] === topCat ? 'c' : '') + '" style="width:' + Math.min(100, pct * 2) + '%"></i></span></td>' +
+          '<td class="n">' + cnt + '개</td></tr>'
+      }).join('') +
+      '</table><div class="note"><i>◆</i>축 하나에 몰릴수록 유행이 아니라 단일 아이템 소비일 확률이 높습니다.</div></div>' +
+      '</div>' +
+      '<div class="assocGrid" style="margin-top:12px">' +
+      cats.map((cat, ci) => {
+        const arr = groups[cat];
+        const max = Math.max.apply(null, arr.map(a => a.cooccurrence || 0)) || 1;
+        return '<div class="panelC" data-cat="' + trEsc(cat) + '" data-ci="' + ci + '">' +
+          '<div class="axHead">' +
+          '<span class="dot"></span><h3>' + trEsc(cat) + '</h3>' +
+          '<div class="axSortToggle">' +
+          '<button class="axSortBtn on" data-sort="pmi" data-ci="' + ci + '">특징순</button>' +
+          '<button class="axSortBtn" data-sort="cooc" data-ci="' + ci + '">언급량순</button>' +
+          '</div>' +
+          '</div>' +
+          '<div class="axList" data-ci="' + ci + '">' + arr.map((a, ai) => {
+            const pct = Math.round((a.cooccurrence || 0) / max * 100);
+            return '<button class="axRow' + (ai === 0 ? ' top' : '') + '" data-ci="' + ci + '" data-ai="' + ai + '">' +
+              '<span class="axNum">' + (ai + 1) + '</span>' +
+              '<span class="axName">' + trEsc(a.term) + '</span>' +
+              '<span class="axBar"><i class="' + (ai === 0 ? 'c' : '') + '" style="width:' + pct + '%"></i></span>' +
+              badgeHtml(a.change) +
+              '</button>'
+          }).join('') +
+          '</div></div>'
+      }).join('') + '</div>';
+    /* ── 클라이언트 사이드 정렬용 데이터 저장 ── */
+    window._assocGroups = groups;
+    window._assocCats = cats;
+    window._assocBadgeHtml = badgeHtml;
+
     G_CFG.assocMain={key:kw+'assoc',term:kw,rows:A.history||[],
       emptyReason:'연관어 적재 이력이 아직 없습니다.',
       sets:[{id:'a',name:'연관어 수',field:'count',unit:'개'}]};
-    gChart('[data-chart="assocMain"]',G_CFG.assocMain); trDial();
-    $$('#trBody .axList .axRow').forEach(btn=>{
-      btn.addEventListener('click',e=>{
+    gChart('[data-chart="assocMain"]', G_CFG.assocMain); trDial();
+
+    /* ── 각 카테고리 토글 클릭 핸들러 ── */
+    $$('#trBody .axSortBtn').forEach(btn => {
+      btn.addEventListener('click', e => {
         e.stopPropagation();
-        const cat=cats[+btn.dataset.ci];
-        const a=groups[cat][+btn.dataset.ai];
-        const stat=[a.lift!=null?'lift '+a.lift.toFixed(2):'', a.pmi!=null?'PMI '+a.pmi.toFixed(2):'',
-                    '동시 언급 '+(a.cooccurrence||0)+'건'].filter(Boolean).join(' · ');
-        assocOpenPop(btn,cat,{n:a.term,spark:null,
-          src:[{tag:'지표',text:stat}].concat(a.evidence||[])});
+        const ci = +btn.dataset.ci;
+        const sort = btn.dataset.sort;
+        const cat = window._assocCats[ci];
+        const grps = window._assocGroups;
+        const badge = window._assocBadgeHtml;
+        if (!cat || !grps[cat]) return;
+
+        /* 토글 버튼 활성 상태 변경 (같은 카테고리 내에서만) */
+        const panel = btn.closest('.panelC');
+        panel.querySelectorAll('.axSortBtn').forEach(b => {
+          b.classList.toggle('on', b === btn);
+        });
+
+        /* 정렬: pmi=기존 association_rank 순, cooc=동시출현 횟수 내림차순 */
+        const arr = grps[cat].slice();
+        if (sort === 'cooc') {
+          arr.sort((a, b) => (b.cooccurrence || 0) - (a.cooccurrence || 0));
+        } else {
+          arr.sort((a, b) => {
+            const ra = a.rank != null ? a.rank : 999999;
+            const rb = b.rank != null ? b.rank : 999999;
+            if (ra !== rb) return ra - rb;
+            return (b.pmi || 0) - (a.pmi || 0);
+          });
+        }
+
+        /* 해당 카테고리의 axList만 다시 그리기 (페이지 초기화 없음) */
+        const list = panel.querySelector('.axList');
+
+        const max = Math.max.apply(null, arr.map(a => a.cooccurrence || 0)) || 1;
+        list.innerHTML = arr.map((a, ai) => {
+          const pct = Math.round((a.cooccurrence || 0) / max * 100);
+          return '<button class="axRow' + (ai === 0 ? ' top' : '') + '" data-ci="' + ci + '" data-ai="' + ai + '">' +
+            '<span class="axNum">' + (ai + 1) + '</span>' +
+            '<span class="axName">' + trEsc(a.term) + '</span>' +
+            '<span class="axBar"><i class="' + (ai === 0 ? 'c' : '') + '" style="width:' + pct + '%"></i></span>' +
+            (badge ? badge(a.change) : '') +
+            '</button>';
+        }).join('');
+
+        /* 정렬된 데이터 기준으로 groups 업데이트 (팝업에서도 맞게) */
+        grps[cat] = arr;
+
+        /* 새로 그린 버튼에 팝업 핸들러 다시 연결 */
+        list.querySelectorAll('.axRow').forEach(row => {
+          row.addEventListener('click', ev => {
+            ev.stopPropagation();
+            const a2 = grps[cat][+row.dataset.ai];
+            const stat2 = [a2.lift != null ? 'lift ' + a2.lift.toFixed(2) : '', a2.pmi != null ? 'PMI ' + a2.pmi.toFixed(2) : '',
+            '동시 언급 ' + (a2.cooccurrence || 0) + '건'].filter(Boolean).join(' · ');
+            assocOpenPop(row, cat, {
+              n: a2.term, spark: null,
+              src: [{ tag: '지표', text: stat2 }].concat(a2.evidence || [])
+            });
+          });
+        });
+      });
+    });
+
+    /* ── 기존 axRow 클릭 → 팝업 핸들러 ── */
+    $$('#trBody .axList .axRow').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        const cat = cats[+btn.dataset.ci];
+        const a = groups[cat][+btn.dataset.ai];
+        const stat = [a.lift != null ? 'lift ' + a.lift.toFixed(2) : '', a.pmi != null ? 'PMI ' + a.pmi.toFixed(2) : '',
+        '동시 언급 ' + (a.cooccurrence || 0) + '건'].filter(Boolean).join(' · ');
+        assocOpenPop(btn, cat, {
+          n: a.term, spark: null,
+          src: [{ tag: '지표', text: stat }].concat(a.evidence || [])
+        });
       });
     });
   }
@@ -1096,7 +1194,7 @@ export function trRender(id){
         '<div class="panelC" id="sentSigCard"><div class="ph"><h3>신호 유형별 건수</h3><em>최근 28일</em></div>'+
           '<div class="sigWrap" id="sigWrap">'+(SIG.length
           ? '<table class="mTable"><tr><th>신호</th><th></th><th>건수</th></tr>'+
-            SIG.map(p=>'<tr data-sig="'+p[0]+'"><td>'+p[0]+'</td>'+
+            SIG.map(p=>'<tr data-sig="'+p[0]+'" style="cursor:pointer"><td>'+p[0]+'</td>'+
               '<td><span class="bar" style="display:block"><i class="'+(p[2]>0?'c':'')+'" style="width:'+Math.round(p[1]/maxSig*100)+'%"></i></span></td>'+
               '<td class="n '+(p[2]>0?'up':p[2]<0?'dn':'')+'">'+p[1].toLocaleString()+'</td></tr>').join('')+'</table>'
           : unavailableHTML('반응 유형(질문·구매·경험·호평·비판·잡담) 건수가 아직 없습니다.',''))+'</div>'+
@@ -1107,6 +1205,20 @@ export function trRender(id){
     /* G_CFG 에 올리지 않는다 — gMount 가 선·막대 엔진(gChart)으로 다시 그리면 원형이 사라진다 */
     sentPie($('[data-chart="sentMain"]'),{key:kw+'sent',rows:rows,lastDate:last.date}); trDial(); trFillBars();
     sentFitSignals();   /* 왼쪽 차트 카드 높이에 맞춰 넘치는 신호 목록을 접고 '+더보기' 로 연다 */
+    /* 신호 행 클릭 → 해당 유형의 실제 근거 문장 */
+    const intentMap={'질문':'QUESTION','구매':'PURCHASE','경험':'EXPERIENCE',
+      '호평':'PRAISE','비판':'CRITIQUE','잡담':'CHITCHAT'};
+    $$('#sigWrap tr[data-sig]').forEach(row=>{
+      row.addEventListener('click',e=>{
+        e.stopPropagation();
+        const intent=intentMap[row.dataset.sig];
+        const evList=(D.evidence||{})[intent]||[];
+        assocOpenPop(row,'긍부정 신호',{
+          n:row.dataset.sig,spark:null,
+          src:evList.length?evList:[{tag:'안내',text:'해당 신호로 분류된 최근 근거 문장이 없습니다.'}]
+        });
+      });
+    });
   }
   /* ══════════════ 할인률 변화 ══════════════
      값: /api/discount → snapshot.product_source_snapshot (세부 검색 조건에 걸린 상품) + 대표 용어 온도 */
