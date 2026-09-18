@@ -23,13 +23,13 @@ from .followup import URL as _URL
 from .lexicon_gate import LexiconGate
 from .nlu import classify
 from .intents import is_salmal_question, is_greeting, GENERAL_CODES, SALMAL_CODES
-from .store import ReadOnlyStore
+from .store import ReadOnlyStore, default_store
 
 
 class ChatEngine:
     def __init__(self, store: ReadOnlyStore | None = None, *, use_llm: bool = True,
                  salmal=None, taste=None):
-        self.store = store or ReadOnlyStore()
+        self.store = store or default_store()
         self.gate = LexiconGate(self.store)
         self.use_llm = use_llm
         self.salmal = salmal
@@ -211,9 +211,29 @@ class ChatEngine:
             self._polish(rep)
         return rep
 
-    def _remember(self, conv_id, q, intent, mode, terms):
+    def _remember(self, conv_id, q, intent, mode, terms, visual=None):
         if conv_id:
-            self.memory.add(conv_id, history.make_turn(q, intent, mode, terms))
+            self.memory.add(conv_id, history.make_turn(q, intent, mode, terms, visual))
+
+    def _vision_terms(self, visual: dict | None) -> list[dict]:
+        """사진 관찰값 중 사전에 실제로 있는 용어만 지표용 term으로 승격한다."""
+        if not isinstance(visual, dict):
+            return []
+        words = [visual.get("item")]
+        for key in ("tags", "materials", "styles", "details"):
+            words.extend(visual.get(key) or [])
+        out, seen = [], set()
+        for word in words:
+            parsed = self.gate.parse(str(word or ""))
+            for term in parsed.get("search") or []:
+                key = term.get("term_key") or term.get("canonical")
+                if not key or key in seen:
+                    continue
+                seen.add(key)
+                out.append(term)
+                if len(out) >= 4:
+                    return out
+        return out
 
     # ── 이미지 첨부 ───────────────────────────────────
     def _vision_ask(self, q: str, mode: str, images: list[str],
@@ -233,6 +253,8 @@ class ChatEngine:
             if not visual:
                 return {"ok": False, "reason": "IMAGE_FAILED",
                         "message": "사진을 분석하지 못했습니다. 다시 시도해 주세요."}
+            visual_context = history.sanitize_visual(visual) or {}
+            visual_terms = self._vision_terms(visual_context)
             result = salmal_index.calculate(
                 term=str(visual.get("item") or ""),
                 product_tags=visual.get("tags") or [],
@@ -244,22 +266,36 @@ class ChatEngine:
                 catalog.append({"id": f"salmal:visual:{i}", "kind": "salmal",
                                 "term": result["term"], "block": block})
             canvas = report_skill.build(catalog, trace=None)
-            self._remember(conversation_id, q or "[사진]", "vision.salmal", mode, [])
+            self._remember(conversation_id, q or "[사진]", "vision.salmal", mode,
+                           visual_terms, visual_context)
             return {"ok": True, "kind": "agent", "intent": "vision.salmal",
                     "headline": mdclean.to_html(str(visual.get("summary") or "사진을 확인했습니다.")),
-                    "followup": "", "terms": [], "as_of": {},
+                    "followup": "", "terms": visual_terms, "as_of": {},
                     "blocks": [canvas] if canvas else [], "notes": [], "sources": [],
                     "partial": not result.get("recommendation_allowed"),
                     # 사진에서는 이름만 안다 — 브랜드·가격은 비워 두고 사용자가 채운다.
                     "item_draft": {"title": result["term"], "brand": "", "price": None,
                                    "source": "사진 분석"},
-                    "visual_item": {"name": result["term"], "tags": visual.get("tags") or []}}
-        answer = llm.vision(q, images, mode=mode)
-        if not answer:
+                    "visual_item": {"name": result["term"], "tags": visual.get("tags") or []},
+                    "visual_context": visual_context}
+        visual = llm.vision(q, images, mode=mode)
+        if not visual:
             return {"ok": False, "reason": "IMAGE_FAILED",
                     "message": "사진을 분석하지 못했습니다. 다시 시도해 주세요."}
-        self._remember(conversation_id, q or "[사진]", "vision.image", mode, [])
-        return {"ok": True, "kind": "meta", "intent": "vision.image", "message": answer}
+        # 전환 중인 테스트·오래된 어댑터가 문자열을 돌려도 답은 유지한다.
+        if isinstance(visual, str):
+            visual = {"summary": visual}
+        visual_context = history.sanitize_visual(visual) or {}
+        visual_terms = self._vision_terms(visual_context)
+        answer = str(visual_context.get("summary") or "사진을 확인했습니다.")
+        self._remember(conversation_id, q or "[사진]", "vision.image", mode,
+                       visual_terms, visual_context)
+        # report 이벤트가 와야 프런트가 이 턴의 history를 저장한다. 블록은 비어 있어
+        # 화면에는 예전처럼 답변 문장만 보인다(reportHTML의 빈 블록 처리 규칙).
+        return {"ok": True, "kind": "agent", "intent": "vision.image",
+                "headline": mdclean.to_html(answer), "followup": "",
+                "terms": visual_terms, "as_of": {}, "blocks": [], "notes": [],
+                "sources": [], "partial": False, "visual_context": visual_context}
 
     # ── ③ ────────────────────────────────────────────
     def _attach_web(self, rep: dict, parsed: dict, q: str, plan: str, past: list[dict]):

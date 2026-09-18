@@ -2,6 +2,7 @@ import { HAS_A, aAnimate, aSpring, aStagger, aUtils } from '../../../core/static
 import { ME, requireAuth } from '../../../account/static/js/profile.js';
 import { rkClamp, rkRingHTML } from '../../../account/static/js/rank.js';
 import { smBarFill, smBarLabels } from '../../../trend/static/js/discount_resale.js';
+import { accountCard, accountCards, accountVote } from '../../../account/static/js/account_api.js';
 
 /* ══════════════ 살!말? (feedit-salmal_2 이식) ══════════════
    이름 충돌을 막기 위해 통째로 자기 범위 안에서 돌린다. */
@@ -126,7 +127,7 @@ function plateStyle(v){
 function cardHTML(i){
   const v=VOTES[i];
   const buyOn=v.voted===0, noOn=v.voted===1;
-  const votesShown=v.votes+(v.voted!==null?1:0);
+  const votesShown=v.votes;
   const capText=v.closed
     ? `${fmtNum(votesShown)}표 · 투표 종료`
     : `${fmtNum(votesShown)}표 · 마감까지 ${fmtHours(v.hours)}${v.voted!==null?' · <em>투표함</em>':''}`;
@@ -136,6 +137,10 @@ function cardHTML(i){
         <button class="buy${buyOn?' picked':''}" data-vote="0">살!</button>
         <button class="${noOn?'picked':''}" data-vote="1">말래요</button>
       </div>`;
+  const barHTML=votesShown
+    ? `<i class="buy" data-w="${v.a}" style="width:${v.a}%"><span>살 ${v.a}%</span></i>
+       <i class="no" data-w="${100-v.a}" style="width:${100-v.a}%"><span>${100-v.a}% 말</span></i>`
+    : '<i class="buy" data-w="50" style="width:50%"><span>투표 전</span></i><i class="no" data-w="50" style="width:50%"><span></span></i>';
   return `
   <div class="voteCard" data-i="${i}">
     <div class="fig">
@@ -148,8 +153,7 @@ function cardHTML(i){
       <h4>${v.t}</h4>
       <div class="cap">${capText}</div>
       <div class="smBar">
-        <i class="buy" data-w="${v.a}" style="width:${v.a}%"><span>살 ${v.a}%</span></i>
-        <i class="no" data-w="${100-v.a}" style="width:${100-v.a}%"><span>${100-v.a}% 말</span></i>
+        ${barHTML}
       </div>
       ${btnsHTML}
     </div>
@@ -293,19 +297,25 @@ function updateCard(i){
     const side=+btn.dataset.vote;
     btn.classList.toggle('picked', v.voted===side);
   });
-  const votesShown=v.votes+(v.voted!==null?1:0);
+  const votesShown=v.votes;
   $('.cap',card).innerHTML=`${fmtNum(votesShown)}표 · 마감까지 ${fmtHours(v.hours)}${v.voted!==null?' · <em>투표함</em>':''}`;
 }
 
 function castVote(i,side){
   if(!requireAuth())return;
   const v=VOTES[i];
-  v.voted = (v.voted===side) ? null : side;
+  if(!v.cardId){ showToast('RDS 카드 ID가 없어 투표를 저장할 수 없어요.'); return; }
+  if(v.voted===null)v.votes+=1;
+  v.voted = side;
   if(v.voted===0) v.a=Math.min(97, v.base+4);
   else if(v.voted===1) v.a=Math.max(3, v.base-4);
   else v.a=v.base;
   updateCard(i);
   smVoteBeat($(`.voteCard[data-i="${i}"]`), side);
+  accountVote({card_id:v.cardId,choice:side===0?'BUY':'PASS'}).then(payload=>{
+    const summary=payload&&payload.vote_summary;
+    if(summary){ v.votes=summary.total; v.base=summary.buy_pct==null?50:Math.round(summary.buy_pct); v.a=v.base; updateCard(i); }
+  }).catch(error=>showToast(error.message));
 }
 
 function attachCardHandlers(root=document){
@@ -423,7 +433,7 @@ function openModal(i){
   $('#modalTitle').textContent=v.t;
   $('#modalBrand').textContent=v.b;
   $('#modalPrice').textContent=fmtWon(v.p);
-  $('#modalSegLabel').textContent=' (체형・스타일・나이)';
+  $('#modalSegLabel').textContent=v.taste==null?' (취향 세그먼트 계산 대기)':' (체형・스타일・나이)';
   const note=v.authorNote||noteFor(i);
   $('#modalNoteName').textContent=note.name;
   $('#modalNote').textContent=note.text;
@@ -443,7 +453,7 @@ function closeModal(){
 function updateModalVote(){
   const i=modalState.i; if(i===null)return;
   const v=VOTES[i];
-  const votesShown=v.votes+(v.voted!==null?1:0);
+  const votesShown=v.votes;
   $('#modalCntAll').textContent=v.closed
     ? `${fmtNum(votesShown)}표 · 투표 종료`
     : `${fmtNum(votesShown)}표 · 마감까지 ${fmtHours(v.hours)}`;
@@ -455,25 +465,35 @@ function updateModalVote(){
     b.classList.toggle('tight',a<28); n.classList.toggle('tight',(100-a)<28);
   };
   setPair($('#modalBarAll'), v.a);
-  setPair($('#modalBarSim'), simA(v));
+  const similar=$('#modalBarSim');
+  similar.hidden=v.taste==null;
+  if(v.taste!=null)setPair(similar, simA(v));
 
   if($('#aiChatBubble').classList.contains('on')) buildAIReport(i);
 }
 
 function buildAIReport(i){
-  const v=VOTES[i], sim=simA(v), sat=satisfaction(v);
+  const v=VOTES[i];
+  if(!v.votes){
+    $('#aiVerdict').textContent='아직 판단할 수 없어요';
+    $('#aiVerdict').classList.remove('buy');
+    $('#aiWhy').textContent='RDS에 실제 투표가 아직 없습니다. 첫 투표가 쌓인 뒤 전체 의견을 보여드릴게요.';
+    $('#aiStats').innerHTML='<div><div class="k">실제 투표</div><div class="v">0표</div></div>'+
+      '<div><div class="k">유사 세그먼트</div><div class="v">측정 전</div></div>'+
+      '<div><div class="k">구매자 만족도</div><div class="v">데이터 없음</div></div>';
+    return;
+  }
   const verdictBuy=v.a>=55;
   const el=$('#aiVerdict');
   el.textContent=verdictBuy?'지금 사도 좋아요':'조금 더 지켜보세요';
   el.classList.toggle('buy',verdictBuy);
   $('#aiWhy').textContent=
-    `전체 투표에서 ${v.a>=50?'살':'말'} 의견이 우세하고, 취향이 비슷한 사용자 사이에서는 ${sim}%가 구매에 동의했습니다. `+
-    `실제 구매자 만족도는 ${sat}%로 ${sat>=80?'높은 편':sat>=60?'무난한 편':'다소 낮은 편'}이며, `+
-    `마감까지 ${fmtHours(v.hours)} 남아 지금이 결정하기 좋은 시점입니다.`;
+    `RDS에 저장된 전체 ${v.votes}표에서 ${v.a>=50?'살':'말'} 의견이 우세합니다. `+
+    '취향 유사 세그먼트와 실제 구매자 만족도는 아직 계산 데이터가 없어 판단에 넣지 않았습니다.';
   $('#aiStats').innerHTML=`
     <div><div class="k">전체 살 비율</div><div class="v">${v.a}%</div></div>
-    <div><div class="k">유사 세그먼트</div><div class="v">${sim}%</div></div>
-    <div><div class="k">구매자 만족도</div><div class="v">${sat}%</div></div>`;
+    <div><div class="k">유사 세그먼트</div><div class="v">측정 전</div></div>
+    <div><div class="k">구매자 만족도</div><div class="v">데이터 없음</div></div>`;
 }
 
 function renderComments(){
@@ -713,7 +733,7 @@ $('#cPrice').addEventListener('input',()=>{
   $('#cPrice').value=$('#cPrice').value.replace(/[^0-9]/g,'');
 });
 
-$('#createSubmit').addEventListener('click',()=>{
+$('#createSubmit').addEventListener('click',async()=>{
   const title=$('#cTitle').value.trim();
   const brand=$('#cBrand').value.replace(/\s+/g,' ').trim();
   const priceRaw=$('#cPrice').value.trim();
@@ -723,13 +743,25 @@ $('#createSubmit').addEventListener('click',()=>{
   if(!brand){ showToast('브랜드를 입력해주세요'); return; }
   if(!priceRaw){ showToast('가격을 입력해주세요'); return; }
 
+  if(createImgURL&&createImgURL.startsWith('blob:')){
+    showToast('이미지 저장은 S3 업로드 연결 후 가능해요. 이미지 없이 등록해 주세요.');
+    return;
+  }
+
+  let saved;
+  try{
+    saved=await accountCard({title,description:note||null,image_url:createImgURL||null,
+      tags:[brand,fmtWon(parseInt(priceRaw,10))]});
+  }catch(error){ showToast(error.message); return }
+
   const seq=VOTES.length?VOTES[VOTES.length-1].seq+1:0;
   const item={
     t:title, b:brand, p:parseInt(priceRaw,10),
-    base:50, a:50, votes:0, hours:48, taste:70,
+    base:50, a:50, votes:0, hours:48, taste:null,
     tone:randomTone(), voted:null, comments:[], closed:false, seq,
     imgURL:createImgURL||null,
-    authorNote: note ? {name:'나', text:note} : null
+    authorNote: note ? {name:'나', text:note} : null,
+    cardId:saved&&saved.card&&saved.card.id
   };
   createImgURL=null; /* 소유권을 item으로 넘겨 reset 시 URL이 해제되지 않도록 함 */
   VOTES.push(item);
@@ -742,23 +774,30 @@ $('#createSubmit').addEventListener('click',()=>{
   renderGrid();
 });
 
-/* ── 실시간 인원 카운터 미세 변동 ────────────────────── */
-setInterval(()=>{
-  const el=$('#liveCount');
-  const cur=+el.textContent;
-  const next=Math.max(96, cur+(Math.random()>0.5?1:-1));
-  if(HAS_A){
-    const o={v:cur};
-    aAnimate(o,{v:next,duration:520,ease:'out(2)',
-      onUpdate:()=>{ el.textContent=Math.round(o.v) }});
-    aAnimate(el,{keyframes:[{translateY:-2,duration:150,ease:'out(2)'},
-      {translateY:0,duration:420,ease:aSpring({stiffness:150,damping:12})}]});
-  }else el.textContent=next;
-},2600);
-
-/* ── 초기 렌더 ───────────────────────────────────────── */
-renderGrid();
-renderClosedGrid();
+/* ── 초기 렌더 ─────────────────────────────────────────
+   운영 화면은 app.vote_card가 원본이다. 위 배열은 화면 모양을 위한 과거 시드일 뿐
+   실제 실행에서는 비우고 RDS 응답으로 교체한다. */
+VOTES.length=0; BRAND_LIST.length=0;
+renderGrid(); renderClosedGrid();
+accountCards().then(rows=>{
+  for(const payload of rows||[]){
+    const card=payload.card||{}, product=payload.product||{}, vote=payload.vote_summary||{};
+    const tags=card.tags||[];
+    const priceTag=tags.find(tag=>/[0-9][0-9,]*원/.test(String(tag)))||'';
+    VOTES.push({
+      t:card.title||product.name||'(제목 없음)', b:product.brand||tags[0]||'브랜드 미입력',
+      p:Number((String(priceTag).match(/[0-9]+/g)||[]).join(''))||Number(payload.price_snapshot?.sale_price||payload.price_snapshot?.list_price||0),
+      base:vote.buy_pct==null?50:Math.round(vote.buy_pct), a:vote.buy_pct==null?50:Math.round(vote.buy_pct),
+      votes:Number(vote.total||0),hours:0,taste:null,tone:randomTone(),
+      voted:vote.my_choice==='BUY'?0:(vote.my_choice==='PASS'?1:null),comments:[],
+      closed:!!vote.closed,seq:VOTES.length,imgURL:card.image_url||null,
+      authorNote:card.description?{name:'FEEDiT 사용자',text:card.description}:null,cardId:card.id,
+    });
+  }
+  BRAND_LIST.splice(0,BRAND_LIST.length,...[...new Set(VOTES.map(v=>v.b))].sort());
+  if($('#liveCount')) $('#liveCount').textContent=String(VOTES.length);
+  renderGrid(); renderClosedGrid();
+}).catch(error=>showToast(error.message));
 
 /* 이 화면을 다시 열 때 등장 모션만 되돌려 준다.
    salmalBoot 은 한 번만 도니까, 바깥에서 부를 손잡이를 남긴다.

@@ -15,7 +15,10 @@ class SalmalHTTPAdapter:
 
     def _get(self, path: str, params: dict) -> dict:
         try:
-            r = requests.get(f"{self.base}/{path}?{urlencode(params)}", timeout=self.timeout)
+            token = (os.getenv("FEEDIT_API_TOKEN") or "").strip()
+            headers = {"X-FEEDiT-Token": token} if token else {}
+            r = requests.get(f"{self.base}/{path}?{urlencode(params)}",
+                             headers=headers, timeout=self.timeout)
             r.raise_for_status()
             payload = r.json()
         except Exception as exc:  # noqa: BLE001 - 도구 실패가 대화를 죽이지 않는다

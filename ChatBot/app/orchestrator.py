@@ -230,10 +230,19 @@ FEEDiT 는 SNS·커머스를 수집해 용어별 트렌드 지표를 계산하�
    형식: `[다음] 아디다스와 트랙탑 중 어느 쪽을 더 볼까요?` — 한 줄, 한 질문.
    물을 것이 없으면 안 써도 된다.
 
-12. **구조화 화면이 답을 더 쉽게 읽게 할 때만 compose_report 를 쓴다.** 순위·비교·
-   여러 지표·살말 근거처럼 정보 관계를 시각화할 가치가 있을 때, 데이터 조회를
-   모두 마친 뒤 최종 문장을 쓰기 직전에 한 번 부른다. 짧은 사실 확인, 인사, 간단한
-   설명, 거절처럼 문장만으로 충분하면 부르지 말고 바로 답한다. 이것은 완성 양식을
+12. **답만 읽는 편이 나은지, 리포트로 보는 편이 나은지 먼저 판단한다.**
+   compose_report 는 데이터를 조회했다는 표시가 아니라, 여러 결과의 관계를 눈으로
+   비교해야 할 때만 쓰는 UI 스킬이다. 짧은 질문이라고 무조건 생략하거나, 지표가
+   하나 있다고 무조건 부르지 마라.
+   - **문장만 답한다:** 인사·잡담·거절·되묻기, 용어 뜻, 사진의 소재·색·길이 같은
+     후속 설명, 한 용어의 한두 축/한 가지 사실, 간단한 코디·상담처럼 1~3문장으로
+     충분히 이해되는 답. get_metric 을 불렀어도 한 값만 설명하면 카드가 필요 없다.
+   - **리포트로 답한다:** 사용자가 리포트·표·차트·상세 근거를 직접 요청했을 때,
+     TOP/순위, 두 대상 비교, 여러 플랫폼·연관어·감성·근거, 3축 이상의 지표,
+     살말 지수처럼 결론을 만든 여러 신호를 함께 보여 줄 때.
+   - 애매하면 먼저 자연스러운 대화 문장으로 답한다. 카드는 장식이 아니다.
+   리포트가 필요한 경우 조회를 모두 마친 뒤 최종 문장을 쓰기 직전에
+   compose_report 를 정확히 한 번 부른다. 이것은 완성 양식을
    고르는 도구가 아니다. 이번 질문에 필요한 모듈만 고르고, 각 모듈의 표현 역할·
    12열 폭·강조도와 전체 색·표면·밀도를 조합하는 UI 스킬이다.
    - 이미 받은 도구 결과에 있는 kind 와 term 만 쓴다. 없는 지표를 화면에 만들지 마라.
@@ -250,8 +259,9 @@ FEEDiT 는 SNS·커머스를 수집해 용어별 트렌드 지표를 계산하�
      한국어로 쓴다. 수치는 제목에 넣지 않는다.
    - HTML·CSS·수치·상품명은 만들지 않는다. 데이터는 서버가 실제 결과와 결합한다.
    - compose_report 를 부른 뒤에는 다른 도구를 부르지 말고 바로 답을 쓴다.
-   - 조회 결과가 있어도 한두 문장으로 충분하면 부르지 않는다.
-   - 조회 결과가 전혀 없거나 ask_user 로 되묻는 경우에도 부르지 않는다.
+   - 답변이 한두 문장이어도 여러 신호를 비교해야 하면 쓴다. 반대로 구조화 결과가
+     있어도 한 값이면 생략한다. 문장 길이가 아니라 **시각 비교의 필요성**이 기준이다.
+   - 구조화 지표 결과가 전혀 없거나 ask_user 로 되묻는 경우에는 부르지 않는다.
    - **declare_missing 이 필요하면 compose_report 와 같은 바퀴에서 함께 불러라.**
      둘 다 조회가 끝난 뒤의 기록·구성이다. 따로 나누면 바퀴를 하나 더 쓰고,
      그만큼 답을 쓰는 바퀴가 밀린다(2026-09-11 실측: 네 바퀴를 다 쓰고도
@@ -265,6 +275,13 @@ FEEDiT 는 SNS·커머스를 수집해 용어별 트렌드 지표를 계산하�
     그 값으로 커뮤니티 카드를 채운다 — 적지 않으면 사용자가 친 원문(링크 주소)이
     상품명 칸에 그대로 들어간다. 확인하지 못한 칸은 null 로 둔다.
     이 때문에 도구를 한 번 더 부르지 마라. 바퀴가 모자라면 리포트가 통째로 사라진다.
+
+14. **직전 사진을 기억한다.** `[최근 이미지 분석]`이 있으면 "소재는?", "길이는?",
+    "위 아이템은?" 같은 질문의 대상은 그 사진 속 아이템이다. 무엇을 말하는지 다시
+    묻지 말고, 기록된 관찰값 안에서 바로 답한다. 기록에 없는 특징은 사진에서 확인하지
+    못했다고 말하고 지어내지 마라. 이미지 관찰값은 색·소재·실루엣·디테일 설명에만
+    쓰며 브랜드·가격·트렌드의 근거로 쓰지 않는다. 이처럼 **구매 판정이 아닌 사진 설명
+    후속 질문**에는 살말 모드여도 get_salmal_index를 다시 부를 필요가 없다.
 
 ## 도구 고르는 법
 - 질문이 용어를 지목했으면 → search_terms 로 정확한 표기를 얻고 get_metric
@@ -428,6 +445,25 @@ def _ctx_block(question: str, ctx: dict, history: list[dict] | None) -> str:
     if seen:
         lines.append("[최근 본 용어] " + " · ".join(seen)
                      + "  ← '이거 · 아까 그거' 는 이 중 하나일 가능성이 높다")
+    visual = next((t.get("visual") for t in reversed(history or [])
+                   if isinstance(t, dict) and isinstance(t.get("visual"), dict)), None)
+    if visual:
+        bits = []
+        if visual.get("item"):
+            bits.append("아이템=" + str(visual["item"]))
+        labels = {"colors": "색", "materials": "소재", "silhouette": "실루엣",
+                  "details": "디테일", "styles": "스타일", "tags": "태그",
+                  "uncertainties": "불확실"}
+        for key, label in labels.items():
+            values = visual.get(key)
+            if isinstance(values, list) and values:
+                bits.append(label + "=" + "·".join(str(x) for x in values[:6]))
+        if bits:
+            lines.append("[최근 이미지 분석] " + "; ".join(bits))
+        # 브라우저가 돌려주는 history는 밖에서 온 값이다. 자유문장 summary를 시스템
+        # 문맥에 다시 넣지 않고, 길이·개수가 제한된 구조화 필드만 사용한다.
+        lines.append("[이미지 기억 범위] 위 값은 사진에서 본 특징에만 사용한다. "
+                     "브랜드·가격·트렌드는 별도 근거 없이는 추측하지 마라")
     for t in (history or [])[-3:]:
         q, a = t.get("q"), t.get("a")
         if q:
@@ -472,10 +508,67 @@ _REPORT_MATERIAL = {
     "season_fit", "similar_terms", "declare_missing",
 }
 
+_REPORT_EXPLICIT = re.compile(
+    r"(?:리포트|보고서|표(?:로|로\s*보)|차트|그래프|상세|자세히|근거|"
+    r"분석|비교|\bvs\b|순위|랭킹|\btop\s*\d*\b|플랫폼별|출처별|"
+    r"연관어|긍부정|감성|수명주기|아직\s*유효|유효해|추이)",
+    re.I,
+)
+_REPORT_ALWAYS_TOOLS = {"rank_terms", "get_salmal", "search_salmal",
+                        "get_salmal_index"}
+
 
 def _has_report_material(trace) -> bool:
     """문장뿐 아니라 구조화 화면으로 보여 줄 도구 결과가 있는가."""
     return any(c.get("tool") in _REPORT_MATERIAL for c in (trace.calls if trace else []))
+
+
+def report_required(question: str, trace) -> bool:
+    """모델이 카드를 빠뜨려도 반드시 복구해야 하는 복잡한 질의인가.
+
+    이것은 리포트를 *고르는* 1차 판단이 아니다. 1차 판단은 Terra 오케스트레이터가
+    대화 맥락까지 보고 compose_report 호출 여부로 남긴다. 이 함수는 TOP·비교·살말
+    처럼 문장만 나오면 정보 구조가 훼손되는 경우에만 안전망으로 작동한다.
+    """
+    calls = list(trace.calls if trace else [])
+    if not any(c.get("tool") in _REPORT_MATERIAL for c in calls):
+        return False
+    if _REPORT_EXPLICIT.search(str(question or "")):
+        return True
+
+    names = {c.get("tool") for c in calls}
+    if names & _REPORT_ALWAYS_TOOLS:
+        return True
+
+    metrics = [c for c in calls if c.get("tool") == "get_metric"
+               and isinstance(c.get("result"), dict)
+               and c["result"].get("has_metric") is not False]
+    metric_terms = {
+        str((c.get("result") or {}).get("term") or (c.get("args") or {}).get("term") or "")
+        for c in metrics
+    }
+    metric_terms.discard("")
+    if len(metric_terms) >= 2:
+        return True
+
+    axes = set()
+    for c in metrics:
+        raw = (c.get("args") or {}).get("axes")
+        if isinstance(raw, list):
+            axes.update(str(x) for x in raw if x)
+    if len(axes) >= 3:
+        return True
+
+    # 숫자와 원문 근거, 또는 여러 개의 연관 항목은 나란히 보는 편이 낫다.
+    if metrics and "get_evidence" in names:
+        return True
+    for c in calls:
+        if c.get("tool") == "similar_terms":
+            res = c.get("result") or {}
+            items = res.get("items") or res.get("terms") or res.get("similar") or []
+            if isinstance(items, list) and len(items) >= 3:
+                return True
+    return False
 
 
 def _has_report_design(trace) -> bool:
@@ -572,6 +665,19 @@ def run(question: str, *, store, gate, ctx: dict | None = None,
         if not calls:
             # 도구를 더 안 부른다 = 답할 준비가 됐다.
             candidate = (res.get("text") or "").strip()
+            # Terra가 문장만으로 충분하다고 판단했다면 그대로 끝낸다. 다만 TOP·비교·
+            # 살말처럼 카드가 없으면 정보 관계가 사라지는 질의만 안전망으로 복구한다.
+            if (candidate and report_required(question, box.trace)
+                    and not _has_report_design(box.trace) and rnd < max_rounds - 1):
+                pending_answer = candidate
+                items.extend(raw.get("output") or [])
+                items.append({
+                    "role": "user",
+                    "content": ("답변 본문은 준비됐습니다. 이번 질문은 순위·비교·다축 "
+                                "결과라 시각 리포트가 필요합니다. 새 데이터 도구는 부르지 말고, 실제 "
+                                "결과만 사용해 compose_report를 정확히 한 번 부르세요."),
+                })
+                continue
             out.answer = candidate
             out.stopped = "done"
             break

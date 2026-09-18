@@ -5,10 +5,11 @@
   사람은 같은 질문을 다른 말에 대해 다시 묻는 것으로 읽는다.
   앞 턴이 없으면 규칙도 LLM 도 "고프코어가 뭐냐" 로 읽는다. 실제로 그렇게 답했다.
 
-무엇을 기억하나 — 세 가지뿐이다.
+무엇을 기억하나 — 네 가지뿐이다.
   · 무엇을 물었나 (intent)
   · 무엇에 대해 물었나 (사전에 걸린 term)
   · 원문 (사용자에게 "앞 질문을 이어받았다" 고 보여 주려고)
+  · 사진에서 직접 확인한 구조화 관찰값 (아이템·색·소재·실루엣 등)
 답변 본문은 기억하지 않는다. 다음 답을 만들 때 쓰이지 않는데 들고 있으면
 언젠가 그걸 근거 삼아 말하게 된다.
 
@@ -43,8 +44,42 @@ def count_asks(turns) -> int:
                if isinstance(t, dict) and str(t.get("intent") or "") == ASK_INTENT)
 
 
-def make_turn(question: str, intent: str, mode: str, terms: list[dict]) -> dict:
-    return {
+_VISUAL_LISTS = ("tags", "colors", "materials", "silhouette", "details", "styles",
+                 "uncertainties")
+
+
+def sanitize_visual(raw) -> dict | None:
+    """Vision Agent가 확인한 **관찰값만** 대화 기억에 남긴다.
+
+    브라우저가 다음 요청에 다시 보내는 값이므로 길이와 모양을 제한한다. 이 값은
+    사진 설명을 이어 갈 때만 쓰고 브랜드·가격·트렌드의 근거로 승격하지 않는다.
+    """
+    if not isinstance(raw, dict):
+        return None
+    out: dict = {}
+    item = " ".join(str(raw.get("item") or raw.get("name") or "").split())[:80]
+    if item:
+        out["item"] = item
+    for key in _VISUAL_LISTS:
+        value = raw.get(key)
+        if not isinstance(value, (list, tuple)):
+            continue
+        rows = []
+        for x in value[:8]:
+            word = " ".join(str(x or "").split())[:60]
+            if word and word not in rows:
+                rows.append(word)
+        if rows:
+            out[key] = rows
+    summary = " ".join(str(raw.get("summary") or "").split())[:500]
+    if summary:
+        out["summary"] = summary
+    return out or None
+
+
+def make_turn(question: str, intent: str, mode: str, terms: list[dict],
+              visual: dict | None = None) -> dict:
+    turn = {
         "q": " ".join(str(question or "").split())[:200],
         "intent": intent,
         "mode": mode,
@@ -52,6 +87,10 @@ def make_turn(question: str, intent: str, mode: str, terms: list[dict]) -> dict:
                    "term_key": t.get("term_key")} for t in (terms or [])][:4],
         "at": time.time(),
     }
+    seen = sanitize_visual(visual)
+    if seen:
+        turn["visual"] = seen
+    return turn
 
 
 class Memory:
@@ -112,7 +151,11 @@ def sanitize(raw) -> list[dict]:
                               "term_key": str(x.get("term_key") or "")[:60] or None})
             elif isinstance(x, str):
                 terms.append({"canonical": x[:40], "facet": None, "term_key": None})
-        out.append({"q": q, "intent": str(t.get("intent") or "")[:32] or None,
-                    "mode": "salmal" if t.get("mode") == "salmal" else "general",
-                    "terms": terms, "at": time.time()})
+        turn = {"q": q, "intent": str(t.get("intent") or "")[:32] or None,
+                "mode": "salmal" if t.get("mode") == "salmal" else "general",
+                "terms": terms, "at": time.time()}
+        visual = sanitize_visual(t.get("visual") or t.get("visual_context"))
+        if visual:
+            turn["visual"] = visual
+        out.append(turn)
     return out

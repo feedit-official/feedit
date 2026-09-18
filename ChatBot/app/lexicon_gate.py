@@ -10,6 +10,8 @@
 from __future__ import annotations
 
 import sys
+import re
+import unicodedata
 
 from .config import EXTRACTOR_DIR, LEXICON_PATH, SEARCH_FACETS
 
@@ -17,6 +19,51 @@ if str(EXTRACTOR_DIR) not in sys.path:
     sys.path.insert(0, str(EXTRACTOR_DIR))
 
 _CRAWLER_ADDED = False
+
+
+def _norm(value):
+    value = unicodedata.normalize("NFC", str(value or ""))
+    return re.sub(r"[\s\-_·/&,\.\(\)\[\]]+", "", value).lower()
+
+
+class _RDSLexicon:
+    """RDS dictionary_term/term_alias/brand를 QuestionExtractor 계약으로 노출한다."""
+    _risky = {"면", "마", "짐", "백", "폴", "캡", "운동", "여행", "출근", "데이트",
+              "캠핑", "휴가", "하객", "골프", "학생", "기본", "러닝", "클래식", "모던"}
+
+    def __init__(self, rows):
+        self.surfaces = {}
+        self.facet_of = {}
+        self.trendable = {}
+        for row in rows:
+            canonical = str(row.get("canonical") or "").strip()
+            facet = str(row.get("facet") or "").strip().lower()
+            if not canonical or not facet:
+                continue
+            self.facet_of.setdefault(canonical, facet)
+            self.trendable.setdefault(canonical, facet not in {"season", "body"})
+            for surface in [canonical, *(row.get("aliases") or [])]:
+                key = _norm(surface)
+                if key: self.surfaces.setdefault(key, (canonical, facet))
+        self._ordered = sorted(self.surfaces, key=len, reverse=True)
+        self._free = [key for key in self._ordered
+                      if len(key) >= 2 and key not in self._risky and self.surfaces[key][1] != "brand"]
+
+    def exact(self, raw, facet=None):
+        found = self.surfaces.get(_norm(raw))
+        return found if found and (facet is None or found[1] == facet) else None
+
+    def extract(self, text, mode="product"):
+        hay, out, seen = _norm(text), [], set()
+        for surface in (self._free if mode == "free" else self._ordered):
+            index = hay.find(surface)
+            if index < 0:
+                continue
+            canonical, facet = self.surfaces[surface]
+            if canonical not in seen:
+                seen.add(canonical); out.append((canonical, facet))
+            hay = hay[:index] + "\0" * len(surface) + hay[index + len(surface):]
+        return out
 
 
 def _lexicon_cls():
@@ -32,9 +79,12 @@ def _lexicon_cls():
 
 class LexiconGate:
     def __init__(self, store):
-        Lexicon = _lexicon_cls()
         from question_extract import QuestionExtractor
-        self.lex = Lexicon(str(LEXICON_PATH))
+        if hasattr(store, "lexicon_entries"):
+            self.lex = _RDSLexicon(store.lexicon_entries())
+        else:
+            Lexicon = _lexicon_cls()
+            self.lex = Lexicon(str(LEXICON_PATH))
         # 접힘 되돌리기 — 지표에 자기 이름으로 있는 말은 접지 않는다
         self.prefer = store.metric_canonicals()
         self.qx = QuestionExtractor(self.lex, prefer_canonicals=self.prefer)

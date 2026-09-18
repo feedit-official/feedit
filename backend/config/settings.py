@@ -99,10 +99,17 @@ AUTH_PASSWORD_VALIDATORS = [
     },
 ]
 
-LLANGUAGE_CODE = "ko-kr"
+LANGUAGE_CODE = "ko-kr"
 TIME_ZONE = "Asia/Seoul"
 USE_I18N = True
 USE_TZ = True
+
+# 브라우저에는 세션 ID만 두고 실제 회원/취향/대화 데이터는 RDS에 저장한다.
+# Vercel의 같은 출처 API가 Set-Cookie를 중계하므로 운영에서는 Secure 쿠키를 쓴다.
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SECURE = not DEBUG
+SESSION_COOKIE_SAMESITE = "Lax"
+CSRF_COOKIE_SECURE = not DEBUG
 
 
 STATIC_URL = 'static/'

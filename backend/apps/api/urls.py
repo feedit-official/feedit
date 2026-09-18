@@ -6,7 +6,7 @@
 
 from django.urls import path
 
-from . import views
+from . import rds_views as views
 
 app_name = "api"
 
@@ -22,4 +22,5 @@ urlpatterns = [
     path("products", views.products, name="products"),
     path("salmal/card", views.salmal_card, name="salmal-card"),
     path("salmal/search", views.salmal_search, name="salmal-search"),
+    path("account", views.account, name="account"),
 ]

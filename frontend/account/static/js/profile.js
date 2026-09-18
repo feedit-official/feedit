@@ -6,6 +6,9 @@ import { SV, svWon } from '../../../trend/static/js/discount_resale.js';
 import { goView } from '../../../app_shell/static/js/router.js';
 import { rkLevelOf, rkPaintAll, rkPaintAv, xpPaint } from './rank.js';
 import { trRender } from '../../../trend/static/js/dispatch.js';
+import {
+  accountDelete, accountLogin, accountLogout, accountMe, accountProfile, accountSignup,
+} from './account_api.js';
 
 /* 내 계정 — 운영자라 최고 등급 고정 */
 export const ME={name:'혁진',mail:'hyeokjin@feedit.co.kr',initial:'혁',xp:9400,   /* 누적 경험치. rank 는 여기서 계산된다 */
@@ -59,6 +62,7 @@ function bioEdit(on){
     p.removeAttribute('contenteditable');
     b.classList.remove('on');
     bioPaint();
+    if(AUTH.in) accountProfile({ bio:ME.bio }).catch(e=>acctToast(e.message));
   }
 }
 function bioBind(){
@@ -82,9 +86,8 @@ bioBind();
 /* ══════════════════════════════════════════════════════════════
    계정 — 로그인 · 회원가입 · 마이페이지
    --------------------------------------------------------------
-   목업이라 서버가 없다. 인증 흉내는 여기서만 내고,
-   실제 값은 전부 ME(사용자)와 기존 데이터(SV 찜 · VOTES 투표 · STYLES 스타일)에
-   연결해 둔다. API 가 붙으면 authLogin / authSignup / acctSave 안쪽만 갈아 끼우면 된다.
+   인증·프로필·취향의 원본은 AWS RDS다. ME는 현재 화면을 빠르게 그리기 위한
+   메모리 사본이며 로그인/가입/수정 때 서버 값으로 다시 채운다.
    ══════════════════════════════════════════════════════════════ */
 export var AUTH = { in: false };
 /* 로그인 없이 쓸 수 없는 기능(챗봇 사용 · 트렌드 분석 · 살!말? 투표/등록)의
@@ -138,6 +141,23 @@ function authPaint(){
     acctMenu(false);
   }
 }
+
+function applyAccount(profile){
+  if(!profile) return;
+  ME.name = profile.nickname || profile.username || ME.name;
+  ME.initial = (ME.name || 'F')[0];
+  ME.mail = profile.email || profile.username || '';
+  ME.birth = profile.birth || '';
+  ME.height = profile.height_cm == null ? '' : String(profile.height_cm);
+  ME.weight = profile.weight_kg == null ? '' : String(profile.weight_kg);
+  ME.bio = profile.bio || '';
+  ME.ava = Number.isInteger(+profile.avatar) ? +profile.avatar : 0;
+  const labels = new Set(profile.styles || []);
+  ME.styles = new Set(STYLES.filter(style => labels.has(style.n)).map(style => style.id));
+}
+function styleLabels(){
+  return STYLES.filter(style => ME.styles.has(style.id)).map(style => style.n);
+}
 /* 로그인 뒤 이름 버튼을 누르면 뜨는 작은 메뉴 */
 function acctMenu(on){
   const m = $('#acctMenu');
@@ -147,13 +167,15 @@ function acctMenu(on){
     if(w) w.classList.toggle('open', m.classList.contains('on'));
   }
 }
-function authLogin(){
+function authLogin(profile){
+  applyAccount(profile);
   AUTH.in = true;
   authPaint();
   goView('home');
   runPendingAuth();
 }
-function authLogout(){
+async function authLogout(){
+  try{ await accountLogout() }catch(e){ acctToast(e.message) }
   AUTH.in = false;
   pendingAfterAuth = null;
   authPaint();
@@ -161,10 +183,11 @@ function authLogout(){
 }
 /* 회원가입 완료(구글 · 아이디 공통) — 홈 화면으로 보낸 뒤 그 위에
    '즐겨입는 스타일' 선택 팝업을 띄운다. 팝업을 닫아도 화면은 홈에 그대로 남는다. */
-function signupComplete(){
+function signupComplete(profile){
+  applyAccount(profile);
   AUTH.in = true;
   authPaint();
-  ME.styles.clear();   /* 팝업은 항상 빈 상태에서 시작한다 */
+  ME.styles.clear();   /* 가입 직후 팝업은 빈 상태에서 시작한다 */
   goView('home');
   openStyleSelect();
   runPendingAuth();
@@ -233,7 +256,9 @@ function styleSelectBind(){
   const save = $('#styleSelectSave');
   if(save && !save.dataset.bound){
     save.dataset.bound = '1';
-    save.addEventListener('click', () => {
+    save.addEventListener('click', async () => {
+      try{ await accountProfile({ styles:styleLabels() }) }
+      catch(e){ acctToast(e.message); return }
       acctModal('styleSelectModal', false);
       acctChips($('#styleWrap'), ME.styles);   /* 마이페이지 칩과 동기화 */
       myRender();
@@ -354,22 +379,21 @@ export function resetSignupForm(){
 export function acctBoot(){
   /* ── 로그인 ── */
   const lf = $('#loginForm');
-  if(lf) lf.addEventListener('submit', e => {
+  if(lf) lf.addEventListener('submit', async e => {
     e.preventDefault();
     const id = $('#loginId').value.trim(), pw = $('#loginPw').value.trim();
     const err = $('#loginErr');
     if(!id || !pw){ err.style.display = 'block'; return; }
     err.style.display = 'none';
-    ME.name = id.slice(0, 12) || ME.name;
-    ME.initial = ME.name[0];
-    authLogin();
+    try{ authLogin(await accountLogin({username:id,password:pw})) }
+    catch(ex){ err.textContent=ex.message; err.style.display='block' }
   });
   const gl = $('#googleLoginBtn');
-  if(gl) gl.addEventListener('click', authLogin);
+  if(gl) gl.addEventListener('click', () => acctToast('Google 로그인은 OAuth 설정 후 사용할 수 있어요.'));
 
   /* ── 회원가입 ── */
   const sf = $('#signupForm');
-  if(sf) sf.addEventListener('submit', e => {
+  if(sf) sf.addEventListener('submit', async e => {
     e.preventDefault();
     const err = $('#signupErr');
     const nick = $('#suNickname').value.trim();
@@ -396,37 +420,27 @@ export function acctBoot(){
     }
     if(msg){ err.textContent = msg; err.style.display = 'block'; return; }
     err.style.display = 'none';
-    ME.name = nick; ME.initial = nick[0];
-    ME.mail = id;   /* 구글 가입=구글 이메일, 아이디 가입=입력한 아이디 그대로 */
-    ME.birth = $('#suBirth').value || ME.birth;
-    ME.height = $('#suHeight').value || '';
-    ME.weight = $('#suWeight').value || '';
-    signupComplete();
+    try{
+      const profile = await accountSignup({
+        username:id, nickname:nick, password:pw,
+        birth:$('#suBirth').value || null,
+        height_cm:$('#suHeight').value || null,
+        weight_kg:$('#suWeight').value || null,
+      });
+      signupComplete(profile);
+    }catch(ex){ err.textContent=ex.message; err.style.display='block' }
   });
-  /* 구글로 계속하기 — 목업이라 실제 구글 인증은 없지만, 흐름은 그대로 흉내낸다.
-     같은 회원가입 폼 위에서 아이디/비밀번호 입력만 막고 닉네임·생년월일·체형을 마저 받는다. */
+  /* 가짜 Google 계정을 RDS에 만들지 않는다. OAuth 클라이언트가 설정되기 전에는
+     정확한 준비 상태만 안내한다. */
   const gs = $('#googleSignupBtn');
-  if(gs) gs.addEventListener('click', () => {
-    signupGoogleMode = true;
-    const suId = $('#suId'), suIdMsg = $('#suIdMsg');
-    if(suId){
-      suId.value = 'google.' + (Date.now() % 100000) + '@gmail.com';
-      suId.readOnly = true;
-    }
-    if(suIdMsg){ suIdMsg.textContent = 'Google 계정 이메일이라 수정할 수 없어요.'; suIdMsg.className = 'fieldMsg ok'; }
-    $('#suPwBlock').hidden = true;
-    $('#signupGoogleDivider').hidden = true;
-    $('#signupGoogleNote').hidden = false;
-    gs.hidden = true;
-    $('#suNickname').focus();
-  });
+  if(gs) gs.addEventListener('click', () => acctToast('Google 가입은 OAuth 설정 후 사용할 수 있어요.'));
   /* 아이디·비밀번호 안내는 치는 동안 바로 알려 준다 */
   const suId = $('#suId'), suIdMsg = $('#suIdMsg');
   if(suId) suId.addEventListener('input', () => {
     const v = suId.value.trim();
     if(!v){ suIdMsg.textContent = ''; suIdMsg.className = 'fieldMsg'; return; }
     const ok = /^[A-Za-z0-9]{4,16}$/.test(v);
-    suIdMsg.textContent = ok ? '사용할 수 있는 아이디입니다.' : '영문·숫자 4~16자';
+    suIdMsg.textContent = ok ? '형식이 맞습니다. 가입할 때 중복을 확인해요.' : '영문·숫자 4~16자';
     suIdMsg.className = 'fieldMsg ' + (ok ? 'ok' : 'err');
   });
   const suPw = $('#suPw'), suPw2 = $('#suPw2'), suPwMsg = $('#suPwMsg');
@@ -465,7 +479,9 @@ if(suW) suW.addEventListener('input', bodyHint);
 /* ── 마이페이지 ── */
   acctChips($('#styleWrap'), ME.styles);
   const ssb = $('#styleSaveBtn');
-  if(ssb) ssb.addEventListener('click', () => {
+  if(ssb) ssb.addEventListener('click', async () => {
+    try{ await accountProfile({ styles:styleLabels() }) }
+    catch(e){ acctToast(e.message); return }
     myRender();
     acctToast('즐겨입는 스타일이 저장됐어요.');
   });
@@ -487,6 +503,7 @@ if(suW) suW.addEventListener('input', bodyHint);
     ME.ava = +b.dataset.ava;
     $$('.avaSw', aw).forEach(x => x.classList.toggle('on', x === b));
     avaPaint(); authPaint();
+    accountProfile({avatar:ME.ava}).catch(err=>acctToast(err.message));
     setTimeout(() => acctModal('avatarModal', false), 240);
   });
   const ep = $('#editProfileBtn');
@@ -499,7 +516,7 @@ if(suW) suW.addEventListener('input', bodyHint);
     acctModal('editModal', true);
   });
   const ef = $('#editProfileForm');
-  if(ef) ef.addEventListener('submit', e => {
+  if(ef) ef.addEventListener('submit', async e => {
     e.preventDefault();
     const nick = $('#editNickname').value.trim();
     const pw = $('#editPw').value, pw2 = $('#editPw2').value;
@@ -510,10 +527,15 @@ if(suW) suW.addEventListener('input', bodyHint);
     else if(pw !== pw2) msg = '새 비밀번호가 서로 다릅니다.';
     else msg = bodyCheck($('#editHeight').value, $('#editWeight').value) || '';
     if(msg){ err.textContent = msg; err.style.display = 'block'; return; }
-    ME.name = nick; ME.initial = nick[0];
-    ME.birth = $('#editBirth').value || ME.birth;
-    ME.height = $('#editHeight').value || '';
-    ME.weight = $('#editWeight').value || '';
+    try{
+      applyAccount(await accountProfile({
+        nickname:nick, password:pw || undefined,
+        birth:$('#editBirth').value || null,
+        height_cm:$('#editHeight').value || null,
+        weight_kg:$('#editWeight').value || null,
+        styles:styleLabels(),
+      }));
+    }catch(ex){ err.textContent=ex.message; err.style.display='block'; return }
     acctModal('editModal', false);
     myRender(); authPaint();
     if(typeof trRender === 'function' && document.body.dataset.view === 'trend') trRender('myfeed');
@@ -556,13 +578,15 @@ if(suW) suW.addEventListener('input', bodyHint);
     if(b) bgDetail(b);
   });
 
-  /* 회원 탈퇴 — 목업이라 진짜로 지우지는 않는다. 확인만 받고 로그아웃한다 */
+  /* 회원 탈퇴는 Django auth 사용자와 연결된 RDS 행을 함께 삭제한다. */
   const lv = $('#leaveBtn');
   if(lv) lv.addEventListener('click', () => acctModal('leaveModal', true));
   const lvGo = $('#leaveConfirm');
-  if(lvGo) lvGo.addEventListener('click', () => {
-    acctModal('leaveModal', false);
-    authLogout();
+  if(lvGo) lvGo.addEventListener('click', async () => {
+    try{ await accountDelete() }
+    catch(e){ acctToast(e.message); return }
+    AUTH.in=false; pendingAfterAuth=null; authPaint();
+    acctModal('leaveModal', false); goView('home');
   });
   $$('[data-close-modal]').forEach(b =>
     b.addEventListener('click', () => $$('.acctModal').forEach(m => m.classList.remove('on'))));
@@ -595,11 +619,17 @@ if(suW) suW.addEventListener('input', bodyHint);
   const mm = $('#menuMypage');
   if(mm) mm.addEventListener('click', () => { acctMenu(false); goView('mypage') });
   const ml = $('#menuLogout');
-  if(ml) ml.addEventListener('click', () => { acctMenu(false); authLogout() });
+  if(ml) ml.addEventListener('click', () => { acctMenu(false); void authLogout() });
   document.addEventListener('click', e => {
     if(!e.target.closest('.mAuthWrap')) acctMenu(false);
   });
 
+  accountMe().then(profile => {
+    applyAccount(profile); AUTH.in=true; authPaint(); myRender();
+  }).catch(error => {
+    if(error.status !== 401) acctToast(error.message);
+    AUTH.in=false; authPaint();
+  });
   authPaint();
   rkPaintAll();      /* 화면에 이미 떠 있는 아바타들도 한 번 맞춰 둔다 */
 }
