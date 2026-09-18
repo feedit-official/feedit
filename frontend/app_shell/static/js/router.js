@@ -21,7 +21,7 @@ export var mainMode=false, mainReady=false, curView='home';
    항목을 다시 읽어 같은 화면 · 같은 탭 · 같은 스타일로 복원한다.
    navSkip 은 popstate 로 인한 복원 자체가 새 히스토리 항목을 또 쌓는 걸
    막는 플래그다. */
-let curTr='myfeed', curStyleId=null, navSkip=false;
+let curTr='myfeed', curStyleId=null, navSkip=false, viewSeq=0;
 function navState(){
   return { view:curView, tr:curView==='trend'?curTr:null, style:curView==='style'?curStyleId:null };
 }
@@ -48,6 +48,11 @@ function mHeroIn(){
    .add('.chips',    {opacity:[0,1],translateY:[14,0],duration:800,ease:'out(3)'},860);
   setTimeout(()=>{ const em=$('#mState em'); if(em)em.classList.add('ul') },1050);
 }
+function mHeroSettle(){
+  const els=[...$$('#mState .wd'),...$$('#v-home .mKicker, #v-home .heroL p, #v-home .hot, #v-home .chatWrap, #v-home .chips')];
+  if(HAS_A)aUtils.remove(els);
+  els.forEach(el=>{ el.style.opacity=''; el.style.transform=''; el.style.translate='' });
+}
 
 /* ── 트렌드 분석 사이드바 ────────────────────────────
    토글 버튼과 뷰 진입이 같은 함수를 쓴다. 상태가 갈리지 않게. */
@@ -58,17 +63,18 @@ export function trSideOpen(on){
   if(wr)wr.classList.toggle('open',on);
 }
 /* 접힌 상태로 되돌리되 폭이 줄어드는 장면은 보이지 않게 — 전환을 한 프레임 끈다 */
-function trSideReset(){
+function trSideInstant(on){
   const sd=$('#side'), wr=$('.trWrap');
   if(!sd)return;
   sd.classList.add('noTr'); if(wr)wr.classList.add('noTr');
-  trSideOpen(false);
+  trSideOpen(on);
   void sd.offsetWidth;
   sd.classList.remove('noTr'); if(wr)wr.classList.remove('noTr');
 }
+function trSideReset(){ trSideInstant(false) }
 
 /* ── 뷰 라우터 ──────────────────────────────────────── */
-export function goView(v){
+export function goView(v,fromTopNav=false){
   if(!v)return;
   /* ★ 없는 화면으로는 가지 않는다.
      아래 `$$('.view').forEach(s=>s.classList.toggle('on', s.id==='v-'+v))` 는
@@ -82,6 +88,11 @@ export function goView(v){
     return;
   }
   if(v===curView){
+    if(fromTopNav){
+      const current=$('#v-'+v);
+      if(HAS_A)aUtils.remove(current);
+      current.style.opacity=''; current.style.transform='';
+    }
     /* 스타일 탭에서 상세 화면에 들어가 있을 때 스타일 탭을 다시 누르면
        그 자리에 머무르지 않고 스타일 목록 처음 화면으로 되돌아간다 —
        이때도 처음 진입할 때와 똑같이 네비 아이콘이 튀고 화면이 살짝
@@ -92,7 +103,7 @@ export function goView(v){
       if(HAS_A&&nb)aAnimate($('span',nb),{translateY:[-3,0],duration:560,
         ease:aSpring({stiffness:150,damping:12})});
       const el=$('#v-style');
-      if(HAS_A&&el){
+      if(HAS_A&&el&&!fromTopNav){
         el.style.transform='';
         aAnimate(el,{opacity:[0,1],translateY:[14,0],duration:640,ease:'out(3)',
           onComplete:()=>{ el.style.transform='' }});
@@ -100,6 +111,16 @@ export function goView(v){
     }
     scrollTo(0,0);
     return;
+  }
+  const analysisSwitch=(curView==='trend'&&v==='salmal')||(curView==='salmal'&&v==='trend');
+  const seamless=fromTopNav||analysisSwitch;
+  const seq=++viewSeq;
+  /* 상단 탭과 분석 화면 왕복은 진행 중인 화면 전체 모션을 끊는다.
+     숨겼던 화면의 opacity:0 이 다음 진입까지 남으면 렉처럼 깜빡인다. */
+  if(seamless&&HAS_A){
+    const views=[document.getElementById('v-'+curView),document.getElementById('v-'+v)];
+    aUtils.remove(views);
+    views.forEach(view=>{ if(view){ view.style.opacity=''; view.style.transform='' } });
   }
   if(curView==='signup'&&v!=='signup')resetSignupForm();   /* 완료 안 하고 나가면 다음엔 처음 상태로 */
   /* 로그인/가입 화면을 그냥 벗어났다 — 관문에 걸려 들고 있던 질문도 여기서 버린다.
@@ -117,14 +138,17 @@ export function goView(v){
   const el=$('#v-'+v);
   /* 끝나면 transform 을 지운다 — 남겨두면 안쪽 position:fixed 가 뷰 기준이 된다.
      트렌드 분석은 고정 사이드바가 있어 transform 을 아예 쓰지 않는다. */
-  if(HAS_A&&el){
+  if(HAS_A&&el&&!seamless){
     if(v==='trend')aAnimate(el,{opacity:[0,1],duration:520,ease:'out(3)'});
     else aAnimate(el,{opacity:[0,1],translateY:[14,0],duration:640,ease:'out(3)',
       onComplete:()=>{ el.style.transform='' }});
   }
   document.body.classList.toggle('athome',v==='home');
   document.body.dataset.view=v;
-  if(v==='home'&&!$('#v-home').classList.contains('asking'))mHeroIn();
+  if(v==='home'){
+    if(fromTopNav)mHeroSettle();
+    else if(!$('#v-home').classList.contains('asking'))mHeroIn();
+  }
   if(v==='style'){ $('#styleDetail').style.display='none'; $('#styleHome').style.display='' }
   if(v==='salmal'){
     const first=!window.__smOn;
@@ -135,9 +159,11 @@ export function goView(v){
        탭 이동과 재생을 둘 다 돌리면 같은 막대에 애니메이션이 두 번 걸리므로 하나만 돌린다. */
     if(window.__smWant&&window.smGoTab){
       const want=window.__smWant; window.__smWant=null;
-      setTimeout(()=>{ try{ window.smGoTab(want) }catch(e){} },first?280:90);
+      if(seamless){ try{ window.smGoTab(want) }catch(e){} }
+      else setTimeout(()=>{ if(seq===viewSeq&&curView==='salmal')try{ window.smGoTab(want) }catch(e){} },first?280:90);
     }
-    else if(!first&&window.smReplay)setTimeout(()=>{ try{ window.smReplay() }catch(e){} },90);
+    else if(!first&&window.smReplay&&!seamless)
+      setTimeout(()=>{ if(seq===viewSeq&&curView==='salmal')try{ window.smReplay() }catch(e){} },90);
   }
   if(v==='mypage'){
     if(!AUTH.in){ setTimeout(()=>goView('login'),0); return }
@@ -152,11 +178,20 @@ export function goView(v){
     if(trGate)trGate.classList.toggle('on',!AUTH.in);
     window.__trOn=1;
     window.__trEnterAt=Date.now();     /* 사이드바 전환과 겹치지 않게 재는 기준점 */
-    trSideReset();                       /* 전환 없이 접어 둔다 — 열리는 장면을 보여 주려고 */
-    const startTr=window.__trWant||'myfeed'; window.__trWant=null; curTr=startTr;
+    const startTr=window.__trWant||'myfeed'; window.__trWant=null;
+    const reuseTr=seamless&&curTr===startTr&&!!$('#trBody').childElementCount;
+    curTr=startTr;
     $$('.sItem').forEach(x=>x.classList.toggle('on',x.dataset.tr===startTr));
-    setTimeout(()=>trRender(startTr),130);
-    setTimeout(()=>trSideOpen(true),240); /* 본문이 올라오기 시작할 때 같이 열린다 */
+    if(seamless){
+      /* 상단 탭에서 돌아올 때는 기존 내 피드 DOM을 유지한다.
+         매번 다시 그리면 카드가 0% 투명도로 돌아갔다 나타난다. */
+      trSideInstant(true);
+      if(!reuseTr)trRender(startTr);
+    }else{
+      trSideReset();                     /* 첫 진입에서는 기존 사이드바 모션 유지 */
+      setTimeout(()=>{ if(seq===viewSeq&&curView==='trend')trRender(startTr) },130);
+      setTimeout(()=>{ if(seq===viewSeq&&curView==='trend')trSideOpen(true) },240);
+    }
   }
   pushNav();
 }
@@ -197,7 +232,7 @@ document.addEventListener('click',e=>{
   }
   const fit=e.target.closest('[data-fit-style]');
   if(fit)return stOpenFit(fit.dataset.fitStyle);
-  const nav=e.target.closest('#mNav button'); if(nav)return goView(nav.dataset.v);
+  const nav=e.target.closest('#mNav button'); if(nav)return goView(nav.dataset.v,true);
   const st=e.target.closest('[data-style]');
   if(st&&st.dataset.style)return goStyle(st.dataset.style);
   const v=e.target.closest('[data-v]');
