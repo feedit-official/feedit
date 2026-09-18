@@ -2,13 +2,14 @@ import { $, $$, HAS_A, aAnimate, aSpring, aStagger, aUtils } from '../../../core
 import { WK, feedSmPicks, feedSmLoad } from './my_feed.js';
 import { STYLES } from '../../../home/static/js/chat.js';
 import { SIMG } from '../../../style/static/js/style_page.js';
-import { FS, getFsCols, fsBuild, fsChipsPaint, fsDropDisallowed, fsHideSug, fsLoadDictionary, fsReset, fsPaintPop } from '../../../style/static/js/search.js';
+import { FS, getFsCols, fsBuild, fsChipsPaint, fsDropDisallowed, fsHideSug, fsLoadDictionary, fsReset, fsPaintPop, fsStockSelect, fsStockClear } from '../../../style/static/js/search.js';
 import { G_CFG, KW, fsItem, fsItemFull, gMount, josa, trEmpty, trFillBars } from './render_helpers.js';
 import { ME, bioPaint } from '../../../account/static/js/profile.js';
 import { S_EDIT, S_FEED, TR_META } from './nav_meta.js';
 import { assocClosePop, assocOpenPop } from './assoc_popover.js';
 import { entryOf, prime, primeUrl, sentimentUrl, stateOf, stateOfUrl, summaryOf, unavailableHTML } from './live_data.js';
 import { gChart, gDraw } from './chart_engine.js';
+import { paintStockPriceChart } from './stock_price_chart.js';
 import { kwWire } from './saved_keywords.js';
 import { rkChip, rkPaintAv } from '../../../account/static/js/rank.js';
 import { jobPlanText } from '../../../account/static/js/job.js';
@@ -16,7 +17,7 @@ import { smBarFill, svRender } from './discount_resale.js';
 import { trCountUp } from './count_up.js';
 import { trDial, wkAnimate } from './weekly_report.js';
 import { trSideOpen } from '../../../app_shell/static/js/router.js';
-import { weeklyReport, weeklyVideos } from '../../../account/static/js/account_api.js';
+import { weeklyReport, weeklyVideos, savedProducts, setSavedProduct } from '../../../account/static/js/account_api.js';
 
 /* 탭 자리 — 키워드 검색바 / 커머스 탭 / 없음 세 가지로 갈린다 */
 function trTabsRender(id){
@@ -46,10 +47,8 @@ function trTabsRender(id){
     return;
   }
   if(id==='stock'){
-    el.hidden=false;
-    const list=['통합','무신사','지그재그','에이블리'];
-    if(list.indexOf(TR_TAB)<0)TR_TAB='통합';
-    el.innerHTML=list.map(t=>'<button data-t="'+t+'"'+(t===TR_TAB?' class="on"':'')+'>'+t+'</button>').join('');
+    /* 단일 상품의 가격 지표에는 플랫폼 집계 탭이 맞지 않는다. */
+    el.hidden=true; el.innerHTML=''; TR_TAB='통합';
   }else{
     el.hidden=true; el.innerHTML=''; TR_TAB='통합';
   }
@@ -64,6 +63,225 @@ function trFillBarsV(){
 
 let TR_CUR=null;
 const TR_TRIED={};   /* 용어 → 마지막으로 물어본 때 */
+const STOCK_SAVED={items:[],status:'idle',error:'',loadedAt:0,promise:null};
+let stockSavedSeq=0, stockSavePending=false, stockSaveError='', stockCurrentProduct=null;
+let stockLastSelectionId=null;
+function stockLoadSaved(background=false){
+  if(STOCK_SAVED.promise||STOCK_SAVED.status!=='idle'&&Date.now()-STOCK_SAVED.loadedAt<30000)return;
+  const seq=++stockSavedSeq;
+  if(!background)STOCK_SAVED.status='loading';
+  STOCK_SAVED.promise=savedProducts().then(data=>{
+    if(seq!==stockSavedSeq)return;
+    STOCK_SAVED.items=Array.isArray(data.items)?data.items:[];
+    STOCK_SAVED.status='ok'; STOCK_SAVED.error=''; STOCK_SAVED.loadedAt=Date.now();
+  }).catch(e=>{
+    if(seq!==stockSavedSeq)return;
+    if(!background){
+      STOCK_SAVED.status='error'; STOCK_SAVED.error=e.message||'찜목록을 읽지 못했습니다.';
+    }
+    STOCK_SAVED.loadedAt=Date.now();
+  }).finally(()=>{
+    if(seq!==stockSavedSeq)return;
+    STOCK_SAVED.promise=null;
+    if(TR_CUR==='stock')trRender('stock');
+  });
+}
+document.addEventListener('feedit:saved',()=>{
+  stockSavedSeq++;
+  STOCK_SAVED.loadedAt=0; STOCK_SAVED.promise=null;
+  if(TR_CUR==='stock')stockLoadSaved(STOCK_SAVED.status==='ok');
+});
+document.addEventListener('feedit:auth',()=>{
+  stockSavedSeq++;
+  STOCK_SAVED.items=[]; STOCK_SAVED.status='idle'; STOCK_SAVED.error='';
+  STOCK_SAVED.loadedAt=0; STOCK_SAVED.promise=null;
+  fsStockClear();
+  stockCurrentProduct=null; stockSaveError=''; stockSavePending=false;
+});
+const stockSafeImg=url=>/^(https?:\/\/|\/|assets\/)/i.test(String(url||''))?String(url):'';
+function stockCardDiscount(item){
+  const regular=Number(item.list_price), sale=Number(item.sale_price);
+  if(Number.isFinite(regular)&&regular>0&&Number.isFinite(sale)&&sale>=0&&sale<=regular)
+    return Math.round((regular-sale)/regular*100);
+  const rate=item.discount_rate==null?null:Number(item.discount_rate);
+  return Number.isFinite(rate)&&rate>=0&&rate<=100?Math.round(rate):null;
+}
+function stockWishlistHTML(){
+  if(STOCK_SAVED.status==='loading'||STOCK_SAVED.status==='idle')
+    return '<p class="stockWishMessage">DB 찜목록을 불러오는 중입니다…</p>';
+  if(STOCK_SAVED.status==='error')
+    return '<p class="stockWishMessage">'+trEsc(STOCK_SAVED.error)+
+      '<br><button type="button" class="stockWishRetry" data-stock-retry>다시 시도</button></p>';
+  if(!STOCK_SAVED.items.length)
+    return '<p class="stockWishMessage">일반 판매 상품 찜이 아직 없습니다.<br>스타일 페이지에서 상품을 찜해 보세요.</p>';
+  return STOCK_SAVED.items.map(item=>{
+    const discount=stockCardDiscount(item);
+    const selected=FS.stockItem?.id===Number(item.id);
+    return '<button type="button" class="wlItem'+(selected?' on':'')+'" draggable="true" data-source-id="'+Number(item.id)+'" aria-label="'+trEsc(item.name)+' 할인률 분석">'+
+      '<span class="wlPic">'+(stockSafeImg(item.image)?'<img src="'+trEsc(item.image)+'" alt="" loading="lazy">':'이미지 없음')+
+        '<span class="wlHeart" aria-hidden="true">♥</span></span>'+
+      '<span class="tx"><b class="wlBrand">'+trEsc(item.brand||item.source||'상품')+'</b>'+
+        '<span class="wlName">'+trEsc(item.name)+'</span>'+
+        '<span class="wlPrice">'+(discount==null?'':'<em>'+discount+'%</em>')+
+          '<strong>'+(item.sale_price==null?'가격 정보 없음':trWon(item.sale_price))+'</strong></span></span></button>';
+  }).join('');
+}
+function stockDiscountDial(product, selected){
+  if(!selected)return '<div class="stockPickerDialEmpty"><b>–</b><small>상품 선택 전</small></div>';
+  const rate=product?.discount_rate==null?null:Number(product.discount_rate);
+  if(!Number.isFinite(rate)||rate<0||rate>100)
+    return '<div class="stockPickerDialEmpty"><b>–</b><small>'+
+      (product?'할인율 정보 없음':'가격 확인 중')+'</small></div>';
+  return '<div class="dial stockPickerDial"><svg viewBox="0 0 120 120">'+
+    '<circle class="trk" cx="60" cy="60" r="56"/>'+
+    '<circle class="val" cx="60" cy="60" r="56" data-ramp="#ff6b4a" data-score="'+rate+'" '+
+      'stroke-dasharray="351.86" stroke-dashoffset="351.86"/></svg>'+
+    '<span class="num"><b>0</b><small>할인율 %</small></span></div>';
+}
+function stockSummaryHTML(product, selected){
+  if(!selected)return '<p class="stockSummaryEmpty">상품을 고르면 이곳에 정가·할인가·관측 기간 최저가가 표시됩니다.</p>';
+  if(!product)return '<p class="stockSummaryEmpty">선택한 상품의 가격 정보를 확인 중입니다.</p>';
+  const discount=product.discount_rate;
+  const days=product.observed_days||0;
+  const atLow=days>=2&&product.sale_price!=null&&product.history_min_price!=null&&
+    product.sale_price<=product.history_min_price;
+  const asOf=String(product.observed_at||'').slice(0,10);
+  return '<div class="stockSummaryContent">'+
+    '<span class="stockEyebrow">'+trEsc([product.brand,product.source].filter(Boolean).join(' · '))+'</span>'+
+    '<h4 title="'+trEsc(product.name)+'">'+trEsc(product.name)+'</h4>'+
+    '<p class="stockSummaryStatus"><em>'+(discount==null?'할인율 확인 중입니다.':discount+'% 할인 중입니다.')+'</em></p>'+
+    '<p class="stockSummaryPrices">정가 '+trWon(product.list_price)+' → 현재 판매가 <strong>'+trWon(product.sale_price)+'</strong></p>'+
+    '<div class="stockSummaryMetrics">'+
+      '<div><b>'+trWon(product.list_price)+'</b><span>정가</span></div>'+
+      '<div><b>'+trWon(product.sale_price)+'</b><span>할인가</span></div>'+
+      '<div><b>'+(discount==null?'–':discount+'%')+'</b><span>할인율</span></div>'+
+      '<div><b>'+(days>=2?trWon(product.history_min_price):'–')+'</b><span>관측 기간 최저가</span></div></div>'+
+    '<p class="stockSummaryAsOf">'+(asOf?trEsc(asOf)+' 기준 · ':'관측일 미확인 · ')+'가격 관측 '+days+'일'+
+      (atLow?'<br>현재 가격이 관측 기간 최저가입니다.':'')+'</p></div>';
+}
+function stockPaintSaveButton(){
+  const button=$('#dzSaveBtn'), error=$('#dzSaveError'), selected=FS.stockItem;
+  if(!button)return;
+  const saved=!!selected&&STOCK_SAVED.items.some(item=>Number(item.id)===selected.id);
+  button.hidden=!selected;
+  button.disabled=stockSavePending||STOCK_SAVED.status!=='ok';
+  button.classList.toggle('on',saved);
+  button.setAttribute('aria-pressed',String(saved));
+  button.textContent=stockSavePending?'저장 중…':STOCK_SAVED.status==='error'?'찜 사용 불가':
+    STOCK_SAVED.status!=='ok'?'찜 확인 중':saved?'♥ 찜 해제':'♡ 찜 추가';
+  button.title=STOCK_SAVED.status==='error'?STOCK_SAVED.error:'';
+  const message=stockSaveError||(selected&&STOCK_SAVED.status==='error'?STOCK_SAVED.error:'');
+  if(error){error.hidden=!message;error.textContent=message;}
+}
+function stockPaintPicker(product=null){
+  const selected=FS.stockItem, image=$('#dzImage');
+  const placeholder=$('#dzPlaceholder'), zone=$('#dzDropZone'), name=$('#dzSelectedName');
+  const detail=$('#dzSelectedDetail'), clear=$('#dzClearBtn'), list=$('#dzWishListBody');
+  const dial=$('#stockDiscountSlot'), summary=$('#stockPickerSummary');
+  if(stockLastSelectionId!==selected?.id){stockSaveError='';stockLastSelectionId=selected?.id||null;}
+  if(product)stockCurrentProduct=product;
+  else if(!selected||stockCurrentProduct?.id!==selected.id)stockCurrentProduct=null;
+  product=product||stockCurrentProduct;
+  if(list){
+    const scrollTop=list.scrollTop;
+    list.innerHTML=stockWishlistHTML();
+    list.scrollTop=scrollTop;
+  }
+  if(!zone)return;
+  if(dial)dial.innerHTML=stockDiscountDial(product,selected);
+  if(summary)summary.innerHTML=stockSummaryHTML(product,selected);
+  zone.classList.toggle('has-item',!!selected);
+  if(clear)clear.hidden=!selected;
+  if(name){
+    name.textContent=selected?(product?.name||selected.label):'';
+    name.title=name.textContent;
+  }
+  if(detail)detail.textContent=selected
+    ? [product?.source||selected.source,
+       product?.sale_price!=null?trWon(product.sale_price):'가격 확인 중'].filter(Boolean).join(' · ')
+    : '';
+  const src=stockSafeImg(product?.image||selected?.thumb);
+  if(placeholder)placeholder.hidden=!!selected&&!!src;
+  if(image){
+    image.hidden=!selected||!src;
+    image.onerror=()=>{
+      if(image.getAttribute('src')!==src||FS.stockItem?.id!==selected?.id)return;
+      image.hidden=true;
+      if(placeholder)placeholder.hidden=false;
+    };
+    image.src=selected&&src?src:'';
+  }
+  stockPaintSaveButton();
+}
+async function stockToggleSaved(){
+  const selected=FS.stockItem;
+  if(!selected||stockSavePending||STOCK_SAVED.status!=='ok')return;
+  const saved=STOCK_SAVED.items.some(item=>Number(item.id)===selected.id);
+  const product=stockCurrentProduct?.id===selected.id?stockCurrentProduct:null;
+  stockSavePending=true; stockSaveError=''; stockPaintSaveButton();
+  try{
+    const result=await setSavedProduct({itemId:'db-'+selected.id,liked:!saved,
+      name:product?.name||selected.label,brand:product?.brand||selected.brand});
+    if(!saved){
+      STOCK_SAVED.items=[{id:selected.id,name:product?.name||selected.label,
+        brand:product?.brand||selected.brand,source:product?.source||selected.source,
+        image:product?.image||selected.thumb,list_price:product?.list_price,
+        sale_price:product?.sale_price,discount_rate:product?.discount_rate},...STOCK_SAVED.items];
+    }else STOCK_SAVED.items=STOCK_SAVED.items.filter(item=>Number(item.id)!==selected.id);
+    if(Number.isFinite(Number(result.saved_count)))ME.saved=Number(result.saved_count);
+    if(FS.stockItem?.id===selected.id)stockPaintPicker(product);
+    document.dispatchEvent(new CustomEvent('feedit:saved'));
+  }catch(e){
+    stockSaveError=e.message||'찜 상태를 바꾸지 못했습니다. 다시 시도해 주세요.';
+  }finally{
+    stockSavePending=false; stockPaintSaveButton();
+  }
+}
+function stockChoose(item){
+  if(!item||!Number.isSafeInteger(Number(item.id)))return;
+  FS.pick={}; FS.colq={};
+  const input=$('#fsInput'); if(input)input.value='';
+  const clear=$('#fsClear'); if(clear)clear.hidden=true;
+  if(!fsStockSelect(item))return;
+  fsChipsPaint();
+  trRender('stock');
+}
+function stockWirePicker(){
+  const list=$('#dzWishListBody'), zone=$('#dzDropZone'), clear=$('#dzClearBtn'), save=$('#dzSaveBtn');
+  if(!list||!zone)return;
+  const itemOf=id=>STOCK_SAVED.items.find(item=>item.id===Number(id));
+  list.addEventListener('click',event=>{
+    if(event.target.closest('[data-stock-retry]')){
+      STOCK_SAVED.status='idle'; STOCK_SAVED.loadedAt=0; stockLoadSaved(); return;
+    }
+    const row=event.target.closest('[data-source-id]');
+    if(row)stockChoose(itemOf(row.dataset.sourceId));
+  });
+  list.addEventListener('dragstart',event=>{
+    const row=event.target.closest('[data-source-id]');
+    if(!row||!event.dataTransfer)return;
+    event.dataTransfer.setData('application/x-feedit-source',row.dataset.sourceId);
+    event.dataTransfer.setData('text/plain',row.dataset.sourceId);
+    event.dataTransfer.effectAllowed='copy';
+  });
+  zone.addEventListener('dragover',event=>{
+    event.preventDefault(); zone.classList.add('dragover');
+  });
+  zone.addEventListener('dragleave',()=>zone.classList.remove('dragover'));
+  zone.addEventListener('drop',event=>{
+    event.preventDefault(); zone.classList.remove('dragover');
+    const id=event.dataTransfer?.getData('application/x-feedit-source');
+    if(id)stockChoose(itemOf(id));
+  });
+  zone.addEventListener('click',()=>$('#fsMore')?.click());
+  zone.addEventListener('keydown',event=>{
+    if(event.key==='Enter'||event.key===' '){event.preventDefault();$('#fsMore')?.click();}
+  });
+  if(clear)clear.addEventListener('click',()=>{
+    fsStockClear(); fsChipsPaint(); trRender('stock');
+  });
+  if(save)save.addEventListener('click',stockToggleSaved);
+}
 
 /* 조회를 이미 한 번 보냈다고 표시한다.
    kwGo 가 직접 prime 을 부른 뒤 이걸 찍어 두면, 이어서 도는 trRender 의
@@ -514,6 +732,11 @@ function fsTerm(){
 const EDIT_API = { stock: '/api/discount', resale: '/api/resale', life: '/api/lifecycle' };
 function editUrl(id) {
   const p = new URLSearchParams();
+  if(id==='stock'&&FS.stockItem){
+    p.set('source_id',String(FS.stockItem.id));
+    const t=fsTerm(); if(t)p.set('term',t);
+    return EDIT_API[id]+'?'+p.toString();
+  }
   getFsCols().forEach(c => (FS.pick[c.ax] || []).forEach(v => p.append(c.param, v)));
   const t = fsTerm(); if (t) p.set('term', t);
   return EDIT_API[id] + '?' + p.toString();
@@ -540,6 +763,9 @@ function primeOnce(id,url){
 
 export function trRender(id){
   TR_CUR=id;
+  if(FS.id==='stock'&&id!=='stock'){
+    fsStockClear(); delete FS.pick['카테고리'];
+  }
   sFootPaint();   /* 가입·정보수정·인증 승인 뒤에 들어와도 이름·직위가 최신이게 */
   if(typeof assocClosePop==='function')assocClosePop();
 
@@ -570,7 +796,7 @@ export function trRender(id){
   /* 연관어 · 할인률 · 리세일 · 수명주기는 URL 단위로 받는다 */
   if(id==='assoc'&&KW.q) primeOnce(id,'/api/assoc?term='+encodeURIComponent(KW.q));
   if(id==='sentiment'&&KW.q) primeOnce(id,sentimentUrl(KW.q,KW.f));
-  if(EDIT_API[id]&&fsItem()) primeOnce(id,editUrl(id));
+  if(EDIT_API[id]&&(id==='stock'?!!FS.stockItem:fsItem())) primeOnce(id,editUrl(id));
   const m=TR_META[id]||TR_META.myfeed;
   $('#trTitle').textContent=m[0];
   $('#trDesc').textContent=m[1]; $('#trDesc').hidden=!m[1];
@@ -613,7 +839,8 @@ export function trRender(id){
     /* 수명주기는 스타일 · 종류 · 브랜드까지만 — 다른 탭에서 걸어 온 아이템명 조건은 뗀다 */
     if(useSearch&&fsDropDisallowed())fsChipsPaint();
     const fi=$('#fsInput');
-    if(fi)fi.placeholder=(id==='life')?'스타일 · 종류 · 브랜드로 검색':'소재 · 아이템 · 스타일 · 브랜드로 검색';
+    if(fi)fi.placeholder=id==='stock'?'상품명을 입력하고 Enter · 또는 찜에서 선택':
+      id==='life'?'스타일 · 종류 · 브랜드로 검색':'소재 · 아이템 · 스타일 · 브랜드로 검색';
   }
   const body=$('#trBody'); if(!body)return;
 
@@ -633,7 +860,7 @@ export function trRender(id){
       '예: 발레코어 · 새틴 · 엄브로');
     return;
   }
-  if (SEARCH_TABS.indexOf(id) >= 0 && !fsItem()) {
+  if (SEARCH_TABS.indexOf(id) >= 0 && id !== 'stock' && !fsItem()) {
     body.innerHTML = trEmpty(
       '먼저 볼 대상을 고르세요',
       '위 검색에서 카테고리나 브랜드를 좁혀 주세요.\n' +
@@ -1228,122 +1455,89 @@ export function trRender(id){
   }
   /* ══════════════ 할인률 변화 ══════════════
      값: /api/discount → snapshot.product_source_snapshot (세부 검색 조건에 걸린 상품) + 대표 용어 온도 */
-  else if(id==='stock'){
-    const D=editGate(body,editUrl('stock'),'할인률 지표를'); if(!D)return;
-    const full=D.label||fsItemFull();
-    const O=D.overall||{}, TB=D.temperature||{}, TL=TB.latest||{};
-    const disc=O.avg_discount!=null?Math.round(O.avg_discount):null;
-    const temp=TL.temp!=null?Math.round(TL.temp):null;
-    const dUp=D.change_2w;
-    const rising=(dUp||0)>0;
-    /* 점수 = 싸게 사는 정도(할인률) − 식어가는 정도(온도 낮음). 할인이 커도 온도가 죽었으면 좋은 매수가 아니다.
-       두 값 중 하나라도 없으면 점수를 만들지 않는다. */
-    const score=(disc==null||temp==null)?null:
-      Math.max(4,Math.min(98,Math.round(disc*0.9+temp*0.45-(rising?dUp*1.1:0))));
-    const dialV=score!=null?score:(disc||0);
-    const band=dialV>=75?0:dialV>=55?1:dialV>=35?2:3;
-    const RAMP=['#b23b3b','#e0642f','#c98a1b','#1f9e6e'].slice(0,4-band);
-    const BAND=[['#1f9e6e','지금이 적기','할인이 충분히 붙었는데 트렌드 온도는 아직 살아 있습니다. 가격과 수요가 겹치는 구간입니다.'],
-                ['#c98a1b','사도 괜찮음','나쁘지 않은 시점입니다. 다만 조금 더 기다리면 할인폭이 커질 여지가 남아 있습니다.'],
-                ['#e0642f','조금 더 대기','할인은 시작됐지만 아직 초반입니다. 2~3주 뒤 재확인을 권합니다.'],
-                ['#b23b3b','지금은 비추천','트렌드가 이미 식은 뒤에 붙는 할인입니다. 싸 보여도 오래 입지 못할 확률이 높습니다.']][band];
-    const C=D.cheapest;
-    const tempRows=(TB.series||[]).map(p=>({date:p.date,temp:p.temp}));
-    const PCODE={'무신사':'musinsa','지그재그':'zigzag','에이블리':'ably'};
-
-    if(TR_TAB==='통합'){
-      body.innerHTML=
-        (C?'<p class="cheapest"><b>'+trEsc(full)+'</b>'+josa(full,'은','는')+' 지금 <u>'+trEsc(C.name)+'</u>'+josa(C.name,'이','가')+' 가장 저렴합니다 '+
-          '<s>'+trWon(C.min_list_price)+' → '+trWon(C.min_sale_price)+(C.min_discount!=null?' · '+C.min_discount+'% 할인':'')+'</s></p>':'')+
-        '<div class="verdict" style="--sc:'+BAND[0]+'">'+
-          '<div class="dial"><svg viewBox="0 0 120 120">'+
-            '<circle class="trk" cx="60" cy="60" r="50"/>'+
-            '<circle class="val" cx="60" cy="60" r="50" data-ramp="'+RAMP.join(',')+'" data-score="'+dialV+'" '+
-              'stroke-dasharray="314.16" stroke-dashoffset="314.16"/></svg>'+
-            '<span class="num"><b data-count="'+dialV+'">0</b><small>'+(score!=null?'구매 점수':'평균 할인률 %')+'</small></span></div>'+
-          '<div class="vdTx">'+
-            '<h4><b>'+trEsc(full)+'</b>'+josa(full,'은','는')+' 현재 <em>'+(dUp==null?'할인 추이 확인 중':rising?'할인 상승세':'할인 하락세')+'</em>입니다.<br>'+
-              (score!=null?'트렌드 온도 '+temp+'°와 비교하면 — <em>'+BAND[1]+'</em>.':'대표 용어의 트렌드 온도가 없어 구매 점수는 계산하지 않았습니다.')+'</h4>'+
-            '<p>'+(score!=null?BAND[2]:trEsc(TB.reason||''))+'</p>'+
-            (score!=null?'<div class="vdBand">'+[0,1,2,3].map(i=>'<div'+(i===band?' class="on"':'')+'>'+
-              '<span>'+['적기','양호','대기','비추천'][i]+'</span></div>').join('')+'</div>':'')+
-            '<div class="vdMeta">'+
-              '<div><b>'+(disc==null?'–':disc+'%')+'</b><span>현재 평균 할인률</span></div>'+
-              '<div><b>'+(temp==null?'–':temp+'°')+'</b><span>트렌드 온도'+(TB.term?' · '+trEsc(TB.term):'')+'</span></div>'+
-              '<div><b>'+(dUp==null?'–':(dUp>0?'+':'')+dUp+'%p')+'</b><span>최근 2주</span></div>'+
-              '<div><b>'+trWon(O.min_sale_price)+'</b><span>최저가</span></div>'+
-            '</div>'+
-          '</div></div>'+
-        '<div class="note" style="margin:0 0 12px"><i>◆</i>'+trEsc(String(D.as_of).slice(0,10))+' 기준 · 상품 '+O.products+'개 · 최근 '+D.days+'일 스냅샷</div>'+
-        '<div class="kpis">'+kpi('할인 시작',D.first_discount_days==null?'–':'D+'+D.first_discount_days,'',
-              D.first_discount_at?D.first_discount_at+' 처음 감지':'기간 내 할인 없음',0)+
-          kpi('정가 유지 비율',O.full_price_pct==null?'–':Math.round(O.full_price_pct),O.full_price_pct==null?'':'%','할인 없이 파는 상품 비중',0)+
-          kpi('최대 할인폭',D.max_discount_period==null?'–':Math.round(D.max_discount_period),D.max_discount_period==null?'':'%','최근 '+D.days+'일 최고',0)+
-          kpi('재입고 횟수',D.restock_count,'회','품절 → 판매 전환 · 최근 '+D.days+'일',1)+'</div>'+
-        '<div class="trGrid">'+
-          '<div class="panelC"><div class="gHead"><h3>할인률 · 트렌드 온도</h3></div>'+
-            '<div data-chart="stockMain"></div>'+
-            '<div class="note"><i>◆</i>두 선이 벌어질수록 "식은 뒤 붙는 할인"입니다. '+
-              '겹쳐 움직이면 아직 수요가 남아 있는 정상 세일입니다.</div></div>'+
-          '<div class="panelC"><div class="ph"><h3>판매처별 최저가</h3><em>최신 스냅샷</em></div>'+
-            '<table class="mTable xl"><tr><th>판매처</th><th>평균 할인률</th><th>최저가</th></tr>'+
-            D.platforms.map((s,i)=>{const top=Math.max.apply(null,D.platforms.map(x=>x.avg_discount||0))||1;
-              const bw=Math.round((s.avg_discount||0)/top*100);
-              return '<tr><td>'+(i===0?'<b>'+trEsc(s.name)+'</b>':trEsc(s.name))+'</td>'+
-                '<td class="n '+(i===0?'up':'dn')+'">'+(s.avg_discount==null?'–':s.avg_discount+'%')+
-                  '<span class="bar" style="display:block;margin-top:7px"><i class="'+(i===0?'c':'')+'" style="width:'+bw+'%"></i></span></td>'+
-                '<td class="n">'+trWon(s.min_sale_price)+'</td></tr>'}).join('')+'</table>'+
-            '<div class="note"><i>◆</i>판매처마다 수집된 상품 수가 달라 평균 할인률은 참고용입니다.</div></div>'+
-        '</div>';
-      const rows=trMergeRows(D.series,tempRows);
-      G_CFG.stockMain={key:full+'stock',rows,min:0,max:100,
-        emptyReason:'할인률 또는 온도 시계열이 비어 있습니다.',
-        sets:[{id:'d',name:'평균 할인률 (%)',field:'discount',unit:'%'}].concat(tempRows.length
-          ?[{id:'t',name:'트렌드 온도 (°)',field:'temp',unit:'°',accent:1}]:[])};
-    } else {
-      /* ── 플랫폼별 세부 분석 ── */
-      const P=D.platforms.find(p=>p.code===PCODE[TR_TAB]||p.name===TR_TAB);
-      if(!P){
-        body.innerHTML=unavailableHTML(TR_TAB+' 에서 이 조건의 상품이 수집되지 않았습니다.',
-          '수집된 판매처: '+(D.platforms.map(p=>p.name).join(' · ')||'없음'));
-        return;
-      }
-      const stock=Object.entries(P.stock||{});
-      const stockMax=Math.max.apply(null,stock.map(x=>x[1]))||1;
-      body.innerHTML=
-        '<div class="kpis">'+kpi(TR_TAB+' 평균 할인률',P.avg_discount==null?'–':P.avg_discount,P.avg_discount==null?'':'%',
-              (P.avg_discount!=null&&O.avg_discount!=null)?(P.avg_discount>O.avg_discount?'통합 평균보다 높음':'통합 평균보다 낮음'):'비교 불가',
-              (P.avg_discount||0)>(O.avg_discount||0)?1:0)+
-          kpi('판매 상품 수',P.products.toLocaleString(),'개','이 조건 기준',1)+
-          kpi('품절 상품',P.sold_out,'개','최신 스냅샷 기준',0)+
-          kpi('평균 평점',P.rating==null?'–':P.rating.toFixed(1),P.rating==null?'':'/5','리뷰 '+(P.reviews||0).toLocaleString()+'건',1)+'</div>'+
-        '<div class="trGrid">'+
-          '<div class="panelC"><div class="gHead"><h3>'+TR_TAB+' 할인률 추이</h3></div>'+
-            '<div data-chart="stockPlat"></div>'+
-            '<div class="note"><i>◆</i>주황 선이 '+TR_TAB+', 검정 선이 전체 평균입니다.</div></div>'+
-          '<div class="panelC"><div class="ph"><h3>재고 상태</h3><em>'+TR_TAB+'</em></div>'+
-            '<table class="mTable"><tr><th>상태</th><th>상품 수</th><th></th></tr>'+
-            stock.map(z=>'<tr><td><b>'+trEsc(z[0])+'</b></td>'+
-              '<td><span class="bar" style="display:block"><i class="'+(/SOLD/i.test(z[0])?'c':'')+'" style="width:'+Math.round(z[1]/stockMax*100)+'%"></i></span></td>'+
-              '<td class="n">'+z[1]+'개</td></tr>').join('')+
-            '</table>'+
-            '<div class="note"><i>◆</i>품절이 늘수록 할인이 멈출 확률이 올라갑니다.</div></div>'+
-        '</div>'+
-        '<div class="panelC" style="margin-top:12px"><div class="ph"><h3>'+TR_TAB+' 세부 지표</h3>'+
-          '<em>최신 스냅샷</em></div><div class="statRow">'+
-          [['최대 할인률',(P.max_discount==null?'–':P.max_discount)+'<u>%</u>','상품 중 최고'],
-           ['최저가',trWon(P.min_sale_price),'정가 '+trWon(P.min_list_price)],
-           ['좋아요',(P.likes||0).toLocaleString()+'<u>개</u>','상품 합계']]
-          .map(x=>'<div class="bigStat"><b>'+x[1]+'</b><span>'+x[0]+' — '+x[2]+'</span></div>').join('')+
-        '</div></div>';
-      const ps=(D.platform_series||{})[P.code]||[];
-      const rows=trMergeRows(D.series,ps.map(p=>({date:p.date,plat:p.discount})));
-      G_CFG.stockPlat={key:full+TR_TAB,rows,min:0,max:100,
-        emptyReason:TR_TAB+' 할인률 시계열이 비어 있습니다.',
-        sets:[{id:'a',name:'전체 평균 (%)',field:'discount',unit:'%'},
-              {id:'p',name:TR_TAB+' (%)',field:'plat',unit:'%',accent:1}]};
+  else if (id === 'stock') {
+    stockLoadSaved();
+    if (!document.getElementById('dzDashboard')) {
+      const dashHTML = `
+        <section class="stockPicker panelC" id="dzDashboard">
+          <div class="ph"><h3>분석할 상품</h3></div>
+          <div class="stockPickerGrid">
+            <div class="stockPickerRate"><span class="stockPickerRateLabel">현재 할인율</span>
+              <div id="stockDiscountSlot"></div></div>
+            <div class="stockPickerSummary" id="stockPickerSummary" aria-live="polite"></div>
+            <div class="dzWrap">
+              <div class="dropZone" id="dzDropZone" role="button" tabindex="0" aria-label="상품을 고르려면 세부 검색 열기">
+                <div class="dzPlaceholder" id="dzPlaceholder"><span class="circlePlus">+</span><b>상품을 골라 주세요</b><small>세부 검색 또는 찜목록에서 선택</small></div>
+                <img id="dzImage" hidden alt="선택한 상품 이미지">
+              </div>
+              <div class="dzSelection"><div><b id="dzSelectedName"></b><span id="dzSelectedDetail"></span></div>
+                <div class="dzActions"><button type="button" class="dzSaveBtn" id="dzSaveBtn" hidden>♡ 찜 추가</button>
+                  <button type="button" class="dzClearBtn" id="dzClearBtn" hidden>선택 해제</button></div></div>
+              <span class="dzSaveError" id="dzSaveError" role="alert" hidden></span>
+            </div>
+            <div class="dzWishlist"><div class="wlHead"><b>내 찜목록</b><span>클릭하거나 왼쪽으로 드래그</span></div>
+              <div class="wlBody" id="dzWishListBody"></div></div>
+          </div>
+        </section>
+        <div id="stockAnalyticsBody"></div>
+      `;
+      body.innerHTML = dashHTML;
+      stockWirePicker();
     }
-    gMount(); trDial();
+
+    stockPaintPicker();
+    const aBody = document.getElementById('stockAnalyticsBody');
+    if (!aBody) return;
+
+    if (!FS.stockItem) {
+      aBody.innerHTML = trEmpty(
+        '할인률을 볼 상품을 고르세요',
+        '위 세부 검색에서 상품명을 고르거나 찜목록의 상품을 선택해 주세요.');
+      return;
+    }
+
+    const D = editGate(aBody, editUrl('stock'), '할인률 지표를'); if (!D) return;
+    stockPaintPicker(D.product);
+    if(D.product){
+      const P=D.product, discount=P.discount_rate;
+      const days=P.observed_days||0;
+      const change=D.change_2w;
+      const comparable=Array.isArray(D.matched_platforms)?D.matched_platforms:[];
+      const maxCompareDiscount=Math.max(1,...comparable.map(item=>Number(item.discount_rate)||0));
+      aBody.innerHTML=
+        '<div class="kpis stockKpis">'+
+          kpi('할인율 변화',change==null?'–':(change>0?'+':'')+change,change==null?'':'%p',
+              change==null?'2주 전 비교 기록 없음':'2주 전 대비',change>0)+
+          kpi('첫 할인 관측',D.first_discount_at||'–','','현재 보유한 기록 기준',0)+
+          kpi('관측 최고 할인율',D.max_discount_period==null?'–':D.max_discount_period,
+              D.max_discount_period==null?'':'%','최근 '+D.days+'일 기록',0)+
+          kpi('가격 관측일',days,'일','이력이 부족하면 추이를 그리지 않습니다',0)+'</div>'+
+        '<div class="trGrid stockPriceGrid">'+
+          '<div class="panelC stockTrendPanel"><div class="gHead"><h3>정가 · 판매가 변동 추이</h3><em>최근 '+D.days+'일 관측</em></div>'+
+            '<div id="stockPriceChart"></div>'+
+            '<div class="note"><i>◆</i>날짜별 마지막 관측 가격입니다. 관측일 사이의 실제 변경 시각은 알 수 없습니다.</div></div>'+
+          '<div class="panelC stockComparePanel"><div class="ph"><h3>판매처별 가격 비교</h3><em>매칭된 동일 상품</em></div>'+
+            (comparable.length?'<table class="mTable stockCompareTable"><tr><th>판매처</th><th>할인율</th><th>최근 관측가</th></tr>'+
+              comparable.map((item,index)=>{
+                const rate=item.discount_rate;
+                const width=rate==null?0:Math.max(0,Math.min(100,rate/maxCompareDiscount*100));
+                return '<tr'+(item.source_id===P.id?' class="selected"':'')+'><td><b>'+trEsc(item.name)+'</b>'+
+                  '<small>'+trEsc(String(item.observed_at||'').slice(0,10))+' 기준</small></td>'+
+                  '<td class="n '+(index===0?'up':'')+'">'+(rate==null?'–':rate+'%')+
+                  '<span class="bar"><i class="'+(index===0?'c':'')+'" style="width:'+width+'%"></i></span></td>'+
+                  '<td class="n">'+trWon(item.sale_price)+'</td></tr>';
+              }).join('')+'</table>':unavailableHTML('비교할 판매처 가격이 없습니다.','이 상품의 가격 스냅샷을 확인해 주세요.'))+
+            '<div class="note"><i>◆</i>'+(comparable.length<2
+              ? '현재 DB에는 동일 표준 상품으로 연결된 다른 판매처가 없습니다.'
+              : '동일 표준 상품으로 확인된 판매처만 비교합니다. 판매처마다 관측일이 다를 수 있습니다.')+'</div></div>'+
+        '</div>';
+      paintStockPriceChart(aBody.querySelector('#stockPriceChart'),D.price_series);
+      if(discount!=null)trDial();
+      return;
+    }
+    aBody.innerHTML=unavailableHTML('선택한 상품의 가격 응답을 받지 못했습니다.',
+      '상품 ID로 조회되는 할인률 API가 필요합니다.');
+    return;
   }
 
   /* ══════════════ 리세일 시세 지수 ══════════════

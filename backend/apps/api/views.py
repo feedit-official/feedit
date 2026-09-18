@@ -31,7 +31,7 @@ from collections import defaultdict
 from datetime import timedelta
 
 from django.db import connection
-from django.db.models import Case, Count, F, FloatField, Max, Min, OuterRef, Q, Subquery, Sum, Value, When
+from django.db.models import Case, Count, Exists, F, FloatField, Max, Min, OuterRef, Q, Subquery, Sum, Value, When
 from django.db.models.functions import Cast, Coalesce, Ln
 from django.http import JsonResponse
 from django.utils import timezone
@@ -109,6 +109,18 @@ def _pct(v):
     if v is None:
         return None
     return round(v * 100 if 0 < v <= 1 else v, 1)
+
+
+def _retail_discount_pct(row):
+    """일반 판매 스냅샷은 정가·판매가를 우선한다. 1%를 100%로 오해하지 않는다."""
+    list_price = _num(row.get("list_price"))
+    sale_price = _num(row.get("sale_price"))
+    if list_price is not None and list_price > 0 and sale_price is not None:
+        if sale_price < 0 or sale_price > list_price:
+            return None
+        return round((list_price - sale_price) / list_price * 100, 1)
+    raw = _num(row.get("discount_rate"))
+    return round(raw, 1) if raw is not None and 0 <= raw <= 100 else None
 
 
 def _int(request, name, default, lo, hi):
@@ -1129,6 +1141,20 @@ def _item_with_thumb_rows(qs, expr, keep, limit):
     return out
 
 
+def _discount_product_rows(qs, query, limit, offset=0):
+    """할인률 후보는 이름 집계가 아니라 실제 일반 판매 상품 ID 단위로 돌려준다."""
+    qs = qs.filter(Exists(ProductSourceSnapshot.objects.filter(product_source_id=OuterRef("pk"))))
+    if query:
+        qs = qs.filter(Q(source_name__icontains=query)
+                       | Q(product__canonical_name__icontains=query))
+    rows = (qs.annotate(_label=ITEM_EXPR, _brand=BRAND_EXPR)
+            .values("id", "_label", "_brand", "thumbnail_url", "source__name")
+            .distinct().order_by("-id")[offset:offset + limit])
+    return [{"id": row["id"], "label": row["_label"] or "상품명 없음",
+             "brand": row["_brand"] or "", "source": row["source__name"],
+             "thumb": row["thumbnail_url"]} for row in rows]
+
+
 @require_GET
 def facets(request):
     """GET /api/facets?style=스트릿&brand=스투시&limit=200 — 세부 검색 네 칸의 후보."""
@@ -1172,24 +1198,40 @@ def facets(request):
 def discount_facets(request):
     """GET /api/discount/facets?style=스트릿&brand=스투시&limit=200"""
     limit = _int(request, "limit", 200, 1, 1000)
+    item_limit = _int(request, "item_limit", min(limit, 24), 1, 50)
+    item_offset = _int(request, "item_offset", 0, 0, 10000)
     sel = _selection(request)
-    base = ProductSource.objects.exclude(market_type="RESALE").filter(status="ACTIVE")
+    query = (request.GET.get("q") or "").strip()
+    base = ProductSource.objects.filter(market_type="RETAIL", status="ACTIVE")
+    def item_page():
+        # 한 건을 더 읽어 다음 페이지 유무만 확인한다. 3천 건을 세거나 URL을 보내지 않는다.
+        rows = _discount_product_rows(_apply(base, sel, "item"), query,
+                                      item_limit + 1, item_offset)
+        return rows[:item_limit], len(rows) > item_limit
+
+    # 입력 중에는 상품명 후보만 바뀐다. 네 축의 집계를 매 글자마다 다시 하지 않는다.
+    if request.GET.get("items_only") == "1":
+        rows, has_more = item_page()
+        return _ok({"item": rows}, items_only=True, item_has_more=has_more,
+                   item_offset=item_offset)
     n_products = base.count()
 
     if n_products == 0:
         return _empty("상품 데이터가 비어 있습니다.", narrowed=False, products=n_products)
 
     matched = _apply(base, sel).count()
+    rows, has_more = item_page()
     data = {
         "style": _core_style_rows(_apply(base, sel, "style"), sel["style"]),
         "brand": _count_rows(_apply(base, sel, "brand"), BRAND_EXPR, sel["brand"], limit),
         "kind": _count_rows(_apply(base, sel, "kind"), CATEGORY_EXPR, sel["kind"], limit),
-        "item": _item_with_thumb_rows(_apply(base, sel, "item"), ITEM_EXPR, sel["item"], limit),
+        "item": rows,
     }
     if not any(len(v) for v in data.values()):
         return _empty("고른 조건에 맞는 상품이 없습니다. 조건을 하나 빼고 다시 보세요.",
                       matched=0, narrowed=True)
-    return _ok(data, matched=matched, narrowed=True, selected=sel, products=n_products)
+    return _ok(data, matched=matched, narrowed=True, selected=sel, products=n_products,
+               item_has_more=has_more, item_offset=item_offset)
 
 
 def _temp_block(term_name, days):
@@ -1218,16 +1260,23 @@ def _no_selection():
 
 @require_GET
 def discount(request):
-    """GET /api/discount?brand=스투시&kind=후디&term=스투시&days=90"""
+    """GET /api/discount?source_id=17&days=90 — 한 일반 판매 상품의 가격 기록."""
     sel = _selection(request)
-    if not any(sel.values()):
+    source_id = _int(request, "source_id", 0, 0, 2_147_483_647)
+    source = None
+    if source_id:
+        source = (ProductSource.objects.filter(id=source_id, market_type="RETAIL", status="ACTIVE")
+                  .select_related("source", "product", "product__brand", "source_brand").first())
+        if source is None:
+            return _empty("선택한 일반 판매 상품을 찾을 수 없습니다.", source_id=source_id)
+    if source is None and not any(sel.values()):
         return _no_selection()
     days = _int(request, "days", 90, 14, 365)
-    label = _selection_label(sel)
-    term_name = (request.GET.get("term") or "").strip() or label
+    label = (source.source_name or source.product.canonical_name) if source else _selection_label(sel)
+    term_name = (request.GET.get("term") or "").strip() or ("" if source else label)
 
-    sources = _selected_sources(sel).exclude(market_type="RESALE")
-    ps_ids = list(sources.values_list("id", flat=True)[:5000])
+    sources = _selected_sources(sel).filter(market_type="RETAIL") if source is None else None
+    ps_ids = [source.id] if source else list(sources.values_list("id", flat=True)[:5000])
     if not ps_ids:
         return _empty(f"‘{label}’ 조건에 맞는 판매 상품이 없습니다.", label=label)
 
@@ -1253,7 +1302,7 @@ def discount(request):
     max_disc = None
     for r in rows:
         pid = r["product_source_id"]
-        d = _pct(r["discount_rate"])
+        d = _retail_discount_pct(r)
         r["_d"] = d
         st = (r["stock_status"] or "").upper()
         if prev_stock.get(pid) in ("SOLD_OUT", "OUT_OF_STOCK") and st and st not in ("SOLD_OUT", "OUT_OF_STOCK"):
@@ -1297,15 +1346,19 @@ def discount(request):
         platforms.append({"code": code, "name": pname, **plat_summary(items)})
     platforms.sort(key=lambda p: (p["min_sale_price"] is None, p["min_sale_price"] or 0))
 
-    # 일별 평균 할인율 — 전체 · 플랫폼별
+    # 일별 할인율 — 단일 상품은 하루 중 마지막 관측값, 조건 검색은 평균.
     daily = defaultdict(list)
     daily_plat = defaultdict(lambda: defaultdict(list))
     for r in rows:
         if r["_d"] is None:
             continue
         day = timezone.localtime(r["observed_at"]).date().isoformat()
-        daily[day].append(r["_d"])
-        daily_plat[r["product_source__source__code"]][day].append(r["_d"])
+        if source:
+            daily[day] = [r["_d"]]
+            daily_plat[r["product_source__source__code"]][day] = [r["_d"]]
+        else:
+            daily[day].append(r["_d"])
+            daily_plat[r["product_source__source__code"]][day].append(r["_d"])
     series = [{"date": d, "discount": round(_mean(v), 2)} for d, v in sorted(daily.items())]
     plat_series = {c: [{"date": d, "discount": round(_mean(v), 2)} for d, v in sorted(m.items())]
                    for c, m in daily_plat.items()}
@@ -1321,6 +1374,75 @@ def discount(request):
 
     overall = plat_summary(list(latest.values()))
     cheapest = platforms[0] if platforms and platforms[0]["min_sale_price"] is not None else None
+    product = None
+    price_series = []
+    matched_platforms = []
+    if source:
+        current = latest[source.id]
+        # 하루에 여러 번 수집했다면 그날의 마지막 유효 판매가만 그린다.
+        # 가격이 없는 날을 0원이나 직전 가격으로 채우지 않는다.
+        price_by_day = {}
+        for row in rows:
+            sale = _num(row["sale_price"])
+            if sale is None or sale <= 0:
+                continue
+            regular = _num(row["list_price"])
+            day = timezone.localtime(row["observed_at"]).date().isoformat()
+            price_by_day[day] = {
+                "date": day, "sale_price": sale,
+                "list_price": regular if regular is not None and regular > 0 else None,
+            }
+        price_series = [price_by_day[day] for day in sorted(price_by_day)]
+        minimum = min(price_series, key=lambda point: point["sale_price"]) if price_series else None
+        maximum = max(price_series, key=lambda point: point["sale_price"]) if price_series else None
+        brand = (source.product.brand.name if source.product_id and source.product.brand_id
+                 else source.source_brand.name if source.source_brand_id else "")
+        # 표준 상품(product_id)이 같다고 확인된 일반 판매 상품만 가격 비교에 넣는다.
+        # 현재 DB에 매칭이 한 판매처뿐이면 다른 상품을 이름으로 추측해 끼워 넣지 않는다.
+        peers = ([source] if not source.product_id or source.mapping_status != "MAPPED" else
+                 list(ProductSource.objects.filter(
+                     product_id=source.product_id, mapping_status="MAPPED",
+                     market_type="RETAIL", status="ACTIVE",
+                 ).select_related("source").order_by("id")[:50]))
+        if not any(peer.id == source.id for peer in peers):
+            peers = peers[:49] + [source]
+        peer_snapshots = {}
+        for snap in (ProductSourceSnapshot.objects.filter(product_source_id__in=[peer.id for peer in peers])
+                     .order_by("product_source_id", "-observed_at", "-id")
+                     .distinct("product_source_id")
+                     .values("product_source_id", "list_price", "sale_price", "discount_rate", "observed_at")):
+            peer_snapshots[snap["product_source_id"]] = snap
+        by_platform = {}
+        for peer in peers:
+            snap = peer_snapshots.get(peer.id)
+            if not snap:
+                continue
+            sale = _num(snap["sale_price"])
+            if sale is None or sale <= 0:
+                continue
+            candidate = {
+                "source_id": peer.id, "name": peer.source.name,
+                "sale_price": sale, "list_price": _num(snap["list_price"]),
+                "discount_rate": _retail_discount_pct(snap),
+                "observed_at": snap["observed_at"],
+            }
+            previous = by_platform.get(peer.source_id)
+            if previous is None or sale < previous["sale_price"]:
+                by_platform[peer.source_id] = candidate
+        matched_platforms = sorted(by_platform.values(), key=lambda item: item["sale_price"])
+        product = {
+            "id": source.id, "name": label, "brand": brand,
+            "source": source.source.name, "image": source.thumbnail_url,
+            "list_price": _num(current["list_price"]),
+            "sale_price": _num(current["sale_price"]),
+            "discount_rate": current["_d"],
+            "observed_at": current["observed_at"],
+            "history_min_price": minimum["sale_price"] if minimum else None,
+            "history_min_at": minimum["date"] if minimum else None,
+            "history_max_price": maximum["sale_price"] if maximum else None,
+            "history_max_at": maximum["date"] if maximum else None,
+            "observed_days": len(price_series),
+        }
     return _ok({
         "label": label,
         "selected": sel,
@@ -1338,6 +1460,9 @@ def discount(request):
         "series": series,
         "platform_series": plat_series,
         "temperature": _temp_block(term_name, days),
+        "product": product,
+        "price_series": price_series,
+        "matched_platforms": matched_platforms,
     })
 
 

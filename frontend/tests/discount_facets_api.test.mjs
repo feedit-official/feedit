@@ -39,10 +39,20 @@ try {
   assert.equal(ok.body.status, 'ok');
   assert.equal(ok.body.data.item[0].count, 2);
 
+  const category = response();
+  await handler({ method: 'GET', url: '/api/discount/facets?kind=%EC%9B%90%ED%94%BC%EC%8A%A4&item_limit=24&item_offset=24' }, category);
+  assert.equal(called.url, 'https://backend.example/api/discount/facets?item_limit=24&item_offset=24&kind=%EC%9B%90%ED%94%BC%EC%8A%A4');
+  assert.equal(category.body.status, 'ok');
+
   const rewritten = response();
   await handler({ method: 'GET', url: '/api/discount?__facets=1&limit=10' }, rewritten);
   assert.equal(called.url, 'https://backend.example/api/discount/facets?limit=10');
   assert.equal(rewritten.body.status, 'ok');
+
+  const rewrittenCategory = response();
+  await handler({ method: 'GET', url: '/api/discount?__facets=1&kind=discount&kind=%EC%9B%90%ED%94%BC%EC%8A%A4&item_limit=24' }, rewrittenCategory);
+  assert.equal(called.url, 'https://backend.example/api/discount/facets?item_limit=24&kind=%EC%9B%90%ED%94%BC%EC%8A%A4');
+  assert.equal(rewrittenCategory.body.status, 'ok');
 
   const ordinaryDiscount = response();
   await handler({ method: 'GET', url: '/api/discount?term=%EB%8D%B0%EB%8B%98' }, ordinaryDiscount);
@@ -60,7 +70,7 @@ try {
   assert.equal(noBackend.body.status, 'error');
   assert.match(noBackend.body.reason, /BACKEND_API_URL/);
 
-  console.log('✅ 할인률 후보 Vercel 중계 및 기존 할인률 경로 5건 통과');
+  console.log('✅ 할인률 후보 Vercel 중계 및 기존 할인률 경로 7건 통과');
 } finally {
   if (previous.backend === undefined) delete process.env.BACKEND_API_URL;
   else process.env.BACKEND_API_URL = previous.backend;

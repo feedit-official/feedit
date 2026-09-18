@@ -228,9 +228,20 @@ await t('★ 조회 대상 — 없으면 빈 문자열, 속성만 있어도 대�
   assert.equal(RH.fsItem(), '키르시');
 });
 
-/* ══ ⑥ 할인률·리세일·수명주기 ═══════════════════════════════ */
-/* 탭마다 다른 브랜드를 쓴다 — 앞 시험에서 걸린 조건으로 이미 받아 둔 주소를 다시 안 부르는 것은 정상이다 */
-for (const [id, name, brand] of [['stock', '할인률', '엄브로'], ['resale', '리세일', '엄브로'], ['life', '수명주기', '엄브로']]) {
+/* ══ ⑥ 할인률은 개별 상품 ID, 리세일·수명주기는 기존 사전 검색 ══ */
+await t('★ 할인률은 브랜드 필터만으로 조회하지 않고 상품 ID를 기다린다', async () => {
+  S.FS.pick = { 브랜드: ['엄브로'] };
+  S.FS.stockItem = null;
+  asked = [];
+  D.trRender('stock');
+  assert.match(document.getElementById('trBody').textContent, /할인률을 볼 상품을 고르세요/);
+  assert.ok(!asked.some(u => u.includes('/api/discount?')), '상품 선택 전 지표를 요청하지 않는다');
+  S.fsStockSelect({id:17,label:'엄브로 상품',thumb:'https://img.example/17.jpg'});
+  D.trRender('stock');
+  assert.ok(asked.some(u => u.includes('/api/discount?source_id=17')));
+});
+/* 나머지 두 탭의 사전 검색 방식은 바뀌지 않는다. */
+for (const [id, name, brand] of [['resale', '리세일', '엄브로'], ['life', '수명주기', '엄브로']]) {
   await t(`★ ${name} — 사전 브랜드를 고르면 빈 화면을 벗어나 조회를 시작한다`, async () => {
     S.FS.pick = {};
     D.trRender(id);

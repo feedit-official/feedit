@@ -181,6 +181,7 @@ function acctMenu(on){
 function authLogin(user){
   applyAccount(user);
   AUTH.in = true;
+  document.dispatchEvent(new CustomEvent('feedit:auth'));
   authPaint();
   goView('home');
   runPendingAuth();
@@ -189,6 +190,7 @@ async function authLogout(){
   try{
     await logoutAccount();
     AUTH.in = false;
+    document.dispatchEvent(new CustomEvent('feedit:auth'));
     pendingAfterAuth = null;
     authPaint();
     goView('home');
@@ -198,6 +200,7 @@ async function authLogout(){
    '즐겨입는 스타일' 선택 팝업을 띄운다. 팝업을 닫아도 화면은 홈에 그대로 남는다. */
 function signupComplete(){
   AUTH.in = true;
+  document.dispatchEvent(new CustomEvent('feedit:auth'));
   authPaint();
   ME.styles.clear();   /* 팝업은 항상 빈 상태에서 시작한다 */
   goView('home');
@@ -459,7 +462,10 @@ export function likeClick(btn){
   if(d){
     const st=STYLES.find(s=>s.id===d.style);
     saveLiked({ itemId:id, liked:on, name:d.nm||'', brand:d.br||'', style:d.styleName||(st?st.n:'') })
-      .then(r=>{ if(r&&Number.isFinite(+r.saved_count))ME.saved=+r.saved_count; });
+      .then(r=>{
+        if(r&&Number.isFinite(+r.saved_count))ME.saved=+r.saved_count;
+        if(r)document.dispatchEvent(new CustomEvent('feedit:saved'));
+      });
   }
   const n=$('#statSavedN'); if(n)n.textContent=LIKED.size;
 }

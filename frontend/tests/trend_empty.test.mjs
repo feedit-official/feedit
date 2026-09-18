@@ -42,7 +42,9 @@ t("★ 탭들이 발레코어를 기본값으로 안 쓴다", () => {
 // ── 빈 화면 ──────────────────────────────────────────────
 t("검색 전에는 빈 화면을 그리고 끝낸다", () => {
   assert.match(dispatch, /if \(KW_TABS\.indexOf\(id\) >= 0 && !KW\.q\)/);
-  assert.match(dispatch, /if \(SEARCH_TABS\.indexOf\(id\) >= 0 && !fsItem\(\)\)/);
+  assert.match(dispatch, /if \(SEARCH_TABS\.indexOf\(id\) >= 0 && id !== 'stock' && !fsItem\(\)\)/);
+  assert.match(dispatch, /if \(!FS\.stockItem\)/,
+    '할인률은 상품 ID가 없을 때 별도의 선택 안내를 보여야 한다');
   // 빈 화면을 그린 뒤 반드시 멈춰야 한다 — 안 그러면 아래 난수 코드가 또 돈다
   const a = dispatch.indexOf('KW_TABS.indexOf');
   const seg = dispatch.slice(a, a + 1200);

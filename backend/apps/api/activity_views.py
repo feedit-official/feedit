@@ -31,6 +31,7 @@ from apps.core.models import (
     ChatSession,
     DictionaryTerm,
     ProductSource,
+    ProductSourceSnapshot,
     UserEvent,
     UserSavedItem,
     VoteBallot,
@@ -357,15 +358,71 @@ def vote_report(request):
 
 # ── ③ 찜 ────────────────────────────────────────────────────
 
-@require_POST
+@require_http_methods(["GET", "POST"])
 def saved(request):
-    """POST /api/auth/saved
+    """GET: 로그인 사용자의 일반 판매 찜 상품. POST: 찜/해제 기록.
 
     {"item_id": "db-17", "liked": true, "name": "...", "brand": "...", "style": "고프코어"}
     """
     profile = _login_profile(request)
     if profile is None:
         return _error("로그인이 필요합니다.", status=401)
+    if request.method == "GET":
+        # 원본 상품을 매핑하지 못한 찜도 SAVE 이벤트에는 남는다.
+        # 최신 이벤트가 해제인 상품은 되살리지 않는다.
+        states = {}
+        events = (UserEvent.objects.filter(user=profile, event_type=UserEvent.EventType.SAVE)
+                  .order_by("-created_at", "-id").values_list("metadata", flat=True))
+        for meta in events:
+            if not isinstance(meta, dict):
+                continue
+            match = DB_ITEM_RE.match(str(meta.get("item_id") or ""))
+            if match and match.group(1) not in states:
+                states[match.group(1)] = bool(meta.get("liked"))
+        ids = [int(pid) for pid, liked in states.items() if liked]
+        sources = list(ProductSource.objects.filter(
+            id__in=ids, status=ProductSource.Status.ACTIVE,
+            market_type=ProductSource.MarketType.RETAIL,
+        ).select_related("product", "product__brand", "source", "source_brand"))
+        # 구버전에서 user_saved_item 만 남긴 찜은 이벤트가 전혀 없을 때 보완한다.
+        if not states:
+            product_ids = list(UserSavedItem.objects.filter(user=profile, product__isnull=False)
+                               .values_list("product_id", flat=True))
+            if product_ids:
+                sources = list(ProductSource.objects.filter(
+                    product_id__in=product_ids, status=ProductSource.Status.ACTIVE,
+                    market_type=ProductSource.MarketType.RETAIL,
+                ).select_related("product", "product__brand", "source", "source_brand")
+                               .order_by("product_id", "-last_seen_at", "-id").distinct("product_id"))
+        latest = {}
+        source_ids = [source.id for source in sources]
+        if source_ids:
+            for snap in (ProductSourceSnapshot.objects.filter(product_source_id__in=source_ids)
+                         .order_by("product_source_id", "-observed_at", "-id")
+                         .distinct("product_source_id")
+                         .values("product_source_id", "list_price", "sale_price", "discount_rate", "observed_at")):
+                latest.setdefault(snap["product_source_id"], snap)
+        items = []
+        for source in sources:
+            snap = latest.get(source.id)
+            if not snap:
+                continue
+            brand = (source.product.brand.name if source.product_id and source.product.brand_id
+                     else source.source_brand.name if source.source_brand_id else "")
+            items.append({
+                "id": source.id,
+                "name": source.source_name or (source.product.canonical_name if source.product_id else ""),
+                "brand": brand,
+                "source": source.source.name,
+                "image": source.thumbnail_url,
+                "list_price": float(snap["list_price"]) if snap["list_price"] is not None else None,
+                "sale_price": float(snap["sale_price"]) if snap["sale_price"] is not None else None,
+                "discount_rate": float(snap["discount_rate"]) if snap["discount_rate"] is not None else None,
+                "as_of": snap["observed_at"],
+            })
+        order = {pid: i for i, pid in enumerate(ids)}
+        items.sort(key=lambda item: order.get(item["id"], len(order)))
+        return JsonResponse({"status": "ok", "data": {"items": items, "count": len(items)}})
     data = _body(request)
     if data is None:
         return _error("요청 형식이 올바른 JSON이 아닙니다.")

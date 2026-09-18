@@ -242,14 +242,28 @@ export function fsMatch(q,limit){
    opts  : /api/facets 가 준 축별 후보 (없으면 로컬 FTREE 로 떨어진다)
    colq  : 칸마다의 찾기 입력 (브랜드가 수천 개라 칸 안에서도 찾아야 한다)
    ══════════════════════════════════════════════════════ */
-export var FS={pick:{},opts:null,narrowed:false,note:'',err:'',matched:null,
+export var FS={pick:{},stockItem:null,opts:null,narrowed:false,note:'',err:'',matched:null,
                loading:false,colq:{},sug:[],cur:-1,open:false,id:null};
 
-export function fsReset(){ FS.pick={}; FS.colq={} }
+export function fsReset(){ FS.pick={}; FS.stockItem=null; FS.colq={} }
 export function fsPickedOf(ax){ return FS.pick[ax]||[] }
 export function fsHas(ax,v){ return fsPickedOf(ax).indexOf(v)>=0 }
+export function fsStockSelect(item){
+  const id=Number(item&&item.id);
+  if(!Number.isSafeInteger(id)||id<=0)return false;
+  FS.stockItem={id,label:item.label||item.name||'',brand:item.brand||'',
+    source:item.source||'',thumb:item.thumb||item.image||''};
+  FS.pick['상품명']=[FS.stockItem.label];
+  return true;
+}
+export function fsStockClear(){
+  FS.stockItem=null;
+  delete FS.pick['상품명'];
+}
 /* 있으면 빼고 없으면 넣는다 — 칩을 뺐다 꼈다 하는 그 동작 그대로 */
 export function fsToggle(ax,v){
+  if(FS.id==='stock'&&ax==='상품명'){ fsStockClear(); return false; }
+  if(FS.id==='stock')fsStockClear();
   const a=FS.pick[ax]||(FS.pick[ax]=[]);
   const i=a.indexOf(v);
   if(i>=0)a.splice(i,1); else a.push(v);
@@ -269,7 +283,7 @@ var fsQI=0, fsQBooked=false;
 
 function fsQStep(){
   const line=$('#fsQ'); if(!line)return;
-  const q=FS_Q[fsQI%FS_Q.length]; fsQI++;
+  const q=FS.id==='stock'?['상품명','할인률을 확인해 보세요']:FS_Q[fsQI%FS_Q.length]; fsQI++;
   const paint=()=>{ line.innerHTML='<i>“<b>'+q[0]+'</b>&nbsp;'+q[1]+'”</i>' };
   if(!HAS_A){ paint(); return }
   if(!line.firstElementChild){ paint();
@@ -343,6 +357,7 @@ function fsPick(o){
    ② 못 받으면 이 파일의 FTREE + 사전 (계층은 FTREE 것만)
    ══════════════════════════════════════════════════════ */
 const FS_POP_CAP=200;          /* 브랜드가 2,775개다 — 다 그리면 팝업이 멎는다 */
+const FS_STOCK_PAGE=24;        /* 할인률 상품 이미지 URL은 한 번에 이만큼만 받는다 */
 
 function fsDictOf(ax){
   const out=[];
@@ -402,11 +417,18 @@ function fsOptsFor(ax){
 /* ── /api/facets ────────────────────────────────────────
    고른 조건을 그대로 넘기고, 축별 후보를 받아 온다.
    늦게 온 응답이 최신 상태를 덮지 않게 표(seq)를 단다. */
-let fsSeq=0, fsFacetT=null;
-function fsFacetURL(){
+let fsSeq=0, fsFacetT=null, fsFacetAbort=null, fsStockFullReady=false;
+let fsStockOffset=0, fsStockHasMore=false;
+function fsFacetURL(itemsOnly=false, itemOffset=0){
   const p=new URLSearchParams();
   getFsCols().forEach(c=>{ if(fsAxOk(c.ax))fsPickedOf(c.ax).forEach(v=>p.append(c.param,v)) });
+  if(FS.id==='stock'&&FS.colq['상품명'])p.set('q',FS.colq['상품명'].trim());
+  if(itemsOnly)p.set('items_only','1');
   p.set('limit',String(FS_POP_CAP));
+  if(FS.id==='stock'){
+    p.set('item_limit',String(FS_STOCK_PAGE));
+    p.set('item_offset',String(itemOffset));
+  }
   const base = (FS.id === 'stock') ? '/api/discount/facets?' : '/api/facets?';
   return base + p.toString();
 }
@@ -415,11 +437,12 @@ function fsFacetURL(){
    **vite 프록시가 Django(:8000)에 못 붙어서 낸 500** 이었고, 그 문장만
    보고는 서버를 안 켠 건지 코드가 깨진 건지 알 수가 없었다.
    HTTP 상태 / JSON 아님 / 아예 못 닿음 을 갈라서 그대로 적는다. */
-async function fsFetchFacets(){
+async function fsFetchFacets(url, signal){
   let r;
   try{
-    r=await fetch(fsFacetURL());
+    r=await fetch(url,{signal});
   }catch(e){
+    if(e&&e.name==='AbortError')return {__cancel:true};
     return {__fail:'후보 서버에 닿지 못했습니다 ('+(e&&e.message||e)+').'};
   }
   const body=await r.text().catch(()=>'');
@@ -439,16 +462,26 @@ async function fsFetchFacets(){
   }
 }
 
-export function fsLoadFacets(){
+export function fsLoadFacets(itemsOnly=false, itemOffset=0){
+  const fast=itemsOnly&&FS.id==='stock'&&fsStockFullReady&&!!FS.opts;
+  if(FS.id==='stock'&&!fast){
+    fsStockFullReady=false; fsStockOffset=0; fsStockHasMore=false;
+  }
   const my=++fsSeq;
+  if(fsFacetAbort)fsFacetAbort.abort();
+  fsFacetAbort=new AbortController();
+  const controller=fsFacetAbort;
   FS.loading=true; FS.err='';
-  fsPaintPop();
-  return fsFetchFacets()
+  if(fast){ $('#fsC3')?.classList.add('isLoading'); fsPaintState(); }
+  else fsPaintPop();
+  return fsFetchFacets(fsFacetURL(fast,fast?itemOffset:0),controller.signal)
     .then(j=>{
       if(my!==fsSeq)return;                    /* 그새 조건이 바뀌었다 */
       FS.loading=false;
+      if(j&&j.__cancel)return;
       if(j&&j.__fail){
-        FS.opts=null; FS.narrowed=false; FS.matched=null;
+        if(!fast)fsStockFullReady=false;
+        if(!fast){ FS.opts=null; FS.narrowed=false; FS.matched=null; }
         FS.err=j.__fail+(FS.id === 'stock'
           ? ' 할인률 상품 후보는 서버가 복구되면 다시 표시됩니다.'
           : ' 아래는 화면에 박아 둔 목록입니다.');
@@ -456,8 +489,17 @@ export function fsLoadFacets(){
         fsPaintPop();
         return;
       }
+      if(fast&&j&&j.status==='ok'&&j.items_only){
+        FS.opts={...FS.opts,item:Array.isArray(j.data?.item)?j.data.item:[]};
+        fsStockOffset=itemOffset;
+        fsStockHasMore=!!j.item_has_more;
+        FS.err='';
+        const host=$('#fsC3'); if(host){host.innerHTML=fsColHTML(getFsCols()[3]);host.classList.remove('isLoading');}
+        fsPaintState();
+        return;
+      }
       if(!j||j.status==='error'){
-        FS.opts=null; FS.narrowed=false; FS.matched=null;
+        if(!fast){ FS.opts=null; FS.narrowed=false; FS.matched=null; fsStockFullReady=false; }
         FS.err=(j&&j.reason)||'후보를 받지 못했습니다.';
       }else if(j.status==='empty'){
         /* 붙었는데 걸리는 게 없다 — 지어내지 않고 그대로 말한다.
@@ -467,33 +509,61 @@ export function fsLoadFacets(){
         FS.opts={}; getFsCols().forEach(c=>{ FS.opts[c.param]=[] });
         FS.narrowed=!!j.narrowed; FS.matched=(j.matched==null?0:j.matched);
         FS.err=''; FS.note=j.reason||'';
+        if(FS.id==='stock'){
+          fsStockFullReady=true; fsStockOffset=0; fsStockHasMore=false;
+        }
       }else{
         FS.opts=j.data||{}; FS.narrowed=!!j.narrowed;
         FS.matched=(j.matched==null?null:j.matched);
         FS.note=j.note||''; FS.err='';
+        if(FS.id==='stock'){
+          fsStockFullReady=true; fsStockOffset=0; fsStockHasMore=!!j.item_has_more;
+        }
       }
       fsPaintPop();
     })
     .catch(e=>{
       if(my!==fsSeq)return;
-      FS.loading=false; FS.opts=null; FS.narrowed=false; FS.matched=null;
+      FS.loading=false;
+      if(!fast){ FS.opts=null; FS.narrowed=false; FS.matched=null; fsStockFullReady=false; }
       FS.err='후보를 그리다 문제가 생겼습니다 ('+(e&&e.message||e)+').';
       if(window.console&&console.warn)console.warn('[facets]',e);
       fsPaintPop();
+    }).finally(()=>{
+      if(fsFacetAbort===controller)fsFacetAbort=null;
     });
 }
-function fsLoadFacetsSoon(){
+function fsLoadFacetsSoon(itemsOnly=false){
   clearTimeout(fsFacetT);
-  fsFacetT=setTimeout(fsLoadFacets,180);      /* 연달아 누를 때 한 번만 나가게 */
+  if(FS.id==='stock'&&!itemsOnly)fsStockFullReady=false;
+  fsFacetT=setTimeout(()=>fsLoadFacets(itemsOnly),itemsOnly&&FS.id==='stock'?350:180);
 }
 
 /* ── 세부 검색 팝업 ── */
 function fsOpenPop(){
   const pop=$('.fsPop'); if(pop){ pop.style.transform=''; pop.style.transition=''; }
+  if(FS.id==='stock'){
+    FS.colq['상품명']=$('#fsInput')?.value.trim()||'';
+    fsStockFullReady=false;
+  }
   FS.open=true; $('#fsPopBg').classList.add('on'); $('#fsMore').classList.add('on');
   fsPaintPop(); fsLoadFacets();
 }
-function fsClosePop(){ FS.open=false; $('#fsPopBg').classList.remove('on'); $('#fsMore').classList.remove('on') }
+function fsClosePop(){
+  FS.open=false;
+  clearTimeout(fsFacetT); fsFacetT=null;
+  if(fsFacetAbort){ fsFacetAbort.abort(); fsFacetAbort=null; fsSeq++; FS.loading=false; }
+  $('#fsPopBg').classList.remove('on'); $('#fsMore').classList.remove('on');
+}
+
+function fsStockPageHTML(ax){
+  if(FS.id!=='stock'||ax!=='상품명'||(!fsStockOffset&&!fsStockHasMore))return '';
+  return '<div class="fsPageNav">'+
+    (fsStockOffset?'<button type="button" data-stock-page="'+Math.max(0,fsStockOffset-FS_STOCK_PAGE)+'">← 이전 24개</button>':'')+
+    ((FS.opts?.item?.length||0)?'<span>'+(fsStockOffset+1)+'–'+(fsStockOffset+FS.opts.item.length)+'번째 상품</span>':'')+
+    (fsStockHasMore?'<button type="button" data-stock-page="'+(fsStockOffset+FS_STOCK_PAGE)+'">다음 24개 →</button>':'')+
+    '</div>';
+}
 
 function fsColHTML(col){
   const ax=col.ax;
@@ -514,18 +584,21 @@ function fsColHTML(col){
             ? '이 조건에서는 남는 것이 없습니다.\n칩을 하나 빼 보세요.'
             : '아직 후보가 없습니다.');
     }
-    return '<div class="hint">'+why.replace(/\n/g,'<br>')+'</div>';
+    return '<div class="hint">'+why.replace(/\n/g,'<br>')+'</div>'+fsStockPageHTML(ax);
   }
   const shown=hit.slice(0,FS_POP_CAP);
   return shown.map(o=>{
-    const on=picked.indexOf(o.label)>=0;
+    const on=FS.id==='stock'&&ax==='상품명'
+      ? !!(FS.stockItem&&FS.stockItem.id===o.id) : picked.indexOf(o.label)>=0;
     return '<button type="button" data-ax="'+fsEsc(ax)+'" data-fv="'+fsEsc(o.label)+'" title="'+fsEsc(o.label)+'"'+
+      (o.id?' data-source-id="'+fsEsc(o.id)+'"':'')+
       ' class="fsOpt'+(on?' on':'')+(o.count===0?' zero':'')+(o.thumb?' has-thumb':'')+'"'+
       ' aria-pressed="'+(on?'true':'false')+'">'+
       (o.thumb?'<img src="'+fsEsc(o.thumb)+'" loading="lazy" alt="">':'')+
-      '<span class="fsOptTx">'+fsEsc(o.label)+'</span>'+
+      '<span class="fsOptTx">'+fsEsc(o.label)+
+        (o.brand||o.source?'<small>'+fsEsc([o.brand,o.source].filter(Boolean).join(' · '))+'</small>':'')+'</span>'+
       (o.count==null?'':'<i>'+o.count+'</i>')+'</button>';
-  }).join('')
+  }).join('')+fsStockPageHTML(ax)
   + (hit.length>shown.length
       ? '<div class="hint">'+FS_POP_CAP+'개만 보입니다 ('+hit.length+'개 중).<br>'+
         '위 칸에 쳐서 좁히세요.</div>'
@@ -549,6 +622,7 @@ export function fsPaintPop(){
       const inp = col.querySelector('input');
       if(inp) {
         inp.dataset.ax = c.ax;
+        inp.value = FS.colq[c.ax]||'';
         inp.placeholder = c.ax + ' 찾기';
         inp.setAttribute('aria-label', c.ax + ' 찾기');
       }
@@ -577,6 +651,10 @@ function fsPaintState(){
   if(FS.err){ el.className='fsState warn'; el.textContent=FS.err; return }
   if(FS.opts&&FS.narrowed){
     el.className='fsState';
+    if(FS.id==='stock'&&FS.colq['상품명']){
+      el.textContent='입력한 상품명의 후보를 표시합니다. 다른 조건은 그대로 유지됩니다.';
+      return;
+    }
     el.textContent=(FS.matched==null?'':'조건에 걸리는 상품 '+FS.matched.toLocaleString()+'개 · ')+
       '숫자는 그 항목까지 걸었을 때 남는 상품 수입니다.';
     return;
@@ -640,6 +718,7 @@ export function fsBuild(){
   inp.addEventListener('input',()=>{
     bar.classList.toggle('typing',!!inp.value);
     $('#fsClear').hidden=!inp.value;
+    if(FS.id==='stock'){ fsHideSug(); return; }
     fsPaintSug();
   });
   inp.addEventListener('keydown',e=>{
@@ -648,6 +727,7 @@ export function fsBuild(){
     else if(e.key==='Escape'){ fsHideSug() }
     else if(e.key==='Enter'){
       e.preventDefault();
+      if(FS.id==='stock'){ fsOpenPop(); return; }
       if(FS.cur>=0&&FS.sug[FS.cur]){ fsPick(FS.sug[FS.cur]); return }
       const m=fsMatch(inp.value,1)[0];
       if(m)fsPick(m); else fsPaintSug();
@@ -676,9 +756,19 @@ export function fsBuild(){
   const cols=$('.fsCols');
   if(cols){
     cols.addEventListener('click',e=>{
+      const page=e.target.closest('button[data-stock-page]');
+      if(page&&FS.id==='stock'){
+        e.stopPropagation();
+        if(!FS.loading)fsLoadFacets(true,Number(page.dataset.stockPage));
+        return;
+      }
       const b=e.target.closest('button[data-fv]'); if(!b)return;
       e.stopPropagation();
-      fsToggle(b.dataset.ax,b.dataset.fv);
+      if(FS.id==='stock'&&b.dataset.ax==='상품명'){
+        const item=(FS.opts&&FS.opts.item||[]).find(o=>String(o.id)===b.dataset.sourceId);
+        if(FS.stockItem&&FS.stockItem.id===Number(b.dataset.sourceId))fsStockClear();
+        else fsStockSelect(item);
+      }else fsToggle(b.dataset.ax,b.dataset.fv);
       fsPaintPop();                 /* 누른 티는 즉시 */
       fsLoadFacetsSoon();           /* 다른 칸은 잠시 뒤 서버가 좁혀 준다 */
     });
@@ -689,6 +779,11 @@ export function fsBuild(){
       const lv=getFsCols().findIndex(c=>c.ax===q.dataset.ax);
       if(lv<0)return;
       const host=$('#fsC'+lv); if(host)host.innerHTML=fsColHTML(getFsCols()[lv]);
+      if(FS.id==='stock'&&q.dataset.ax==='상품명'&&!e.isComposing)fsLoadFacetsSoon(true);
+    });
+    cols.addEventListener('compositionend',e=>{
+      const q=e.target.closest('input[data-ax="상품명"]');
+      if(FS.id==='stock'&&q)fsLoadFacetsSoon(true);
     });
   }
   $('#fsPicked').addEventListener('click',e=>{

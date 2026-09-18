@@ -95,6 +95,13 @@ export const deleteVoteCard = cardId =>
 export const saveLiked = ({ itemId, liked, name = '', brand = '', style = '' }) =>
   quiet(request('saved', { method:'POST', body:{ item_id:itemId, liked, name, brand, style } }));
 
+/* 할인률 페이지의 찜목록은 브라우저 저장소가 아닌 로그인 사용자의 DB 기록을 읽는다. */
+export const savedProducts = () => request('saved');
+
+/* 할인률 화면은 저장 성공/실패를 즉시 보여줘야 하므로 오류를 숨기지 않는다. */
+export const setSavedProduct = ({ itemId, liked, name = '', brand = '' }) =>
+  request('saved', { method:'POST', body:{ item_id:itemId, liked, name, brand } });
+
 /* 금주의 리포트 — 실패하면 예외를 그대로 올려 화면이 사유를 적게 한다 */
 export const weeklyReport = () =>
   request('weekly-report');

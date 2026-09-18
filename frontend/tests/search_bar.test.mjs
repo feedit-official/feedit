@@ -95,7 +95,7 @@ t('움직임을 줄여 달라는 설정을 존중한다', () => {
 t('없는 CSS 변수를 쓰지 않는다', () => {
   const seg = css.slice(css.indexOf('.kwGoBtn{'));
   const used = [...seg.matchAll(/var\(--([a-z0-9-]+)\)/g)].map((m) => m[1]);
-  const known = ['pink-0','pink-1','pink-2','pink-3','paper','coral','ease','line','ink','bg'];
+  const known = ['pink-0','pink-1','pink-2','pink-3','paper','coral','ease','line','ink','bg','num'];
   const bad = [...new Set(used)].filter((v) => !known.includes(v));
   assert.deepEqual(bad, [], `없는 변수: ${bad}`);
 });

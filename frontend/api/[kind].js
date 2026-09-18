@@ -29,11 +29,19 @@ export default async function handler(req, res) {
   }
 
   const qs = new URLSearchParams(url.search);
-  qs.delete('kind');
   // Vercel은 /api/discount/facets를 이 기존 함수로 재작성한다.
   // 재작성 전/후 어느 URL이 req.url에 남아도 같은 Django 경로로 보낸다.
   const discountFacets = url.pathname === '/api/discount/facets'
     || (kind === 'discount' && qs.get('__facets') === '1');
+  // 동적 경로 [kind]가 쿼리에 붙을 수 있지만, 할인률 후보의 kind는 실제 종류 필터다.
+  // 경로 매개변수만 제거하고 사용자가 고른 종류는 Django로 전달한다.
+  const kindValues = discountFacets ? qs.getAll('kind') : [];
+  qs.delete('kind');
+  if (discountFacets) {
+    const routeKind = kindValues.indexOf(kind);
+    if (routeKind >= 0) kindValues.splice(routeKind, 1);
+    kindValues.forEach((value) => qs.append('kind', value));
+  }
   qs.delete('__facets');
   const q = qs.toString();
   const backendPath = discountFacets ? '/discount/facets' : `/${kind}`;
