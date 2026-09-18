@@ -47,7 +47,13 @@ from . import llm
 from .tools import Toolbox, progress_say, specs_for
 
 # ── 안전장치 값 ────────────────────────────────────────────
-MAX_ROUNDS = 4          # 한 질문에 도구를 부를 수 있는 바퀴 수
+MAX_ROUNDS = 5          # 한 질문에 도구를 부를 수 있는 바퀴 수
+# ★ 2026-09-18 — 4 → 5. 살말 질문은 검색 → 지표 → 지수 → 결측 기록 → 리포트로
+#   바퀴를 딱 맞게 쓰는 일이 흔해서, 도구 하나만 더 부르면 **시간은 남았는데**
+#   답을 못 쓰고 끝났다(실측: 예산 33초 중 21초 사용, 링크 질문 5바퀴 전부 사용).
+#   진짜 상한은 시간 예산(TIME_BUDGET)이고, 바퀴는 무한 반복을 막는 안전장치다.
+#   그리고 마지막 바퀴는 **답 쓰기 전용**으로 돌린다(run() 참고) — 바퀴가 바닥나도
+#   답 없이 끝나지 않는다.
 # ★ 링크 질문은 바퀴가 하나 더 든다 (2026-09-11 실측, 예산과 같은 이유).
 #   `33058ms/33000ms stopped=max_rounds 바퀴=4(5328+12387+4624+3006ms)`
 #   ① 링크 확인 ② 지표·지수 ③ 결측 기록 ④ compose_report — 네 바퀴를 다 쓰고
@@ -644,9 +650,26 @@ def run(question: str, *, store, gate, ctx: dict | None = None,
             })
             borrowed = False
 
+        # ★ 마지막 바퀴는 답 쓰기 전용 (2026-09-18).
+        #   예전에는 마지막 바퀴에도 도구를 다 줬다. 모델이 하나 더 부르면 바퀴가
+        #   바닥나 답 없이 끝났고, 화면엔 조회 목록과 "요약 문장을 쓸 시간이 모자라"
+        #   만 남았다. 마지막 바퀴에는 데이터 도구를 빼고(리포트 구성만 남김) 그 사실을 말한다.
+        round_tools = tools
+        if rnd == max_rounds - 1:
+            round_tools = ([t for t in tools if t.get("name") == "compose_report"]
+                           if not _has_report_design(box.trace) else [])
+            if not borrowed:
+                items.append({
+                    "role": "user",
+                    "content": ("이번이 마지막 차례입니다. 데이터 도구는 더 부를 수 없습니다. "
+                                "지금까지 받은 결과만으로 답을 쓰세요."
+                                + (" 시각 리포트가 필요하면 답과 함께 compose_report 를 한 번만 부르세요."
+                                   if round_tools else "")),
+                })
+
         t_round = time.monotonic()
         res = llm.respond(
-            INSTRUCTIONS, items, tools=tools, raw_flag=True,
+            INSTRUCTIONS, items, tools=round_tools or None, raw_flag=True,
             # ★ 남은 시간을 **실수 그대로** 상한으로 쓴다.
             #   int(left) 는 내림이라 2.9 초 남았을 때 2 초만 주고 끊었다.
             #   하한 2 초는 연결 자체가 안 되는 시간을 피하기 위한 것이다.
@@ -659,7 +682,7 @@ def run(question: str, *, store, gate, ctx: dict | None = None,
             if left >= WRITE_MIN:
                 out.escalated.append(f"orchestrator:{llm.LAST_ERROR}")
                 res = llm.respond(
-                    INSTRUCTIONS, items, tools=tools, raw_flag=True,
+                    INSTRUCTIONS, items, tools=round_tools or None, raw_flag=True,
                     timeout=max(2.0, min(float(CALL_TIMEOUT), left)),
                     **llm.escalate("orchestrator"),
                 )
@@ -883,8 +906,11 @@ def _recap(out: Result) -> str:
         lines.append("빠진 신호: " + " · ".join(missing) + ".")
     if not lines:
         return ""
-    lines.append("요약 문장을 쓸 시간이 모자라 조회한 것만 정리했습니다. "
-                 "어느 쪽을 더 볼까요?")
+    # ★ 사유를 사실대로 (2026-09-18). 바퀴가 바닥난 것을 "시간이 모자라" 라고 적으니
+    #   빨리 끝난 답에 시간 핑계가 붙어 어색했다.
+    why = ("요약 문장을 쓸 시간이 모자라" if out.stopped == "time_budget"
+           else "조회 단계가 길어져 요약 문장 대신")
+    lines.append(f"{why} 조회한 것만 정리했습니다. 어느 쪽을 더 볼까요?")
     return "\n\n".join(lines)
 
 

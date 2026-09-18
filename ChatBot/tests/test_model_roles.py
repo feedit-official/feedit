@@ -119,3 +119,34 @@ class SolFallback(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LastRoundWrites(unittest.TestCase):
+    """바퀴가 바닥나도 답 없이 끝나지 않는다 (2026-09-18)."""
+
+    @patch("app.orchestrator.llm.respond")
+    def test_last_round_has_no_data_tools_and_answers(self, respond):
+        import json
+        seen_tools = []
+
+        def fake(*a, **kw):
+            names = [t.get("name") for t in (kw.get("tools") or [])]
+            seen_tools.append(names)
+            if "get_metric" in names:            # 데이터 도구가 있으면 계속 더 부르려 한다
+                n = len(seen_tools)
+                return {"_raw": {"output": [{"type": "function_call", "call_id": f"c{n}",
+                        "name": "get_metric", "arguments": json.dumps({"term": f"용어{n}"})}]},
+                        "text": ""}
+            return msg("지금까지 본 것으로 답합니다.")
+        respond.side_effect = fake
+
+        class S(Store):
+            def term_latest(self, _k): return None
+            def obs_count(self, *a): return 0
+            def term_sources(self, _k): return []
+
+        out = orchestrator.run("고프코어 요즘 어때?", store=S(), gate=Gate())
+        self.assertEqual(out.answer, "지금까지 본 것으로 답합니다.")
+        self.assertEqual(len(seen_tools), orchestrator.MAX_ROUNDS)
+        self.assertNotIn("get_metric", seen_tools[-1])
+        self.assertEqual(out.stopped, "done")
