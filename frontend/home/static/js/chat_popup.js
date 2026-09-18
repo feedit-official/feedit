@@ -1118,6 +1118,10 @@ async function cpAskLive(c,aiMsg,text,images){
   let acc='';
   await askStream({question:text, mode:cpMode(), plan:'FREE', request_id:run.requestId,
                     conversation_id:conv, history,
+                    /* ★ 로그인 사실을 챗봇에 알린다 (2026-09-18). 예전에는 안 보내서 챗봇이
+                       모든 사용자를 비로그인으로 보고 취향 도구를 막았다. 취향 값 자체는
+                       taste_context 로 가고, 챗봇은 이 id 로 다른 데이터를 조회하지 않는다. */
+                    user_id:(AUTH.in&&ME.id!=null)?String(ME.id):undefined,
                     taste_context:cpTasteContext(c),
                     images:(images&&images.length)?images:undefined},{
     /* ★ 진행 상황 (server.py 의 push("status", {stage:"tool", message})).

@@ -891,8 +891,26 @@ class Toolbox:
             return {"logged_in": False,
                     "note": "비로그인 상태입니다. 취향을 근거로 말하지 마세요."}
         if self.taste is None:
-            return {"logged_in": True,
-                    "unavailable": "취향 데이터 연결이 아직 없습니다."}
+            # ★ 화면이 보낸 취향(가입 때 고른 즐겨입는 스타일 · 최근 검색 · 찜)을 쓴다
+            #   (2026-09-18). 원본은 RDS 계정 프로필이고, 브라우저가 로그인 때 받아 둔 값이다.
+            #   예전에는 여기서 '연결 없음'으로 끝나 로그인한 사용자도 취향을 못 썼다.
+            tc = self.ctx.get("taste_context") if isinstance(self.ctx.get("taste_context"), dict) else {}
+            styles = [str(s) for s in (tc.get("favorite_styles") or []) if str(s).strip()]
+            searched = [str(s) for s in (tc.get("searched_terms") or []) if str(s).strip()]
+            saved = [str(s) for s in (tc.get("saved_terms") or []) if str(s).strip()]
+            if not (styles or searched or saved):
+                return {"logged_in": True,
+                        "unavailable": "가입할 때 고른 스타일이나 검색·찜 기록이 아직 없습니다."}
+            items = ([{"name": s, "why": "즐겨입는 스타일"} for s in styles[:6]]
+                     + [{"name": s, "why": "찜"} for s in saved[:3]]
+                     + [{"name": s, "why": "최근 검색"} for s in searched[-3:]])
+            return {"logged_in": True, "source": "profile",
+                    "favorite_styles": styles[:10],
+                    "style_keywords": {p.get("name"): p.get("keywords") or []
+                                       for p in (tc.get("favorite_style_profiles") or [])
+                                       if isinstance(p, dict) and p.get("name")},
+                    "saved_terms": saved[:30], "searched_terms": searched[-20:],
+                    "items": items[:6]}
         return self.taste.of(uid)
 
     # ── 출력 디자인 스킬 ─────────────────────────────────

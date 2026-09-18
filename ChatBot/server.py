@@ -330,13 +330,22 @@ def actions_for(rep: dict, mode: str = "general") -> list[dict]:
                 community["draft"] = keep
             acts.append(community)
 
-        # 착장 의도 또는 이번 답의 사진 분석이 있을 때만 입혀보기를 제안한다.
-        has_visual = isinstance(rep.get("visual_context"), dict) and bool(rep["visual_context"])
-        wants_tryon = intent == "buy.tryon" or bool(_TRYON_ASK.search(question))
-        photo_purchase = has_visual and (intent == "vision.salmal"
-                                         or bool(_PURCHASE_ASK.search(question)))
-        if wants_tryon or photo_purchase:
-            acts.append({"label": "입혀보기", "type": "virtual_fit"})
+    # ── 입혀보기 (2026-09-18: 조건을 넓혔다) ─────────────────────
+    #   예전에는 살말 모드에서 "입혀/착용" 을 말하거나 사진을 올려 구매를 물을 때만 떴다.
+    #   그래서 링크로 옷을 보내 "살까 말까" 를 물어도 한 번도 안 나왔다.
+    #   이제는 **입어 볼 대상이 분명할 때** 모드와 관계없이 제안한다.
+    #     ① 입혀/착용/어울려 같은 말을 했거나 의도가 buy.tryon
+    #     ② 이번 답이 사진 속 옷을 봤고, 구매·코디 얘기다
+    #     ③ 살말 모드에서 링크로 실제 상품을 확인했다(상품명이 확인됨)
+    has_visual = isinstance(rep.get("visual_context"), dict) and bool(rep["visual_context"])
+    wants_tryon = intent == "buy.tryon" or bool(_TRYON_ASK.search(question))
+    photo_item = has_visual and (intent == "vision.salmal" or mode == "salmal"
+                                 or bool(_PURCHASE_ASK.search(question)))
+    draft = rep.get("item_draft") if isinstance(rep.get("item_draft"), dict) else {}
+    linked_item = (mode == "salmal" and bool(draft.get("title"))
+                   and "링크" in str(draft.get("source") or ""))
+    if wants_tryon or photo_item or linked_item:
+        acts.append({"label": "입혀보기", "type": "virtual_fit"})
     return acts
 
 

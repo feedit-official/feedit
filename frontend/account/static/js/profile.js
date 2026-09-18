@@ -28,6 +28,7 @@ Object.defineProperty(ME,'rank',{get(){ return rkLevelOf(ME.xp) }, enumerable:tr
    마크업과 렌더 함수는 그대로 두고, 값의 출처만 목업에서 API로 바꾼다. */
 function applyAccount(user){
   if(!user)return;
+  ME.id=user.id==null?null:user.id;   /* 챗봇에 로그인 사실을 알릴 때 쓴다 (2026-09-18) */
   ME.name=user.nickname||user.username||ME.name;
   ME.initial=ME.name[0]||'F';
   ME.mail=user.email||user.username||'';
