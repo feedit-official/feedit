@@ -56,3 +56,9 @@
   .jrItem{grid-template-columns:48px minmax(0,1fr)}
   .jrActs{grid-column:1/-1;justify-content:flex-end}
 }
+
+/* 심사 목록 — 대기 중 / 전체 (2026-09-19, 서버 연동) */
+.jrTabs{display:flex;gap:6px;margin-bottom:12px}
+.jrTabs button{padding:6px 12px;border-radius:999px;border:1px solid var(--pink-3);background:#fff;font-size:12px;color:var(--pink-1)}
+.jrTabs button.on{background:var(--pink-0);border-color:var(--pink-0);color:#fff}
+.jrHead small{font-size:11px;color:var(--pink-2)}

@@ -461,48 +461,97 @@ select.cInput{
 }
 .cComboItem:hover,.cComboItem.on{background:var(--paper)}
 
-/* ══ 살!말? 사후 피드백 (2026-09-19) ══════════════════════════ */
-.fbModal{position:fixed;inset:0;z-index:120;display:flex;align-items:center;justify-content:center;
-  padding:16px;background:rgba(20,18,16,.52);opacity:0;visibility:hidden;transition:opacity .2s,visibility .2s}
+/* ══ 살!말? 사후 피드백 (2026-09-19 · 디자인 개편) ═════════════
+   단계형 — 구매 여부를 고르면 만족도, 그다음 도움 여부·후기가 차례로 열린다.
+   맨 태그(h3·b) 대신 클래스만 쓴다: 전역 등장 모션에 먹혀 글자가 사라졌었다. */
+.fbModal{--fb-ink:#1c1a17;--fb-sub:#8a8781;--fb-line:#ece8e3;--fb-soft:#f7f5f2;--fb-acc:var(--coral,#ff6b4a);
+  position:fixed;inset:0;z-index:120;display:flex;align-items:center;justify-content:center;padding:16px;
+  background:rgba(22,20,18,.46);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);
+  opacity:0;visibility:hidden;transition:opacity .22s ease,visibility .22s}
 .fbModal.on{opacity:1;visibility:visible}
-.fbCard{position:relative;width:min(440px,100%);max-height:calc(100vh - 32px);overflow:auto;
-  background:#fff;border-radius:18px;padding:24px 22px 20px;box-shadow:0 30px 70px -24px rgba(0,0,0,.5)}
-.fbX{position:absolute;top:10px;right:12px;font-size:22px;line-height:1;color:var(--pink-2);background:none}
-.fbHead{display:flex;gap:12px;align-items:center;margin-bottom:18px}
-.fbHead img{width:56px;height:56px;border-radius:10px;object-fit:cover;flex:none}
-.fbHead em{display:block;font-style:normal;font-size:11px;color:var(--coral);margin-bottom:3px}
-.fbHead h3{font-size:15px;font-weight:600;letter-spacing:-.02em;margin:0 0 3px}
-.fbHead span{font-size:11.5px;color:var(--pink-2)}
-.fbQ{margin-top:16px}
-.fbQ>b{display:block;font-size:13px;font-weight:600;margin-bottom:8px}
-.fbQ small{font-weight:400;color:var(--pink-2);margin-left:4px}
-.fbOpts{display:flex;flex-wrap:wrap;gap:6px}
-.fbOpts button{padding:8px 13px;border-radius:999px;border:1px solid var(--pink-3);background:#fff;font-size:12.5px;color:var(--pink-1)}
-.fbOpts button.on{border-color:var(--coral);background:var(--coral);color:#fff}
-.fbStars{display:flex;align-items:center;gap:2px}
-.fbStars button{font-size:24px;line-height:1;background:none;color:var(--pink-3);padding:0 2px}
-.fbStars button.on{color:var(--coral)}
-.fbStars span{margin-left:8px;font-size:12px;color:var(--pink-2)}
-.fbQ input{width:100%;padding:10px 12px;border:1px solid var(--pink-3);border-radius:10px;font-size:13px}
-.fbErr{margin-top:12px;font-size:12px;color:#c73a24}
+.fbCard{position:relative;width:min(420px,100%);max-height:calc(100vh - 32px);overflow:auto;
+  background:#fff;border-radius:22px;padding:26px 24px 22px;color:var(--fb-ink);
+  box-shadow:0 1px 0 rgba(0,0,0,.04),0 32px 80px -28px rgba(0,0,0,.45);
+  transform:translateY(10px) scale(.985);transition:transform .28s cubic-bezier(.2,.8,.2,1)}
+.fbModal.in .fbCard{transform:none}
+.fbCard,.fbCard *{box-sizing:border-box}
+.fbCard *{opacity:1}
+.fbX{position:absolute;top:14px;right:14px;width:32px;height:32px;border-radius:50%;display:grid;place-items:center;
+  background:transparent;color:var(--fb-sub);transition:background .18s,color .18s}
+.fbX:hover{background:var(--fb-soft);color:var(--fb-ink)}
+.fbX svg{width:16px;height:16px}
+/* 머리 — 썸네일 · 제목 · 투표 결과 막대 */
+.fbTop{display:flex;gap:14px;align-items:center;padding-right:28px}
+.fbThumb{width:64px;height:64px;flex:none;border-radius:14px;overflow:hidden;background:var(--fb-soft)}
+.fbThumb img{width:100%;height:100%;object-fit:cover;display:block}
+.fbTopTx{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px}
+.fbEyebrow{font-size:11px;font-weight:600;letter-spacing:.02em;color:var(--fb-acc)}
+.fbTitle{display:block;font-size:16px;font-weight:700;letter-spacing:-.03em;line-height:1.35;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fbBar{height:6px;border-radius:99px;background:var(--fb-ink);overflow:hidden;margin-top:4px}
+.fbBar i{display:block;height:100%;background:var(--fb-acc);border-radius:99px}
+.fbBarTx{display:flex;gap:10px;font-size:11.5px;color:var(--fb-sub)}
+.fbBarTx em{font-style:normal}
+.fbBarTx em:first-child{color:var(--fb-acc);font-weight:600}
+.fbBarTx .n{margin-left:auto}
+/* 단계 */
+.fbStep{margin-top:22px;animation:fbIn .26s ease both}
+@keyframes fbIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+.fbTop+.fbStep{padding-top:20px;border-top:1px solid var(--fb-line)}
+.fbLabel{display:block;font-size:13.5px;font-weight:600;letter-spacing:-.02em;margin-bottom:10px;color:var(--fb-ink)}
+.fbLabel small{font-size:11.5px;font-weight:400;color:var(--fb-sub);margin-left:4px}
+/* 선택 버튼 — 같은 폭으로 나눈 한 줄 */
+.fbSeg{display:grid;gap:8px}
+.fbSeg.c3{grid-template-columns:repeat(3,1fr)}
+.fbSeg.c2{grid-template-columns:repeat(2,1fr)}
+.fbSeg button{height:44px;border-radius:12px;border:1px solid var(--fb-line);background:#fff;
+  font-size:13px;font-weight:500;color:var(--fb-ink);transition:border-color .18s,background .18s,color .18s}
+.fbSeg button:hover{border-color:#d9d3cc}
+.fbSeg button.on{border-color:var(--fb-ink);background:var(--fb-ink);color:#fff}
+/* 만족도 1~5 */
+.fbScale{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
+.fbScale button{height:44px;border-radius:12px;border:1px solid var(--fb-line);background:#fff;
+  font-size:14px;font-weight:600;color:var(--fb-sub);font-variant-numeric:tabular-nums;transition:.18s}
+.fbScale button:hover{border-color:#d9d3cc;color:var(--fb-ink)}
+.fbScale button.on{border-color:var(--fb-acc);background:var(--fb-acc);color:#fff}
+.fbEnds{display:flex;justify-content:space-between;margin-top:7px;font-size:11px;color:var(--fb-sub)}
+/* 후기 */
+.fbInput{position:relative}
+.fbInput input{width:100%;height:46px;padding:0 58px 0 14px;border:1px solid var(--fb-line);border-radius:12px;
+  background:var(--fb-soft);font-size:13px;color:var(--fb-ink);outline:none;transition:border-color .18s,background .18s}
+.fbInput input:focus{border-color:var(--fb-ink);background:#fff}
+.fbCount{position:absolute;right:14px;top:50%;transform:translateY(-50%);font-size:11px;color:var(--fb-sub);font-variant-numeric:tabular-nums}
+.fbErr{margin-top:14px;font-size:12px;color:#c73a24}
 .fbErr[hidden]{display:none}
-.fbActs{display:flex;justify-content:flex-end;gap:8px;margin-top:20px}
-/* 카드 모달 안 — 글쓴이의 결과 */
-.modalFeedback{margin-top:12px;padding:12px 14px;border-radius:12px;background:var(--paper);font-size:12.5px;
+/* 아래 버튼 */
+.fbActs{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:24px}
+.fbLater{background:none;font-size:12.5px;color:var(--fb-sub);padding:8px 2px}
+.fbLater:hover{color:var(--fb-ink)}
+.fbSave{height:46px;padding:0 26px;border-radius:999px;background:var(--fb-ink);color:#fff;font-size:13.5px;font-weight:600;
+  transition:opacity .18s,transform .18s}
+.fbSave:hover{transform:translateY(-1px)}
+.fbSave:disabled{opacity:.3;transform:none;cursor:default}
+@media (max-width:420px){ .fbCard{padding:22px 18px 18px} .fbSeg.c3 button{font-size:12px} }
+
+/* 카드 상세 안 — 글쓴이의 결과 */
+.modalFeedback{margin-top:14px;padding:14px 16px;border-radius:14px;background:#f7f5f2;font-size:12.5px;
   display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px}
 .modalFeedback[hidden]{display:none}
-.modalFeedback b{font-weight:600}
-.modalFeedback span{color:var(--pink-1)}
-.modalFeedback q{flex-basis:100%;color:var(--pink-1)}
+.modalFeedback b{font-weight:600;color:#1c1a17}
+.modalFeedback span{color:#6f6a64}
+.modalFeedback q{flex-basis:100%;color:#1c1a17}
 .modalFeedback .pill{margin-left:auto}
+
 /* 마이페이지 패널 */
-.fbSum{display:flex;gap:16px;font-size:12px;color:var(--pink-2);margin-bottom:10px}
-.fbSum b{color:var(--pink-0);font-weight:600;margin-left:3px}
-.fbRow{display:flex;align-items:center;gap:12px;padding:10px 0;border-top:1px solid var(--pink-3)}
-.fbRow img,.fbRow>i{width:44px;height:44px;border-radius:8px;object-fit:cover;flex:none;background:var(--paper)}
-.fbRowT{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
-.fbRowT b{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.fbRowT span{font-size:11.5px;color:var(--pink-2)}
-.fbRow.pending .fbRowT span{color:var(--coral)}
-.fbRowT q{font-size:11.5px;color:var(--pink-1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.fbEmpty{font-size:12.5px;color:var(--pink-2);line-height:1.6;padding:6px 0}
+.fbSum{display:flex;gap:8px;margin-bottom:6px}
+.fbSum span{padding:6px 11px;border-radius:999px;background:#f7f5f2;font-size:11.5px;color:#8a8781}
+.fbSum b{color:#1c1a17;font-weight:700;margin-left:4px}
+.fbRow{display:flex;align-items:center;gap:12px;padding:12px 0;border-top:1px solid #ece8e3}
+.fbSum+.fbRow{border-top:0}
+.fbRow img,.fbRow>i{width:48px;height:48px;border-radius:12px;object-fit:cover;flex:none;background:#f7f5f2}
+.fbRowT{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+.fbRowT b{font-size:13px;font-weight:600;color:#1c1a17;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fbRowT span{font-size:11.5px;color:#8a8781}
+.fbRow.pending .fbRowT span{color:var(--coral,#ff6b4a);font-weight:600}
+.fbRowT q{font-size:11.5px;color:#6f6a64;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fbEmpty{font-size:12.5px;color:#8a8781;line-height:1.7;padding:6px 0}

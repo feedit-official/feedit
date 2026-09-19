@@ -215,6 +215,30 @@ def check_vote_result(card):
         return None
 
 
+def notify_vote_closed(cards):
+    """투표가 마감된 내 카드 — 작성자에게 '결과를 알려 주세요'(사후 피드백)를 한 번 알린다.
+
+    종류는 VOTE_RESULT 설정을 따른다(투표 결과 알림을 끈 사람에게는 보내지 않는다).
+    링크 'salmal' 로 들어가면 살말 화면이 피드백 팝업을 띄운다 (salmal/static/js/feedback.js).
+    """
+    made = 0
+    for card in cards:
+        if card is None or card.user_id is None or not str(card.seed_key or "").startswith("user:"):
+            continue
+        try:
+            total = VoteBallot.objects.filter(card_id=card.id).count()
+            buys = VoteBallot.objects.filter(card_id=card.id, choice=VoteBallot.Choice.BUY).count()
+            body = (f"{total}명 중 {buys}명이 '살!'이라고 했어요. 결국 어떻게 하셨는지 알려 주세요."
+                    if total else "결국 어떻게 하셨는지 알려 주세요.")
+            if notify(card.user, rules.VOTE_RESULT, f"VOTE_CLOSED:{card.id}",
+                      f"'{(card.title or '내 카드')[:40]}' 투표가 마감됐어요.", body, link="salmal",
+                      payload={"card_id": card.id, "total": total, "buy": buys, "closed": True}):
+                made += 1
+        except Exception:
+            logger.exception("마감 알림 실패 card=%s", getattr(card, "id", None))
+    return made
+
+
 # ── ③ 뱃지 달성 ────────────────────────────────────────────
 
 def check_badges(profile, now=None):

@@ -1,4 +1,6 @@
 import { $, $$ } from '../../../core/static/js/dom.js';
+import { cancelJobRequest, jobRequestSubmit, jobRequestsList, jobReviewDecide } from './account_api.js';
+import { imageFileToDataURL } from '../../../home/static/js/chat_api.js';
 
 /* ══════════════════════════════════════════════════════════════
    직업 인증 · 배지
@@ -10,8 +12,9 @@ import { $, $$ } from '../../../core/static/js/dom.js';
      관련 직종이어도 인증이 번거로워 Basic 으로 가입하는 사람이 있다.
      그래서 직업을 비워 두거나, 승인 전이면 모두 Basic 으로 보인다.
 
-   목업이라 서버가 없다. 심사 대기열(JOB_QUEUE)은 이 모듈 안에만 있다.
-   API 가 붙으면 jobSubmit / jobDecide 안쪽만 갈아 끼우면 된다.
+   ★ 2026-09-19 — 목업(브라우저 안 JOB_QUEUE)을 끊고 서버로 옮겼다 (backend/apps/api/job_views.py).
+     신청은 서버에 남고, 서류는 S3 에 저장되며, 승인·반려는 운영(ADMIN) 계정만 한다.
+     인증이 필요한 직업은 **승인 전까지 직업이 비어 있다**(Basic 으로 보인다).
    ══════════════════════════════════════════════════════════════ */
 
 /* 드롭다운 목록 — fashion:true 는 주황 배지, Basic 은 검정 배지 */
@@ -36,9 +39,6 @@ export const jobNeedsDoc=id=>{ const j=jobOf(id); return !!(j&&j.fashion) };
    실제 서비스에서는 false 로 두고 관리자 계정에서만 보이게 한다. */
 export const JOB_REVIEW_DEMO=false;   /* 2026-09-19 — 운영 계정(ADMIN)이 생겨 시연용 개방을 닫는다 */
 
-/* 심사 대기열 — {id, user, nick, job, major, file, url, at, status} */
-export const JOB_QUEUE=[];
-let JOB_UID=1;
 
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,
   c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -62,8 +62,10 @@ export function jobPlanText(u){
   const req=jobPendingOf(u);
   return j.label+(u.job==='Student'&&u.major?' · '+u.major:'')+(req?' · 인증 대기':'');
 }
+/* 심사 중인 내 신청 — 서버가 로그인 응답(job_request)으로 준다 */
 export function jobPendingOf(u){
-  return JOB_QUEUE.find(r=>r.user===u&&r.status==='pending')||null;
+  const r=u&&u.jobRequest;
+  return r&&r.status==='PENDING'?r:null;
 }
 
 /* ── 가입 · 수정 폼 한 줄 ──
@@ -127,70 +129,83 @@ export function jobFieldCheck(prefix,u){
   if(u&&u.job===sel.value&&!f)return '';
   if(u&&jobPendingOf(u)&&jobPendingOf(u).job===sel.value&&!f)return '';
   if(!f)return '선택한 직업을 확인할 서류를 첨부하거나, 직업을 비워 두세요.';
-  if(f.size>10*1024*1024)return '서류 파일은 10MB 이하로 올려 주세요.';
+  const pdf=f.type==='application/pdf';
+  if(!pdf&&!/^image\/(jpeg|png|webp)$/.test(f.type))return '서류는 JPG · PNG · WebP 이미지나 PDF 로 올려 주세요.';
+  if(pdf&&f.size>3*1024*1024)return 'PDF 서류는 3MB 이하로 올려 주세요. 사진으로 찍어 올려도 됩니다.';
+  if(!pdf&&f.size>20*1024*1024)return '서류 이미지는 20MB 이하로 올려 주세요.';
   return '';
 }
-/* 폼 값을 사용자에게 반영한다.
-   Basic · 비움 → 바로 반영. 패션 직종 + 서류 → 심사 대기열로. */
-export function jobFieldApply(prefix,u){
+/* 폼 값을 서버에 반영한다 (가입 직후 · 회원정보 저장 직후에 부른다).
+   · Basic · 비움 → 바로 반영(진행 중 신청 취소)
+   · 인증 직업 + 서류 → 심사 신청. 승인 전까지 직업은 비어 있다.
+   바뀐 게 없으면 서버를 부르지 않는다. 돌려주는 값: {changed, pending, job} */
+export async function jobFieldApply(prefix,u){
   const sel=$('#'+prefix+'Job'), file=$('#'+prefix+'JobFile'), major=$('#'+prefix+'Major');
-  if(!sel||!u)return null;
-  const v=sel.value, f=file.files&&file.files[0];
+  if(!sel||!u||u.role==='admin')return {changed:false};
+  const v=sel.value, f=file&&file.files&&file.files[0];
   const mj=major?major.value.trim().slice(0,20):'';
+  const cur=u.job||'';
   if(!jobNeedsDoc(v)){
-    /* 관리자 계정은 직업을 바꾸지 않는다 */
-    if(u.role!=='admin'){
-      u.job=v||'Basic'; u.major='';
-      JOB_QUEUE.forEach(r=>{ if(r.user===u&&r.status==='pending')r.status='cancelled' });
-    }
-    jobNotify(); return null;
+    const want=v==='Basic'?'':v;
+    if(want===cur&&!jobPendingOf(u))return {changed:false};
+    const d=await jobRequestSubmit({job:v||'Basic'});
+    jobSync(u,d); return {changed:true, pending:false, job:u.job};
   }
-  if(!f){
-    if(v==='Student'&&u.job==='Student')u.major=mj||u.major;
-    jobNotify(); return null;
-  }
-  return jobSubmit(u,v,mj,f);
+  if(!f)return {changed:false};
+  const pdf=f.type==='application/pdf';
+  const docDataUrl=pdf?await readDataURL(f):await imageFileToDataURL(f);
+  const d=await jobRequestSubmit({job:v, major:mj, docDataUrl, docName:f.name});
+  jobSync(u,d); return {changed:true, pending:true, job:u.job};
 }
-export function jobSubmit(u,job,major,file){
-  JOB_QUEUE.forEach(r=>{ if(r.user===u&&r.status==='pending')r.status='cancelled' });
-  const isImg=/^image\//.test(file.type);
-  const req={id:JOB_UID++, user:u, nick:u.name, job, major:job==='Student'?major:'',
-    file:file.name, url:isImg?URL.createObjectURL(file):'', at:new Date(), status:'pending'};
-  JOB_QUEUE.unshift(req);
+const readDataURL=f=>new Promise((ok,no)=>{ const r=new FileReader();
+  r.onload=()=>ok(String(r.result||'')); r.onerror=()=>no(new Error('서류 파일을 읽지 못했습니다.')); r.readAsDataURL(f); });
+function jobSync(u,d){
+  if(!d)return;
+  u.job=d.job||''; if('major' in d)u.major=d.major||'';
+  u.jobRequest=d.job_request||null;
   jobNotify();
-  return req;
 }
-/* 관리자 결정 — 승인이면 그때 비로소 직업과 배지가 바뀐다 */
-export function jobDecide(id,ok){
-  const r=JOB_QUEUE.find(x=>x.id===id); if(!r||r.status!=='pending')return;
-  r.status=ok?'approved':'rejected';
-  if(ok){ r.user.job=r.job; r.user.major=r.major }
-  jobNotify();
+export async function jobCancel(u){
+  const d=await cancelJobRequest(); jobSync(u,d);
 }
 function jobNotify(){ try{ document.dispatchEvent(new CustomEvent('feedit:job')) }catch(e){} }
 
-/* ── 관리자 심사 모달 ── */
-export function jobReviewRender(){
+/* ── 관리자 심사 모달 (운영 계정만) ── */
+let JR_ROWS=[], JR_FILTER='PENDING';
+const JR_ST={PENDING:'대기',APPROVED:'승인',REJECTED:'반려'};
+const jrDate=v=>{ const d=new Date(v); return isNaN(d)?'':(d.getMonth()+1)+'.'+d.getDate()+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0') };
+export async function jobReviewRender(){
   const host=$('#jobReviewList'); if(!host)return;
-  const list=JOB_QUEUE.filter(r=>r.status!=='cancelled');
-  if(!list.length){
-    host.innerHTML='<p class="jrEmpty">아직 들어온 인증 신청이 없습니다.<br>가입이나 회원정보 수정에서 서류를 올리면 여기에 쌓입니다.</p>';
+  host.innerHTML='<p class="jrEmpty">신청 목록을 불러오는 중입니다.</p>';
+  try{
+    const d=await jobRequestsList(JR_FILTER);
+    JR_ROWS=d.items||[];
+  }catch(e){ host.innerHTML='<p class="jrEmpty">'+esc(e.message||'목록을 불러오지 못했습니다.')+'</p>'; return; }
+  jrPaint();
+}
+function jrPaint(){
+  const host=$('#jobReviewList'); if(!host)return;
+  const tabs='<div class="jrTabs">'+[['PENDING','대기 중'],['ALL','전체']].map(([k,l])=>
+    '<button type="button" data-jr-tab="'+k+'" class="'+(JR_FILTER===k?'on':'')+'">'+l+'</button>').join('')+'</div>';
+  if(!JR_ROWS.length){
+    host.innerHTML=tabs+'<p class="jrEmpty">'+(JR_FILTER==='PENDING'?'심사를 기다리는 신청이 없습니다.':'아직 들어온 인증 신청이 없습니다.')+'</p>';
     return;
   }
-  const ST={pending:'대기',approved:'승인',rejected:'반려'};
-  host.innerHTML=list.map(r=>{
-    const j=jobOf(r.job);
-    return '<div class="jrItem '+r.status+'">'+
-      '<div class="jrThumb">'+(r.url?'<img src="'+r.url+'" alt="">':'<span>FILE</span>')+'</div>'+
+  host.innerHTML=tabs+JR_ROWS.map(r=>{
+    const j=jobOf(r.job), img=r.doc_url&&/^image\//.test(r.doc_type);
+    const st=String(r.status||'').toLowerCase();
+    return '<div class="jrItem '+st+'">'+
+      '<div class="jrThumb">'+(img?'<a href="'+esc(r.doc_url)+'" target="_blank" rel="noopener"><img src="'+esc(r.doc_url)+'" alt=""></a>':'<span>'+(r.doc_type==='application/pdf'?'PDF':'FILE')+'</span>')+'</div>'+
       '<div class="jrBody">'+
-        '<div class="jrHead">'+jobBadgeHTML(r.job)+'<b>'+esc(r.nick)+'</b>'+
-          '<em class="jrSt">'+ST[r.status]+'</em></div>'+
-        '<div class="jrMeta">'+esc(j?j.doc:'')+(r.major?' · 전공 '+esc(r.major):'')+'<br>'+
-          (r.url?'<a href="'+r.url+'" target="_blank" rel="noopener">'+esc(r.file)+'</a>':esc(r.file))+'</div>'+
+        '<div class="jrHead">'+jobBadgeHTML(r.job)+'<b>'+esc(r.nickname)+'</b><small>@'+esc(r.username)+'</small>'+
+          '<em class="jrSt">'+(JR_ST[r.status]||r.status)+'</em></div>'+
+        '<div class="jrMeta">'+esc(j?j.doc:'')+(r.major?' · 전공 '+esc(r.major):'')+' · '+jrDate(r.requested_at)+'<br>'+
+          (r.doc_url?'<a href="'+esc(r.doc_url)+'" target="_blank" rel="noopener">'+esc(r.doc_name||'서류 보기')+'</a>':esc(r.doc_name||'서류 없음'))+
+          (r.current_job?' · 현재 '+esc(r.current_job):'')+'</div>'+
       '</div>'+
-      (r.status==='pending'
-        ? '<div class="jrActs"><button type="button" class="pill ghost sm" data-jr-no="'+r.id+'">반려</button>'+
-          '<button type="button" class="pill sm" data-jr-ok="'+r.id+'">승인</button></div>'
+      (r.status==='PENDING'
+        ? '<div class="jrActs"><button type="button" class="pill ghost sm" data-jr-no="'+r.user_id+'">반려</button>'+
+          '<button type="button" class="pill sm" data-jr-ok="'+r.user_id+'">승인</button></div>'
         : '')+
     '</div>';
   }).join('');
@@ -199,12 +214,16 @@ export function jobReviewBind(onDone){
   const host=$('#jobReviewList');
   if(!host||host.dataset.bound)return;
   host.dataset.bound='1';
-  host.addEventListener('click',e=>{
+  host.addEventListener('click',async e=>{
+    const tab=e.target.closest('[data-jr-tab]');
+    if(tab){ JR_FILTER=tab.dataset.jrTab; jobReviewRender(); return; }
     const ok=e.target.closest('[data-jr-ok]'), no=e.target.closest('[data-jr-no]');
     if(!ok&&!no)return;
-    const id=+(ok?ok.dataset.jrOk:no.dataset.jrNo);
-    jobDecide(id,!!ok);
-    jobReviewRender();
-    if(onDone)onDone(!!ok);
+    const btn=ok||no; btn.disabled=true;
+    try{
+      await jobReviewDecide({userId:+(ok?ok.dataset.jrOk:no.dataset.jrNo), approve:!!ok});
+      await jobReviewRender();
+      if(onDone)onDone(!!ok);
+    }catch(err){ btn.disabled=false; if(onDone)onDone(null, err.message); }
   });
 }

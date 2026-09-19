@@ -6,7 +6,7 @@
 
 from django.urls import path
 
-from . import activity_views, auth_views, chat_views, notification_views, salmal_views, views
+from . import activity_views, auth_views, chat_views, job_views, notification_views, salmal_views, views
 from .crawl_views import (
     CrawlRunDetailAPIView,
     CrawlRunListAPIView,
@@ -25,6 +25,9 @@ urlpatterns = [
     path("auth/google-signup", auth_views.google_signup, name="auth-google-signup"),
     path("auth/logout", auth_views.logout, name="auth-logout"),
     path("auth/profile", auth_views.profile, name="auth-profile"),
+    path("auth/job-request", job_views.job_request, name="auth-job-request"),        # 직업 인증 신청
+    path("auth/job-requests", job_views.job_requests, name="auth-job-requests"),     # (관리자) 목록
+    path("auth/job-review", job_views.job_review, name="auth-job-review"),           # (관리자) 승인·반려
     path("auth/weekly-videos", auth_views.weekly_videos, name="auth-weekly-videos"),
     # ── 사용자 활동 기록 · 금주의 리포트 (activity_views.py) ──
     path("auth/event", activity_views.event, name="auth-event"),                    # 검색 · 챗봇 사용

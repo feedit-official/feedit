@@ -52,6 +52,16 @@ export const signupAccount = data =>
 export const logoutAccount = () =>
   request('logout', { method:'POST', body:{} }).finally(() => { sessionPromise = null; });
 
+/* 직업 인증 — 신청 · 취소 · (관리자) 목록 · 승인/반려 */
+export const jobRequestSubmit = ({ job, major = '', docDataUrl = '', docName = '' }) =>
+  request('job-request', { method:'POST', body:{ job, major, doc_data_url:docDataUrl, doc_name:docName } });
+export const cancelJobRequest = () =>
+  request('job-request', { method:'DELETE', body:{} });
+export const jobRequestsList = (status = 'PENDING') =>
+  request('job-requests?status=' + encodeURIComponent(status));
+export const jobReviewDecide = ({ userId, approve, reason = '' }) =>
+  request('job-review', { method:'POST', body:{ user_id:userId, approve, reason } });
+
 export const saveAccount = data =>
   request('profile', { method:'POST', body:data });
 

@@ -7,7 +7,7 @@ import { styleProductCard, styleProductsURL } from '../../../style/static/js/pro
 import { goView } from '../../../app_shell/static/js/router.js';
 import { rkLevelOf, rkPaintAll, rkPaintAv, xpPaint } from './rank.js';
 import { trRender } from '../../../trend/static/js/dispatch.js';
-import { JOB_REVIEW_DEMO, jobFieldApply, jobFieldBind, jobFieldCheck, jobFieldReset, jobReviewBind, jobReviewRender } from './job.js';
+import { jobFieldApply, jobFieldBind, jobFieldCheck, jobFieldReset, jobReviewBind, jobReviewRender } from './job.js';
 import { googleLogin, googleSignupAccount, loginAccount, logoutAccount, prepareGoogle, saveAccount, saveLiked, session, signupAccount } from './account_api.js';
 
 /* 내 계정 — 운영자라 최고 등급 고정 */
@@ -45,6 +45,7 @@ function applyAccount(user){
   ME.plan=user.plan||(ME.role==='admin'?'ADMIN':'FREE');
   badgesApply(user.badges||{});
   ME.job=user.job||'';
+  ME.jobRequest=user.job_request||null;   /* 심사 중인 직업 인증 — 승인 전에는 job 이 비어 있다 */
   ME.major=user.major||'';
   ME.saved=Number(user.saved_count||0);
   ME.votes=Number(user.vote_count||0);
@@ -166,7 +167,8 @@ function authPaint(){
       '<path d="M2.5 4.5L6 8l3.5-3.5"/></svg>';
     avaPaint();
     const mj = $('#menuJobReview');
-    if(mj) mj.hidden = !(ME.role === 'admin' || JOB_REVIEW_DEMO);
+    /* 직업 인증 심사는 운영(ADMIN) 계정에만 보인다 */
+    if(mj) mj.hidden = ME.role !== 'admin';
   }else{
     b.className = 'pill';
     b.dataset.v = 'login';
@@ -589,7 +591,7 @@ export function acctBoot(){
   /* ── 직업 선택 · 서류 첨부 (가입 · 회원정보 수정 공통) ── */
   jobFieldBind('su');
   jobFieldBind('edit');
-  jobReviewBind(ok => acctToast(ok ? '승인했어요. 배지가 바로 반영됩니다.' : '반려했어요.'));
+  jobReviewBind((ok, err) => acctToast(err ? err : ok ? '승인했어요. 해당 사용자의 직업·배지가 반영됩니다.' : '반려했어요.'));
 
   /* ── 회원가입 ── */
   const sf = $('#signupForm');
@@ -636,7 +638,14 @@ export function acctBoot(){
         : await signupAccount({ username:id, password:pw, ...profileFields });
       applyAccount(data.user);
       ME.role='user'; ME.job=''; ME.major='';
+      /* 인증이 필요한 직업을 골랐으면 심사를 신청한다 — 승인 전까지 직업은 비어 있다 */
+      let jobMsg='';
+      try{
+        const r=await jobFieldApply('su', ME);
+        if(r&&r.pending) jobMsg='직업 인증을 신청했어요. 관리자 승인 후 배지가 달립니다.';
+      }catch(jx){ jobMsg='가입은 됐지만 직업 인증 신청은 실패했어요 — '+(jx.message||'')+' 회원정보 수정에서 다시 올려 주세요.'; }
       signupComplete();
+      if(jobMsg) setTimeout(()=>acctToast(jobMsg), 600);
       sf.reset();
     }catch(ex){ err.textContent=ex.message||'회원가입하지 못했습니다.'; err.style.display='block' }
     finally{ if(submit)submit.disabled=false }
@@ -760,9 +769,16 @@ if(suW) suW.addEventListener('input', bodyHint);
         password:pw||'',
       });
       applyAccount(data.user);
+      let saved='회원정보가 DB에 저장됐어요.';
+      if(ME.role !== 'admin'){
+        try{
+          const r=await jobFieldApply('edit', ME);
+          if(r&&r.pending) saved='저장했어요. 직업 인증은 관리자 승인 후 반영됩니다.';
+        }catch(jx){ saved='회원정보는 저장했지만 직업 인증 신청은 실패했어요 — '+(jx.message||''); }
+      }
       acctModal('editModal', false);
       ef.reset(); myRender(); authPaint();
-      acctToast('회원정보가 DB에 저장됐어요.');
+      acctToast(saved);
       /* ★ 2026-09-19 — 닉네임을 바꾸면 이미 올린 살!말? 카드의 작성자 이름도 함께 바뀌어야 한다.
          카드 목록은 한 번 받아 두고 쓰므로, 여기서 다시 받아 오라고 알려 준다. */
       if(typeof window.smReloadVotes === 'function') window.smReloadVotes();
@@ -847,7 +863,11 @@ if(suW) suW.addEventListener('input', bodyHint);
   const mm = $('#menuMypage');
   if(mm) mm.addEventListener('click', () => { acctMenu(false); goView('mypage') });
   const mj = $('#menuJobReview');
-  if(mj) mj.addEventListener('click', () => { acctMenu(false); jobReviewRender(); acctModal('jobReviewModal', true) });
+  if(mj) mj.addEventListener('click', () => {
+    acctMenu(false);
+    if(ME.role !== 'admin') return;   /* 운영 계정만 — 서버도 403 으로 막는다 */
+    jobReviewRender(); acctModal('jobReviewModal', true);
+  });
   const ml = $('#menuLogout');
   if(ml) ml.addEventListener('click', () => { acctMenu(false); authLogout() });
   document.addEventListener('click', e => {

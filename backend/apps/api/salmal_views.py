@@ -57,13 +57,26 @@ def _clean_text(value, limit):
 
 
 def _close_expired_cards(now=None):
-    """마감 시각이 지난 진행 중 카드를 종료 상태로 동기화한다."""
+    """마감 시각이 지난 진행 중 카드를 종료 상태로 동기화한다.
+
+    ★ 2026-09-19 — 막 마감된 카드의 작성자에게 '결과를 알려 주세요' 알림을 보낸다
+      (notification_service.notify_vote_closed · 같은 카드는 한 번만). 알림이 실패해도 마감은 된다.
+    """
     now = now or timezone.now()
-    return VoteCard.objects.filter(
+    due = list(VoteCard.objects.filter(
         status=VoteCard.Status.ACTIVE,
         closes_at__isnull=False,
         closes_at__lte=now,
-    ).update(status=VoteCard.Status.CLOSED)
+    ).select_related("user"))
+    if not due:
+        return 0
+    n = VoteCard.objects.filter(id__in=[c.id for c in due]).update(status=VoteCard.Status.CLOSED)
+    try:
+        from . import notification_service
+        notification_service.notify_vote_closed(due)
+    except Exception:
+        pass
+    return n
 
 
 def _comment_time(value):

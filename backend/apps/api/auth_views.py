@@ -40,6 +40,7 @@ from apps.core.models import (
 from . import google_auth
 from .activity_views import active_saved_count, active_vote_count
 from .badges import badge_states
+from .job_views import job_request_public
 
 
 USERNAME_RE = re.compile(r"^[A-Za-z0-9]{4,16}$")
@@ -121,6 +122,8 @@ def _user_payload(user, profile):
         "avatar": int(meta.get("avatar") or 0),
         "job": meta.get("job") or "",
         "major": meta.get("major") or "",
+        # 직업 인증 신청 상태 — 승인 전에는 job 이 비어 있고 여기에 PENDING 으로 남는다
+        "job_request": job_request_public(meta),
         "role": "admin" if user.is_staff or user.is_superuser else "user",
         # 요금제 — 운영 계정은 ADMIN, 그 밖은 profile_metadata.plan (없으면 FREE).
         #   알파 테스트용 TEST 플랜은 같은 칸에 "TEST" 로 넣을 예정이다.

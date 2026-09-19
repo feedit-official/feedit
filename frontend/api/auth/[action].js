@@ -5,6 +5,8 @@ import { backendBase, backendToken } from '../_lib/db.js';
 const ALLOWED = new Set(['me', 'signup', 'login', 'logout', 'profile', 'weekly-videos', 'google', 'google-signup',
   // 활동 기록 · 금주의 리포트 (backend/apps/api/activity_views.py)
   'event', 'vote', 'vote-comment', 'vote-report', 'saved', 'weekly-report',
+  // 직업 인증 신청 · 관리자 심사 (backend/apps/api/job_views.py)
+  'job-request', 'job-requests', 'job-review',
   // 챗봇 대화 기록 (backend/apps/api/chat_views.py)
   'chats',
   // 알림 · 알림 설정 · 용어 등재 요청 (backend/apps/api/notification_views.py)
