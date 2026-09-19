@@ -63,10 +63,8 @@ const AVA=[
 function avaPaint(){
   const g=AVA[ME.ava]||AVA[0];
   const bg='linear-gradient(135deg,'+g[0]+','+g[1]+')';
+  /* 헤더의 작은 원(.meAv)은 2026-09-19 에 없앴다 — 남은 건 마이페이지 원 하나다. */
   const c=$('#avatarInitial'); if(c){ c.style.background=bg; rkPaintAv(c, ME.rank) }
-  $$('.mAuth .meAv').forEach(e=>{
-    e.style.background=bg; e.style.color='#fff'; rkPaintAv(e, ME.rank);
-  });
 }
 
 /* ── 소개글 인라인 편집 ──────────────────────────────────
@@ -160,7 +158,9 @@ function authPaint(){
   if(AUTH.in){
     b.className = 'pill me';
     b.removeAttribute('data-v');       /* 전역 [data-v] 위임 대신 메뉴를 연다 */
-    b.innerHTML = '<span class="meAv">' + ME.initial + '</span>' + ME.name +
+    /* ★ 2026-09-19 — 닉네임 왼쪽의 프로필 원(.meAv)은 뺐다.
+       그 자리에 알림 아이콘이 오른쪽으로 붙으면서 헤더에 동그라미가 둘이 됐다. */
+    b.innerHTML = ME.name +
       '<svg class="meCaret" viewBox="0 0 12 12" fill="none" stroke="currentColor" ' +
       'stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
       '<path d="M2.5 4.5L6 8l3.5-3.5"/></svg>';

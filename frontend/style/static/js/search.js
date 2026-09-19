@@ -315,7 +315,12 @@ function fsPaintSug(){
     box.innerHTML='<div class="none">'+(axes?'이 탭에서 찾을 수 있는 키워드가 아닙니다.':'패션 어휘로 인식하지 못했습니다.')+'<br>'+
       (axes?'수명주기는 사전에 있는 '+axes.join(' · ')+'만 다룹니다.<br>아이템명은 검색할 수 없습니다.'
            :'이 검색은 소재 · 아이템 · 스타일 · 브랜드만 다룹니다.')+
-      (near.length?'<br><br>혹시 <b>'+near.map(o=>fsEsc(o.label)).join('</b>, <b>')+'</b> 인가요?':'')+'</div>';
+      (near.length?'<br><br>혹시 <b>'+near.map(o=>fsEsc(o.label)).join('</b>, <b>')+'</b> 인가요?':'')+
+      /* 사전에 없는 말이면 등재를 요청할 수 있다. 등재되면 알림이 간다
+         (account/static/js/notify.js 가 이 버튼을 받는다). */
+      '<br><br><button type="button" class="termReqBtn" data-term-req="'+fsEsc(q)+'">'+
+        '\u2018'+fsEsc(q)+'\u2019 사전 등재 요청'+
+      '</button>'+'</div>';
     box.hidden=false; return;
   }
   const n=fsNorm(q);

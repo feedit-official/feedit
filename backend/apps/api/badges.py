@@ -25,6 +25,19 @@ from apps.core.models import UserEvent, UserTaste, VoteBallot, VoteCard, VoteCom
 
 NO_RECORD = "기록 없음"
 
+# 뱃지 이름 — 알림 문구("뱃지 '살말 백전 100'을 달성했어요")에 쓴다.
+# 화면 목록(frontend/account/static/js/badges.js 의 BADGES)의 n·tier 와 같은 글자다.
+# 한쪽만 고치면 화면과 알림이 다른 이름을 부른다.
+BADGE_LABELS = {
+    "b01": "스타일 입문자", "b02": "첫 살말",
+    "b03": "여론 조력자 1", "b04": "여론 조력자 10", "b05": "여론 조력자 50",
+    "b06": "살말 백전 100", "b07": "살말 백전 500", "b08": "살말 백전 1000",
+    "b09": "성실 피드백러 10", "b10": "성실 피드백러 50", "b11": "성실 피드백러 100",
+    "b12": "개근상 7", "b13": "개근상 30", "b14": "개근상 100",
+    "b15": "연속 적중 5", "b16": "연속 적중 10", "b17": "연속 적중 20",
+    "b18": "카테고리 안목러", "b19": "결산 공유러",
+}
+
 
 def _day(dt):
     return timezone.localtime(dt).date()

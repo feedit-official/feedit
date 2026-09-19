@@ -6,7 +6,9 @@ const ALLOWED = new Set(['me', 'signup', 'login', 'logout', 'profile', 'weekly-v
   // 활동 기록 · 금주의 리포트 (backend/apps/api/activity_views.py)
   'event', 'vote', 'vote-comment', 'vote-report', 'saved', 'weekly-report',
   // 챗봇 대화 기록 (backend/apps/api/chat_views.py)
-  'chats']);
+  'chats',
+  // 알림 · 알림 설정 · 용어 등재 요청 (backend/apps/api/notification_views.py)
+  'notifications', 'notification-settings', 'term-request']);
 
 export default async function handler(req, res) {
   const url = new URL(req.url, 'http://x');

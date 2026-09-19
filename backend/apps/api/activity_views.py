@@ -41,6 +41,7 @@ from apps.core.models import (
 )
 
 from .activity import build_weekly_report, latest_state, week_bounds
+from . import notification_service
 
 TEXT_MAX = 120
 DB_ITEM_RE = re.compile(r"^db-(\d+)$")
@@ -155,6 +156,7 @@ def event(request):
             user=profile, event_type=UserEvent.EventType.SEARCH, term=term,
             metadata={"q": q, "facet": facet, "style": style_term.canonical_name if style_term else ""},
         )
+        notification_service.check_badges(profile)
         return JsonResponse({"status": "ok", "data": {"recorded": "SEARCH"}})
 
     if kind == "CHAT":
@@ -175,6 +177,7 @@ def event(request):
                 user=profile, event_type=UserEvent.EventType.CHAT,
                 metadata={"conversation_id": conv, "chat_session_id": session.id},
             )
+        notification_service.check_badges(profile)
         return JsonResponse({"status": "ok", "data": {"recorded": "CHAT", "chat_session_id": session.id}})
 
     return _error("type 은 SEARCH 또는 CHAT 이어야 합니다.")
@@ -225,6 +228,11 @@ def vote(request):
             else:
                 VoteBallot.objects.update_or_create(
                     card=card, user=profile, defaults={"choice": choice})
+    # 알림 — 카드 작성자에게 투표 결과(기준 표 수를 넘었을 때 한 번), 투표한 사람에게 뱃지.
+    # 실패해도 투표는 이미 저장됐다. notification_service 가 예외를 삼키고 로그만 남긴다.
+    if card is not None and choice is not None:
+        notification_service.check_vote_result(card)
+    notification_service.check_badges(profile)
     return JsonResponse({"status": "ok", "data": {"card_key": card_key, "choice": choice,
                                                    "vote_count": active_vote_count(profile)}})
 
@@ -515,11 +523,18 @@ def saved(request):
         if m:
             product_id = (ProductSource.objects.filter(id=int(m.group(1)))
                           .values_list("product_id", flat=True).first())
+        saved_item = None
         if product_id:
             if liked:
-                UserSavedItem.objects.get_or_create(user=profile, product_id=product_id)
+                saved_item, _created = UserSavedItem.objects.get_or_create(
+                    user=profile, product_id=product_id)
             else:
                 UserSavedItem.objects.filter(user=profile, product_id=product_id).delete()
+    # 가격 하락 알림(1번)의 기준가 — 찜한 순간의 가격을 박아 둔다.
+    # 해제했다가 다시 찜하면 행이 새로 생기므로 기준도 그때 가격이 된다.
+    if liked and saved_item is not None and m:
+        notification_service.sync_saved_price(saved_item, int(m.group(1)))
+    notification_service.check_badges(profile)
     return JsonResponse({"status": "ok", "data": {"item_id": item_id, "liked": liked,
                                                    "saved_count": active_saved_count(profile)}})
 

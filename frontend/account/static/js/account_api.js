@@ -114,6 +114,34 @@ export const savedProducts = () => request('saved');
 export const setSavedProduct = ({ itemId, liked, name = '', brand = '' }) =>
   request('saved', { method:'POST', body:{ item_id:itemId, liked, name, brand } });
 
+/* ── 알림 ─────────────────────────────────────────────────
+ * 목록·설정은 실패를 그대로 올린다(화면이 사유를 적는다).
+ * 읽음 처리만 조용히 넘긴다 — 읽음이 안 됐다고 패널이 멈추면 안 된다. */
+export const notifications = () => request('notifications');
+
+export const readNotification = id =>
+  quiet(request('notifications', { method:'POST', body:{ op:'read', id } }));
+
+export const readAllNotifications = () =>
+  quiet(request('notifications', { method:'POST', body:{ op:'read_all' } }));
+
+/* 삭제는 조용히 넘기지 않는다 — 지운 줄 알았는데 남아 있으면 안 된다 */
+export const deleteNotification = id =>
+  request('notifications', { method:'POST', body:{ op:'delete', id } });
+
+export const deleteAllNotifications = () =>
+  request('notifications', { method:'POST', body:{ op:'delete_all' } });
+
+export const notificationSettings = () => request('notification-settings');
+
+/* kinds 는 보낸 종류만 바뀐다 — 안 보낸 종류는 서버가 그대로 둔다 */
+export const saveNotificationSettings = ({ enabled, kinds }) =>
+  request('notification-settings', { method:'POST', body:{ enabled, kinds } });
+
+/* 용어 사전 등재 요청 — 이미 사전에 있으면 {already:true, canonical_name} 이 온다 */
+export const requestTerm = (term, note = '') =>
+  request('term-request', { method:'POST', body:{ term, note } });
+
 /* 금주의 리포트 — 실패하면 예외를 그대로 올려 화면이 사유를 적게 한다 */
 export const weeklyReport = () =>
   request('weekly-report');

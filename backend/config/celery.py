@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 
 from celery import Celery
+from celery.schedules import crontab
 
 
 os.environ.setdefault(
@@ -47,6 +48,18 @@ app.conf.beat_schedule = {
     "dispatch-due-crawl-targets": {
         "task": "core.dispatch_due_targets",
         "schedule": 60.0,
+    },
+    # ── 알림 (apps/api/tasks.py) ──
+    #   시간대는 app.conf.timezone = Asia/Seoul 이다.
+    #   매일 10:00 — 찜한 상품 가격 하락(하루 한 번 묶어서) · 용어 사전 등재
+    "notify-daily": {
+        "task": "app.notify_daily",
+        "schedule": crontab(hour=10, minute=0),
+    },
+    #   월요일 09:00 — 주간 트렌드 리포트 (주 1회)
+    "notify-weekly": {
+        "task": "app.notify_weekly",
+        "schedule": crontab(hour=9, minute=0, day_of_week=1),
     },
 }
 

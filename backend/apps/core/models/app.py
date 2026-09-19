@@ -270,6 +270,48 @@ class UserSavedItem(models.Model):
         verbose_name="콘텐츠",
     )
 
+    # ── 가격 하락 알림(1번)이 쓰는 기준값 ──────────────────────────
+    # 찜한 순간의 가격을 여기에 박아 둔다. 스냅샷 시계열만으로는
+    # '언제 대비 내렸는지'가 사람마다 달라 판정이 흔들린다.
+    saved_price = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="찜 시점 가격",
+    )
+
+    # 그 가격을 읽은 판매처. 한 상품에 판매처가 여럿이면 비교 대상을 고정한다.
+    saved_price_source = models.ForeignKey(
+        "core.ProductSource",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="saved_price_items",
+        verbose_name="가격 기준 판매처",
+    )
+
+    saved_price_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="찜 시점 가격 관측일시",
+    )
+
+    # 마지막으로 알린 가격. 같은 하락을 며칠 내리 알리지 않기 위해 남긴다.
+    notified_price = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="마지막 알림 가격",
+    )
+
+    notified_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="마지막 알림 시각",
+    )
+
     created_at = models.DateTimeField(
         auto_now_add=True,
         verbose_name="저장일시",
@@ -746,3 +788,255 @@ class ChatMessage(models.Model):
 
     def __str__(self):
         return f"{self.get_role_display()} / {self.created_at}"
+
+
+class Notification(models.Model):
+    """사용자에게 보낼 알림 한 건.
+
+    만드는 규칙은 apps/api/notifications.py(순수 계산),
+    실제 생성은 apps/api/notification_service.py 가 맡는다.
+
+    ★ dedup_key 가 이 모델의 핵심이다.
+      '하루 한 번 묶어서', '10표 도달했을 때 한 번', '주 1회' 는 전부
+      같은 키로 두 번 만들지 않는 것으로 지킨다. 배치가 여러 번 돌아도
+      결과가 같아야 한다.
+    """
+
+    class Kind(models.TextChoices):
+        PRICE_DROP = "PRICE_DROP", "찜한 상품 가격 하락"
+        VOTE_RESULT = "VOTE_RESULT", "살!말? 투표 결과"
+        WEEKLY_REPORT = "WEEKLY_REPORT", "주간 트렌드 리포트"
+        BADGE = "BADGE", "뱃지 달성"
+        TERM_ADDED = "TERM_ADDED", "용어 사전 등재"
+
+    user = models.ForeignKey(
+        AppUser,
+        on_delete=models.CASCADE,
+        related_name="notifications",
+        verbose_name="사용자",
+    )
+
+    kind = models.CharField(
+        max_length=30,
+        choices=Kind.choices,
+        verbose_name="알림 종류",
+    )
+
+    title = models.CharField(
+        max_length=200,
+        verbose_name="제목",
+    )
+
+    body = models.CharField(
+        max_length=500,
+        blank=True,
+        default="",
+        verbose_name="본문",
+    )
+
+    # 눌렀을 때 갈 화면. 프런트의 화면 이름 그대로다 (goView 가 받는 값 —
+    # "mypage" · "salmal" · "trend"). 있지도 않은 깊은 주소를 적지 않는다.
+    link = models.CharField(
+        max_length=200,
+        blank=True,
+        default="",
+        verbose_name="이동 화면",
+    )
+
+    payload = models.JSONField(
+        default=dict,
+        blank=True,
+        verbose_name="알림 근거",
+    )
+
+    dedup_key = models.CharField(
+        max_length=200,
+        verbose_name="중복 방지 키",
+    )
+
+    read_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="읽은 시각",
+    )
+
+    # 사용자가 지운 알림. 행은 남긴다 — dedup_key 가 사라지면
+    # 배치나 다음 투표가 같은 알림을 다시 만들어 버린다.
+    deleted_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="지운 시각",
+    )
+
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="생성일시",
+    )
+
+    class Meta:
+        db_table = '"app"."notification"'
+        verbose_name = "알림"
+        verbose_name_plural = "알림"
+
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "dedup_key"],
+                name="uq_notification_user_key",
+            ),
+        ]
+
+        indexes = [
+            models.Index(
+                fields=["user", "-created_at"],
+                name="idx_noti_user_time",
+            ),
+            models.Index(
+                fields=["user", "read_at"],
+                name="idx_noti_user_read",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.user} / {self.get_kind_display()}"
+
+
+class NotificationSetting(models.Model):
+    """알림 끄기 단위 — 전체 하나 + 종류마다 하나.
+
+    행이 없으면 전부 켜진 것으로 본다(가입한 적 없는 사용자도 알림을 받는다).
+    종류를 늘릴 때 칸을 추가한다. JSON 한 칸에 몰아넣지 않은 이유는
+    '어떤 종류가 있는지'가 스키마에 드러나야 다음 사람이 읽을 수 있어서다.
+    """
+
+    user = models.OneToOneField(
+        AppUser,
+        on_delete=models.CASCADE,
+        related_name="notification_setting",
+        verbose_name="사용자",
+    )
+
+    enabled = models.BooleanField(
+        default=True,
+        verbose_name="전체 알림",
+    )
+
+    price_drop = models.BooleanField(
+        default=True,
+        verbose_name="찜한 상품 가격 하락",
+    )
+
+    vote_result = models.BooleanField(
+        default=True,
+        verbose_name="살!말? 투표 결과",
+    )
+
+    weekly_report = models.BooleanField(
+        default=True,
+        verbose_name="주간 트렌드 리포트",
+    )
+
+    badge = models.BooleanField(
+        default=True,
+        verbose_name="뱃지 달성",
+    )
+
+    term_added = models.BooleanField(
+        default=True,
+        verbose_name="용어 사전 등재",
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = '"app"."notification_setting"'
+        verbose_name = "알림 설정"
+        verbose_name_plural = "알림 설정"
+
+    def __str__(self):
+        return f"{self.user} / 알림 설정"
+
+
+class TermRequest(models.Model):
+    """사용자가 '사전에 올려 달라'고 요청한 용어.
+
+    dictionary.term_candidate 는 문서에서 자동으로 찾아낸 후보라 요청자가 없다.
+    누가 무엇을 요청했는지는 여기에만 남는다 — 등재 알림(7번)의 근거다.
+    """
+
+    class Status(models.TextChoices):
+        PENDING = "PENDING", "검토 대기"
+        ADDED = "ADDED", "등재됨"
+        REJECTED = "REJECTED", "반려"
+
+    user = models.ForeignKey(
+        AppUser,
+        on_delete=models.CASCADE,
+        related_name="term_requests",
+        verbose_name="요청자",
+    )
+
+    raw_term = models.CharField(
+        max_length=100,
+        verbose_name="요청 용어",
+    )
+
+    # 띄어쓰기·대소문자를 누른 비교용 이름. 등재 여부를 이 값으로 맞춘다.
+    normalized_term = models.CharField(
+        max_length=100,
+        verbose_name="정규화 이름",
+    )
+
+    note = models.CharField(
+        max_length=200,
+        blank=True,
+        default="",
+        verbose_name="요청 메모",
+    )
+
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.PENDING,
+        verbose_name="처리 상태",
+    )
+
+    term = models.ForeignKey(
+        "core.DictionaryTerm",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="requests",
+        verbose_name="등재된 용어",
+    )
+
+    resolved_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="처리 시각",
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = '"app"."term_request"'
+        verbose_name = "용어 등재 요청"
+        verbose_name_plural = "용어 등재 요청"
+
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "normalized_term"],
+                name="uq_term_request_user_term",
+            ),
+        ]
+
+        indexes = [
+            models.Index(
+                fields=["status", "normalized_term"],
+                name="idx_term_req_status",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.user} / {self.raw_term}"

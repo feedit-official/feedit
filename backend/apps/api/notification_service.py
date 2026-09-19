@@ -1,0 +1,332 @@
+"""알림을 실제로 만드는 자리 — DB 를 읽고 app.notification 에 남긴다.
+
+문구와 판정 기준은 notifications.py 에 있다. 여기서는 그것을 DB 에 붙인다.
+
+다루는 알림 (2026-09-19):
+  PRICE_DROP     찜한 상품 가격 하락 — 하루 한 번 묶어서 (배치)
+  VOTE_RESULT    살!말? 투표가 기준 표 수를 넘었을 때 (투표가 들어온 순간)
+  WEEKLY_REPORT  주간 트렌드 리포트 — 주 1회 (배치)
+  BADGE          뱃지 달성 (활동이 기록된 순간)
+  TERM_ADDED     요청한 용어가 사전에 올라갔을 때 (배치)
+
+★ 스타일 단계 변화 · FEEDiT Pick 갱신은 여기 없다.
+  단계 판정 규칙과 Pick 의 정의가 아직 확정되지 않았다 — 정해지면 더한다.
+
+★ 알림은 사용자의 동작을 막지 않는다.
+  화면 요청 도중에 부르는 함수(check_vote_result · check_badges)는
+  예외를 밖으로 내보내지 않는다. 대신 로그에 남긴다.
+"""
+from __future__ import annotations
+
+import logging
+from datetime import timedelta
+
+from django.db import transaction
+from django.db.models import Q
+from django.utils import timezone
+
+from apps.core.models import (
+    AppUser,
+    ChatSession,
+    DictionaryTerm,
+    Notification,
+    NotificationSetting,
+    ProductSourceSnapshot,
+    TermAlias,
+    TermRequest,
+    UserEvent,
+    UserSavedItem,
+    VoteBallot,
+)
+
+from . import notifications as rules
+from .badges import BADGE_LABELS, badge_states
+
+logger = logging.getLogger(__name__)
+
+
+def norm_term(value):
+    """'스투시 후디' → '스투시후디'. views.py 의 _norm 과 같은 규칙."""
+    return "".join(str(value or "").split()).lower()
+
+
+# ── 설정 ────────────────────────────────────────────────────
+
+def setting_of(profile):
+    """설정 행이 없으면 만들지 않는다 — 없으면 전부 켜진 것으로 본다."""
+    return NotificationSetting.objects.filter(user=profile).first()
+
+
+def allowed(profile, kind, setting=None):
+    row = setting if setting is not None else setting_of(profile)
+    if row is None:
+        return True
+    if not row.enabled:
+        return False
+    field = rules.SETTING_FIELD.get(kind)
+    return True if field is None else bool(getattr(row, field))
+
+
+# ── 한 건 만들기 ────────────────────────────────────────────
+
+def notify(profile, kind, dedup_key, title, body="", link="", payload=None, setting=None):
+    """알림 한 건. 이미 같은 키가 있거나 꺼 둔 종류면 None 을 돌려준다."""
+    if profile is None or not title:
+        return None
+    if not allowed(profile, kind, setting=setting):
+        return None
+    row, created = Notification.objects.get_or_create(
+        user=profile,
+        dedup_key=dedup_key,
+        defaults={
+            "kind": kind,
+            "title": title[:200],
+            "body": (body or "")[:500],
+            "link": (link or "")[:200],
+            "payload": payload or {},
+        },
+    )
+    return row if created else None
+
+
+# ── ① 찜한 상품 가격 하락 ───────────────────────────────────
+
+def _latest_price(source_ids):
+    """판매처 id → (가격, 관측일시). 판매가가 없으면 정가를 쓴다 (price-history 와 같은 규칙)."""
+    out = {}
+    ids = [i for i in source_ids if i]
+    if not ids:
+        return out
+    rows = (ProductSourceSnapshot.objects.filter(product_source_id__in=ids)
+            .order_by("product_source_id", "-observed_at", "-id")
+            .distinct("product_source_id")
+            .values("product_source_id", "list_price", "sale_price", "observed_at"))
+    for r in rows:
+        price = r["sale_price"] if r["sale_price"] is not None else r["list_price"]
+        if price is not None:
+            out[r["product_source_id"]] = (price, r["observed_at"])
+    return out
+
+
+def sync_saved_price(saved_item, product_source_id):
+    """찜한 순간의 가격을 기준값으로 박아 둔다.
+
+    이미 기준값이 있으면 건드리지 않는다 — 찜을 유지한 채로 기준이 바뀌면
+    '찜한 뒤 얼마나 내렸나' 를 셀 수 없다.
+    """
+    if saved_item is None or saved_item.saved_price is not None:
+        return False
+    latest = _latest_price([product_source_id])
+    got = latest.get(product_source_id)
+    if not got:
+        return False
+    price, observed_at = got
+    saved_item.saved_price = price
+    saved_item.saved_price_source_id = product_source_id
+    saved_item.saved_price_at = observed_at
+    saved_item.save(update_fields=["saved_price", "saved_price_source", "saved_price_at"])
+    return True
+
+
+def price_drop_digest(profile, now=None, setting=None):
+    """한 사용자의 오늘치 가격 하락 알림. 만들었으면 Notification, 아니면 None."""
+    now = now or timezone.now()
+    items = list(UserSavedItem.objects.filter(
+        user=profile, saved_price__isnull=False, saved_price_source__isnull=False,
+    ).select_related("saved_price_source", "product"))
+    if not items:
+        return None
+    latest = _latest_price([i.saved_price_source_id for i in items])
+
+    rows, by_key = [], {}
+    for item in items:
+        got = latest.get(item.saved_price_source_id)
+        if not got:
+            continue
+        current, _observed = got
+        # 이미 알린 가격이 있으면 그것과 견준다 — 같은 하락을 며칠 내리 알리지 않는다.
+        base = item.notified_price if item.notified_price is not None else item.saved_price
+        name = (item.saved_price_source.source_name
+                or (item.product.canonical_name if item.product_id else ""))
+        key = f"src-{item.saved_price_source_id}"
+        rows.append({"item_id": key, "name": name, "base": base, "current": current})
+        by_key[key] = (item, current)
+
+    drops = rules.price_drops(rows)
+    if not drops:
+        return None
+    title, body = rules.price_digest(drops)
+    day = rules.kst_day(now).isoformat()
+    row = notify(
+        profile, rules.PRICE_DROP, f"PRICE_DROP:{day}", title, body,
+        link="mypage",
+        payload={"items": [{"name": d["name"], "percent": d["percent"],
+                            "source_id": int(d["item_id"].split("-")[1]),
+                            "base": float(d["base"]), "current": float(d["current"])}
+                           for d in drops]},
+        setting=setting,
+    )
+    if row is None:
+        # 꺼 두었거나 오늘 이미 보냈다 — 기준값은 손대지 않는다.
+        return None
+    for d in drops:
+        item, current = by_key[d["item_id"]]
+        item.notified_price = current
+        item.notified_at = now
+        item.save(update_fields=["notified_price", "notified_at"])
+    return row
+
+
+def run_price_drops(now=None):
+    """배치 — 찜 기준가가 있는 사용자 전부. 만든 알림 수를 돌려준다."""
+    now = now or timezone.now()
+    user_ids = (UserSavedItem.objects.filter(saved_price__isnull=False)
+                .values_list("user_id", flat=True).distinct())
+    made = 0
+    for profile in AppUser.objects.filter(id__in=list(user_ids)):
+        try:
+            if price_drop_digest(profile, now=now) is not None:
+                made += 1
+        except Exception:
+            logger.exception("가격 하락 알림 실패 user=%s", profile.id)
+    return made
+
+
+# ── ② 살!말? 투표 결과 ──────────────────────────────────────
+
+def check_vote_result(card):
+    """표가 기준선을 넘었으면 카드 작성자에게 한 번 알린다."""
+    if card is None or card.user_id is None:
+        return None
+    try:
+        total = VoteBallot.objects.filter(card_id=card.id).count()
+        milestone = rules.vote_milestone(total)
+        if milestone is None:
+            return None
+        buys = VoteBallot.objects.filter(card_id=card.id, choice=VoteBallot.Choice.BUY).count()
+        title, body = rules.vote_result_text(total, buys, card.title or "")
+        return notify(
+            card.user, rules.VOTE_RESULT, f"VOTE_RESULT:{card.id}:{milestone}",
+            title, body, link="salmal",
+            payload={"card_id": card.id, "total": total, "buy": buys, "milestone": milestone},
+        )
+    except Exception:
+        logger.exception("투표 결과 알림 실패 card=%s", getattr(card, "id", None))
+        return None
+
+
+# ── ③ 뱃지 달성 ────────────────────────────────────────────
+
+def check_badges(profile, now=None):
+    """오늘 달성한 뱃지만 알린다.
+
+    ★ '오늘' 로 자르는 이유 — 예전에 딴 뱃지까지 한꺼번에 알리면
+      알림을 처음 켠 사람의 알림창이 옛날 뱃지로 가득 찬다.
+    """
+    if profile is None:
+        return []
+    now = now or timezone.now()
+    today = rules.kst_day(now).strftime("%Y.%m.%d")
+    made = []
+    try:
+        for badge_id, state in badge_states(profile).items():
+            if not state.get("earned") or state.get("date") != today:
+                continue
+            label = BADGE_LABELS.get(badge_id, badge_id)
+            title, body = rules.badge_text(label)
+            row = notify(profile, rules.BADGE, f"BADGE:{badge_id}", title, body,
+                         link="mypage", payload={"badge_id": badge_id, "label": label})
+            if row is not None:
+                made.append(row)
+    except Exception:
+        logger.exception("뱃지 알림 실패 user=%s", getattr(profile, "id", None))
+    return made
+
+
+# ── ④ 주간 트렌드 리포트 ───────────────────────────────────
+
+def run_weekly_reports(now=None):
+    """배치 — 지난 한 주에 활동이 있었던 사용자에게 주 1회.
+
+    활동이 없으면 보내지 않는다. 빈 리포트를 알리는 것은 소음이다.
+    리포트 내용은 화면이 /api/auth/weekly-report 로 그때 받아 그린다.
+    """
+    now = now or timezone.now()
+    day = rules.kst_day(now)
+    week_start = day - timedelta(days=day.weekday())
+    since = now - timedelta(days=7)
+    active = set(UserEvent.objects.filter(created_at__gte=since)
+                 .values_list("user_id", flat=True).distinct())
+    active |= set(ChatSession.objects.filter(updated_at__gte=since)
+                  .values_list("user_id", flat=True).distinct())
+    if not active:
+        return 0
+    title, body = rules.weekly_report_text(week_start)
+    made = 0
+    for profile in AppUser.objects.filter(id__in=list(active)):
+        try:
+            row = notify(profile, rules.WEEKLY_REPORT,
+                         f"WEEKLY_REPORT:{week_start.isoformat()}", title, body,
+                         link="trend",
+                         payload={"week_start": week_start.isoformat()})
+            if row is not None:
+                made += 1
+        except Exception:
+            logger.exception("주간 리포트 알림 실패 user=%s", profile.id)
+    return made
+
+
+# ── ⑤ 용어 사전 등재 ───────────────────────────────────────
+
+def find_active_term(raw_term, normalized):
+    """표준명 › 정규화명 › 별칭 순으로 ACTIVE 용어를 찾는다 (views._resolve_term 과 같은 순서)."""
+    base = DictionaryTerm.objects.filter(status=DictionaryTerm.Status.ACTIVE)
+    term = base.filter(canonical_name=raw_term).first()
+    if term:
+        return term
+    term = base.filter(normalized_name=normalized).first()
+    if term:
+        return term
+    alias_id = (TermAlias.objects.filter(Q(alias=raw_term) | Q(normalized_alias=normalized))
+                .values_list("term_id", flat=True).first())
+    return base.filter(id=alias_id).first() if alias_id else None
+
+
+def run_term_added(now=None):
+    """배치 — 검토 대기 중인 요청 중 사전에 오른 것을 찾아 알린다."""
+    now = now or timezone.now()
+    made = 0
+    pending = (TermRequest.objects.filter(status=TermRequest.Status.PENDING)
+               .select_related("user"))
+    for req in pending:
+        try:
+            term = find_active_term(req.raw_term, req.normalized_term)
+            if term is None:
+                continue
+            with transaction.atomic():
+                req.status = TermRequest.Status.ADDED
+                req.term = term
+                req.resolved_at = now
+                req.save(update_fields=["status", "term", "resolved_at", "updated_at"])
+                title, body = rules.term_added_text(req.raw_term, term.canonical_name)
+                row = notify(req.user, rules.TERM_ADDED, f"TERM_ADDED:{req.id}", title, body,
+                             link="trend",
+                             payload={"term_request_id": req.id, "term_id": term.id,
+                                      "canonical_name": term.canonical_name})
+            if row is not None:
+                made += 1
+        except Exception:
+            logger.exception("용어 등재 알림 실패 request=%s", req.id)
+    return made
+
+
+# ── 배치 묶음 ──────────────────────────────────────────────
+
+def run_daily(now=None):
+    now = now or timezone.now()
+    return {"price_drop": run_price_drops(now), "term_added": run_term_added(now)}
+
+
+def run_weekly(now=None):
+    now = now or timezone.now()
+    return {"weekly_report": run_weekly_reports(now)}

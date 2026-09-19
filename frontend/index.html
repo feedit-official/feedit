@@ -183,6 +183,28 @@
           <button type="button" class="out" id="menuLogout"><i>→</i>로그아웃</button>
         </div>
       </span>
+      <!-- 알림 — 닉네임 오른쪽. 로그인 전에는 숨긴다 (account/static/js/notify.js) -->
+      <span class="notiWrap" id="notiWrap" hidden>
+        <button type="button" class="notiBtn" id="notiBtn" aria-label="알림" aria-expanded="false">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M18 8.6a6 6 0 10-12 0c0 4.8-2 6.4-2 6.4h16s-2-1.6-2-6.4"/>
+            <path d="M10.2 18.6a2.1 2.1 0 003.6 0"/>
+          </svg>
+          <em class="notiDot" id="notiDot" hidden></em>
+        </button>
+        <div class="notiPanel" id="notiPanel">
+          <div class="notiHead">
+            <b>알림</b>
+            <span class="notiHeadBtns">
+              <button type="button" class="notiTxtBtn" id="notiReadAll">모두 읽음</button>
+              <button type="button" class="notiTxtBtn" id="notiDelAll">모두 삭제</button>
+            </span>
+          </div>
+          <div class="notiList" id="notiList"></div>
+          <button type="button" class="notiSetLink" id="notiSetLink">알림 설정</button>
+        </div>
+      </span>
     </div>
   </header>
 
@@ -996,6 +1018,29 @@
     <div class="modalHead"><h3 id="stFitTitle">Virtual Fitting</h3>
       <button type="button" class="modalClose" id="stFitClose" aria-label="닫기"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
     <div class="infFeed" id="stFitGrid"></div>
+  </div>
+</div>
+
+<!-- ── 알림 설정 (헤더 닉네임 메뉴 · 알림 패널에서 연다) ── -->
+<div class="acctModal" id="notiSetModal">
+  <div class="modalCard">
+    <div class="modalHead"><h3>알림 설정</h3>
+      <button type="button" class="modalClose" id="notiSetClose" aria-label="닫기"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+
+    <label class="notiSetRow notiSetAll">
+      <span class="notiSetName"><b>전체 알림</b>
+        <em>끄면 아래 알림이 하나도 오지 않아요.</em></span>
+      <input type="checkbox" class="notiSw" id="notiSetAll">
+      <i class="notiSwUi" aria-hidden="true"></i>
+    </label>
+
+    <div class="notiSetKinds" id="notiSetKinds"></div>
+
+    <p class="fieldMsg" id="notiSetMsg"></p>
+    <div class="modalBtns">
+      <button type="button" class="pill ghost" id="notiSetCancel">닫기</button>
+      <button type="button" class="pill" id="notiSetSave">저장하기</button>
+    </div>
   </div>
 </div>
 

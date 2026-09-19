@@ -193,8 +193,6 @@
   transition:color .3s var(--ease);
 }
 .mAuth .pill.me:hover{background:none;color:var(--pink-0);transform:none}
-.mAuth .meAv{width:26px;height:26px;border-radius:50%;background:var(--pink-0);color:var(--paper);
-  display:grid;place-items:center;font-size:11px;font-weight:600;flex:0 0 auto}
 /* 이름 뒤 작은 갈매기 — 메뉴가 열리면 뒤집힌다 */
 .mAuth .meCaret{
   width:9px;height:9px;flex:0 0 auto;opacity:.42;margin-left:-2px;

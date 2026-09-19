@@ -1,0 +1,117 @@
+/* 알림 — 헤더 종 아이콘 · 패널 · 설정 모달의 스위치.
+   색은 전부 tokens.css 의 변수를 쓴다 (새 색을 만들지 않는다). */
+
+.notiWrap{position:relative;display:inline-flex;align-items:center;margin-left:2px}
+
+.notiBtn{
+  position:relative;width:32px;height:32px;border:0;background:none;padding:0;
+  display:grid;place-items:center;border-radius:9px;color:var(--pink-1);
+  transition:color .24s var(--ease),background .24s var(--ease);
+}
+.notiBtn svg{width:19px;height:19px}
+.notiBtn:hover{color:var(--pink-0);background:rgba(10,10,10,.05)}
+
+/* 안 읽은 알림이 있을 때만 뜨는 점 — 숫자를 적지 않는다.
+   몇 건인지는 패널을 열면 보인다. 헤더에 숫자가 붙으면 읽어야 할 빚처럼 보인다. */
+.notiDot{
+  position:absolute;top:5px;right:6px;width:7px;height:7px;border-radius:50%;
+  background:var(--coral);border:1.5px solid var(--paper);
+}
+
+.notiPanel{
+  position:absolute;right:0;top:calc(100% + 8px);z-index:30;width:min(340px,86vw);
+  background:#fff;border:1px solid var(--pink-3);border-radius:12px;padding:6px;
+  box-shadow:0 24px 48px -24px rgba(10,10,10,.4);
+  opacity:0;visibility:hidden;transform:translateY(-6px);
+  transition:opacity .26s var(--ease),transform .26s var(--ease),visibility .26s;
+}
+.notiPanel.on{opacity:1;visibility:visible;transform:translateY(0)}
+
+.notiHead{display:flex;align-items:center;justify-content:space-between;padding:8px 10px 6px}
+.notiHead b{font-size:13px;font-weight:600;letter-spacing:-.02em;color:var(--pink-0)}
+.notiHeadBtns{display:inline-flex;align-items:center;gap:4px}
+.notiTxtBtn{border:0;background:none;padding:2px 4px;font-size:12px;color:var(--pink-2);
+  transition:color .24s var(--ease)}
+.notiTxtBtn:hover{color:var(--coral)}
+
+/* 높이는 notify.js 의 fitList() 가 여섯 번째 알림 위치를 재서 인라인으로 박는다.
+   아직 화면에 없어 재지 못했을 때를 위해 여기에도 상한을 둔다. */
+.notiList{overflow:auto}
+.notiList.scrolls{max-height:min(420px,56vh)}
+.notiEmpty{padding:26px 14px;text-align:center;font-size:12.5px;line-height:1.7;color:var(--pink-2)}
+
+/* 알림 한 줄 = 본문 버튼 + 휴지통 버튼 */
+.notiItem{
+  display:flex;align-items:flex-start;gap:2px;width:100%;
+  border-radius:9px;transition:background .2s var(--ease);
+}
+.notiItem:hover{background:rgba(10,10,10,.04)}
+.notiOpen{
+  flex:1;display:grid;gap:3px;text-align:left;border:0;background:none;
+  padding:11px 4px 11px 12px;min-width:0;
+}
+/* 휴지통은 평소 흐리다 — 알림을 읽는 것이 먼저다 */
+.notiDel{
+  flex:0 0 auto;width:30px;height:30px;margin:8px 6px 0 0;border:0;background:none;
+  display:grid;place-items:center;border-radius:8px;color:var(--pink-2);opacity:0;
+  transition:opacity .2s var(--ease),color .2s var(--ease),background .2s var(--ease);
+}
+.notiDel svg{width:15px;height:15px}
+.notiItem:hover .notiDel,.notiDel:focus-visible{opacity:1}
+.notiDel:hover{color:var(--coral);background:rgba(10,10,10,.05)}
+.notiKind{font-size:10.5px;letter-spacing:.02em;color:var(--pink-2)}
+.notiTitle{font-size:13px;line-height:1.5;color:var(--pink-0);letter-spacing:-.02em}
+.notiBody{font-size:12px;line-height:1.6;color:var(--pink-1)}
+.notiAgo{font-size:11px;color:var(--pink-2)}
+
+/* 안 읽은 알림 — 왼쪽에 코랄 선. 글자를 굵게 하는 대신 선으로 표시한다 */
+.notiItem.unread{box-shadow:inset 2px 0 0 var(--coral)}
+.notiItem.unread .notiTitle{font-weight:600}
+/* 손가락으로 쓰는 화면에는 hover 가 없다 — 휴지통을 늘 보여 준다 */
+@media (hover:none){ .notiDel{opacity:1} }
+
+.notiSetLink{
+  width:100%;border:0;background:none;padding:10px;margin-top:2px;
+  border-top:1px solid var(--pink-3);font-size:12.5px;color:var(--pink-1);
+  transition:color .24s var(--ease);
+}
+.notiSetLink:hover{color:var(--coral)}
+
+/* ── 알림 설정 모달 ─────────────────────────────────── */
+.notiSetRow{
+  display:flex;align-items:center;gap:14px;padding:13px 2px;cursor:pointer;
+  border-bottom:1px solid var(--pink-3);
+}
+.notiSetKinds .notiSetRow:last-child{border-bottom:0}
+.notiSetAll{border-bottom:1px solid var(--pink-3);margin-bottom:4px}
+.notiSetName{flex:1;display:grid;gap:3px}
+.notiSetName b{font-size:13.5px;font-weight:600;letter-spacing:-.02em;color:var(--pink-0)}
+.notiSetName em{font-style:normal;font-size:12px;line-height:1.6;color:var(--pink-2)}
+
+/* 전체 알림을 끄면 종류별 칸은 흐려진다 — 눌러도 되지만 지금은 아무것도 오지 않는다 */
+.notiSetKinds.off{opacity:.45}
+
+/* 스위치 — 진짜 체크박스를 화면 밖에 두고 그 옆의 <i> 를 그린다.
+   키보드(Tab·Space)로도 그대로 켜고 끌 수 있다. */
+.notiSw{position:absolute;opacity:0;width:0;height:0}
+.notiSwUi{
+  flex:0 0 auto;width:40px;height:23px;border-radius:999px;position:relative;
+  background:var(--pink-3);transition:background .26s var(--ease);
+}
+.notiSwUi::after{
+  content:'';position:absolute;top:3px;left:3px;width:17px;height:17px;border-radius:50%;
+  background:#fff;box-shadow:0 1px 3px rgba(10,10,10,.28);
+  transition:transform .26s var(--ease);
+}
+.notiSw:checked + .notiSwUi{background:var(--coral)}
+.notiSw:checked + .notiSwUi::after{transform:translateX(17px)}
+.notiSw:focus-visible + .notiSwUi{outline:2px solid var(--pink-0);outline-offset:2px}
+
+/* ── 검색창의 '사전 등재 요청' 버튼 ─────────────────── */
+.termReqBtn{
+  display:inline-block;margin-top:10px;padding:7px 12px;border-radius:999px;
+  border:1px solid var(--pink-3);background:#fff;font-size:12px;color:var(--pink-1);
+  transition:border-color .24s var(--ease),color .24s var(--ease);
+}
+.termReqBtn:hover:not(:disabled){border-color:var(--coral);color:var(--coral)}
+.termReqBtn:disabled{opacity:.7}

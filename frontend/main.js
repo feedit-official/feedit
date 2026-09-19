@@ -21,6 +21,7 @@ import './trend/static/js/discount_resale.js';
 import './account/static/js/rank.js';
 import './trend/static/js/my_feed.js';
 import './account/static/js/profile.js';
+import './account/static/js/notify.js';
 import './style/static/js/search.js';
 import './trend/static/js/assoc_popover.js';
 import './salmal/static/js/nav_widget.js';

@@ -1,4 +1,4 @@
-import { $, $$ } from '../../../core/static/js/dom.js';
+import { $ } from '../../../core/static/js/dom.js';
 import { ME } from './profile.js';
 
 /* ══════════════════════════════════════════════════════
@@ -100,7 +100,7 @@ export function xpPaint(){
 }
 /* 화면에 있는 내 아바타를 한 번에 맞춘다 */
 export function rkPaintAll(){
+  /* 헤더 닉네임 옆의 작은 원(.mAuth .meAv)은 2026-09-19 에 없앴다 (알림 아이콘 자리). */
   [$('#avatarInitial'), $('#trProfAv'), $('#sFoot .av')]
     .forEach(el=>rkPaintAv(el, ME.rank));
-  $$('.mAuth .meAv').forEach(el=>rkPaintAv(el, ME.rank));
 }

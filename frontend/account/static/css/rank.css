@@ -136,13 +136,10 @@
 
 /* 링이 붙는 자리마다 지름만 알려 준다. 나머지(간격·굵기)는 비례로 따라온다. */
 .acct .avatarCircle{--rkS:78px;  --rk-sep:#fff}
-.mAuth .meAv       {--rkS:22px;  --rk-sep:var(--pink-0)}   /* 검은 알약 안에 있다 */
 .trProfAv          {--rkS:100px; --rk-sep:#fff}
 .sFoot .av         {--rkS:31px;  --rk-sep:var(--side)}
 /* 아바타 안의 이니셜이 링 아래로 깔리지 않게 */
 .rkAv > .rkRing,.rkAv > .rkGloss{z-index:1}
-/* 작은 자리에서는 두 번째 겹이 뭉개지므로 접는다 — 테두리 색만으로도 읽힌다 */
-.mAuth .meAv .rkRing i.o2,.mAuth .meAv .rkRing b.aura{display:none}
 /* 사이드바 아바타는 옛 브래스 링을 쓰지 않는다 */
 .sFoot .av{background:var(--coral)}
 
