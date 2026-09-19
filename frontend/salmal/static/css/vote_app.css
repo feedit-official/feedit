@@ -238,6 +238,10 @@
 .ctxMenu button:hover{background:var(--paper)}
 .ctxMenu button.danger{color:#c73a24}
 .ctxMenu button.danger:hover{background:rgba(199,58,36,.07)}
+/* ★ 2026-09-19 — 위 display:flex 가 hidden 속성을 덮어써서 '삭제하기'가 모든 사람에게 보였다.
+   권한 없는 사람에게는 버튼 자체를 숨긴다 (서버도 403 으로 막는다). */
+.ctxMenu button[hidden]{display:none}
+.ctxMenu button[hidden]+button{border-top:0}
 .cMenuBtn{
   margin-left:auto;color:var(--pink-2);padding:2px 7px;border-radius:6px;
   font-size:15px;line-height:1;transition:background .2s,color .2s;
