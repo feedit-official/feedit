@@ -91,6 +91,8 @@ document.addEventListener('feedit:saved',()=>{
   STOCK_SAVED.loadedAt=0; STOCK_SAVED.promise=null;
   if(TR_CUR==='stock')stockLoadSaved(STOCK_SAVED.status==='ok');
 });
+/* 찜이 서버 원본으로 바뀌면(로그인·로그아웃) 찜한 키워드 화면을 다시 그린다 */
+document.addEventListener('feedit:liked-sync',()=>{ if(TR_CUR==='saved')trRender('saved'); });
 document.addEventListener('feedit:auth',()=>{
   stockSavedSeq++;
   STOCK_SAVED.items=[]; STOCK_SAVED.status='idle'; STOCK_SAVED.error='';

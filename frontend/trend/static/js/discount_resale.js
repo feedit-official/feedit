@@ -21,9 +21,8 @@ const SV_KIND={
 /* ══════════════════════════════════════════════════════════════
    ★ 데이터 출처 (2026-09)
    --------------------------------------------------------------
-   찜 목록은 스타일 페이지 '이 스타일의 아이템'(실데이터 상품)에서 하트를 눌러 쌓인
-   chat.js 의 LIKED(localStorage) 를 읽는다. 로그인·사용자 테이블이 아직 없어서
-   찜 저장만 브라우저에 두는 목업이다.
+   찜 목록은 chat.js 의 LIKED 를 읽는다. 로그인하면 서버 원본(/api/auth/saved?view=all)으로
+   맞춰진 사본이다 (2026-09-19).
 
    실데이터
    - 상품 정보 : 상품명 · 브랜드 · 이미지 · 가격 · 카테고리 · 링크 (/api/products)
@@ -32,20 +31,12 @@ const SV_KIND={
    - 최저가   : 상품 가격 스냅샷의 최저·최고·현재가 (/api/price-history)
    - 이슈 유형 : 위 두 실값으로 판정한다 (최저가 → 온도 ±5 이상 → 잠잠)
 
-   목업
-   - 같은 걸 찜한 사람 수 : 사용자 데이터가 없어 상품 id 고정 난수로 채운다.
+   - 같은 걸 찜한 사람 수 : 서버가 센 '지금 찜해 둔 사용자 수(나 포함)'. 모르면 적지 않는다.
 
    값이 없으면 지어내지 않고 '측정 전' · '—' 로 둔다.
    ══════════════════════════════════════════════════════════════ */
 const svEsc=v=>String(v==null?'':v).replace(/[&<>"']/g,c=>({
   '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-/* 상품 id → 고정 난수 (같은 걸 찜한 사람 수 목업 전용) */
-function svSeed(id){
-  let h=2166136261;
-  for(const ch of String(id)){ h^=ch.charCodeAt(0); h=Math.imul(h,16777619); }
-  h^=h>>>13; h=Math.imul(h,3266489917); h^=h>>>16;
-  return (h>>>0)/4294967296;
-}
 /* '189,000원' 같은 문자열에서도 숫자를 되찾는다 (예전에 저장된 찜 · 추천 카드) */
 const svNum=v=>{ if(typeof v==='number')return Number.isFinite(v)?v:null;
   const n=Number(String(v||'').replace(/[^0-9]/g,'')); return n>0?n:null; };
@@ -138,7 +129,7 @@ function svBuild(id,d){
   }[kind];
   return { id, n:d.nm||'상품명 없음', b:d.br||'', img:d.img||'', url:d.url||'',
            p, lo, hi, atLow, d:days, idx, was, dl, k:kind, why, note, asOf:t.asOf||null,
-           same:Math.round(120+svSeed(id)*2400) };   /* ← 유일한 목업 값 */
+           same:Number.isFinite(d.same)?d.same:null };
 }
 
 /* 찜 목록 → 화면 데이터. 위에서부터 오늘 시끄러운 순서(최저가 → 온도 변화 폭 → 잠잠 → 측정 전). */
@@ -205,7 +196,7 @@ export function svRender(body){
           '<div><span>지난주 대비</span><b>'+(h.dl==null?'—':(h.dl>=0?'+':'')+h.dl)+'</b></div>'+
         '</div>'+
         '<div class="svMeta">'+[h.p?svWon(h.p):'', h.lo!=null?'기록 최저 '+svWon(h.lo):'',
-          '같은 걸 찜한 사람 '+h.same.toLocaleString('ko-KR')+'명'].filter(Boolean).join(' · ')+'</div>'+
+          h.same!=null?'같은 걸 찜한 사람 '+h.same.toLocaleString('ko-KR')+'명':''].filter(Boolean).join(' · ')+'</div>'+
         '<button type="button" class="pill" style="margin-top:16px" id="svToSalmal"><i>→</i> 살!말?에 올리기</button>'+
       '</div>'+
     '</section>'+
@@ -244,7 +235,7 @@ export function svRender(body){
       '<div class="wkNote"><i>◆</i><span>'+
         (loading?'실데이터를 불러오는 중입니다. ':'')+
         '온도는 상품이 속한 <b>스타일의 트렌드 온도</b>(지난 7일 비교), 최저가는 <b>수집된 가격 기록</b> 기준입니다. '+
-        '같은 걸 찜한 사람 수는 사용자 데이터 연동 전 <b>목업 값</b>입니다.</span></div>'+
+        '같은 걸 찜한 사람 수는 FEEDiT 에서 <b>지금 찜해 둔 사용자</b>(나 포함)입니다.</span></div>'+
     '</section>'+
     '</div>';
 

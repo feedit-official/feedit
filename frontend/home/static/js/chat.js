@@ -1,6 +1,7 @@
 import { $, $$, HAS_A, aAnimate, aSpring, aStagger, aTimeline, aUtils } from '../../../core/static/js/dom.js';
 import { cpKeyFor, openChatWith } from './chat_popup.js';
 import { MAX_IMAGES, imageFileToDataURL, bindImageDrop } from './chat_api.js';
+import { savedAll, saveLiked } from '../../../account/static/js/account_api.js';
 
 /* ============================================================
    메인 — 홈(챗봇) / 트렌드 분석 / 살!말? / Style / 요금제
@@ -112,22 +113,57 @@ const cardEsc=v=>String(v==null?'':v).replace(/[&<>"']/g,c=>({
 }[c]));
 const cardImage=v=>/^(https?:\/\/|\/|assets\/)/i.test(String(v||''))?String(v):'';
 const cardLink=v=>/^https?:\/\//i.test(String(v||''))?String(v):'';
-/* ★ 찜 목업 저장 — 실제 로그인·사용자 테이블이 백엔드에 아직 없어서
-   브라우저 localStorage 에 찜 목록을 둔다. 새로고침해도 찜이 남고,
-   트렌드 분석 › 찜한 키워드 화면이 이 목록을 그대로 읽는다.
-   백엔드에 사용자 찜 API 가 생기면 likedLoad/likedSave 두 함수만 바꾸면 된다. */
+/* ★ 2026-09-19 — 찜의 원본은 서버(/api/auth/saved?view=all)다.
+   localStorage 는 화면을 빨리 그리기 위한 사본이고, 누구의 사본인지(owner)를 같이 적는다.
+   · 로그인하면 likedSync(uid) 가 서버 목록으로 갈아 끼운다.
+   · 예전 형식(owner 없는 배열)은 서버 도입 전 이 브라우저에 쌓인 찜이다 —
+     처음 로그인한 계정으로 한 번만 옮긴다(likedSync). 다른 계정의 사본은 옮기지 않는다.
+   · 로그아웃하면 비운다(likedClear) — 다음 사람이 앞 사람의 찜을 보지 않게. */
 const LIKED_KEY='feedit.liked.v1';
+let LIKED_OWNER=null;     /* 사본의 주인 (app_user id). null 이면 예전 형식 */
+let LIKED_LEGACY=false;   /* 예전 형식에서 읽었나 — 서버로 한 번 옮길 대상 */
 function likedSave(){
-  try{ localStorage.setItem(LIKED_KEY, JSON.stringify([...LIKED.entries()])); }
+  try{ localStorage.setItem(LIKED_KEY, JSON.stringify({v:2, owner:LIKED_OWNER, entries:[...LIKED.entries()]})); }
   catch(e){ /* 저장소를 못 쓰는 환경(시크릿 창 등)은 이번 세션 메모리로만 유지한다 */ }
 }
 function likedLoad(){
   try{
-    const arr=JSON.parse(localStorage.getItem(LIKED_KEY)||'null');
-    if(!Array.isArray(arr)) return false;
+    const raw=JSON.parse(localStorage.getItem(LIKED_KEY)||'null');
+    const arr=Array.isArray(raw)?raw:(raw&&Array.isArray(raw.entries)?raw.entries:null);
+    if(!arr) return false;
+    LIKED_LEGACY=Array.isArray(raw);
+    LIKED_OWNER=Array.isArray(raw)?null:(raw.owner??null);
     arr.forEach(e=>{ if(Array.isArray(e)&&e[0]&&e[1]) LIKED.set(e[0], e[1]); });
     return true;
   }catch(e){ return false; }
+}
+function savedToCard(it){
+  const st=STYLES.find(s=>s.n===it.style);
+  const price=Number.isFinite(it.sale_price)?it.sale_price:(Number.isFinite(it.list_price)?it.list_price:null);
+  return { img:it.image||'', br:it.brand||'', nm:it.name||'', pr:price!=null?price.toLocaleString('ko-KR')+'원':'',
+           style:st?st.id:'', styleName:it.style||'', cat:it.category||'', price, listPrice:it.list_price??null,
+           url:it.url||'', likedAt:Date.parse(it.liked_at)||Date.now(),
+           same:Number.isFinite(it.same_count)?it.same_count:null };
+}
+/* 로그인한 사용자의 찜을 서버에서 받아 LIKED 를 갈아 끼운다. 실패하면 사본을 그대로 둔다. */
+export async function likedSync(uid){
+  let data;
+  try{ data=await savedAll(); }catch(e){ return false; }
+  const server=new Map((data.items||[]).map(it=>[it.item_id, savedToCard(it)]));
+  /* 예전 형식 사본은 이 브라우저에서 처음 로그인한 계정으로 한 번만 옮긴다 */
+  if(LIKED_LEGACY||(LIKED_OWNER==null&&LIKED.size)){
+    const local=[...LIKED.entries()].filter(([id])=>!server.has(id));
+    await Promise.all(local.map(([id,d])=>saveLiked({itemId:id,liked:true,name:d.nm||'',brand:d.br||'',style:d.styleName||''})));
+    local.forEach(([id,d])=>server.set(id,{...d,same:null}));
+  }
+  LIKED.clear(); server.forEach((v,k)=>LIKED.set(k,v));
+  LIKED_OWNER=uid??null; LIKED_LEGACY=false; likedSave();
+  document.dispatchEvent(new CustomEvent('feedit:liked-sync'));
+  return true;
+}
+export function likedClear(){
+  LIKED.clear(); LIKED_OWNER=null; LIKED_LEGACY=false; likedSave();
+  document.dispatchEvent(new CustomEvent('feedit:liked-sync'));
 }
 likedLoad();
 export function toggleLike(id){

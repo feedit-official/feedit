@@ -358,6 +358,73 @@ def vote_report(request):
 
 # ── ③ 찜 ────────────────────────────────────────────────────
 
+def _liked_now(events):
+    """(item_id → 최신 이벤트) 에서 지금 찜 상태인 것만. events 는 최신순."""
+    latest = {}
+    for e in events:
+        meta = e["metadata"] if isinstance(e["metadata"], dict) else {}
+        key = (e["user_id"], str(meta.get("item_id") or ""))
+        if key[1] and key not in latest:
+            latest[key] = (bool(meta.get("liked")), e["created_at"], meta)
+    return latest
+
+
+def _saved_all(profile):
+    """GET /api/auth/saved?view=all — 화면 전체(마이페이지 · 찜한 키워드)가 쓰는 찜 원본.
+
+    ★ 2026-09-19 — 찜의 원본을 서버 하나로 모은다.
+      예전에는 브라우저 localStorage(LIKED)와 서버 기록이 따로 놀아 기기·계정마다 찜이 달랐다.
+      SAVE 이벤트의 최신 상태가 원본이다(상품 매핑 여부와 상관없이 남는다).
+    same_count — 같은 항목을 지금 찜해 둔 사용자 수(나 포함). 예전 화면은 난수였다.
+    """
+    mine_events = (UserEvent.objects.filter(user=profile, event_type=UserEvent.EventType.SAVE)
+                   .order_by("-created_at", "-id").values("user_id", "metadata", "created_at"))
+    mine = {item: v for (uid, item), v in _liked_now(mine_events).items() if v[0]}
+    if not mine:
+        return JsonResponse({"status": "ok", "data": {"items": [], "count": 0}})
+    # 같은 항목을 찜한 사람 수
+    others = (UserEvent.objects.filter(event_type=UserEvent.EventType.SAVE,
+                                       metadata__item_id__in=list(mine))
+              .order_by("-created_at", "-id").values("user_id", "metadata", "created_at"))
+    same = {}
+    for (uid, item), (liked, _at, _m) in _liked_now(others).items():
+        if liked:
+            same[item] = same.get(item, 0) + 1
+    # 실데이터 상품(db-<product_source_id>)은 상품 정보 · 최신 가격을 붙인다
+    src_ids = [int(m.group(1)) for m in (DB_ITEM_RE.match(i) for i in mine) if m]
+    sources = {s.id: s for s in ProductSource.objects.filter(id__in=src_ids)
+               .select_related("product", "product__brand", "source_brand", "source_category")}
+    latest = {}
+    if src_ids:
+        for snap in (ProductSourceSnapshot.objects.filter(product_source_id__in=src_ids)
+                     .order_by("product_source_id", "-observed_at", "-id")
+                     .distinct("product_source_id")
+                     .values("product_source_id", "list_price", "sale_price")):
+            latest[snap["product_source_id"]] = snap
+    items = []
+    for item_id, (_liked, liked_at, meta) in sorted(mine.items(), key=lambda kv: kv[1][1], reverse=True):
+        row = {"item_id": item_id, "liked_at": liked_at,
+               "name": meta.get("name") or "", "brand": meta.get("brand") or "",
+               "style": meta.get("style") or "", "same_count": same.get(item_id, 1)}
+        m = DB_ITEM_RE.match(item_id)
+        src = sources.get(int(m.group(1))) if m else None
+        if src is not None:
+            snap = latest.get(src.id) or {}
+            brand = (src.product.brand.name if src.product_id and src.product.brand_id
+                     else src.source_brand.name if src.source_brand_id else "")
+            row.update({
+                "name": src.source_name or row["name"],
+                "brand": brand or row["brand"],
+                "image": src.thumbnail_url,
+                "url": src.product_url,
+                "category": src.source_category.source_category_name if src.source_category_id else "",
+                "list_price": float(snap["list_price"]) if snap.get("list_price") is not None else None,
+                "sale_price": float(snap["sale_price"]) if snap.get("sale_price") is not None else None,
+            })
+        items.append(row)
+    return JsonResponse({"status": "ok", "data": {"items": items, "count": len(items)}})
+
+
 @require_http_methods(["GET", "POST"])
 def saved(request):
     """GET: 로그인 사용자의 일반 판매 찜 상품. POST: 찜/해제 기록.
@@ -367,6 +434,8 @@ def saved(request):
     profile = _login_profile(request)
     if profile is None:
         return _error("로그인이 필요합니다.", status=401)
+    if request.method == "GET" and request.GET.get("view") == "all":
+        return _saved_all(profile)
     if request.method == "GET":
         # 원본 상품을 매핑하지 못한 찜도 SAVE 이벤트에는 남는다.
         # 최신 이벤트가 해제인 상품은 되살리지 않는다.

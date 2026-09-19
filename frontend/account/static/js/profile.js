@@ -1,6 +1,6 @@
 import { $, $$, HAS_A, aAnimate, aStagger } from '../../../core/static/js/dom.js';
 import { BADGES, bgDetail, bgRender } from './badges.js';
-import { IMG, itemCard, LIKED, STYLES, toggleLike } from '../../../home/static/js/chat.js';
+import { IMG, itemCard, LIKED, STYLES, toggleLike, likedSync, likedClear } from '../../../home/static/js/chat.js';
 import { SIMG } from '../../../style/static/js/style_page.js';
 import { styleProductCard, styleProductsURL } from '../../../style/static/js/products.js';
 import { goView } from '../../../app_shell/static/js/router.js';
@@ -144,9 +144,8 @@ function runPendingAuth(){
 }
 /* 회원가입 진행 중 구글 모드 여부 — 가입 폼을 벗어나면 반드시 초기화된다 */
 let signupGoogleMode = false;
-/* 찜(위시리스트) — 실제 사용자 데이터가 없으므로 localStorage 목업(chat.js)이 출처다.
-   예전에는 트렌드의 SV 예시 9개를 시드로 넣었지만, 이제 찜한 키워드 화면이
-   '내가 실제로 찜한 상품'으로 그려지므로 가짜 시드는 넣지 않는다. */
+/* 찜(위시리스트) — 원본은 서버(/api/auth/saved?view=all), 화면은 chat.js 의 LIKED 사본을 읽는다.
+   로그인·세션 복구 때 likedAfterAuth() 가 서버 목록으로 맞춘다 (2026-09-19). */
 
 /* 헤더 오른쪽 — 로그인 전에는 [로그인], 후에는 [혁진] 버튼이 마이페이지로 */
 function authPaint(){
@@ -178,9 +177,18 @@ function acctMenu(on){
     if(w) w.classList.toggle('open', m.classList.contains('on'));
   }
 }
+/* 찜을 서버 원본으로 맞춘 뒤 숫자·마이페이지를 다시 그린다 */
+function likedAfterAuth(){
+  likedSync(ME.id).then(ok=>{
+    if(!ok)return;
+    const n=$('#statSavedN'); if(n)n.textContent=LIKED.size;
+    if(document.body.dataset.view==='mypage')myRender();
+  });
+}
 function authLogin(user){
   applyAccount(user);
   AUTH.in = true;
+  likedAfterAuth();
   document.dispatchEvent(new CustomEvent('feedit:auth'));
   authPaint();
   goView('home');
@@ -190,6 +198,7 @@ async function authLogout(){
   try{
     await logoutAccount();
     AUTH.in = false;
+    likedClear();
     document.dispatchEvent(new CustomEvent('feedit:auth'));
     pendingAfterAuth = null;
     authPaint();
@@ -200,6 +209,7 @@ async function authLogout(){
    '즐겨입는 스타일' 선택 팝업을 띄운다. 팝업을 닫아도 화면은 홈에 그대로 남는다. */
 function signupComplete(){
   AUTH.in = true;
+  likedAfterAuth();
   document.dispatchEvent(new CustomEvent('feedit:auth'));
   authPaint();
   ME.styles.clear();   /* 팝업은 항상 빈 상태에서 시작한다 */
@@ -823,6 +833,7 @@ if(suW) suW.addEventListener('input', bodyHint);
   session().then(data=>{
     if(!data.authenticated||!data.user)return;
     applyAccount(data.user); AUTH.in=true; authPaint();
+    likedAfterAuth();
     acctChips($('#styleWrap'),ME.styles);
     if(document.body.dataset.view==='mypage')myRender();
   }).catch(e=>console.warn('[account]',e.message||e));

@@ -95,6 +95,9 @@ export const deleteVoteCard = cardId =>
 export const saveLiked = ({ itemId, liked, name = '', brand = '', style = '' }) =>
   quiet(request('saved', { method:'POST', body:{ item_id:itemId, liked, name, brand, style } }));
 
+/* 찜 전체(마이페이지 · 찜한 키워드) — 서버 SAVE 기록의 최신 상태가 원본. same_count 포함 */
+export const savedAll = () => request('saved?view=all');
+
 /* 할인률 페이지의 찜목록은 브라우저 저장소가 아닌 로그인 사용자의 DB 기록을 읽는다. */
 export const savedProducts = () => request('saved');
 
