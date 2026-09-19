@@ -137,7 +137,7 @@ class JobReviewTextTest(unittest.TestCase):
         from apps.api.notifications import job_review_text
         title, body = job_review_text("MD", False, "서류가 흐려요")
         self.assertEqual(title, "MD 인증이 반려됐어요.")
-        self.assertTrue(body.startswith("사유: 서류가 흐려요."))
+        self.assertTrue(body.startswith("사유: 서류가 흐려요\n"))
 
     def test_setting_field(self):
         from apps.api.notifications import JOB_REVIEW, SETTING_FIELD
@@ -151,7 +151,7 @@ class VoteCommentTextTest(unittest.TestCase):
         from apps.api.notifications import vote_comment_text
         title, body = vote_comment_text("민지", "보머 재킷", "실물이 더 예뻐요", "BUY")
         self.assertEqual(title, "민지님이 '살!' 쪽에서 댓글을 남겼어요.")
-        self.assertEqual(body, "'보머 재킷' — “실물이 더 예뻐요”")
+        self.assertEqual(body, "'보머 재킷'\n“실물이 더 예뻐요”")   # 2026-09-20 줄을 나눠 적는다
 
     def test_long_comment_is_cut(self):
         from apps.api.notifications import vote_comment_text

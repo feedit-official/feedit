@@ -119,7 +119,7 @@ def price_digest(drops):
         f"{d.get('name') or '이름 없는 상품'} {d['percent']}%" for d in drops[:5]
     )
     if len(drops) > 5:
-        body += f" 외 {len(drops) - 5}개"
+        body += f"\n외 {len(drops) - 5}개"
     return title, body
 
 
@@ -150,7 +150,8 @@ def vote_comment_text(nickname, card_title, content, choice=None):
     if len(text) > 60:
         text = text[:59] + "…"
     card = str(card_title or "").strip()
-    body = (f"'{card[:30]}' — " if card else "") + (f"“{text}”" if text else "")
+    # ★ 2026-09-20 — 카드 제목과 댓글을 줄을 나눠 적는다 (알림 창이 \n 을 줄바꿈으로 보여 준다)
+    body = "\n".join(x for x in ((f"'{card[:30]}'" if card else ""), (f"“{text}”" if text else "")) if x)
     return title, body
 
 
@@ -160,7 +161,7 @@ def job_review_text(job_label, approved, reason=""):
     if approved:
         return (f"{label} 인증이 승인됐어요.",
                 f"이제 닉네임 옆에 {label} 배지가 달려요.")
-    body = f"사유: {reason}. " if reason else ""
+    body = f"사유: {reason}\n" if reason else ""
     return (f"{label} 인증이 반려됐어요.",
             body + "회원정보 수정에서 서류를 다시 올려 신청할 수 있어요.")
 

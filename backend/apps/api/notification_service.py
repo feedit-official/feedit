@@ -228,7 +228,7 @@ def notify_vote_closed(cards):
         try:
             total = VoteBallot.objects.filter(card_id=card.id).count()
             buys = VoteBallot.objects.filter(card_id=card.id, choice=VoteBallot.Choice.BUY).count()
-            body = (f"{total}명 중 {buys}명이 '살!'을 골랐어요. 구매하셨다면 후기를 들려주세요."
+            body = (f"{total}명 중 {buys}명이 '살!'을 골랐어요.\n구매하셨다면 후기를 들려주세요."
                     if total else "구매하셨다면 후기를 들려주세요.")
             if notify(card.user, rules.VOTE_RESULT, f"VOTE_CLOSED:{card.id}",
                       f"'{(card.title or '내 카드')[:40]}' 투표가 마감됐어요.", body, link="salmal",
@@ -294,7 +294,7 @@ def notify_admin_job_pending(admin_profile):
         who, req = rows[-1]
         n = len(rows)
         name = who.nickname or who.user.username
-        body = f"새 신청: {name} · {req.get('job') or '-'}" + (f" 외 {n - 1}건" if n > 1 else "")
+        body = f"새 신청: {name} · {req.get('job') or '-'}" + (f"\n그 밖에 {n - 1}건이 더 기다리고 있어요." if n > 1 else "")
         return notify(admin_profile, rules.JOB_REVIEW,
                       f"JOB_PENDING:{req.get('requested_at') or who.id}",
                       f"직업 인증 심사 대기 {n}건", body, link="mypage",

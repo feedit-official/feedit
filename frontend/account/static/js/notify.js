@@ -58,6 +58,17 @@ const NT = { items:[], unread:0, setting:null, timer:0, loading:false, open:fals
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g,
   c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
 
+/* ★ 2026-09-20 — 알림 본문을 줄 단위로 정돈한다.
+   서버는 이제 \n 으로 줄을 나눠 보내지만, 예전에 쌓인 알림은 한 줄로 이어 붙어 있다.
+   그래서 문장 끝(. ! ?)과 ' — ' 에서도 줄을 나눈다. 줄마다 span 으로 감싸 한 줄씩 선다. */
+function bodyHTML(body){
+  const lines = String(body || '').replace(/\r/g, '')
+    .replace(/\s+—\s+/g, '\n')
+    .replace(/([.!?])\s+(?=\S)/g, '$1\n')
+    .split('\n').map(x => x.trim()).filter(Boolean);
+  return lines.map(l => '<span class="nbLine">' + esc(l) + '</span>').join('');
+}
+
 /* "방금 · 12분 전 · 3시간 전 · 2일 전 · 2026.09.01" */
 function ago(iso){
   const t = Date.parse(iso);
@@ -103,7 +114,7 @@ function paintList(note){
           '<span class="notiMeta"><span class="notiKind">' + esc(kindName(it)) + '</span>' +
             '<span class="notiAgo">' + esc(ago(it.created_at)) + '</span></span>' +
           '<span class="notiTitle">' + esc(it.title) + '</span>' +
-          (it.body ? '<span class="notiBody">' + esc(it.body) + '</span>' : '') +
+          (it.body ? '<span class="notiBody">' + bodyHTML(it.body) + '</span>' : '') +
         '</span>' +
       '</button>' +
       '<button type="button" class="notiDel" aria-label="이 알림 삭제">' + TRASH + '</button>' +
@@ -228,7 +239,7 @@ function toastShow(it, count){
     '<span class="ntTx"><span class="ntMeta"><b>FEEDiT</b><span>' + esc(kindName(it)) + '</span>' +
       '<span class="ntAgo">' + esc(ago(it.created_at)) + '</span></span>' +
       '<span class="ntTitle">' + esc(it.title) + '</span>' +
-      (it.body ? '<span class="ntBody">' + esc(it.body) + '</span>' : '') +
+      (it.body ? '<span class="ntBody">' + bodyHTML(it.body) + '</span>' : '') +
       (more ? '<span class="ntMore" data-more>외 ' + more + '개의 새 알림 · 모두 보기</span>' : '') +
     '</span>' +
     '<button type="button" class="ntX" aria-label="닫기">' + XMARK + '</button>';
