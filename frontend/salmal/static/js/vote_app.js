@@ -61,19 +61,26 @@ function cardFromApi(card,i){
   };
 }
 let ACTIVITY=null;   /* {hours, participants} — 최근 N시간 실제 참여자 수 */
+/* ★ 2026-09-19 — 로그아웃·로그인을 빠르게 하면 두 번의 조회가 겹치는데, 늦게 도착한 '로그아웃 상태'
+   응답이 로그인 뒤 목록을 덮어써 내 카드인데 '신고하기'만 보였다. 가장 마지막 요청만 반영한다.
+   no-store — 브라우저가 다른 계정으로 받은 응답을 재사용하지 않게 한다. */
+let LOAD_SEQ=0;
 async function loadVotes(){
+  const seq=++LOAD_SEQ;
   const groups=await Promise.all(['latest','result'].map(tab=>
-    fetch('/api/salmal/cards?tab='+tab,{credentials:'same-origin',headers:{Accept:'application/json'}})
+    fetch('/api/salmal/cards?tab='+tab,{credentials:'same-origin',cache:'no-store',headers:{Accept:'application/json'}})
       .then(async response=>{
         const payload=await response.json();
         if(!response.ok||payload.status!=='ok') throw new Error(payload.reason||'살말 데이터를 불러오지 못했습니다.');
         if(tab==='latest'&&payload.data.activity) ACTIVITY=payload.data.activity;
         return payload.data.items||[];
       })));
+  if(seq!==LOAD_SEQ) return false;   /* 더 새 요청이 있다 — 이 응답은 버린다 */
   paintActivity();
   const unique=new Map([...groups[0],...groups[1]].map(card=>[card.id,card]));
   VOTES=[...unique.values()].map(cardFromApi);
   BRAND_LIST=[...new Set(VOTES.map(v=>v.b))].sort();
+  return true;
 }
 
 /* 페이지를 계속 열어 둔 상태에서도 마감 시간이 지나면 즉시 종료 영역으로 옮긴다. */
@@ -401,12 +408,13 @@ function openCtxMenu(triggerEl, target){
   const reportButton=$('[data-action="report"]',menu);
   if(target.type==='card'){
     const mine=Boolean(VOTES[target.i]?.mine);
-    deleteButton.hidden=!VOTES[target.i]?.deletable;
+    /* 운영 계정은 어떤 카드든 지울 수 있다 — 서버가 다시 확인한다 */
+    deleteButton.hidden=!(VOTES[target.i]?.deletable||ME.role==='admin');
     reportButton.hidden=mine;
   }else{
     const comment=VOTES[target.i]?.comments.find(item=>item.id===target.commentId);
     const mine=Boolean(comment?.me);
-    deleteButton.hidden=!comment?.deletable;
+    deleteButton.hidden=!(comment?.deletable||ME.role==='admin');
     reportButton.hidden=mine;
   }
   const r=triggerEl.getBoundingClientRect();
@@ -425,7 +433,7 @@ function closeCtxMenu(){
   ctxTarget=null;
 }
 async function deleteCard(i){
-  if(!VOTES[i]?.deletable){ showToast('직접 등록한 내 카드만 삭제할 수 있어요.'); return; }
+  if(!(VOTES[i]?.deletable||ME.role==='admin')){ showToast('직접 등록한 내 카드만 삭제할 수 있어요.'); return; }
   try{
     await deleteVoteCard(VOTES[i].id);
     VOTES[i].deleted=true;
@@ -438,7 +446,7 @@ async function deleteCard(i){
 async function deleteComment(i,commentId){
   if(i===null)return;
   const comment=VOTES[i]?.comments.find(c=>c.id===commentId);
-  if(!comment?.deletable){ showToast('내가 작성한 댓글만 삭제할 수 있어요.'); return; }
+  if(!(comment?.deletable||ME.role==='admin')){ showToast('내가 작성한 댓글만 삭제할 수 있어요.'); return; }
   try{
     await deleteVoteComment(commentId);
     VOTES[i].comments=VOTES[i].comments.filter(c=>c.id!==commentId);
@@ -1002,7 +1010,7 @@ window.smFeedbackPrompt();
    카드 목록을 한 번 받아 두고 화면 전환만 해 왔기 때문이다 — 서버에서 다시 받아 그린다. */
 window.smReloadVotes=async()=>{
   try{
-    await loadVotes();
+    if(!await loadVotes()) return;
     syncExpiredCards();
     renderGrid();
     renderClosedGrid();
