@@ -1013,9 +1013,10 @@ window.smOpenCard=async(cardId,commentId)=>{
       const btn=document.querySelector('#commentsList [data-comment-id="'+commentId+'"]');
       const row=btn&&btn.closest('.cItem');
       if(!row)return;
+      row.classList.remove('flash'); void row.offsetWidth;
       row.scrollIntoView({block:'center',behavior:'smooth'});
       row.classList.add('flash');
-      setTimeout(()=>row.classList.remove('flash'),2400);
+      row.addEventListener('animationend',()=>row.classList.remove('flash'),{once:true});
     },380);
   }
 };

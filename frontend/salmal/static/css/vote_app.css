@@ -557,5 +557,11 @@ select.cInput{
 .fbEmpty{font-size:12.5px;color:#8a8781;line-height:1.7;padding:6px 0}
 
 /* 알림에서 넘어온 댓글 — 잠깐 강조 (2026-09-19) */
-.cItem{transition:background-color .6s ease;border-radius:12px}
-.cItem.flash{background:rgba(255,107,74,.1);box-shadow:0 0 0 6px rgba(255,107,74,.1)}
+/* 알림으로 들어온 댓글 강조 — 색을 직접 바꾸면 스크롤 중에 끊겨 보여서,
+   뒤에 깐 레이어의 opacity 만 움직인다(합성 레이어라 부드럽다). */
+.cItem{position:relative;isolation:isolate;border-radius:12px}
+.cItem::before{content:"";position:absolute;inset:-6px;border-radius:14px;
+  background:rgba(255,107,74,.1);opacity:0;pointer-events:none;z-index:-1;will-change:opacity}
+.cItem.flash::before{animation:cFlash 2.2s cubic-bezier(.4,0,.2,1) .35s both}
+@keyframes cFlash{0%{opacity:0}18%{opacity:1}62%{opacity:1}100%{opacity:0}}
+@media (prefers-reduced-motion:reduce){.cItem.flash::before{animation-duration:1.6s}}
