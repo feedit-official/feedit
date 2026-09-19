@@ -13,7 +13,6 @@ import fs from 'node:fs';
 
 const F = new URL('..', import.meta.url).href.replace(/\/$/, '');
 const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
-const chatCss = fs.readFileSync(new URL('../home/static/css/chat.css', import.meta.url), 'utf8');
 const popupCss = fs.readFileSync(new URL('../home/static/css/chat_popup.css', import.meta.url), 'utf8');
 const dom = new JSDOM(html, { url: 'http://localhost:5173/' });
 for (const k of ['window','document','Element','SVGElement','getComputedStyle','Node',
@@ -419,12 +418,10 @@ await t('바깥을 누르면 메뉴가 닫힌다', async () => {
 });
 
 /* ── Virtual Try On 단독 진입 (2026-09-18) ──────────────
-   질문을 먼저 보내지 않아도 홈·팝업의 두 버튼이 같은 빈 착장을 연다. */
-await t('홈 챗바 위와 팝업 왼쪽 하단에 Virtual Try On 버튼이 있다', () => {
-  assert.ok(document.querySelector('#homeVtonQuick'), '홈 버튼이 없다');
+   질문을 먼저 보내지 않아도 팝업 버튼이 빈 착장을 연다. */
+await t('팝업 왼쪽 하단에만 Virtual Try On 버튼이 있다', () => {
+  assert.equal(document.querySelector('#homeVtonQuick'), null, '홈 챗바 위 버튼이 남아 있다');
   assert.ok(document.querySelector('#cpVtonQuick'), '팝업 버튼이 없다');
-  assert.match(chatCss, /#v-home\.smMode \.vtonQuickHome\{display:flex/,
-               '홈 버튼이 살말 모드에서 보이지 않는다');
   assert.match(popupCss, /\.cpOverlay\.sm \.cpVtonQuick\{display:flex/,
                '팝업 버튼이 살말 모드에서 보이지 않는다');
 });
@@ -443,15 +440,12 @@ await t('질문 없이 바로 빈 착장 위젯을 연다', async () => {
                '살말 팝업으로 열리지 않았다');
 });
 
-await t('홈·팝업 버튼이 둘 다 같은 독립 착장을 연다', async () => {
+await t('팝업 버튼이 독립 착장을 연다', async () => {
   const count = () => CP.cpStore().convos.length;
   const before = count();
-  click(document.querySelector('#homeVtonQuick'));
-  await wait(40);
-  assert.equal(count(), before + 1, '홈 버튼이 새 착장을 열지 않았다');
   click(document.querySelector('#cpVtonQuick'));
   await wait(40);
-  assert.equal(count(), before + 2, '팝업 버튼이 새 착장을 열지 않았다');
+  assert.equal(count(), before + 1, '팝업 버튼이 새 착장을 열지 않았다');
 });
 
 console.log(`\n${pass}개 통과 · ${fail}개 실패`);

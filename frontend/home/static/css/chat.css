@@ -128,8 +128,7 @@
 /* 챗바 — 예시 질문이 안에서 굴러간다 */
 /* 챗바 위: 이미지 미리보기 자리. 비어 있으면 [hidden]이라 간격도 같이 사라진다 */
 .chatWrap{width:100%;position:relative;display:flex;flex-direction:column;gap:12px}
-/* Virtual Try On 바로가기 — 홈과 팝업에서 같은 버튼 언어를 쓴다.
-   평소에는 숨고 살!말? 모드에서만 보인다. */
+/* Virtual Try On 바로가기 — 챗봇 팝업의 살!말? 모드에서만 보인다. */
 .vtonQuick{
   display:none;position:relative;isolation:isolate;overflow:hidden;align-items:center;
   gap:10px;border:1px solid rgba(255,107,74,.28);border-radius:14px;
@@ -157,8 +156,6 @@
 .vtonQuickCopy small{font-size:10.5px;color:var(--pink-2);letter-spacing:-.01em}
 .vtonQuickArrow{margin-left:auto;color:var(--coral);font-size:13px;transition:transform .28s var(--ease)}
 .vtonQuick:hover .vtonQuickArrow{transform:translateX(3px)}
-.vtonQuickHome{align-self:flex-end;padding:8px 11px 8px 9px;min-width:182px}
-#v-home.smMode .vtonQuickHome{display:flex;animation:vtonQuickIn .52s var(--ease) both}
 @keyframes vtonQuickIn{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:none}}
 @keyframes vtonQuickSheen{0%,68%{transform:translateX(-70%)}88%,100%{transform:translateX(70%)}}
 @keyframes vtonQuickStar{0%,76%,100%{transform:rotate(0) scale(1)}84%{transform:rotate(18deg) scale(1.08)}92%{transform:rotate(-8deg) scale(1)}}

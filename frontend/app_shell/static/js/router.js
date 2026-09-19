@@ -263,7 +263,6 @@ document.addEventListener('keydown',e=>{
 });
 $('#mHome')&&$('#mHome').addEventListener('click',()=>goView('home'));
 $('#chatFab')&&$('#chatFab').addEventListener('click',()=>openChatWith('',null));
-$('#homeVtonQuick')&&$('#homeVtonQuick').addEventListener('click',openVirtualTryOn);
 $('#mSend')&&$('#mSend').addEventListener('click',sendChat);
 /* 살!말? 버튼은 이제 뷰 이동이 아니라 모드 전환이다 */
 $('#smToggle')&&$('#smToggle').addEventListener('click',e=>{ e.stopPropagation(); smSwitch(!SM_ON,e) });
