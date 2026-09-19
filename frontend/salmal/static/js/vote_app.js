@@ -5,6 +5,7 @@ import { jobBadgeHTML, jobShown } from '../../../account/static/js/job.js';
 import { smBarFill, smBarLabels } from '../../../trend/static/js/discount_resale.js';
 import { STYLES } from '../../../home/static/js/chat.js';
 import { fbOpen, fbPromptOnce } from './feedback.js';
+import { imageFileToDataURL } from '../../../home/static/js/chat_api.js';
 import { createVoteCard, deleteVoteCard, deleteVoteComment, reportVoteTarget, saveVote, saveVoteComment } from '../../../account/static/js/account_api.js';
 
 /* ══════════════ 살!말? (feedit-salmal_2 이식) ══════════════
@@ -900,9 +901,11 @@ $('#imgInput').addEventListener('change',e=>{
     showToast('JPEG, PNG, WebP 이미지만 등록할 수 있어요.');
     return;
   }
-  if(file.size>1024*1024){
+  /* ★ 2026-09-19 — 원본을 그대로 base64 로 보내다 서버 앞단(nginx 기본 1MB)에서 413 으로 막혔다.
+     이제 올릴 때 긴 변 1280px · JPEG 로 줄여 보낸다(보통 100~300KB). 원본은 20MB 까지만 받는다. */
+  if(file.size>20*1024*1024){
     e.target.value='';
-    showToast('이미지는 1MB 이하만 등록할 수 있어요.');
+    showToast('이미지는 20MB 이하만 등록할 수 있어요.');
     return;
   }
   if(createImgURL) URL.revokeObjectURL(createImgURL);
@@ -919,12 +922,11 @@ $('#cPrice').addEventListener('input',()=>{
   $('#cPrice').value=$('#cPrice').value.replace(/[^0-9]/g,'');
 });
 
-const fileDataUrl=file=>new Promise((resolve,reject)=>{
-  const reader=new FileReader();
-  reader.onload=()=>resolve(String(reader.result||''));
-  reader.onerror=()=>reject(new Error('이미지 파일을 읽지 못했습니다.'));
-  reader.readAsDataURL(file);
-});
+/* 업로드용으로 줄인 JPEG data URL — 챗봇 사진 첨부와 같은 함수(긴 변 1280px · 품질 0.82) */
+const fileDataUrl=async file=>{
+  try{ return await imageFileToDataURL(file); }
+  catch(e){ throw new Error('이미지 파일을 읽지 못했습니다.'); }
+};
 
 $('#createSubmit').addEventListener('click',async()=>{
   const title=$('#cTitle').value.trim();

@@ -23,6 +23,7 @@ async function request(path, { method='GET', body, bootstrap=true, base='/api/au
   let payload;
   try { payload = JSON.parse(text); }
   catch (_) {
+    if (response.status === 413) throw new Error('보내는 내용이 너무 커요. 이미지를 더 작은 것으로 바꿔 주세요.');
     // 상태 숫자를 같이 보여 준다 — 404는 서버에 인증 주소가 없음, 403은 CSRF 거부, 502/504는 서버 꺼짐
     throw new Error(`로그인 서버가 올바른 JSON을 돌려주지 않았습니다 (${response.status}).`);
   }
