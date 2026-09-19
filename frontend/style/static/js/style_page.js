@@ -13,29 +13,31 @@ let stTotal=null;   /* 이 스타일의 전체 상품 수 — '더 보기 (24 / 
 /* 스타일 사진 — 전용 컷(ph)이 있으면 그걸 쓰고, 없으면 공용 라이브러리로 떨어진다 */
 export const SIMG=s=>s.ph||IMG(s.img);
 export function stBuild(){
-  /* ★ 2026-09-20 — 번호 · 한글명 · 영문명 · 화살표의 목차 한 칸 (누르면 그 스타일 상세로 간다) */
-  const GO='<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 11.5l7-7M5.5 4.5h6v6"/></svg>';
-  $('#stCats').innerHTML=STYLES.map((s,i)=>
-    '<button type="button" class="stCat" data-style="'+s.id+'" style="--i:'+i+'" aria-label="'+s.n+' 스타일 보기">'+
-      '<span class="stCatNo">'+String(i+1).padStart(2,'0')+'</span>'+
-      '<span class="stCatTx"><b>'+s.n+'</b><em>'+s.en+'</em></span>'+
-      '<i class="stCatGo">'+GO+'</i></button>').join('');
+  /* ★ 2026-09-20 — 스타일 홈을 [쇼케이스] + [코어 · 원형 인덱스] 둘로 합쳤다.
+     예전의 사진 타일 그리드(#stGrid)와 알약 버튼 줄은 인덱스 한 칸(사진 + 번호 · 한/영 · 화살표)으로 들어왔다.
+     누르면 그 스타일 상세로 간다(문서 전역 [data-style] 위임). */
   const six=STYLES.slice(0,6);
   $('#stShow').innerHTML=six.map((s,i)=>
     '<div class="sl'+(i?'':' on')+'" data-style="'+s.id+'"><img src="'+SIMG(s)+'" alt="'+s.n+'">'+
     '<div class="vg"></div><div class="cap"><em>'+s.en.toUpperCase()+' · '+s.pk+'</em>'+
     '<b>'+s.n+'</b><span>'+s.kw.join(' · ')+'</span></div></div>').join('')+
     '<div class="dots">'+six.map((s,i)=>'<i'+(i?'':' class="on"')+'></i>').join('')+'</div>';
-  /* 코어와 원형을 한 그리드 안에서 층으로 갈라 보여 준다 */
-  const tile=s=>'<div class="stTile" data-style="'+s.id+'">'+
-    '<img src="'+SIMG(s)+'" alt="'+s.n+'" loading="lazy">'+
-    '<b>'+s.n+'</b><span class="stEn">'+s.en+'</span></div>';
-  /* 개수(N종) 표시는 뺐다 — 설명 문구가 그 자리, 제목 바로 오른쪽에 선다 */
-  const band=(t,d)=>'<div class="stBand"><b>'+t+'</b><span>'+d+'</span></div>';
+  const GO='<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 11.5l7-7M5.5 4.5h6v6"/></svg>';
+  let no=0;
+  const cell=s=>{ const i=no++;
+    return '<button type="button" class="stCat" data-style="'+s.id+'" style="--i:'+i+'" aria-label="'+s.n+' 스타일 보기">'+
+      '<span class="stCatPh"><img src="'+SIMG(s)+'" alt="" loading="lazy"></span>'+
+      '<span class="stCatMeta"><span class="stCatNo">'+String(i+1).padStart(2,'0')+'</span>'+
+        '<span class="stCatTx"><b>'+s.n+'</b><em>'+s.en+'</em></span>'+
+        '<i class="stCatGo">'+GO+'</i></span></button>'; };
+  const group=(t,en,d,list)=>list.length?'<div class="stGroup">'+
+    '<div class="stGroupHead"><b>'+t+'</b><em>'+en+'</em><span>'+d+'</span></div>'+
+    '<div class="stGroupRow">'+list.map(cell).join('')+'</div></div>':'';
   const core=STYLES.filter(s=>s.g==='코어'), root=STYLES.filter(s=>s.g==='원형');
-  $('#stGrid').innerHTML=
-    band('코어','지금 이름이 붙어 도는 흐름')+core.map(tile).join('')+
-    band('원형','코어들이 갈라져 나온 뿌리')+root.map(tile).join('');
+  const rest=STYLES.filter(s=>s.g!=='코어'&&s.g!=='원형');
+  $('#stCats').innerHTML=
+    group('코어','CORE','지금 이름이 붙어 도는 흐름',core)+
+    group('원형','ROOTS','코어들이 갈라져 나온 뿌리',root.concat(rest));
   setInterval(()=>{
     const sl=$$('#stShow .sl'), dt=$$('#stShow .dots i');
     if(!sl.length)return;
