@@ -28,6 +28,7 @@ WEEKLY_REPORT = "WEEKLY_REPORT"
 BADGE = "BADGE"
 TERM_ADDED = "TERM_ADDED"
 JOB_REVIEW = "JOB_REVIEW"
+VOTE_COMMENT = "VOTE_COMMENT"
 
 # 종류 → NotificationSetting 의 칸 이름
 SETTING_FIELD = {
@@ -37,6 +38,7 @@ SETTING_FIELD = {
     BADGE: "badge",
     TERM_ADDED: "term_added",
     JOB_REVIEW: "job_review",
+    VOTE_COMMENT: "vote_comment",
 }
 
 
@@ -137,6 +139,19 @@ def vote_result_text(total, buys, card_title=""):
 
 def badge_text(label):
     return f"뱃지 '{label}'{josa(label, '을', '를')} 달성했어요.", ""
+
+
+def vote_comment_text(nickname, card_title, content, choice=None):
+    """(제목, 본문). 누가 · 어느 카드에 · 살/말 중 어느 쪽으로 · 무슨 말을 했는지."""
+    who = str(nickname or "누군가").strip() or "누군가"
+    side = {"BUY": " '살!' 쪽에서", "PASS": " '말!' 쪽에서"}.get(choice or "", "")
+    title = f"{who}님이{side} 댓글을 남겼어요."
+    text = " ".join(str(content or "").split())
+    if len(text) > 60:
+        text = text[:59] + "…"
+    card = str(card_title or "").strip()
+    body = (f"'{card[:30]}' — " if card else "") + (f"“{text}”" if text else "")
+    return title, body
 
 
 def job_review_text(job_label, approved, reason=""):

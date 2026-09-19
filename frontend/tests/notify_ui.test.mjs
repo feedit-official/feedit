@@ -79,6 +79,13 @@ assert.ok(document.getElementById('mNav').compareDocumentPosition(bell) & 4 ||
 /* ② 안 읽은 알림이 있으면 점이 뜬다 */
 assert.equal(document.getElementById('notiDot').hidden, false, '안 읽은 알림이 있으면 점이 뜬다');
 
+/* ②-b 로그인하면 안 읽은 알림이 오른쪽 위 토스트로 뜬다 (2026-09-19) */
+await new Promise(r => setTimeout(r, 80));
+const toasts = document.querySelectorAll('#notiToasts .notiToast');
+assert.equal(toasts.length, 1, '안 읽은 알림 1건이 토스트로 뜬다');
+assert.ok(toasts[0].textContent.includes('찜한 상품 2개가 내려갔어요.'), '토스트에 제목이 보인다');
+toasts[0].querySelector('.ntX').dispatchEvent(new dom.window.MouseEvent('click', { bubbles:true }));
+
 /* ③ 아이콘을 누르면 패널이 열리고 목록이 그려진다 */
 bell.dispatchEvent(new dom.window.MouseEvent('click', { bubbles:true }));
 await new Promise(r => setTimeout(r, 60));
@@ -127,7 +134,7 @@ const delAll = asked.filter(a => a.url.includes('/api/auth/notifications') && a.
   .map(a => JSON.parse(a.body)).find(b => b.op === 'delete_all');
 assert.ok(delAll, '모두 삭제를 서버에 알린다');
 assert.equal(document.querySelectorAll('#notiList .notiItem').length, 0);
-assert.ok(document.getElementById('notiList').textContent.includes('아직 온 알림이 없어요'));
+assert.ok(document.getElementById('notiList').textContent.includes('새 알림이 없어요'));
 assert.equal(document.getElementById('notiList').textContent.includes('여기에 쌓여요'), false,
   '빈 화면 설명 문구는 뺐다');
 
@@ -140,9 +147,9 @@ const modal = document.getElementById('notiSetModal');
 assert.ok(modal.classList.contains('on'), '알림 설정 모달이 열린다');
 assert.equal(document.getElementById('notiSetAll').checked, true, '전체 알림 스위치가 서버 값을 따른다');
 const kinds = document.querySelectorAll('#notiSetKinds .notiSw');
-assert.equal(kinds.length, 6, '구현한 알림 6종을 종류별로 끌 수 있다 (2026-09-19 직업 인증 결과 추가)');
+assert.equal(kinds.length, 7, '구현한 알림 7종을 종류별로 끌 수 있다 (2026-09-19 직업 인증 결과 · 살말 새 댓글 추가)');
 assert.deepEqual([...kinds].map(k => k.dataset.kind),
-  ['PRICE_DROP','VOTE_RESULT','WEEKLY_REPORT','BADGE','TERM_ADDED','JOB_REVIEW']);
+  ['PRICE_DROP','VOTE_RESULT','WEEKLY_REPORT','BADGE','TERM_ADDED','JOB_REVIEW','VOTE_COMMENT']);
 
 /* 한 종류만 끄고 저장 */
 kinds[0].checked = false;

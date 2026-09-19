@@ -143,5 +143,21 @@ class JobReviewTextTest(unittest.TestCase):
         from apps.api.notifications import JOB_REVIEW, SETTING_FIELD
         self.assertEqual(SETTING_FIELD[JOB_REVIEW], "job_review")
 
+
+class VoteCommentTextTest(unittest.TestCase):
+    """살말 새 댓글 알림 문구 (2026-09-19)."""
+
+    def test_side_and_quote(self):
+        from apps.api.notifications import vote_comment_text
+        title, body = vote_comment_text("민지", "보머 재킷", "실물이 더 예뻐요", "BUY")
+        self.assertEqual(title, "민지님이 '살!' 쪽에서 댓글을 남겼어요.")
+        self.assertEqual(body, "'보머 재킷' — “실물이 더 예뻐요”")
+
+    def test_long_comment_is_cut(self):
+        from apps.api.notifications import vote_comment_text
+        _, body = vote_comment_text("A", "", "가" * 100, "NEUTRAL")
+        self.assertTrue(body.endswith("…”"))
+        self.assertLessEqual(len(body), 64)
+
 if __name__ == "__main__":
     unittest.main()

@@ -28,10 +28,25 @@ const KINDS = [
   { id:'BADGE',         n:'뱃지 달성',           d:'새 뱃지를 딴 날 알려 드려요.' },
   { id:'TERM_ADDED',    n:'용어 사전 등재',      d:'요청한 용어가 사전에 올라가면 알려 드려요.' },
   { id:'JOB_REVIEW',    n:'직업 인증 결과',      d:'신청한 직업 인증이 승인되거나 반려되면 알려 드려요.' },
+  { id:'VOTE_COMMENT',  n:'살!말? 새 댓글',      d:'내가 올린 상품에 누군가 댓글을 달면 알려 드려요.' },
 ];
 const KIND_NAME = Object.fromEntries(KINDS.map(k => [k.id, k.n]));
 
-const POLL_MS = 60000;          /* 1분마다 다시 센다 — 알림은 실시간일 필요가 없다 */
+/* 종류별 아이콘 (2026-09-19 디자인 개편) — 라벨 글자 대신 작은 원 안의 선 아이콘으로 구분한다 */
+const SVG = d => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" ' +
+  'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + d + '</svg>';
+const KIND_ICON = {
+  PRICE_DROP:    SVG('<path d="M20 12l-8 8-8-8V4h8z"/><circle cx="8" cy="8" r="1.3"/>'),
+  VOTE_RESULT:   SVG('<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>'),
+  WEEKLY_REPORT: SVG('<rect x="5" y="3.5" width="14" height="17" rx="2"/><path d="M9 8h6M9 12h6M9 16h3"/>'),
+  BADGE:         SVG('<circle cx="12" cy="9" r="5"/><path d="M9 13.5L8 21l4-2 4 2-1-7.5"/>'),
+  TERM_ADDED:    SVG('<path d="M5 4h11a3 3 0 013 3v13H8a3 3 0 01-3-3z"/><path d="M5 17a3 3 0 013-3h11"/>'),
+  JOB_REVIEW:    SVG('<path d="M12 3l7 3v5c0 4.4-3 8-7 10-4-2-7-5.6-7-10V6z"/><path d="M9 12l2 2 4-4"/>'),
+  VOTE_COMMENT:  SVG('<path d="M4 5.5h16v10H9.5L5 19.5v-4H4z"/><path d="M8 9.5h8M8 12.3h5"/>'),
+};
+const BELL = SVG('<path d="M6 16V11a6 6 0 0112 0v5l1.5 2h-15z"/><path d="M10 20a2 2 0 004 0"/>');
+
+const POLL_MS = 30000;          /* 30초마다 다시 센다 — 새 알림은 오른쪽 위 토스트로도 띄운다 */
 const LIST_MAX = 6;             /* 한 화면에 보이는 알림 수. 넘으면 스크롤 */
 const NT = { items:[], unread:0, setting:null, timer:0, loading:false, open:false };
 
@@ -57,6 +72,7 @@ function paintDot(){
   const dot = $('#notiDot'), btn = $('#notiBtn');
   if(dot) dot.hidden = !NT.unread;
   if(btn) btn.setAttribute('aria-label', NT.unread ? `알림 ${NT.unread}건 안 읽음` : '알림');
+  paintCount();
 }
 
 /* 휴지통 — 이모지가 아니라 아이콘 */
@@ -67,23 +83,36 @@ const TRASH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke
 function paintList(note){
   const box = $('#notiList');
   if(!box) return;
-  if(note){ box.innerHTML = '<p class="notiEmpty">' + esc(note) + '</p>'; fitList(); return }
+  paintCount();
+  if(note){ box.innerHTML = '<div class="notiEmpty"><i>' + BELL + '</i><p>' + esc(note) + '</p></div>'; fitList(); return }
   if(!NT.items.length){
-    box.innerHTML = '<p class="notiEmpty">아직 온 알림이 없어요.</p>';
+    box.innerHTML = '<div class="notiEmpty"><i>' + BELL + '</i><b>새 알림이 없어요</b>' +
+      '<p>가격이 내려가거나 투표 결과가 나오면 여기로 알려 드릴게요.</p></div>';
     fitList();
     return;
   }
   box.innerHTML = NT.items.map(it =>
-    '<div class="notiItem' + (it.read ? '' : ' unread') + '" data-id="' + it.id + '">' +
+    '<div class="notiItem' + (it.read ? '' : ' unread') + '" data-id="' + it.id + '" data-kind="' + esc(it.kind) + '">' +
       '<button type="button" class="notiOpen" data-link="' + esc(it.link || '') + '">' +
-        '<span class="notiKind">' + esc(KIND_NAME[it.kind] || it.kind) + '</span>' +
-        '<span class="notiTitle">' + esc(it.title) + '</span>' +
-        (it.body ? '<span class="notiBody">' + esc(it.body) + '</span>' : '') +
-        '<span class="notiAgo">' + esc(ago(it.created_at)) + '</span>' +
+        '<span class="notiIc">' + (KIND_ICON[it.kind] || BELL) + '</span>' +
+        '<span class="notiTx">' +
+          '<span class="notiMeta"><span class="notiKind">' + esc(KIND_NAME[it.kind] || '알림') + '</span>' +
+            '<span class="notiAgo">' + esc(ago(it.created_at)) + '</span></span>' +
+          '<span class="notiTitle">' + esc(it.title) + '</span>' +
+          (it.body ? '<span class="notiBody">' + esc(it.body) + '</span>' : '') +
+        '</span>' +
       '</button>' +
       '<button type="button" class="notiDel" aria-label="이 알림 삭제">' + TRASH + '</button>' +
     '</div>').join('');
   fitList();
+}
+
+/* 머리의 '안 읽음 N' — 0 이면 숨긴다 */
+function paintCount(){
+  const c = $('#notiCount');
+  if(!c) return;
+  c.textContent = NT.unread > 99 ? '99+' : String(NT.unread || '');
+  c.hidden = !NT.unread;
 }
 
 /* 한 화면에 LIST_MAX 개까지만 보이게 높이를 맞춘다.
@@ -112,6 +141,7 @@ export function notiRefresh(){
     if(data.setting) NT.setting = data.setting;
     paintDot();
     if(NT.open) paintList();
+    toastNew();
   }).catch(e => {
     if(NT.open) paintList('알림을 받아오지 못했습니다 — ' + (e.message || e));
   }).finally(() => { NT.loading = false });
@@ -130,11 +160,88 @@ function start(){
 
 function stop(){
   clearInterval(NT.timer); NT.timer = 0;
+  toastReset();
   NT.items = []; NT.unread = 0; NT.setting = null;
   panel(false);
   const wrap = $('#notiWrap');
   if(wrap) wrap.hidden = true;
   paintDot();
+}
+
+/* ── 토스트 — 맥 알림처럼 오른쪽 위에 떴다 사라진다 (2026-09-19) ─────────
+   · 로그인하면: 안 읽은 알림을 최근 3개까지 띄우고, 더 있으면 '외 N개' 한 장을 더한다.
+   · 로그인해 있는 동안: 30초마다 받아 올 때 새로 생긴(처음 보는) 안 읽은 알림을 띄운다.
+   · 같은 알림은 두 번 띄우지 않는다 — 새로고침해도 이 탭에서는 다시 뜨지 않는다(sessionStorage).
+   · 누르면 읽음 처리 후 그 화면으로, 가만두면 6초 뒤 사라진다(마우스를 올리면 멈춘다). */
+const TOAST_MAX = 3, TOAST_MS = 6000, TOAST_KEY = 'feedit.noti.toasted';
+let TOAST_PRIMED = false;
+const toastSeen = new Set();
+function toastLoad(){ try{ JSON.parse(sessionStorage.getItem(TOAST_KEY) || '[]').forEach(id => toastSeen.add(id)) }catch(e){} }
+function toastSave(){ try{ sessionStorage.setItem(TOAST_KEY, JSON.stringify([...toastSeen].slice(-200))) }catch(e){} }
+function toastReset(){
+  TOAST_PRIMED = false; toastSeen.clear();
+  try{ sessionStorage.removeItem(TOAST_KEY) }catch(e){}
+  const box = $('#notiToasts'); if(box) box.innerHTML = '';
+}
+function toastBox(){
+  let box = $('#notiToasts');
+  if(!box){
+    document.body.insertAdjacentHTML('beforeend', '<div class="notiToasts" id="notiToasts" aria-live="polite"></div>');
+    box = $('#notiToasts');
+  }
+  return box;
+}
+function toastNew(){
+  if(!TOAST_PRIMED){ toastLoad(); TOAST_PRIMED = true; }
+  const fresh = NT.items.filter(it => !it.read && !toastSeen.has(it.id));
+  NT.items.forEach(it => toastSeen.add(it.id));
+  toastSave();
+  if(!fresh.length || NT.open) return;
+  fresh.slice(0, TOAST_MAX).reverse().forEach((it, i) => setTimeout(() => toastShow(it), i * 140));
+  const more = fresh.length - TOAST_MAX;
+  if(more > 0) setTimeout(() => toastShow(null, more), TOAST_MAX * 140);
+}
+const XMARK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M7 7l10 10M17 7L7 17"/></svg>';
+function toastShow(it, more){
+  const box = toastBox();
+  while(box.children.length >= TOAST_MAX + 1) box.lastElementChild.remove();
+  const el = document.createElement('div');
+  el.className = 'notiToast';
+  el.setAttribute('role', 'status');
+  el.innerHTML = it
+    ? '<span class="notiIc' + (it.read ? '' : ' hot') + '">' + (KIND_ICON[it.kind] || BELL) + '</span>' +
+      '<span class="ntTx"><span class="ntMeta"><b>FEEDiT</b><span>' + esc(KIND_NAME[it.kind] || '알림') + '</span>' +
+        '<span class="ntAgo">' + esc(ago(it.created_at)) + '</span></span>' +
+        '<span class="ntTitle">' + esc(it.title) + '</span>' +
+        (it.body ? '<span class="ntBody">' + esc(it.body) + '</span>' : '') + '</span>' +
+      '<button type="button" class="ntX" aria-label="닫기">' + XMARK + '</button>'
+    : '<span class="notiIc hot">' + BELL + '</span>' +
+      '<span class="ntTx"><span class="ntMeta"><b>FEEDiT</b></span>' +
+        '<span class="ntTitle">읽지 않은 알림이 ' + more + '개 더 있어요.</span>' +
+        '<span class="ntBody">눌러서 알림 목록을 열어 보세요.</span></span>' +
+      '<button type="button" class="ntX" aria-label="닫기">' + XMARK + '</button>';
+  box.prepend(el);
+  requestAnimationFrame(() => el.classList.add('in'));
+  let timer = setTimeout(close, TOAST_MS);
+  function close(){
+    clearTimeout(timer);
+    el.classList.remove('in'); el.classList.add('out');
+    setTimeout(() => el.remove(), 320);
+  }
+  el.addEventListener('mouseenter', () => clearTimeout(timer));
+  el.addEventListener('mouseleave', () => { timer = setTimeout(close, 2500) });
+  el.addEventListener('click', e => {
+    if(e.target.closest('.ntX')){ close(); return }
+    close();
+    if(!it){ panel(true); return }
+    const row = NT.items.find(x => x.id === it.id);
+    if(row && !row.read){
+      row.read = true; NT.unread = Math.max(0, NT.unread - 1);
+      paintDot(); if(NT.open) paintList();
+      readNotification(it.id);
+    }
+    if(it.link) goView(it.link);
+  });
 }
 
 /* ── 패널 여닫기 ──────────────────────────────────────── */

@@ -282,6 +282,8 @@ def vote_comment(request):
         content=content,
         source_metadata={"source": "USER"},
     )
+    # 카드 작성자에게 새 댓글 알림 (내 카드에 내가 단 댓글은 제외). 실패해도 댓글은 저장됐다.
+    notification_service.notify_vote_comment(card, comment, profile)
     return JsonResponse({
         "status": "ok",
         "data": {"id": comment.id, "choice": comment.choice, "content": comment.content},

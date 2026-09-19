@@ -239,6 +239,23 @@ def notify_vote_closed(cards):
     return made
 
 
+def notify_vote_comment(card, comment, author):
+    """내 살말 카드에 남이 댓글을 달면 카드 작성자에게 알린다. 댓글 하나당 한 번."""
+    try:
+        if card is None or comment is None or card.user_id is None:
+            return None
+        if author is not None and card.user_id == author.id:
+            return None
+        nickname = getattr(author, "nickname", "") or ""
+        title, body = rules.vote_comment_text(nickname, card.title, comment.content, comment.choice)
+        return notify(card.user, rules.VOTE_COMMENT, f"VOTE_COMMENT:{comment.id}",
+                      title, body, link="salmal",
+                      payload={"card_id": card.id, "comment_id": comment.id})
+    except Exception:
+        logger.exception("댓글 알림 실패 comment=%s", getattr(comment, "id", None))
+        return None
+
+
 def notify_job_review(profile, job, approved, reason="", requested_at=""):
     """직업 인증 승인·반려를 신청자에게 알린다. 같은 신청(신청 시각)에는 한 번만."""
     try:

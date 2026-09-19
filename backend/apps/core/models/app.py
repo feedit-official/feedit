@@ -809,6 +809,7 @@ class Notification(models.Model):
         BADGE = "BADGE", "뱃지 달성"
         TERM_ADDED = "TERM_ADDED", "용어 사전 등재"
         JOB_REVIEW = "JOB_REVIEW", "직업 인증 결과"
+        VOTE_COMMENT = "VOTE_COMMENT", "살!말? 새 댓글"
 
     user = models.ForeignKey(
         AppUser,
@@ -949,6 +950,11 @@ class NotificationSetting(models.Model):
     job_review = models.BooleanField(
         default=True,
         verbose_name="직업 인증 결과",
+    )
+
+    vote_comment = models.BooleanField(
+        default=True,
+        verbose_name="살!말? 새 댓글",
     )
 
     created_at = models.DateTimeField(auto_now_add=True)
