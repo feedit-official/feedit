@@ -46,6 +46,23 @@
 .voteGrid{
   display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:20px;
 }
+/* ★ 2026-09-20 — 불러오는 중 · 빈 목록 · 오류 안내. 예전엔 스타일이 없어 기본 글꼴 크기로
+   카드 한 칸 폭에 줄바꿈돼 어색했다. 사이트 본문 글꼴(Pretendard)로 한 줄 가운데 정렬. */
+.smDataState{
+  grid-column:1/-1;display:flex;align-items:center;justify-content:center;gap:10px;
+  min-height:220px;padding:34px 16px;border:1px dashed var(--pink-3);border-radius:14px;
+  font-family:'Pretendard Variable',Pretendard,-apple-system,BlinkMacSystemFont,system-ui,sans-serif;
+  font-size:13.5px;font-weight:500;letter-spacing:-.02em;line-height:1.6;color:var(--pink-2);
+  text-align:center;word-break:keep-all;
+  animation:smStateIn .4s ease both;
+}
+.smDataState.loading::before{
+  content:"";width:15px;height:15px;flex:none;border-radius:50%;
+  border:2px solid var(--pink-3);border-top-color:var(--coral,#ff6b4a);
+  animation:smSpin .8s linear infinite;
+}
+@keyframes smSpin{to{transform:rotate(360deg)}}
+@keyframes smStateIn{from{opacity:0}to{opacity:1}}
 .voteCard{
   background:#fff;border:1px solid var(--pink-3);border-radius:10px;overflow:hidden;
   box-shadow:0 1px 0 rgba(10,10,10,.02);cursor:pointer;

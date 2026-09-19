@@ -987,7 +987,7 @@ function paintActivity(){
 }
 
 /* ── 초기 렌더 ───────────────────────────────────────── */
-$('#voteGrid').innerHTML='<div class="smDataState">살!말? 데이터를 불러오는 중이에요.</div>';
+$('#voteGrid').innerHTML='<div class="smDataState loading">살!말? 고민들을 불러오고 있어요</div>';
 const SM_READY=loadVotes().then(()=>{
   syncExpiredCards();
   renderGrid();
