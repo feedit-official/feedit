@@ -212,4 +212,8 @@ def job_review(request):
         meta["job_request"] = req
         p.profile_metadata = meta
         p.save(update_fields=["profile_metadata", "updated_at"])
+    # 신청자에게 결과 알림 (알림 설정 '직업 인증 결과'를 끈 사람은 제외). 실패해도 심사는 끝났다.
+    from . import notification_service
+    notification_service.notify_job_review(p, req.get("job"), approve, req.get("reason") or "",
+                                           req.get("requested_at") or "")
     return _ok({"user_id": user_id, "status": req["status"], "job": meta.get("job") or ""})

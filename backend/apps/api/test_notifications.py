@@ -123,5 +123,25 @@ class DayTest(unittest.TestCase):
         self.assertEqual(kst_day(datetime(2026, 9, 19, 1, 0, tzinfo=KST)), date(2026, 9, 19))
 
 
+
+class JobReviewTextTest(unittest.TestCase):
+    """직업 인증 결과 알림 문구 (2026-09-19)."""
+
+    def test_approved(self):
+        from apps.api.notifications import job_review_text
+        title, body = job_review_text("Stylist", True)
+        self.assertEqual(title, "Stylist 인증이 승인됐어요.")
+        self.assertIn("배지", body)
+
+    def test_rejected_with_reason(self):
+        from apps.api.notifications import job_review_text
+        title, body = job_review_text("MD", False, "서류가 흐려요")
+        self.assertEqual(title, "MD 인증이 반려됐어요.")
+        self.assertTrue(body.startswith("사유: 서류가 흐려요."))
+
+    def test_setting_field(self):
+        from apps.api.notifications import JOB_REVIEW, SETTING_FIELD
+        self.assertEqual(SETTING_FIELD[JOB_REVIEW], "job_review")
+
 if __name__ == "__main__":
     unittest.main()

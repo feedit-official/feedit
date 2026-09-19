@@ -239,6 +239,19 @@ def notify_vote_closed(cards):
     return made
 
 
+def notify_job_review(profile, job, approved, reason="", requested_at=""):
+    """직업 인증 승인·반려를 신청자에게 알린다. 같은 신청(신청 시각)에는 한 번만."""
+    try:
+        title, body = rules.job_review_text(job, approved, reason)
+        return notify(profile, rules.JOB_REVIEW,
+                      f"JOB_REVIEW:{profile.id}:{requested_at or job}",
+                      title, body, link="mypage",
+                      payload={"job": job, "approved": bool(approved), "reason": reason or ""})
+    except Exception:
+        logger.exception("직업 인증 알림 실패 user=%s", getattr(profile, "id", None))
+        return None
+
+
 # ── ③ 뱃지 달성 ────────────────────────────────────────────
 
 def check_badges(profile, now=None):

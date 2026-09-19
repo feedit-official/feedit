@@ -140,9 +140,9 @@ const modal = document.getElementById('notiSetModal');
 assert.ok(modal.classList.contains('on'), '알림 설정 모달이 열린다');
 assert.equal(document.getElementById('notiSetAll').checked, true, '전체 알림 스위치가 서버 값을 따른다');
 const kinds = document.querySelectorAll('#notiSetKinds .notiSw');
-assert.equal(kinds.length, 5, '구현한 알림 5종을 종류별로 끌 수 있다');
+assert.equal(kinds.length, 6, '구현한 알림 6종을 종류별로 끌 수 있다 (2026-09-19 직업 인증 결과 추가)');
 assert.deepEqual([...kinds].map(k => k.dataset.kind),
-  ['PRICE_DROP','VOTE_RESULT','WEEKLY_REPORT','BADGE','TERM_ADDED']);
+  ['PRICE_DROP','VOTE_RESULT','WEEKLY_REPORT','BADGE','TERM_ADDED','JOB_REVIEW']);
 
 /* 한 종류만 끄고 저장 */
 kinds[0].checked = false;

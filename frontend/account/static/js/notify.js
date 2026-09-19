@@ -23,10 +23,11 @@ import {
 /* 설정 모달에 그릴 종류. 서버(notifications.SETTING_FIELD)와 같은 값이어야 한다. */
 const KINDS = [
   { id:'PRICE_DROP',    n:'찜한 상품 가격 하락', d:'하루 한 번, 내려간 찜 상품을 묶어서 알려 드려요.' },
-  { id:'VOTE_RESULT',   n:'살!말? 투표 결과',    d:'내가 올린 상품에 표가 10개 모이면 알려 드려요.' },
+  { id:'VOTE_RESULT',   n:'살!말? 투표 결과',    d:'내가 올린 상품에 표가 10개 모이거나 투표가 마감되면 알려 드려요.' },
   { id:'WEEKLY_REPORT', n:'주간 트렌드 리포트',  d:'매주 월요일, 지난 한 주 리포트가 도착해요.' },
   { id:'BADGE',         n:'뱃지 달성',           d:'새 뱃지를 딴 날 알려 드려요.' },
   { id:'TERM_ADDED',    n:'용어 사전 등재',      d:'요청한 용어가 사전에 올라가면 알려 드려요.' },
+  { id:'JOB_REVIEW',    n:'직업 인증 결과',      d:'신청한 직업 인증이 승인되거나 반려되면 알려 드려요.' },
 ];
 const KIND_NAME = Object.fromEntries(KINDS.map(k => [k.id, k.n]));
 

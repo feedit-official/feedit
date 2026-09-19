@@ -27,6 +27,7 @@ VOTE_RESULT = "VOTE_RESULT"
 WEEKLY_REPORT = "WEEKLY_REPORT"
 BADGE = "BADGE"
 TERM_ADDED = "TERM_ADDED"
+JOB_REVIEW = "JOB_REVIEW"
 
 # 종류 → NotificationSetting 의 칸 이름
 SETTING_FIELD = {
@@ -35,6 +36,7 @@ SETTING_FIELD = {
     WEEKLY_REPORT: "weekly_report",
     BADGE: "badge",
     TERM_ADDED: "term_added",
+    JOB_REVIEW: "job_review",
 }
 
 
@@ -135,6 +137,17 @@ def vote_result_text(total, buys, card_title=""):
 
 def badge_text(label):
     return f"뱃지 '{label}'{josa(label, '을', '를')} 달성했어요.", ""
+
+
+def job_review_text(job_label, approved, reason=""):
+    """직업 인증 결과 — 승인이면 배지가 달렸다고, 반려면 사유와 다시 신청하는 길을 적는다."""
+    label = str(job_label or "직업")
+    if approved:
+        return (f"{label} 인증이 승인됐어요.",
+                f"이제 닉네임 옆에 {label} 배지가 달려요.")
+    body = f"사유: {reason}. " if reason else ""
+    return (f"{label} 인증이 반려됐어요.",
+            body + "회원정보 수정에서 서류를 다시 올려 신청할 수 있어요.")
 
 
 def term_added_text(raw_term, canonical_name=""):

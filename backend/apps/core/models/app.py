@@ -808,6 +808,7 @@ class Notification(models.Model):
         WEEKLY_REPORT = "WEEKLY_REPORT", "주간 트렌드 리포트"
         BADGE = "BADGE", "뱃지 달성"
         TERM_ADDED = "TERM_ADDED", "용어 사전 등재"
+        JOB_REVIEW = "JOB_REVIEW", "직업 인증 결과"
 
     user = models.ForeignKey(
         AppUser,
@@ -943,6 +944,11 @@ class NotificationSetting(models.Model):
     term_added = models.BooleanField(
         default=True,
         verbose_name="용어 사전 등재",
+    )
+
+    job_review = models.BooleanField(
+        default=True,
+        verbose_name="직업 인증 결과",
     )
 
     created_at = models.DateTimeField(auto_now_add=True)
