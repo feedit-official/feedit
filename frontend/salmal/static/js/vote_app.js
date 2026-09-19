@@ -1,6 +1,6 @@
 import { HAS_A, aAnimate, aSpring, aStagger, aUtils } from '../../../core/static/js/dom.js';
 import { AUTH, ME, requireAuth } from '../../../account/static/js/profile.js';
-import { rkClamp, rkRingHTML } from '../../../account/static/js/rank.js';
+import { RANK_ON, rkClamp, rkRingHTML } from '../../../account/static/js/rank.js';
 import { jobBadgeHTML, jobShown } from '../../../account/static/js/job.js';
 import { smBarFill, smBarLabels } from '../../../trend/static/js/discount_resale.js';
 import { STYLES } from '../../../home/static/js/chat.js';
@@ -49,7 +49,9 @@ function cardFromApi(card,i){
       id:comment.id, name:comment.name,
       tag:comment.choice==='BUY'?0:comment.choice==='PASS'?1:null,
       rk:comment.rank, job:comment.job, text:comment.text, time:comment.time,
-      me:Boolean(comment.mine)
+      me:Boolean(comment.mine),
+      /* 운영 계정은 남의 댓글도 지울 수 있다 — 서버가 판단해 준다 */
+      deletable:Boolean(comment.deletable??comment.mine)
     })),
     seq:i
   };
@@ -400,7 +402,7 @@ function openCtxMenu(triggerEl, target){
   }else{
     const comment=VOTES[target.i]?.comments.find(item=>item.id===target.commentId);
     const mine=Boolean(comment?.me);
-    deleteButton.hidden=!mine;
+    deleteButton.hidden=!comment?.deletable;
     reportButton.hidden=mine;
   }
   const r=triggerEl.getBoundingClientRect();
@@ -432,7 +434,7 @@ async function deleteCard(i){
 async function deleteComment(i,commentId){
   if(i===null)return;
   const comment=VOTES[i]?.comments.find(c=>c.id===commentId);
-  if(!comment?.me){ showToast('내가 작성한 댓글만 삭제할 수 있어요.'); return; }
+  if(!comment?.deletable){ showToast('내가 작성한 댓글만 삭제할 수 있어요.'); return; }
   try{
     await deleteVoteComment(commentId);
     VOTES[i].comments=VOTES[i].comments.filter(c=>c.id!==commentId);
@@ -612,7 +614,7 @@ function renderComments(){
     const rk=rkClamp(c.rk!=null?c.rk:0);
     return `
     <div class="cItem">
-      <div class="cAvatar rkAv rk${rk+1}">${rkRingHTML(rk)}${rk>=3?'<b class="rkGloss"></b>':''}<span>${c.name[0]}</span></div>
+      <div class="cAvatar${RANK_ON?` rkAv rk${rk+1}`:''}">${rkRingHTML(rk)}${RANK_ON&&rk>=3?'<b class="rkGloss"></b>':''}<span>${c.name[0]}</span></div>
       <div class="cBody">
         <div class="cHead">
           <b>${c.name}</b>${c.me ? (jobShown(ME) ? jobBadgeHTML(jobShown(ME)) : '') : jobBadgeHTML(c.job)}
@@ -643,7 +645,7 @@ async function sendComment(){
   try{
     const saved=await saveVoteComment({cardId,content:text});
     card.comments.unshift({
-      name:'나',rk:ME.rank,job:jobShown(ME)||'Basic',me:true,text,time:'1시간 전',
+      name:'나',rk:ME.rank,job:jobShown(ME)||'Basic',me:true,deletable:true,text,time:'방금 전',
       tag:saved?.choice==='BUY'?0:saved?.choice==='PASS'?1:null,id:saved?.id||nextCommentId()
     });
     if(modalState.i!==null && VOTES[modalState.i].id===cardId){

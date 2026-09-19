@@ -246,7 +246,9 @@ def vote_comment(request):
         comment = VoteComment.objects.filter(id=comment_id, is_deleted=False).first()
         if comment is None:
             return _error("댓글을 찾지 못했습니다.", status=404)
-        if comment.user_id != profile.id:
+        # 운영 계정(슈퍼유저·스태프)은 누구의 댓글이든 지울 수 있다 — 신고 처리용.
+        is_admin = request.user.is_superuser or request.user.is_staff
+        if comment.user_id != profile.id and not is_admin:
             return _error("본인이 작성한 댓글만 삭제할 수 있습니다.", status=403)
         comment.is_deleted = True
         comment.save(update_fields=["is_deleted", "updated_at"])

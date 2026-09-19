@@ -1,5 +1,5 @@
 import { $, $$, HAS_A, aAnimate, aStagger } from '../../../core/static/js/dom.js';
-import { BADGES, bgDetail, bgRender } from './badges.js';
+import { BADGES, badgesApply, bgDetail, bgRender } from './badges.js';
 import { IMG, itemCard, LIKED, STYLES, toggleLike, likedSync, likedClear } from '../../../home/static/js/chat.js';
 import { SIMG } from '../../../style/static/js/style_page.js';
 import { styleProductCard, styleProductsURL } from '../../../style/static/js/products.js';
@@ -10,16 +10,18 @@ import { JOB_REVIEW_DEMO, jobFieldApply, jobFieldBind, jobFieldCheck, jobFieldRe
 import { googleLogin, googleSignupAccount, loginAccount, logoutAccount, prepareGoogle, saveAccount, saveLiked, session, signupAccount } from './account_api.js';
 
 /* 내 계정 — 운영자라 최고 등급 고정 */
-export const ME={name:'혁진',mail:'hyeokjin@feedit.co.kr',initial:'혁',xp:9400,   /* 누적 경험치. rank 는 여기서 계산된다 */
+/* ★ 2026-09-19 — 예전 기본값(혁진 · xp 9400 · 적중 94 · 찜 128 · ADMIN)은 시연용 목업이었다.
+   로그인 전 기본값은 비워 두고, 값은 전부 applyAccount() 가 서버 응답으로 채운다. */
+export const ME={name:'FEEDiT 사용자',mail:'',initial:'F',xp:0,   /* 누적 경험치 — 등급 기준 확정 전(rank.js RANK_ON=false) */
           height:'',weight:'',   /* 체형 — 가입·정보수정에서 받는다 */
-          plan:'ADMIN · 서울',saved:128,
-          role:'admin',      /* 운영자 계정 — 직업 배지 대신 ADMIN 을 유지한다. 새로 가입하면 'user' */
+          plan:'FREE',saved:0,
+          role:'user',       /* 서버가 admin(슈퍼유저·스태프) 또는 user 로 준다 */
           job:'',            /* 승인된 직업(job.js JOBS id). 비어 있거나 승인 전이면 Basic 으로 보인다 */
-          major:'',          /* Student 전공 */votes:42,hit:94,
+          major:'',          /* Student 전공 */votes:0,
           bio:'',            /* 비어 있으면 예시 문구가 흐리게 대신 선다 */
           birth:'',          /* 가입·정보수정에서 채운다 */
           ava:0,             /* 프로필 아이콘 색 (AVA 인덱스) */
-          styles:new Set(['block','ameka','street'])};  /* 즐겨입는 스타일 (가입 시 선택) */
+          styles:new Set()};  /* 즐겨입는 스타일 (가입 시 선택) */
 /* rank 는 저장하지 않는다 — 경험치에서 항상 다시 센다.
    이렇게 두면 XP 만 올려도 링·문구·바가 한꺼번에 따라온다. */
 Object.defineProperty(ME,'rank',{get(){ return rkLevelOf(ME.xp) }, enumerable:true});
@@ -38,6 +40,9 @@ function applyAccount(user){
   ME.bio=user.bio||'';
   ME.ava=Number.isFinite(+user.avatar)?+user.avatar:0;
   ME.role=user.role||'user';
+  /* 요금제 — 서버가 준다 (ADMIN · FREE · 이후 알파 테스트용 TEST) */
+  ME.plan=user.plan||(ME.role==='admin'?'ADMIN':'FREE');
+  badgesApply(user.badges||{});
   ME.job=user.job||'';
   ME.major=user.major||'';
   ME.saved=Number(user.saved_count||0);
@@ -199,6 +204,7 @@ async function authLogout(){
     await logoutAccount();
     AUTH.in = false;
     likedClear();
+    badgesApply(null);
     document.dispatchEvent(new CustomEvent('feedit:auth'));
     pendingAfterAuth = null;
     authPaint();

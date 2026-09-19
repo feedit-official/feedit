@@ -39,6 +39,7 @@ from apps.core.models import (
 
 from . import google_auth
 from .activity_views import active_saved_count, active_vote_count
+from .badges import badge_states
 
 
 USERNAME_RE = re.compile(r"^[A-Za-z0-9]{4,16}$")
@@ -121,10 +122,15 @@ def _user_payload(user, profile):
         "job": meta.get("job") or "",
         "major": meta.get("major") or "",
         "role": "admin" if user.is_staff or user.is_superuser else "user",
+        # 요금제 — 운영 계정은 ADMIN, 그 밖은 profile_metadata.plan (없으면 FREE).
+        #   알파 테스트용 TEST 플랜은 같은 칸에 "TEST" 로 넣을 예정이다.
+        "plan": "ADMIN" if user.is_superuser else (meta.get("plan") or "FREE"),
         "styles": styles,
         # 찜·투표 수는 기록 API(activity_views)가 남긴 '현재 상태' 기준으로 센다.
         "saved_count": active_saved_count(profile),
         "vote_count": active_vote_count(profile),
+        # 컬렉션 배지 — 실제 기록으로 계산 (badges.py). 등급(Lv)은 기준 확정 전이라 보내지 않는다.
+        "badges": badge_states(profile),
     }
 
 

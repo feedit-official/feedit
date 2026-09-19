@@ -5,6 +5,10 @@ import { ME } from './profile.js';
    등급 뱃지 — 전부 48 그리드 · 획 1.4 로 한 가족처럼 읽히게.
    1~4 는 currentColor 를 따라가고, 5~7 만 금속/브랜드 그라디언트를 쓴다.
    ══════════════════════════════════════════════════════ */
+/* ★ 2026-09-19 — 등급(Lv) 기준이 확정될 때까지 화면에서 숨긴다.
+   예전에는 모든 사용자가 경험치 기본값 9400 → Lv.Max 로 보였다(목업).
+   기준이 정해지면 true 로 바꾸고 ME.xp 를 서버 값으로 채우면 된다. */
+export const RANK_ON=false;
 const RANKS=[
   {k:'lv1',n:'Lv.1'}, {k:'lv2',n:'Lv.2'}, {k:'lv3',n:'Lv.3'},
   {k:'lv4',n:'Lv.4'}, {k:'lv5',n:'Lv.Max'}
@@ -32,6 +36,7 @@ export const rkClamp=i=>Math.max(0,Math.min(RK_MAX, i|0));
 
 /* 글자 칩 — 심볼은 없다. 등급은 글자와 아바타 링 두 가지로만 말한다 */
 export function rkChip(i,lg){
+  if(!RANK_ON)return '';
   i=rkClamp(i);
   return '<span class="rk rk'+(i+1)+(lg?' lg':'')+'">'+RANKS[i].n+'</span>';
 }
@@ -40,6 +45,7 @@ export function rkChip(i,lg){
    Lv.3 부터 두 겹이 되고, Lv.3 은 눈금 / Lv.4 는 표면 광택 /
    Lv.Max 는 광택 + 오라 + 이따금 링 전체가 밝아지는 플래시를 얻는다. */
 export function rkRingHTML(i){
+  if(!RANK_ON)return '';
   i=rkClamp(i);
   let h='<i></i>';
   if(i>=2) h+='<i class="o2"></i>';
@@ -51,6 +57,11 @@ export function rkRingHTML(i){
    안쪽 내용(이니셜·사진)은 건드리지 않고 링과 광택만 얹었다 뺐다 한다. */
 export function rkPaintAv(el,i){
   if(!el)return;
+  if(!RANK_ON){
+    el.classList.remove('rkAv','rk1','rk2','rk3','rk4','rk5');
+    el.querySelectorAll(':scope > .rkRing, :scope > .rkGloss').forEach(n=>n.remove());
+    return;
+  }
   i=rkClamp(i);
   el.classList.add('rkAv');
   el.classList.remove('rk1','rk2','rk3','rk4','rk5');
@@ -62,6 +73,8 @@ export function rkPaintAv(el,i){
 /* 마이페이지 경험치 바 — 레벨 색과 진행률을 한 번에 칠한다 */
 export function xpPaint(){
   const w=$('#xpWrap'); if(!w)return;
+  w.hidden=!RANK_ON;
+  if(!RANK_ON)return;
   const p=rkProgress(ME.xp), i=p.lv;
   w.classList.remove('rk1','rk2','rk3','rk4','rk5');
   w.classList.add('rk'+(i+1));

@@ -463,3 +463,6 @@
 @media(max-width:640px){
   .styleSelectGrid{grid-template-columns:repeat(2,1fr)}
 }
+
+/* 등급 기준 확정 전에는 숨긴다 (rank.js RANK_ON) */
+.xpWrap[hidden]{display:none!important}

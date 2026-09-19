@@ -239,6 +239,8 @@ def _card_payload(card, profile, tastes_by_user, taste_names_by_user):
                 "text": comment.content,
                 "time": _comment_time(comment.created_at),
                 "mine": bool(profile and comment.user_id == profile.id),
+                "deletable": bool(profile and (comment.user_id == profile.id
+                                               or profile.user.is_superuser or profile.user.is_staff)),
             }
         )
     brand = None
@@ -290,8 +292,10 @@ def _card_payload(card, profile, tastes_by_user, taste_names_by_user):
         "mine": bool(profile and card.user_id == profile.id),
         "deletable": bool(
             profile
-            and card.user_id == profile.id
-            and str(card.seed_key or "").startswith("user:")
+            and (
+                (card.user_id == profile.id and str(card.seed_key or "").startswith("user:"))
+                or profile.user.is_superuser or profile.user.is_staff
+            )
         ),
         "comments": comments,
     }
@@ -371,7 +375,9 @@ def card(request, card_id):
     if request.method == "DELETE":
         if profile is None:
             return _error("로그인이 필요합니다.", 401)
-        if row.user_id != profile.id or not str(row.seed_key or "").startswith("user:"):
+        # 운영 계정(슈퍼유저·스태프)은 어떤 카드든 지울 수 있다 — 신고 처리·시드 정리용.
+        is_admin = request.user.is_superuser or request.user.is_staff
+        if not is_admin and (row.user_id != profile.id or not str(row.seed_key or "").startswith("user:")):
             return _error("본인이 작성한 카드만 삭제할 수 있습니다.", 403)
         try:
             delete_vote_image(row.image_url)

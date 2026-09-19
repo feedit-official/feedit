@@ -34,7 +34,7 @@ export const jobNeedsDoc=id=>{ const j=jobOf(id); return !!(j&&j.fashion) };
 /* 목업 시연용 — 가입 직후엔 관리자 계정이 아니라 심사 화면을 열 사람이 없다.
    시연 중에도 승인 흐름을 보여 줄 수 있게 메뉴를 열어 둔다.
    실제 서비스에서는 false 로 두고 관리자 계정에서만 보이게 한다. */
-export const JOB_REVIEW_DEMO=true;
+export const JOB_REVIEW_DEMO=false;   /* 2026-09-19 — 운영 계정(ADMIN)이 생겨 시연용 개방을 닫는다 */
 
 /* 심사 대기열 — {id, user, nick, job, major, file, url, at, status} */
 export const JOB_QUEUE=[];
