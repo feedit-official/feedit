@@ -146,6 +146,14 @@ function noteFor(i){ return NOTE_POOL[i%NOTE_POOL.length]; }
 
 function orderFor(tab){
   let idx=VOTES.map((_,i)=>i).filter(i=>!VOTES[i].deleted);
+  /* ★ 2026-09-19 — 로그인 전에는 내가 올린 카드를 다른 탭에서 빼 둔다.
+     인기순 · 최신순 · 마감임박은 남의 고민을 보는 자리이므로 로그인과는 상관이 없다. */
+  if(!AUTH.in&&tab!=='mine') idx=idx.filter(i=>!VOTES[i].mine);
+  /* ★ 2026-09-19 — '내 카드': 내가 올린 글만. 마감된 것도 내 글이므로 같이 보여 준다. */
+  if(tab==='mine'){
+    return idx.filter(i=>VOTES[i].mine)
+      .sort((a,b)=>VOTES[b].createdAt-VOTES[a].createdAt||VOTES[b].seq-VOTES[a].seq);
+  }
   if(tab==='result'){
     /* 결과보기: 마감된(투표 종료) 게시글만 */
     return idx.filter(i=>VOTES[i].closed).sort((a,b)=>VOTES[b].votes-VOTES[a].votes);
@@ -215,8 +223,21 @@ function renderGrid(){
        `matched.length?matched:idx` 가 **전체 카드로 떨어져**, 로그아웃 상태에서도
        내 취향 추천이 있는 것처럼 보였다. 맞지 않는 것을 맞는다고 쓰지 않는다. */
   const gate=$('#smGate'), grid0=$('#voteGrid'), pager0=$('#pager');
-  const locked=state.tab==='taste'&&!AUTH.in;
-  if(gate)gate.hidden=!locked;
+  /* ★ 2026-09-19 — '내 카드'도 내가 누구인지 알아야 고를 수 있다.
+     로그인 전에는 카드 대신 안내와 로그인 · 회원가입 버튼을 둔다. */
+  const locked=(state.tab==='taste'||state.tab==='mine')&&!AUTH.in;
+  if(gate){
+    gate.hidden=!locked;
+    if(locked){
+      const t=$('#smGateTitle'), d=$('#smGateDesc');
+      if(t)t.textContent=state.tab==='mine'
+        ? '내가 올린 카드는 로그인해야 볼 수 있어요.'
+        : '내 취향 추천은 로그인해야 볼 수 있어요.';
+      if(d)d.textContent=state.tab==='mine'
+        ? '로그인하면 내가 올린 살!말? 글과 그 결과를 한자리에서 볼 수 있습니다.'
+        : '즐겨입는 스타일과 체형을 알아야 나와 맞는 고민을 골라 드릴 수 있습니다.';
+    }
+  }
   if(locked){
     if(grid0)grid0.innerHTML='';
     if(pager0)pager0.innerHTML='';
@@ -229,6 +250,11 @@ function renderGrid(){
   const pageItems=order.slice(start,start+PAGE_SIZE);
 
   const grid=$('#voteGrid');
+  if(state.tab==='mine'&&!order.length){
+    grid.innerHTML='<div class="smDataState">아직 올린 카드가 없습니다. ‘＋ 살까말까 물어보기’로 첫 글을 올려 보세요.</div>';
+    renderPager(1);
+    return;
+  }
   grid.innerHTML=pageItems.map(cardHTML).join('');
   attachCardHandlers(grid);
   smCardsIn(grid);
@@ -911,6 +937,9 @@ $('#createSubmit').addEventListener('click',async()=>{
   if(!title){ showToast('상품명을 입력해주세요'); return; }
   if(!brand){ showToast('브랜드를 입력해주세요'); return; }
   if(!priceRaw){ showToast('가격을 입력해주세요'); return; }
+  /* ★ 2026-09-19 — 사진 없는 카드는 받지 않는다. 살까 말까는 눈으로 보고 고르는 일이라
+     사진이 빠지면 판이 회색으로만 뜨고 투표도 제대로 되지 않는다. */
+  if(!createImgFile&&!createImgURL){ showToast('상품 이미지를 등록해주세요'); return; }
 
   const submit=$('#createSubmit');
   submit.disabled=true;
@@ -971,6 +1000,17 @@ loadVotes().then(()=>{
    salmalBoot 은 한 번만 도니까, 바깥에서 부를 손잡이를 남긴다.
    다시 그리지 않고 모션만 태워서 이미 누른 투표는 그대로 남는다. */
 window.smReplay=()=>{ smCardsIn($('#voteGrid')); smCardsIn($('#closedGrid')) };
+/* ★ 2026-09-19 — 회원정보에서 닉네임을 바꿔도 카드에는 예전 이름이 남아 있었다.
+   카드 목록을 한 번 받아 두고 화면 전환만 해 왔기 때문이다 — 서버에서 다시 받아 그린다. */
+window.smReloadVotes=async()=>{
+  try{
+    await loadVotes();
+    syncExpiredCards();
+    renderGrid();
+    renderClosedGrid();
+    if(modalState.i!==null) openModal(modalState.i);
+  }catch(e){ /* 못 받아 오면 지금 화면을 그대로 둔다 */ }
+};
 /* 바깥(내 피드 등)에서 특정 탭으로 열어 달라고 할 때 쓴다 */
 window.smGoTab=(tab)=>{
   const b=$$('#smTabs button').filter(x=>x.dataset.tab===tab)[0];

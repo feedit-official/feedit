@@ -396,6 +396,8 @@
 @media(max-width:640px){ .bgTiles{grid-template-columns:repeat(4,1fr)} }
 
 .acctModal .fieldMsg{font-size:11.5px;color:var(--pink-2)}
+/* ★ 2026-09-19 — 빈 목록 안내는 줄을 넘기지 않는다 */
+.acctModal .fieldMsg.oneLine{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .acct .panelHead{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:20px}
 .acct .panelHead h3{font-size:15px;font-weight:600;letter-spacing:-.02em}
 .acct .panelHead .sub{font-size:11.5px;color:var(--pink-2)}

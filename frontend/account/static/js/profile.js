@@ -726,6 +726,9 @@ if(suW) suW.addEventListener('input', bodyHint);
       acctModal('editModal', false);
       ef.reset(); myRender(); authPaint();
       acctToast('회원정보가 DB에 저장됐어요.');
+      /* ★ 2026-09-19 — 닉네임을 바꾸면 이미 올린 살!말? 카드의 작성자 이름도 함께 바뀌어야 한다.
+         카드 목록은 한 번 받아 두고 쓰므로, 여기서 다시 받아 오라고 알려 준다. */
+      if(typeof window.smReloadVotes === 'function') window.smReloadVotes();
       if(typeof trRender === 'function' && document.body.dataset.view === 'trend') trRender('myfeed');
     }catch(ex){ err.textContent=ex.message||'회원정보를 저장하지 못했습니다.'; err.style.display='block' }
     finally{ if(submit)submit.disabled=false }
@@ -750,7 +753,7 @@ if(suW) suW.addEventListener('input', bodyHint);
     if(g) g.innerHTML = voted.map(v => itemCard({
       img: v.imgURL, tag: v.voted === 0 ? '살! 선택' : '말? 선택',
       br: v.b, nm: v.t, pr: fmtWon(v.p)
-    })).join('') || '<p class="fieldMsg">아직 투표한 카드가 없습니다. 살!말? 에서 골라 보세요.</p>';
+    })).join('') || '<p class="fieldMsg oneLine">아직 투표한 카드가 없습니다. 살!말? 에서 골라 보세요.</p>';
     acctModal('votedModal', true);
   });
   /* 뱃지 — 컬렉션 뱃지 전용 자리다.

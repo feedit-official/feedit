@@ -353,12 +353,23 @@
         <button data-tab="latest" class="">최신순</button>
         <button data-tab="taste">내 취향</button>
         <button data-tab="closing">마감임박</button>
+        <button data-tab="mine">내 카드</button>
       </div>
       <button class="addItemBtn" id="addItemBtn">＋ 살까말까 물어보기</button>
     </div>
   </section>
 
   <section class="voteSection">
+    <!-- '내 취향' · '내 카드' 탭은 내가 누구인지 알아야 볼 수 있다.
+         로그인 전에는 카드를 감추고 여기에 안내를 띄운다. -->
+    <div class="smGate" id="smGate" hidden>
+      <b id="smGateTitle">내 취향 추천은 로그인해야 볼 수 있어요.</b>
+      <span id="smGateDesc">즐겨입는 스타일과 체형을 알아야 나와 맞는 고민을 골라 드릴 수 있습니다.</span>
+      <div class="smGateBtns">
+        <button type="button" data-v="login">로그인</button>
+        <button type="button" class="ghost" data-v="signup">회원가입</button>
+      </div>
+    </div>
     <div class="voteGrid" id="voteGrid"></div>
     <div class="pager" id="pager">
     <button class="pagerBtn" id="pagerPrev" disabled="" aria-label="이전 페이지">←</button>

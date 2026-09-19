@@ -197,6 +197,9 @@
      "상품명을 입력해주세요" 같은 경고가 모달에 가려 보이지 않았다.
      경고는 지금 보고 있는 것 위에 떠야 한다 — 모든 오버레이보다 큰 값을 준다. */
 /* 로그인이 필요한 탭에서 카드 대신 띄우는 안내 */
+/* ★ 2026-09-19 — display:flex 가 hidden 속성을 이겨, 로그인이 필요 없는 탭에서도
+   안내가 계속 떠 있었다. hidden 이면 확실히 감춘다. */
+.smGate[hidden]{display:none}
 .smGate{display:flex;flex-direction:column;align-items:center;gap:9px;text-align:center;
   padding:52px 20px;margin-bottom:8px;border:1px dashed var(--pink-3);border-radius:14px;
   background:rgba(10,10,10,.02)}
@@ -205,6 +208,12 @@
 .smGate button{margin-top:8px;padding:11px 20px;border-radius:999px;border:0;cursor:pointer;
   background:var(--pink-0);color:var(--paper);font-size:12.5px;font-family:inherit}
 .smGate button:hover{opacity:.88}
+/* ★ 2026-09-19 — 로그인 · 회원가입 두 갈래를 나란히 둔다 */
+.smGateBtns{display:flex;align-items:center;gap:8px;margin-top:8px}
+.smGateBtns button{margin-top:0}
+.smGate button.ghost{background:transparent;color:var(--pink-1);
+  border:1px solid var(--pink-3)}
+.smGate button.ghost:hover{background:rgba(10,10,10,.04);opacity:1}
 
 .toast{
   position:fixed;left:50%;top:26px;transform:translateX(-50%) translateY(-16px);
