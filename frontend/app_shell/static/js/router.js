@@ -153,6 +153,7 @@ export function goView(v,fromTopNav=false){
   if(v==='salmal'){
     const first=!window.__smOn;
     if(first){ window.__smOn=1; try{ salmalBoot() }catch(e){} }
+    else if(window.smFeedbackPrompt){ try{ window.smFeedbackPrompt() }catch(e){} }
     /* 어느 탭에서 시작할지 지정돼 있으면 그쪽에서 다시 그리며 모션까지 태운다.
        첫 진입이든 아니든 반드시 반영한다 — 예전엔 첫 진입일 때 흘려버려서
        내 피드에서 넘어와도 '내 취향' 표시가 안 붙었다.

@@ -460,3 +460,49 @@ select.cInput{
   cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
 }
 .cComboItem:hover,.cComboItem.on{background:var(--paper)}
+
+/* ══ 살!말? 사후 피드백 (2026-09-19) ══════════════════════════ */
+.fbModal{position:fixed;inset:0;z-index:120;display:flex;align-items:center;justify-content:center;
+  padding:16px;background:rgba(20,18,16,.52);opacity:0;visibility:hidden;transition:opacity .2s,visibility .2s}
+.fbModal.on{opacity:1;visibility:visible}
+.fbCard{position:relative;width:min(440px,100%);max-height:calc(100vh - 32px);overflow:auto;
+  background:#fff;border-radius:18px;padding:24px 22px 20px;box-shadow:0 30px 70px -24px rgba(0,0,0,.5)}
+.fbX{position:absolute;top:10px;right:12px;font-size:22px;line-height:1;color:var(--pink-2);background:none}
+.fbHead{display:flex;gap:12px;align-items:center;margin-bottom:18px}
+.fbHead img{width:56px;height:56px;border-radius:10px;object-fit:cover;flex:none}
+.fbHead em{display:block;font-style:normal;font-size:11px;color:var(--coral);margin-bottom:3px}
+.fbHead h3{font-size:15px;font-weight:600;letter-spacing:-.02em;margin:0 0 3px}
+.fbHead span{font-size:11.5px;color:var(--pink-2)}
+.fbQ{margin-top:16px}
+.fbQ>b{display:block;font-size:13px;font-weight:600;margin-bottom:8px}
+.fbQ small{font-weight:400;color:var(--pink-2);margin-left:4px}
+.fbOpts{display:flex;flex-wrap:wrap;gap:6px}
+.fbOpts button{padding:8px 13px;border-radius:999px;border:1px solid var(--pink-3);background:#fff;font-size:12.5px;color:var(--pink-1)}
+.fbOpts button.on{border-color:var(--coral);background:var(--coral);color:#fff}
+.fbStars{display:flex;align-items:center;gap:2px}
+.fbStars button{font-size:24px;line-height:1;background:none;color:var(--pink-3);padding:0 2px}
+.fbStars button.on{color:var(--coral)}
+.fbStars span{margin-left:8px;font-size:12px;color:var(--pink-2)}
+.fbQ input{width:100%;padding:10px 12px;border:1px solid var(--pink-3);border-radius:10px;font-size:13px}
+.fbErr{margin-top:12px;font-size:12px;color:#c73a24}
+.fbErr[hidden]{display:none}
+.fbActs{display:flex;justify-content:flex-end;gap:8px;margin-top:20px}
+/* 카드 모달 안 — 글쓴이의 결과 */
+.modalFeedback{margin-top:12px;padding:12px 14px;border-radius:12px;background:var(--paper);font-size:12.5px;
+  display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px}
+.modalFeedback[hidden]{display:none}
+.modalFeedback b{font-weight:600}
+.modalFeedback span{color:var(--pink-1)}
+.modalFeedback q{flex-basis:100%;color:var(--pink-1)}
+.modalFeedback .pill{margin-left:auto}
+/* 마이페이지 패널 */
+.fbSum{display:flex;gap:16px;font-size:12px;color:var(--pink-2);margin-bottom:10px}
+.fbSum b{color:var(--pink-0);font-weight:600;margin-left:3px}
+.fbRow{display:flex;align-items:center;gap:12px;padding:10px 0;border-top:1px solid var(--pink-3)}
+.fbRow img,.fbRow>i{width:44px;height:44px;border-radius:8px;object-fit:cover;flex:none;background:var(--paper)}
+.fbRowT{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.fbRowT b{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fbRowT span{font-size:11.5px;color:var(--pink-2)}
+.fbRow.pending .fbRowT span{color:var(--coral)}
+.fbRowT q{font-size:11.5px;color:var(--pink-1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fbEmpty{font-size:12.5px;color:var(--pink-2);line-height:1.6;padding:6px 0}

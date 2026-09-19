@@ -22,6 +22,7 @@ from apps.core.models import (
     VoteBallot,
     VoteCard,
     VoteComment,
+    VoteFeedback,
 )
 
 from .salmal_storage import VoteImageError, delete_vote_image, upload_vote_image, vote_image_url
@@ -178,6 +179,102 @@ def _buyer_rating(snapshot):
     }
 
 
+def _feedback_payload(fb):
+    if fb is None:
+        return None
+    return {
+        "purchase": fb.purchase,
+        "purchase_label": fb.get_purchase_display(),
+        "satisfaction": fb.satisfaction,
+        "helpful": fb.helpful,
+        "comment": fb.comment,
+        "created_at": fb.created_at,
+    }
+
+
+def pending_feedback_cards(profile):
+    """피드백을 아직 안 쓴, 마감된 내 카드 — 알림(팀원 작업)이 이 함수를 그대로 쓰면 된다."""
+    if profile is None:
+        return VoteCard.objects.none()
+    _close_expired_cards()
+    return (VoteCard.objects.filter(user=profile, status=VoteCard.Status.CLOSED,
+                                    seed_key__startswith="user:", feedback__isnull=True)
+            .order_by("-closes_at", "-id"))
+
+
+def _feedback_card_row(card):
+    ballots = list(card.ballots.all())
+    summary = _vote_summary(card, ballots)
+    fb = getattr(card, "feedback", None)
+    return {
+        "card_id": card.id,
+        "title": card.title,
+        "image_url": vote_image_url(card.image_url),
+        "closes_at": card.closes_at,
+        "vote_summary": summary,
+        "feedback": _feedback_payload(fb),
+    }
+
+
+@require_http_methods(["GET", "POST"])
+def feedback(request):
+    """GET /api/salmal/feedback — 내 마감 카드의 피드백 현황 {pending, done}
+    POST {card_id, purchase, satisfaction, helpful, comment} — 작성·수정 (글쓴이만, 마감된 카드만)
+    """
+    profile = _profile(request)
+    if profile is None:
+        return _error("로그인이 필요합니다.", 401)
+    _close_expired_cards()
+    if request.method == "GET":
+        mine = (VoteCard.objects.filter(user=profile, status=VoteCard.Status.CLOSED,
+                                        seed_key__startswith="user:")
+                .select_related("feedback").prefetch_related("ballots")
+                .order_by("-closes_at", "-id"))
+        rows = [_feedback_card_row(c) for c in mine]
+        pending = [r for r in rows if r["feedback"] is None]
+        done = [r for r in rows if r["feedback"] is not None]
+        return _ok({"pending": pending, "done": done,
+                    "counts": {"pending": len(pending), "done": len(done)}})
+
+    data = _request_data(request)
+    if data is None:
+        return _error("요청 형식이 올바른 JSON이 아닙니다.")
+    try:
+        card_id = int(data.get("card_id"))
+    except (TypeError, ValueError):
+        return _error("card_id 가 올바르지 않습니다.")
+    card = VoteCard.objects.filter(id=card_id).first()
+    if card is None:
+        return _error("카드를 찾지 못했습니다.", 404)
+    if card.user_id != profile.id:
+        return _error("내가 올린 카드에만 피드백을 남길 수 있습니다.", 403)
+    if card.status != VoteCard.Status.CLOSED:
+        return _error("투표가 마감된 뒤에 피드백을 남길 수 있습니다.", 409)
+    purchase = str(data.get("purchase") or "").upper()
+    if purchase not in VoteFeedback.Purchase.values:
+        return _error("구매 여부를 골라 주세요.")
+    satisfaction = data.get("satisfaction")
+    if purchase == VoteFeedback.Purchase.UNDECIDED:
+        satisfaction = None
+    else:
+        try:
+            satisfaction = int(satisfaction)
+        except (TypeError, ValueError):
+            return _error("만족도를 1~5 중에서 골라 주세요.")
+        if not 1 <= satisfaction <= 5:
+            return _error("만족도를 1~5 중에서 골라 주세요.")
+    helpful = data.get("helpful")
+    helpful = None if helpful is None else bool(helpful)
+    comment = _clean_text(data.get("comment"), 300)
+    fb, created = VoteFeedback.objects.update_or_create(
+        card=card,
+        defaults={"user": profile, "purchase": purchase, "satisfaction": satisfaction,
+                  "helpful": helpful, "comment": comment},
+    )
+    return _ok({"card_id": card.id, "created": created, "feedback": _feedback_payload(fb)},
+               status=201 if created else 200)
+
+
 def _activity(hours=24):
     """최근 N시간 안에 살말에 참여(투표·댓글·카드 작성)한 사람 수 — 지어낸 실시간 인원 대신."""
     since = timezone.now() - timedelta(hours=hours)
@@ -284,6 +381,13 @@ def _card_payload(card, profile, tastes_by_user, taste_names_by_user):
         # ★ 2026-09-19 — 화면의 '구매자 만족도'는 투표율로 만든 계산값이었다.
         #   실제 구매자 신호인 판매처 평점·후기 수(상품 스냅샷)를 보낸다. 없으면 None.
         "buyer_rating": _buyer_rating(snapshot),
+        # 마감 뒤 글쓴이가 남긴 결과 — 모두에게 보인다. 글쓴이 본인에게는 작성 대기 여부도.
+        "feedback": _feedback_payload(getattr(card, "feedback", None)),
+        "feedback_pending": bool(
+            profile and card.user_id == profile.id and card.status == VoteCard.Status.CLOSED
+            and str(card.seed_key or "").startswith("user:")
+            and getattr(card, "feedback", None) is None
+        ),
         "vote_summary": summary,
         "similar_user_summary": similar,
         "taste_match_count": taste_match_count,
@@ -319,6 +423,7 @@ def cards(request):
             "product_source",
             "product_source__source_brand",
             "product_source__source_category",
+            "feedback",
         )
         .prefetch_related("ballots", "ballots__user", "comments", "comments__user", "comments__user__user")
     )

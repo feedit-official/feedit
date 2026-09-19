@@ -4,6 +4,7 @@ import { RANK_ON, rkClamp, rkRingHTML } from '../../../account/static/js/rank.js
 import { jobBadgeHTML, jobShown } from '../../../account/static/js/job.js';
 import { smBarFill, smBarLabels } from '../../../trend/static/js/discount_resale.js';
 import { STYLES } from '../../../home/static/js/chat.js';
+import { fbOpen, fbPromptOnce } from './feedback.js';
 import { createVoteCard, deleteVoteCard, deleteVoteComment, reportVoteTarget, saveVote, saveVoteComment } from '../../../account/static/js/account_api.js';
 
 /* ══════════════ 살!말? (feedit-salmal_2 이식) ══════════════
@@ -38,6 +39,8 @@ function cardFromApi(card,i){
     tone:['#302d2b','#6e6660'], imgURL:card.image_url,
     /* 판매처 구매 평점 — 없으면 null. 예전 '구매자 만족도'(투표율 계산값)를 대신한다 (2026-09-19) */
     buyer:card.buyer_rating||null,
+    /* 사후 피드백 — 마감 뒤 글쓴이가 남긴 결과. 내 카드인데 아직 안 썼으면 feedbackPending */
+    feedback:card.feedback||null, feedbackPending:Boolean(card.feedback_pending),
     youtubeId:source.video_id||'', upload_date:source.upload_date||'',
     productSourceId:card.product_source_id,
     closed:Boolean(card.closed), st:Array.isArray(card.style_tags)?card.style_tags:[],
@@ -536,11 +539,38 @@ function openModal(i){
   const note=v.authorNote||{name:'FEEDiT 사용자',text:''};
   $('#modalNoteName').textContent=note.name;
   $('#modalNote').textContent=note.text;
+  paintModalFeedback(v);
   closeAiModal();
   updateModalVote();
   renderComments();
   $('#modalOverlay').classList.add('on');
   document.body.style.overflow='hidden';
+}
+/* 모달 — 글쓴이의 사후 결과(있으면), 내 카드인데 아직 안 썼으면 '결과 남기기' */
+function paintModalFeedback(v){
+  let el=$('#modalFeedback');
+  if(!el){
+    const note=$('#modalNote'); if(!note)return;
+    note.insertAdjacentHTML('afterend','<div class="modalFeedback" id="modalFeedback" hidden></div>');
+    el=$('#modalFeedback');
+  }
+  const f=v.feedback;
+  if(f){
+    el.hidden=false;
+    el.innerHTML='<b>글쓴이의 결과</b><span>'+escapeHtml(f.purchase_label||'')+
+      (f.satisfaction?' · 만족 '+f.satisfaction+'/5':'')+
+      (f.helpful===true?' · 투표가 도움이 됐어요':'')+'</span>'+
+      (f.comment?'<q>'+escapeHtml(f.comment)+'</q>':'')+
+      (v.mine?'<button type="button" class="pill ghost" data-fb-card>수정</button>':'');
+  }else if(v.feedbackPending){
+    el.hidden=false;
+    el.innerHTML='<b>투표가 마감됐어요</b><span>결국 어떻게 하셨는지 알려 주세요. 투표한 사람들의 적중이 계산됩니다.</span>'+
+      '<button type="button" class="pill" data-fb-card>결과 남기기</button>';
+  }else{ el.hidden=true; el.innerHTML=''; return; }
+  const btn=el.querySelector('[data-fb-card]');
+  if(btn)btn.onclick=()=>fbOpen({card_id:v.id, title:v.t, image_url:v.imgURL, feedback:v.feedback,
+      vote_summary:{buy_pct:v.a, pass_pct:100-v.a, total:v.votes}},
+    {askLater:false, onSaved:()=>window.smReloadVotes&&window.smReloadVotes()});
 }
 function closeModal(){
   $('#modalOverlay').classList.remove('on');
@@ -963,6 +993,9 @@ loadVotes().then(()=>{
    salmalBoot 은 한 번만 도니까, 바깥에서 부를 손잡이를 남긴다.
    다시 그리지 않고 모션만 태워서 이미 누른 투표는 그대로 남는다. */
 window.smReplay=()=>{ smCardsIn($('#voteGrid')); smCardsIn($('#closedGrid')) };
+/* 살말 화면에 들어올 때마다 — 마감된 내 카드에 결과를 안 남겼으면 팝업으로 묻는다 */
+window.smFeedbackPrompt=()=>{ if(AUTH.in) fbPromptOnce().catch(()=>{}); };
+window.smFeedbackPrompt();
 /* ★ 2026-09-19 — 회원정보에서 닉네임을 바꿔도 카드에는 예전 이름이 남아 있었다.
    카드 목록을 한 번 받아 두고 화면 전환만 해 왔기 때문이다 — 서버에서 다시 받아 그린다. */
 window.smReloadVotes=async()=>{

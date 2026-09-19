@@ -89,6 +89,14 @@ export const reportVoteTarget = ({ targetType, targetId, reason='' }) =>
 export const createVoteCard = data =>
   request('cards', { method:'POST', body:data, base:'/api/salmal/' });
 
+/* 살!말? 사후 피드백 — 마감된 내 카드의 작성 현황 {pending, done, counts} · 작성/수정 */
+export const feedbackList = () =>
+  request('feedback', { base:'/api/salmal/' });
+
+export const saveFeedback = ({ cardId, purchase, satisfaction = null, helpful = null, comment = '' }) =>
+  request('feedback', { method:'POST', base:'/api/salmal/',
+    body:{ card_id:cardId, purchase, satisfaction, helpful, comment } });
+
 export const deleteVoteCard = cardId =>
   request(`cards/${cardId}`, { method:'DELETE', body:{}, base:'/api/salmal/' });
 

@@ -1,5 +1,6 @@
 import { $, $$, HAS_A, aAnimate, aStagger } from '../../../core/static/js/dom.js';
 import { BADGES, badgesApply, bgDetail, bgRender } from './badges.js';
+import { fbLoad, fbPanelRender, fbReset } from '../../../salmal/static/js/feedback.js';
 import { IMG, itemCard, LIKED, STYLES, toggleLike, likedSync, likedClear } from '../../../home/static/js/chat.js';
 import { SIMG } from '../../../style/static/js/style_page.js';
 import { styleProductCard, styleProductsURL } from '../../../style/static/js/products.js';
@@ -205,6 +206,7 @@ async function authLogout(){
     AUTH.in = false;
     likedClear();
     badgesApply(null);
+    fbReset();
     document.dispatchEvent(new CustomEvent('feedit:auth'));
     pendingAfterAuth = null;
     authPaint();
@@ -440,6 +442,9 @@ export function myRender(){
   recRender();
   syncTodayRecHeight();
 
+  /* 살!말? 피드백 작성 현황 (2026-09-19) — 마감된 내 카드에 결과를 남겼는지 */
+  fbPanelMount();
+
   if(HAS_A){
     aAnimate($$('#v-mypage .panel'), {opacity:[0,1],translateY:[14,0],
       duration:640,delay:aStagger(60),ease:'out(3)',
@@ -448,6 +453,20 @@ export function myRender(){
 }
 
 /* '오늘의 추천' 패널 높이를 왼쪽 컬럼(프로필+필터) 높이에 정확히 맞춘다 */
+function fbPanelMount(){
+  const rec = $('#todayRecPanel');
+  if(!rec) return;
+  if(!$('#fbPanel')){
+    rec.insertAdjacentHTML('afterend',
+      '<div class="panel fbPanel" id="fbPanel" style="margin-top:20px">'+
+        '<div class="panelHead"><h3>살!말? 피드백</h3><span class="sub">마감된 내 카드의 결과</span></div>'+
+        '<div id="fbPanelBody"></div></div>');
+  }
+  const body = $('#fbPanelBody');
+  if(!AUTH.in){ body.innerHTML = '<div class="fbEmpty">로그인하면 확인할 수 있습니다.</div>'; return; }
+  fbPanelRender(body);
+  fbLoad().then(() => fbPanelRender($('#fbPanelBody')));
+}
 function syncTodayRecHeight(){
   const left = $('.myGrid .myCol:first-child');
   const panel = $('#todayRecPanel');

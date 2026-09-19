@@ -52,6 +52,7 @@ urlpatterns = [
     path("salmal/card", views.salmal_card, name="salmal-card"),
     path("salmal/search", views.salmal_search, name="salmal-search"),
     path("salmal/cards", salmal_views.cards, name="salmal-cards"),
+    path("salmal/feedback", salmal_views.feedback, name="salmal-feedback"),
     path("salmal/cards/<int:card_id>", salmal_views.card, name="salmal-card-detail"),
 
     # ── 관리자 수집 API (DRF) ──

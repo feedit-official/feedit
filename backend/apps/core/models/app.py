@@ -590,6 +590,59 @@ class VoteReport(models.Model):
         return f"{self.get_target_type_display()} #{self.target_id} / {self.get_status_display()}"
 
 
+class VoteFeedback(models.Model):
+    """살!말? 사후 피드백 — 투표가 마감된 뒤 글쓴이가 남기는 결과 (2026-09-19).
+
+    글쓴이만, 카드당 하나. 투표자들의 '적중'(내 판단이 맞았나)은 이 값으로 계산한다
+    (apps/api/badges.py — 연속 적중 · 여론 조력자 · 성실 피드백러).
+    """
+
+    class Purchase(models.TextChoices):
+        BOUGHT = "BOUGHT", "샀어요"
+        SKIPPED = "SKIPPED", "안 샀어요"
+        UNDECIDED = "UNDECIDED", "아직 고민 중"
+
+    card = models.OneToOneField(
+        VoteCard,
+        on_delete=models.CASCADE,
+        related_name="feedback",
+        verbose_name="카드",
+    )
+    user = models.ForeignKey(
+        AppUser,
+        on_delete=models.CASCADE,
+        related_name="vote_feedbacks",
+        verbose_name="작성자",
+    )
+    purchase = models.CharField(max_length=20, choices=Purchase.choices, verbose_name="구매 여부")
+    satisfaction = models.PositiveSmallIntegerField(
+        null=True, blank=True, verbose_name="만족도(1~5)",
+        help_text="샀으면 '사길 잘했나', 안 샀으면 '안 사길 잘했나'. 고민 중이면 비워 둔다.",
+    )
+    helpful = models.BooleanField(null=True, blank=True, verbose_name="투표가 도움이 됐나")
+    comment = models.CharField(max_length=300, blank=True, default="", verbose_name="한 줄 후기")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="작성일시")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="수정일시")
+
+    class Meta:
+        db_table = '"app"."vote_feedback"'
+        verbose_name = "살말 피드백"
+        verbose_name_plural = "살말 피드백"
+        indexes = [
+            models.Index(fields=["user", "-created_at"], name="idx_vote_feedback_user"),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(satisfaction__isnull=True)
+                | models.Q(satisfaction__gte=1, satisfaction__lte=5),
+                name="ck_vote_feedback_satisfaction",
+            ),
+        ]
+
+    def __str__(self):
+        return f"#{self.card_id} {self.get_purchase_display()} · {self.satisfaction or '-'}"
+
+
 class ChatSession(models.Model):
     """
     사용자와 AI 챗봇의 대화 세션.

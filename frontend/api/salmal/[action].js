@@ -1,7 +1,7 @@
-/* 살!말? 조회·카드 생성을 Django로 중계한다. */
+/* 살!말? 조회·카드 생성·사후 피드백을 Django로 중계한다. */
 import { backendBase, backendToken } from '../_lib/db.js';
 
-const ALLOWED = new Set(['cards']);
+const ALLOWED = new Set(['cards', 'feedback']);
 
 export default async function handler(req, res) {
   const url = new URL(req.url, 'http://x');
