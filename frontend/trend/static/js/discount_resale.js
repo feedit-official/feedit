@@ -210,7 +210,8 @@ export function svRender(body){
         return '<div class="svAlsoCard" style="--k:'+k[2]+'">'+
           '<div class="svAlsoTop"><span class="svTag">'+k[0]+'</span>'+
             '<u>'+svPic(s)+'</u></div>'+
-          '<b>'+svEsc(s.n)+'</b><span class="svAlsoB">'+svEsc(s.b)+'</span>'+
+          '<b>'+svEsc(s.n)+'</b><span class="svAlsoB">'+svEsc(s.b)+
+            (s.same!=null?' · 찜 '+s.same.toLocaleString('ko-KR')+'명':'')+'</span>'+
           '<p>'+s.note.replace(/<\/?b>/g,'')+'</p></div>'}).join('')+
       '</div>'+
     '</section>':'')+
@@ -267,7 +268,8 @@ function svRows(){
     const k=SV_KIND[s.k], d=s.dl;
     return '<div class="svRow" style="--k:'+k[2]+(s.url?';cursor:pointer" data-product-url="'+svEsc(s.url)+'" role="link" tabindex="0':'')+'">'+
       '<u class="svTh">'+svPic(s)+'</u>'+
-      '<div class="svName"><b>'+svEsc(s.n)+'</b><span>'+svEsc(s.b)+' · '+svEsc(s.why)+'</span></div>'+
+      '<div class="svName"><b>'+svEsc(s.n)+'</b><span>'+svEsc(s.b)+' · '+svEsc(s.why)+
+        (s.same!=null?' · 찜 '+s.same.toLocaleString('ko-KR')+'명':'')+'</span></div>'+
       '<div class="svAge">'+svAge(s.d)+'</div>'+
       '<div class="svIdx"><div class="svMini"><i data-w="'+Math.max(0,Math.min(100,s.idx||0))+'"></i></div>'+
         '<b>'+svV(s.idx)+'</b><em class="'+(d>0?'up':d<0?'dn':'')+'">'+

@@ -475,6 +475,8 @@ export function likeClick(btn){
       .then(r=>{
         if(r&&Number.isFinite(+r.saved_count))ME.saved=+r.saved_count;
         if(r)document.dispatchEvent(new CustomEvent('feedit:saved'));
+        /* 방금 누른 찜의 '같은 걸 찜한 사람 수'까지 서버 값으로 다시 맞춘다 */
+        if(r)likedAfterAuth();
       });
   }
   const n=$('#statSavedN'); if(n)n.textContent=LIKED.size;
