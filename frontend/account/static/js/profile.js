@@ -865,11 +865,13 @@ if(suW) suW.addEventListener('input', bodyHint);
     acctModal('trendGateModal', false);
     goView('home');
   });
+  /* ★ 2026-09-20 — data-lock 이 달린 창(트렌드 분석 로그인 안내)은 바깥 클릭 · Esc 로 닫히지 않는다.
+     닫히면 로그인 없이 뒤편 화면을 그대로 눌러 볼 수 있었다. '취소' · '로그인' 으로만 빠져나간다. */
   $$('.acctModal').forEach(m => m.addEventListener('click', e => {
-    if(e.target === m) m.classList.remove('on');
+    if(e.target === m && !m.dataset.lock) m.classList.remove('on');
   }));
   addEventListener('keydown', e => {
-    if(e.key === 'Escape') $$('.acctModal').forEach(m => m.classList.remove('on'));
+    if(e.key === 'Escape') $$('.acctModal').forEach(m => { if(!m.dataset.lock) m.classList.remove('on') });
   });
 
   /* 헤더 계정 메뉴 */

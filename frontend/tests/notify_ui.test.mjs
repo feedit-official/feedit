@@ -221,6 +221,15 @@ await new Promise(r => setTimeout(r, 400));
 assert.ok(document.getElementById('trendGateModal').classList.contains('on'), '로그인 안내가 뜬다');
 assert.notEqual(document.getElementById('trProfNm').textContent, '피딧회원', '앞 계정 이름이 남지 않는다');
 assert.equal(document.querySelector('#sFoot .who b').textContent.includes('피딧회원'), false);
+/* 2026-09-20 — 바깥을 누르거나 Esc 를 눌러도 닫히지 않는다. 취소 · 로그인으로만 빠져나간다 */
+const gate = document.getElementById('trendGateModal');
+click(gate);
+dom.window.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key:'Escape' }));
+assert.ok(gate.classList.contains('on'), '로그인 안내는 바깥 클릭 · Esc 로 닫히지 않는다');
+click(document.getElementById('trendGateCancel'));
+await new Promise(r => setTimeout(r, 60));
+assert.equal(gate.classList.contains('on'), false);
+assert.equal(document.body.dataset.view, 'home', '취소하면 홈으로');
 
 console.log('✅ 알림 아이콘 · 패널 · 읽음 · 삭제 · 알림 설정이 실제로 동작합니다.');
 process.exit(0);
