@@ -85,8 +85,14 @@ export function lockWidths(items){
   });
   return ()=>restores.forEach(fn=>fn());
 }
+/* ★ 2026-09-19 — 앞선 카운트업이 도는 중에 다시 불리면, 굴러가던 중간값(0 에 가까운 수)을
+   원래 값으로 오해해 그 자리에서 멈춰 버렸다(요일별 활동 숫자가 0 으로 굳던 버그).
+   그래서 새로 시작하기 전에 돌고 있던 것을 제 값으로 끝맺어 둔다. */
+let cuRun=null;
+function cuFinish(){ if(cuRun){ const fn=cuRun; cuRun=null; fn(); } }
 export function trCountUp(){
   if(!HAS_A)return;
+  cuFinish();
   const items=[];
   $$(CU_SEL).forEach(el=>{
     if(el.closest('.dial'))return;                 /* 다이얼은 따로 돈다 */
@@ -112,7 +118,9 @@ export function trCountUp(){
   };
   items.forEach(it=>paint(it,0));
   const px=items.map(()=>({t:0}));
-  aAnimate(px,{t:1,duration:1000,delay:aStagger(38),ease:'out(3)',
+  const done=()=>{ items.forEach(it=>paint(it,1)); undo(); };
+  const anim=aAnimate(px,{t:1,duration:1000,delay:aStagger(38),ease:'out(3)',
     onUpdate:()=>items.forEach((it,i)=>paint(it,px[i].t)),
-    onComplete:()=>{ items.forEach(it=>paint(it,1)); undo(); }});
+    onComplete:()=>{ cuRun=null; done(); }});
+  cuRun=()=>{ try{ anim&&anim.pause&&anim.pause() }catch(e){} done(); };
 }

@@ -464,6 +464,11 @@ async function wkLoadVideo(term){
      받기 전에는 '…', 실패하면 사유를 적는다. 숫자를 지어내지 않는다. */
 let WR={state:'loading',data:null,reason:''};
 const WK_DAY=['월','화','수','목','금','토','일'];
+/* ★ 2026-09-19 — 기다리는 자리에 '…' · '–' 같은 글자를 박아 두지 않는다.
+   점 세 개가 차례로 뛰는 표시(wkDots)와, 값 자리를 지키는 뼈대(wkSkel)로 대신하고
+   실제 값이 오면 그 자리에서 숫자가 굴러 올라온다(trCountUp). */
+const WK_DOTS=(cls)=>'<span class="wkDots'+(cls?' '+cls:'')+'"><i></i><i></i><i></i></span>';
+const WK_SKEL=(cls)=>'<span class="wkSkel'+(cls?' '+cls:'')+'"></span>';
 const wkSign=n=>(n>0?'+':'')+n;
 /* ── 이번 주 리포트의 축 = 가장 많이 검색한 키워드 ──
    ★ 2026-09-17 · 한 줄 요약 · 히어로 카드 · 추천 영상 · 추천 웹매거진이 모두 같은 키워드를 말한다.
@@ -473,7 +478,8 @@ const wkSign=n=>(n>0?'+':'')+n;
 let WKEY=null;   /* {label, facet, style:STYLES 항목|null, from:'search'|'style'} */
 function wkKeyword(fallback){
   const d=WR.data, top=d&&d.search&&d.search.top;
-  const byName=n=>STYLES.find(s=>s.n===n)||null;
+  const norm=x=>String(x||'').trim();
+  const byName=n=>STYLES.find(s=>norm(s.n)===norm(n))||null;
   if(top&&top.label)return {label:top.label,facet:top.facet||(byName(top.label)?'스타일':''),style:byName(top.label),from:'search'};
   return {label:fallback.n,facet:'스타일',style:fallback,from:'style'};
 }
@@ -485,8 +491,8 @@ function wkLineHTML(K,rp){
 }
 /* 히어로 카드 — 이미지 · 키워드 이름 · 트렌드 온도 3칸 · 더 보기 버튼 */
 function wkHeroHTML(K){
-  if(!K)return '<div class="wkHeroImg wkHeroType"><b>…</b></div>'+
-    '<div class="wkCopy"><div class="wkState">THIS WEEK</div><h3>…</h3>'+
+  if(!K)return '<div class="wkHeroImg wkHeroType wkHeroWait"><b>'+WK_DOTS('lg')+'</b></div>'+
+    '<div class="wkCopy"><div class="wkState">THIS WEEK</div><h3>'+WK_DOTS('md')+'</h3>'+
     '<div class="wkLedger c3">'+wkLedgerHTML(null)+'</div></div>';
   const sub=K.style?K.style.en:(K.facet||'KEYWORD');
   /* 스타일은 스타일 대표 사진, 그 밖의 키워드는 관련 상품 사진을 받아 온 뒤 채운다(wkHeroImage) */
@@ -529,7 +535,7 @@ document.addEventListener('click',e=>{
 },true);
 function wkMetricsHTML(){
   const d=WR.data, wait=WR.state!=='ok';
-  const v=x=>wait?(WR.state==='loading'?'…':'–'):x;
+  const v=x=>wait?WK_SKEL():x;   /* ★ 2026-09-19 — 로딩 중에는 '–' 대신 뼈대만 두고, 값이 오면 숫자가 굴러 올라온다(trCountUp) */
   const rows=wait
     ? [['검색한 키워드','','개'],['새로 찜한 것','','개'],['살!말? 투표','','표'],['트렌드 분석','','분']]
         .map(r=>[r[0],v(),r[2],WR.state==='loading'?'불러오는 중':trEsc(WR.reason||'기록을 불러오지 못했습니다.'),0])
@@ -551,7 +557,7 @@ function wkPeakHours(hours){
 }
 function wkDaysHTML(){
   const head=peak=>'<div class="wkCardHead"><h3>요일별 활동</h3><em>PEAK · '+peak+'</em></div>';
-  if(WR.state!=='ok')return head('–')+'<div class="wkNote"><i>◆</i><span>'+
+  if(WR.state!=='ok')return head(WR.state==='loading'?WK_DOTS('xs'):'–')+'<div class="wkNote"><i>◆</i><span>'+
     (WR.state==='loading'?'이번 주 활동 기록을 불러오는 중입니다…':trEsc(WR.reason||'활동 기록을 불러오지 못했습니다.'))+'</span></div>';
   const days=WR.data.activity.days, max=Math.max(...days), total=days.reduce((a,b)=>a+b,0);
   const today=WK_DAY[(new Date().getDay()+6)%7];
@@ -589,14 +595,29 @@ function wkTasteHTML(){
 /* 받아 온 뒤 칸만 다시 채운다 — 본문 전체를 다시 그리면 등장 애니메이션이 또 돈다 */
 function wkActivityPaint(K,rp){
   const put=(sel,html)=>{ const el=$(sel); if(el)el.innerHTML=html; return el };
-  put('#wkLine',wkLineHTML(K,rp));
-  put('#wkHero',wkHeroHTML(K));
-  put('#wkMetrics',wkMetricsHTML());
-  put('#wkDaysCard',wkDaysHTML());
-  put('#wkTasteCard',wkTasteHTML());
+  /* ★ 2026-09-19 — 다섯 칸이 API(weekly-report) 응답 하나를 같이 기다리다 보니
+     '…' 만 보이던 화면이 받는 순간 전부 한꺼번에 바뀌어 보였다. 데이터가 오는
+     시점은 실제로 하나뿐이라 서버 스트리밍으로 바꿀 수는 없지만, 화면에서는
+     위에서 아래로 순서대로 살아나게 해 '팝' 하고 한 번에 뜨는 느낌을 없앤다. */
+  const els=[
+    put('#wkLine',wkLineHTML(K,rp)),
+    put('#wkHero',wkHeroHTML(K)),
+    put('#wkMetrics',wkMetricsHTML()),
+    put('#wkDaysCard',wkDaysHTML()),
+    put('#wkTasteCard',wkTasteHTML())
+  ].filter(Boolean);
   $$('#wkReport .wkDay .t i').forEach(e=>e.style.height=e.dataset.h+'%');
   $$('#wkReport .wkTaste .rail i').forEach(e=>e.style.width=e.dataset.w+'%');
   $$('#wkReport .wkMetric').forEach(e=>e.style.setProperty('--u',e.classList.contains('hot')?'38px':'22px'));
+  /* ★ 2026-09-19 — 처음 들어올 때 이미 아래에서 위로 올라오는 동작(wkAnimate)을 한 번 보여 줬다.
+     값이 채워질 때 또 올리면 같은 카드가 두 번 솟아 보여 산만하다 — 여기서는 은은하게 밝아지기만 한다. */
+  if(HAS_A&&els.length){
+    aUtils.set(els,{opacity:.45});
+    aAnimate(els,{opacity:[.45,1],duration:420,delay:aStagger(70),ease:'out(3)'});
+  }
+  /* ★ 2026-09-19 — 내 피드 · 찜한 키워드와 같은 느낌: '…' 로 기다리게 하는 대신
+     실제 값이 들어온 순간 0에서 그 값까지 숫자가 굴러 올라가다 멈춘다. */
+  trCountUp();
 }
 async function wkActivityLoad(fallback,rp){
   WR={state:'loading',data:null,reason:''};
@@ -611,7 +632,7 @@ async function wkActivityLoad(fallback,rp){
   const K=WKEY=wkKeyword(fallback);
   wkActivityPaint(K,rp);
   wkHeroImage(K);
-  tpLoad([{n:K.label}],()=>{ const l=$('#wkHeroLedger'); if(l&&WKEY===K)l.innerHTML=wkLedgerHTML({n:K.label}) });
+  tpLoad([{n:K.label}],()=>{ const l=$('#wkHeroLedger'); if(l&&WKEY===K){ l.innerHTML=wkLedgerHTML({n:K.label}); trCountUp() } });
   wkLoadVideo(K.label);
   wkMagLoad(K.label);
   const g=$('#wkNextGrid'); if(g)g.innerHTML=wkNextHTML(K.style||{id:null});
@@ -690,7 +711,7 @@ function wkLedgerHTML(s){
   const L=s?tpLive(s):{state:'loading'};
   const cell=(lb,v,ac)=>'<div'+(ac?' class="ac"':'')+'><span>'+lb+'</span><b>'+v+'</b></div>';
   if(L.state!=='ok'){
-    const v=L.state==='loading'?'…':'–';
+    const v=WK_SKEL('sm');   /* ★ 2026-09-19 — '–' 대신 뼈대만 두고, 값이 오면 숫자가 굴러 올라온다(trCountUp) */
     return cell('트렌드 온도',v,1)+cell('지난주 대비',v)+cell('수명주기 단계',v);
   }
   return cell('트렌드 온도',L.temp+'°',1)+
@@ -707,6 +728,9 @@ function wkNextHTML(top){
   if(!ok.length)return unavailableHTML('스타일별 트렌드 지표가 아직 없습니다.','');
   return ok.map(([s,L])=>
     '<div class="wkNextCard" data-style="'+s.id+'" style="cursor:pointer">'+
+    /* ★ 2026-09-19 — 스타일 페이지(SIMG)와 같은 사진을 써서, 이름만 보고 어떤
+       스타일인지 못 알아보던 카드에 얼굴을 붙였다. */
+    '<div class="wkNextImg"><img src="'+SIMG(s)+'" alt="'+s.n+'" loading="lazy"></div>'+
     '<div class="wkNextHead"><i></i><b>'+s.n+'</b><span>'+(L.stage?L.stage+' · ':'')+L.temp+'°</span></div>'+
     '<p>'+s.ab+'</p></div>').join('');
 }

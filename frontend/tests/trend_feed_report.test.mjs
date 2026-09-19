@@ -118,7 +118,7 @@ await t('리포트 — 기간 · 받기 전에는 키워드 · 활동 지표를 
   assert.match(r, /\d{4}\.\d{2} · W\d · \d+\/\d+ – \d+\/\d+/);
   assert.match(body().querySelector('#wkLine').textContent, /확인하고 있습니다/);
   const m = [...body().querySelectorAll('.wkMetric strong')].map(e => e.textContent);
-  assert.deepEqual(m, ['…개', '…개', '…표', '…분']);
+  assert.deepEqual(m, ['–개', '–개', '–표', '–분']);   /* ★ 2026-09-19 — '…' 대신 '–', 값이 오면 카운트업으로 굴러 올라간다 */
   await wait();
 });
 

@@ -22,6 +22,7 @@ from __future__ import annotations
 import re
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, wait as futures_wait
 from urllib.parse import urlsplit
 
 from . import llm
@@ -121,10 +122,14 @@ def _pick(term: str, got: dict | None, deadline: float | None = None) -> list[di
     """모델 답 중 확인된 기사 주소만 남긴다 (인용 출처에 있거나 · 직접 열어 확인).
 
     ★ deadline — 여기까지만 주소를 열어 본다 (time.time() 기준).
-      주소 확인은 한 편에 최대 6초라, 인용이 없는 기사가 여럿이면 30초를 더 쓴다.
-      그러면 버셀 함수가 먼저 끊겨 사용자는 아무것도 못 본다.
-      시간이 다 되면 **남은 기사는 확인 없이 버린다** — 있지도 않은 주소를 올리느니
-      확인된 것만 내보낸다.
+      ★ 2026-09-19 수정 — 인용 출처에 없는 기사를 **한 편씩 순서대로** 열어 봤다.
+        한 편에 최대 6초라, 인용이 안 달린 기사가 3~4편만 돼도 검증 예산(18초)을
+        다 써 버려 **뒤쪽 기사는 열어 보지도 못하고 통째로 버려졌다** — 그 기사들이
+        실제로는 멀쩡해도 사용자 화면엔 '찾지 못했습니다'만 떴다. 그래서 순서를
+        지키는 최종 목록은 그대로 두되, 주소 확인 자체는 동시에 여러 편을 열어
+        같은 예산 안에 더 많이 확인한다.
+      시간이 다 돼도 확인 못 한 기사만 **그 기사만** 버린다 — 있지도 않은 주소를
+      올리느니 확인된 것만 내보낸다.
     """
     if not got:
         return []
@@ -132,24 +137,40 @@ def _pick(term: str, got: dict | None, deadline: float | None = None) -> list[di
     for s in got.get("_raw_sources") or []:
         shown, key = llm._clean_url(s.get("url") or "")
         cited[key] = {"url": shown, "title": s.get("title") or ""}
-    out, seen = [], set()
+    candidates: list[tuple[str, str, dict]] = []
+    seen = set()
     for a in got.get("articles") or []:
         shown, key = llm._clean_url(str(a.get("url") or "").strip())
         if key in seen or not _is_article(shown):
             continue
-        if key not in cited:
-            if deadline is not None and time.time() >= deadline:
-                break
-            if not _page_exists(shown):
-                continue
         seen.add(key)
+        candidates.append((key, shown, a))
+    if not candidates:
+        return []
+    # 인용 출처에 있는 것은 이미 확인된 것으로 본다. 나머지만 실제로 열어 봐야 하는데,
+    # 순서(최근 · 한국어 매체 우선)는 모델이 준 candidates 순서를 그대로 지키면서
+    # 검증 자체만 동시에 진행한다.
+    need_verify = [(key, shown) for key, shown, _ in candidates if key not in cited]
+    verified: dict[str, bool] = {}
+    if need_verify and deadline is not None:
+        remaining = deadline - time.time()
+        if remaining > 0:
+            with ThreadPoolExecutor(max_workers=min(6, len(need_verify))) as ex:
+                futs = {key: ex.submit(_page_exists, shown) for key, shown in need_verify}
+                done, _pending = futures_wait(futs.values(), timeout=remaining)
+                for key, fut in futs.items():
+                    verified[key] = fut in done and fut.result()
+    out = []
+    for key, shown, a in candidates:
+        if len(out) >= LIMIT:
+            break
+        if key not in cited and not verified.get(key, False):
+            continue
         url = cited[key]["url"] if key in cited else shown
         title = str(a.get("title") or "").strip() or (cited.get(key) or {}).get("title") or shown
         magazine = str(a.get("magazine") or "").strip() or _host(shown)
         out.append({"magazine": magazine[:40], "title": title[:120], "url": url,
                     "domain": _host(shown)})
-        if len(out) >= LIMIT:
-            break
     return out
 
 
