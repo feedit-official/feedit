@@ -62,7 +62,7 @@
 .notiIc{flex:0 0 auto;width:36px;height:36px;border-radius:50%;display:grid;place-items:center;
   background:var(--nt-soft);color:var(--nt-ink);transition:background .18s var(--ease)}
 .notiItem:hover .notiIc{background:#fff}
-.notiIc svg{width:17px;height:17px}
+.notiIc svg{display:block;flex:none;width:17px;height:17px;margin:0}
 .notiItem.unread .notiIc{background:rgba(255,107,74,.1);color:var(--nt-acc)}
 .notiTx{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
 .notiMeta{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--nt-sub)}
@@ -150,10 +150,10 @@
 .notiToast.in{opacity:1;transform:none}
 .notiToast.out{opacity:0;transform:translateX(24px) scale(.98);transition:opacity .22s ease,transform .3s ease}
 .notiToast:hover{background:rgba(255,255,255,.96)}
-.notiToast .notiIc{flex:0 0 auto;width:36px;height:36px;border-radius:10px;display:grid;place-items:center;
-  background:var(--nt-soft);color:var(--nt-ink)}
-.notiToast .notiIc.hot{background:rgba(255,107,74,.12);color:var(--nt-acc)}
-.notiToast .notiIc svg{width:18px;height:18px}
+.ntIc{flex:0 0 36px;width:36px;height:36px;border-radius:10px;margin:0;padding:0;
+  display:flex;align-items:center;justify-content:center;line-height:0;
+  background:rgba(255,107,74,.12);color:var(--nt-acc)}
+.ntIc svg{display:block;flex:none;width:18px;height:18px;margin:0}
 .ntTx{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
 .ntMeta{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--nt-sub)}
 .ntMeta b{font-weight:700;letter-spacing:.01em;color:var(--nt-ink)}
@@ -162,6 +162,8 @@
 .ntAgo{margin-left:auto;font-variant-numeric:tabular-nums}
 .ntAgo::before{display:none!important}
 .ntTitle{font-size:13.5px;font-weight:600;line-height:1.45;letter-spacing:-.025em;color:var(--nt-ink)}
+.ntMore{margin-top:6px;font-size:11.5px;font-weight:600;color:var(--nt-acc)}
+.ntMore:hover{text-decoration:underline}
 .ntBody{font-size:12.5px;line-height:1.5;color:#6f6a64;letter-spacing:-.015em;
   display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .ntX{position:absolute;top:10px;right:10px;width:22px;height:22px;border:0;border-radius:50%;padding:0;

@@ -1,5 +1,5 @@
 import { $, $$, HAS_A, aAnimate, aStagger } from '../../../core/static/js/dom.js';
-import { BADGES, badgesApply, bgDetail, bgRender } from './badges.js';
+import { BADGES, badgesApply, bgDetail, bgRender, bgSelect } from './badges.js';
 import { fbLoad, fbPanelRender, fbReset } from '../../../salmal/static/js/feedback.js';
 import { IMG, itemCard, LIKED, STYLES, toggleLike, likedSync, likedClear } from '../../../home/static/js/chat.js';
 import { SIMG } from '../../../style/static/js/style_page.js';
@@ -814,6 +814,11 @@ if(suW) suW.addEventListener('input', bodyHint);
      팀원 컬렉션 뱃지가 도착하면 BADGES 배열만 채우면 그대로 그려진다. */
   const bb = $('#statBadgeBtn');
   if(bb) bb.addEventListener('click', () => { bgRender(); acctModal('badgeModal', true) });
+  /* 알림에서 뱃지 설명 창 바로 열기 — 달성 여부·진행도는 서버 값을 다시 받아 맞춘다 */
+  window.feeditOpenBadge = id => {
+    bgRender(); bgSelect(id); acctModal('badgeModal', true);
+    session(true).then(d => { if(d && d.user){ applyAccount(d.user); bgRender(); bgSelect(id) } }).catch(() => {});
+  };
   /* 타일을 고르면 위 상세 패널이 바뀐다 */
   const bg = $('#badgeGrid');
   if(bg) bg.addEventListener('click', e => {

@@ -167,18 +167,19 @@ function stop(){
   paintDot();
 }
 
-/* ── 토스트 — 맥 알림처럼 오른쪽 위에 떴다 사라진다 (2026-09-19) ─────────
-   · 로그인하면: 안 읽은 알림을 최근 3개까지 띄우고, 더 있으면 '외 N개' 한 장을 더한다.
-   · 로그인해 있는 동안: 30초마다 받아 올 때 새로 생긴(처음 보는) 안 읽은 알림을 띄운다.
-   · 같은 알림은 두 번 띄우지 않는다 — 새로고침해도 이 탭에서는 다시 뜨지 않는다(sessionStorage).
-   · 누르면 읽음 처리 후 그 화면으로, 가만두면 6초 뒤 사라진다(마우스를 올리면 멈춘다). */
-const TOAST_MAX = 3, TOAST_MS = 6000, TOAST_KEY = 'feedit.noti.toasted';
-let TOAST_PRIMED = false;
+/* ── 토스트 — 맥 알림처럼 오른쪽 위에 한 장만 떴다 사라진다 (2026-09-19) ─────────
+   · 새 알림이 1개면 그 알림을, 여러 개면 **가장 최근 것 + '외 N개 새 알림'** 을 한 장으로.
+     (여러 장을 쌓지 않는다 — 화면이 알림으로 덮였다)
+   · 로그인 직후: 안 읽은 알림 기준. 로그인해 있는 동안: 30초마다 받아 올 때 처음 보는 안 읽은 알림.
+   · 같은 알림은 두 번 띄우지 않는다(sessionStorage). 가려진 탭에서는 모았다가 돌아오면 띄운다.
+   · 누르면 그 알림이 가리키는 곳으로 간다(openTarget). '외 N개'를 누르면 알림 목록을 연다. */
+const TOAST_MS = 6000, TOAST_KEY = 'feedit.noti.toasted';
+let TOAST_PRIMED = false, TOAST_WAIT = null;
 const toastSeen = new Set();
 function toastLoad(){ try{ JSON.parse(sessionStorage.getItem(TOAST_KEY) || '[]').forEach(id => toastSeen.add(id)) }catch(e){} }
 function toastSave(){ try{ sessionStorage.setItem(TOAST_KEY, JSON.stringify([...toastSeen].slice(-200))) }catch(e){} }
 function toastReset(){
-  TOAST_PRIMED = false; toastSeen.clear();
+  TOAST_PRIMED = false; TOAST_WAIT = null; toastSeen.clear();
   try{ sessionStorage.removeItem(TOAST_KEY) }catch(e){}
   const box = $('#notiToasts'); if(box) box.innerHTML = '';
 }
@@ -196,48 +197,40 @@ function toastNew(){
   NT.items.forEach(it => toastSeen.add(it.id));
   toastSave();
   if(!fresh.length || NT.open) return;
-  const batch = fresh.slice(0, TOAST_MAX).reverse().map(it => [it]);
-  const more = fresh.length - TOAST_MAX;
-  if(more > 0) batch.push([null, more]);
-  /* ★ 보이지 않는 탭에서는 띄우지 않고 모아 둔다 — 그 사이 6초 타이머가 돌아 사용자가 못 본 채 사라졌다 */
-  if(document.hidden){ TOAST_WAIT.push(...batch); return }
-  toastFlush(batch);
-}
-const TOAST_WAIT = [];
-function toastFlush(batch){
-  batch.forEach(([it, more], i) => setTimeout(() => toastShow(it, more), i * 140));
+  /* 가려진 탭이면 모아 둔다 — 돌아왔을 때 한 장으로 합쳐 띄운다 */
+  const pack = { latest: fresh[0], count: fresh.length + (TOAST_WAIT ? TOAST_WAIT.count : 0) };
+  if(document.hidden){ TOAST_WAIT = pack; return }
+  TOAST_WAIT = null;
+  toastShow(pack.latest, pack.count);
 }
 /* 탭으로 돌아오면: 모아 둔 토스트를 띄우고, 그동안 못 받은 알림도 바로 받아 온다 */
 document.addEventListener('visibilitychange', () => {
   if(document.hidden || !AUTH.in) return;
-  if(TOAST_WAIT.length) toastFlush(TOAST_WAIT.splice(0, TOAST_WAIT.length).slice(-(TOAST_MAX + 1)));
+  if(TOAST_WAIT){ const w = TOAST_WAIT; TOAST_WAIT = null; toastShow(w.latest, w.count) }
   notiRefresh();
 });
 const XMARK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M7 7l10 10M17 7L7 17"/></svg>';
-function toastShow(it, more){
+function toastShow(it, count){
+  if(!it) return;
   const box = toastBox();
-  while(box.children.length >= TOAST_MAX + 1) box.lastElementChild.remove();
+  box.querySelectorAll('.notiToast').forEach(old => { old.classList.remove('in'); old.classList.add('out'); setTimeout(() => old.remove(), 300) });
+  const more = Math.max(0, (count || 1) - 1);
   const el = document.createElement('div');
   el.className = 'notiToast';
   el.setAttribute('role', 'status');
-  el.innerHTML = it
-    ? '<span class="notiIc' + (it.read ? '' : ' hot') + '">' + (KIND_ICON[it.kind] || BELL) + '</span>' +
-      '<span class="ntTx"><span class="ntMeta"><b>FEEDiT</b><span>' + esc(KIND_NAME[it.kind] || '알림') + '</span>' +
-        '<span class="ntAgo">' + esc(ago(it.created_at)) + '</span></span>' +
-        '<span class="ntTitle">' + esc(it.title) + '</span>' +
-        (it.body ? '<span class="ntBody">' + esc(it.body) + '</span>' : '') + '</span>' +
-      '<button type="button" class="ntX" aria-label="닫기">' + XMARK + '</button>'
-    : '<span class="notiIc hot">' + BELL + '</span>' +
-      '<span class="ntTx"><span class="ntMeta"><b>FEEDiT</b></span>' +
-        '<span class="ntTitle">읽지 않은 알림이 ' + more + '개 더 있어요.</span>' +
-        '<span class="ntBody">눌러서 알림 목록을 열어 보세요.</span></span>' +
-      '<button type="button" class="ntX" aria-label="닫기">' + XMARK + '</button>';
+  el.innerHTML =
+    '<span class="ntIc">' + (KIND_ICON[it.kind] || BELL) + '</span>' +
+    '<span class="ntTx"><span class="ntMeta"><b>FEEDiT</b><span>' + esc(KIND_NAME[it.kind] || '알림') + '</span>' +
+      '<span class="ntAgo">' + esc(ago(it.created_at)) + '</span></span>' +
+      '<span class="ntTitle">' + esc(it.title) + '</span>' +
+      (it.body ? '<span class="ntBody">' + esc(it.body) + '</span>' : '') +
+      (more ? '<span class="ntMore" data-more>외 ' + more + '개의 새 알림 · 모두 보기</span>' : '') +
+    '</span>' +
+    '<button type="button" class="ntX" aria-label="닫기">' + XMARK + '</button>';
   box.prepend(el);
-  /* ★ requestAnimationFrame 은 탭이 가려져 있으면 돌지 않아 토스트가 투명한 채 남았다.
-     강제 리플로우로 시작 상태를 확정한 뒤 바로 켠다. */
-  void el.offsetWidth;
+  void el.offsetWidth;          /* rAF 대신 — 가려진 탭에서도 시작 상태가 확정된다 */
   el.classList.add('in');
-  let timer = setTimeout(close, TOAST_MS);
+  let timer = setTimeout(close, TOAST_MS + (more ? 2000 : 0));
   function close(){
     clearTimeout(timer);
     el.classList.remove('in'); el.classList.add('out');
@@ -248,15 +241,68 @@ function toastShow(it, more){
   el.addEventListener('click', e => {
     if(e.target.closest('.ntX')){ close(); return }
     close();
-    if(!it){ panel(true); return }
-    const row = NT.items.find(x => x.id === it.id);
-    if(row && !row.read){
-      row.read = true; NT.unread = Math.max(0, NT.unread - 1);
-      paintDot(); if(NT.open) paintList();
-      readNotification(it.id);
-    }
-    if(it.link) goView(it.link);
+    if(e.target.closest('[data-more]')){ panel(true); return }
+    markRead(it.id);
+    openTarget(it);
   });
+}
+
+/* ── 알림을 누르면 어디로 가나 (2026-09-19) ─────────────────
+   VOTE_COMMENT · VOTE_RESULT → 그 살말 카드 상세(댓글이면 그 댓글을 잠깐 강조)
+   BADGE                      → 그 뱃지 설명 창 (어떻게 따는지 · 진행도)
+   JOB_REVIEW                 → 마이페이지
+   PRICE_DROP                 → 트렌드 분석 › 찜한 키워드
+   WEEKLY_REPORT              → 트렌드 분석 › 금주의 리포트
+   TERM_ADDED                 → 트렌드 분석 › 언급량·온도에서 그 용어를 바로 검색
+   갈 곳이 없으면 아무것도 하지 않는다. */
+function markRead(id){
+  const row = NT.items.find(x => x.id === id);
+  if(row && !row.read){
+    row.read = true; NT.unread = Math.max(0, NT.unread - 1);
+    paintDot(); if(NT.open) paintList();
+    readNotification(id);
+  }
+}
+const waitFor = (fn, ms = 4000) => new Promise(ok => {
+  const t0 = Date.now();
+  (function tick(){ const v = fn(); if(v || Date.now() - t0 > ms) ok(v); else setTimeout(tick, 80) })();
+});
+function goTrendTab(tab){
+  if(document.body.dataset.view === 'trend'){
+    const b = document.querySelector('[data-tr="' + tab + '"]');
+    if(b){ b.click(); return }
+  }
+  window.__trWant = tab;
+  goView('trend');
+}
+async function openTarget(it){
+  if(!it) return;
+  const p = it.payload || {};
+  panel(false);
+  switch(it.kind){
+    case 'VOTE_COMMENT':
+    case 'VOTE_RESULT':
+      goView('salmal');
+      if(p.card_id){
+        const open = await waitFor(() => window.smOpenCard);
+        if(open) open(Number(p.card_id), p.comment_id ? Number(p.comment_id) : null);
+      }
+      return;
+    case 'BADGE':
+      if(p.badge_id && window.feeditOpenBadge){ window.feeditOpenBadge(p.badge_id); return }
+      goView('mypage'); return;
+    case 'PRICE_DROP':     goTrendTab('saved'); return;
+    case 'WEEKLY_REPORT':  goTrendTab('report'); return;
+    case 'TERM_ADDED':
+      goTrendTab('temp');
+      if(p.canonical_name){
+        const go = await waitFor(() => window.feeditKwGo && document.getElementById('kwInput') && window.feeditKwGo);
+        if(go) setTimeout(() => go(p.canonical_name), 120);
+      }
+      return;
+    default:
+      if(it.link) goView(it.link);
+  }
 }
 
 /* ── 패널 여닫기 ──────────────────────────────────────── */
@@ -281,7 +327,7 @@ function openItem(row){
     paintDot();
     readNotification(id);
   }
-  if(link){ panel(false); goView(link) }
+  openTarget(it || { link });
 }
 
 function delItem(row){

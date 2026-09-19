@@ -989,7 +989,7 @@ function paintActivity(){
 
 /* ── 초기 렌더 ───────────────────────────────────────── */
 $('#voteGrid').innerHTML='<div class="smDataState">살!말? 데이터를 불러오는 중이에요.</div>';
-loadVotes().then(()=>{
+const SM_READY=loadVotes().then(()=>{
   syncExpiredCards();
   renderGrid();
   renderClosedGrid();
@@ -999,6 +999,26 @@ loadVotes().then(()=>{
   $('#closedGrid').innerHTML='';
 });
 
+/* ★ 2026-09-19 — 알림에서 바로 그 카드로 (댓글 알림이면 그 댓글을 잠깐 강조한다).
+   notify.js 의 openTarget() 이 부른다. 목록에 없으면 한 번 다시 받아 보고, 그래도 없으면 알린다. */
+window.smOpenCard=async(cardId,commentId)=>{
+  try{ await SM_READY; }catch(e){}
+  const find=()=>VOTES.findIndex(v=>Number(v.id)===Number(cardId)&&!v.deleted);
+  let i=find();
+  if(i<0&&window.smReloadVotes){ await window.smReloadVotes(); i=find(); }
+  if(i<0){ showToast('게시글이 삭제됐거나 더 이상 볼 수 없어요.'); return; }
+  openModal(i);
+  if(commentId){
+    setTimeout(()=>{
+      const btn=document.querySelector('#commentsList [data-comment-id="'+commentId+'"]');
+      const row=btn&&btn.closest('.cItem');
+      if(!row)return;
+      row.scrollIntoView({block:'center',behavior:'smooth'});
+      row.classList.add('flash');
+      setTimeout(()=>row.classList.remove('flash'),2400);
+    },380);
+  }
+};
 /* 이 화면을 다시 열 때 등장 모션만 되돌려 준다.
    salmalBoot 은 한 번만 도니까, 바깥에서 부를 손잡이를 남긴다.
    다시 그리지 않고 모션만 태워서 이미 누른 투표는 그대로 남는다. */

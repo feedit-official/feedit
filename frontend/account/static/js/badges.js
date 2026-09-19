@@ -89,6 +89,16 @@ export function bgDetail(b){
       '</div>'+
     '</div>';
 }
+/* 알림(뱃지 달성)에서 그 뱃지 설명 창을 바로 연다 — notify.js openTarget (2026-09-19) */
+export function bgSelect(id){
+  const b=BADGES.find(x=>x.id===id); if(!b)return false;
+  bgRender.sel=id;
+  bgDetail(b);
+  $$('.bgTile').forEach(t=>t.classList.toggle('active', t.dataset.badge===id));
+  const tile=$('.bgTile[data-badge="'+id+'"]');
+  if(tile&&tile.scrollIntoView)tile.scrollIntoView({block:'nearest'});
+  return true;
+}
 export function bgRender(){
   const host=$('#badgeGrid'); if(!host)return;
   const cats=[...new Set(BADGES.map(b=>b.cat))];

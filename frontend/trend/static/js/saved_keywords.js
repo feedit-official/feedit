@@ -82,6 +82,8 @@ function kwMoveSug(d){
   $$('#kwSug .sg').forEach((b,i)=>b.classList.toggle('on',i===KW.cur));
 }
 /* 검색어 확정 → 그 파트를 다시 그린다 */
+/* 알림(용어 사전 등재)에서 그 용어를 바로 검색할 때 쓴다 — notify.js openTarget (2026-09-19) */
+window.feeditKwGo=v=>kwGo(v);
 function kwGo(v){
   const inp=$('#kwInput'); if(!inp)return;
   const selected=v&&typeof v==='object'?v:null;

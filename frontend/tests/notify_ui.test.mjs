@@ -110,7 +110,9 @@ assert.ok(read, '읽음 처리를 서버에 알린다');
 assert.equal(JSON.parse(read.body).op, 'read');
 assert.equal(JSON.parse(read.body).id, 11);
 assert.equal(document.getElementById('notiDot').hidden, true, '다 읽으면 점이 사라진다');
-assert.equal(document.body.dataset.view, 'mypage', '알림의 link 화면으로 이동한다');
+/* 2026-09-19 — 종류별로 갈 곳이 정해졌다: 가격 하락은 트렌드 분석 › 찜한 키워드 */
+await new Promise(r => setTimeout(r, 60));
+assert.equal(document.body.dataset.view, 'trend', '가격 하락 알림은 트렌드 분석으로 간다');
 
 /* ⑤ 휴지통 — 한 건 삭제. 지운 줄 알았는데 남아 있으면 안 되므로 서버에도 보낸다 */
 router.goView('home');
