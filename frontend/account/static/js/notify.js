@@ -36,14 +36,19 @@ const KIND_NAME = Object.fromEntries(KINDS.map(k => [k.id, k.n]));
 const SVG = d => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" ' +
   'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + d + '</svg>';
 const KIND_ICON = {
-  PRICE_DROP:    SVG('<path d="M20 12l-8 8-8-8V4h8z"/><circle cx="8" cy="8" r="1.3"/>'),
-  VOTE_RESULT:   SVG('<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>'),
-  WEEKLY_REPORT: SVG('<rect x="5" y="3.5" width="14" height="17" rx="2"/><path d="M9 8h6M9 12h6M9 16h3"/>'),
+  /* ★ 2026-09-19 — 투표는 투표함, 가격은 내려가는 꺾은선, 주간 리포트는 막대그래프 */
+  PRICE_DROP:    SVG('<path d="M3.5 7l6 6 3.5-3.5 7.5 7.5"/><path d="M20.5 12v5h-5"/>'),
+  VOTE_RESULT:   SVG('<path d="M3.5 13.5h17v6.5h-17z"/><path d="M7.5 13.5V4.5h9v9"/><path d="M9.8 9l1.7 1.7L14.4 7.6"/>'),
+  WEEKLY_REPORT: SVG('<path d="M5 20V11M10 20V5M15 20v-6M20 20V9"/>'),
   BADGE:         SVG('<circle cx="12" cy="9" r="5"/><path d="M9 13.5L8 21l4-2 4 2-1-7.5"/>'),
   TERM_ADDED:    SVG('<path d="M5 4h11a3 3 0 013 3v13H8a3 3 0 01-3-3z"/><path d="M5 17a3 3 0 013-3h11"/>'),
   JOB_REVIEW:    SVG('<path d="M12 3l7 3v5c0 4.4-3 8-7 10-4-2-7-5.6-7-10V6z"/><path d="M9 12l2 2 4-4"/>'),
   VOTE_COMMENT:  SVG('<path d="M4 5.5h16v10H9.5L5 19.5v-4H4z"/><path d="M8 9.5h8M8 12.3h5"/>'),
 };
+/* 운영 계정이 받는 '직업 인증 심사 대기' — 서류 판 */
+const CLIPBOARD = SVG('<rect x="5" y="4.5" width="14" height="16.5" rx="2"/><path d="M9 4.5V3h6v1.5"/><path d="M8.5 10h7M8.5 13.5h7M8.5 17h4"/>');
+const kindName = it => (it.kind === 'JOB_REVIEW' && it.payload && it.payload.admin_pending) ? '직업 인증 심사' : (KIND_NAME[it.kind] || '알림');
+const iconOf = it => (it.kind === 'JOB_REVIEW' && it.payload && it.payload.admin_pending) ? CLIPBOARD : (KIND_ICON[it.kind] || BELL);
 const BELL = SVG('<path d="M6 16V11a6 6 0 0112 0v5l1.5 2h-15z"/><path d="M10 20a2 2 0 004 0"/>');
 
 const POLL_MS = 30000;          /* 30초마다 다시 센다 — 새 알림은 오른쪽 위 토스트로도 띄운다 */
@@ -93,9 +98,9 @@ function paintList(note){
   box.innerHTML = NT.items.map(it =>
     '<div class="notiItem' + (it.read ? '' : ' unread') + '" data-id="' + it.id + '" data-kind="' + esc(it.kind) + '">' +
       '<button type="button" class="notiOpen" data-link="' + esc(it.link || '') + '">' +
-        '<span class="notiIc">' + (KIND_ICON[it.kind] || BELL) + '</span>' +
+        '<span class="notiIc">' + iconOf(it) + '</span>' +
         '<span class="notiTx">' +
-          '<span class="notiMeta"><span class="notiKind">' + esc(KIND_NAME[it.kind] || '알림') + '</span>' +
+          '<span class="notiMeta"><span class="notiKind">' + esc(kindName(it)) + '</span>' +
             '<span class="notiAgo">' + esc(ago(it.created_at)) + '</span></span>' +
           '<span class="notiTitle">' + esc(it.title) + '</span>' +
           (it.body ? '<span class="notiBody">' + esc(it.body) + '</span>' : '') +
@@ -219,8 +224,8 @@ function toastShow(it, count){
   el.className = 'notiToast';
   el.setAttribute('role', 'status');
   el.innerHTML =
-    '<span class="ntIc">' + (KIND_ICON[it.kind] || BELL) + '</span>' +
-    '<span class="ntTx"><span class="ntMeta"><b>FEEDiT</b><span>' + esc(KIND_NAME[it.kind] || '알림') + '</span>' +
+    '<span class="ntIc">' + iconOf(it) + '</span>' +
+    '<span class="ntTx"><span class="ntMeta"><b>FEEDiT</b><span>' + esc(kindName(it)) + '</span>' +
       '<span class="ntAgo">' + esc(ago(it.created_at)) + '</span></span>' +
       '<span class="ntTitle">' + esc(it.title) + '</span>' +
       (it.body ? '<span class="ntBody">' + esc(it.body) + '</span>' : '') +
@@ -249,6 +254,8 @@ function toastShow(it, count){
 
 /* ── 알림을 누르면 어디로 가나 (2026-09-19) ─────────────────
    VOTE_COMMENT · VOTE_RESULT → 그 살말 카드 상세(댓글이면 그 댓글을 잠깐 강조)
+   VOTE_RESULT(마감)          → 살말로 가지 않고 피드백 창만
+   JOB_REVIEW(운영 · 대기 N건) → 직업 인증 심사 창
    BADGE                      → 그 뱃지 설명 창 (어떻게 따는지 · 진행도)
    JOB_REVIEW                 → 마이페이지
    PRICE_DROP                 → 트렌드 분석 › 찜한 키워드
@@ -280,14 +287,21 @@ async function openTarget(it){
   const p = it.payload || {};
   panel(false);
   switch(it.kind){
-    case 'VOTE_COMMENT':
     case 'VOTE_RESULT':
+      /* 마감 알림 → 살말로 가지 않고 피드백 창만 띄운다 (카드 정보를 누르면 그때 카드로 간다) */
+      if(p.closed && p.card_id && window.feeditOpenFeedback){ window.feeditOpenFeedback(Number(p.card_id)); return }
+      /* fallthrough — 10표 돌파 같은 알림은 그 카드로 */
+    case 'VOTE_COMMENT':
       goView('salmal');
       if(p.card_id){
         const open = await waitFor(() => window.smOpenCard);
         if(open) open(Number(p.card_id), p.comment_id ? Number(p.comment_id) : null);
       }
       return;
+    case 'JOB_REVIEW':
+      /* 운영 계정 — 심사 창을 바로 연다. 신청자 — 결과를 볼 수 있는 마이페이지 */
+      if(p.admin_pending && window.feeditOpenJobReview){ window.feeditOpenJobReview(); return }
+      goView('mypage'); return;
     case 'BADGE':
       if(p.badge_id && window.feeditOpenBadge){ window.feeditOpenBadge(p.badge_id); return }
       goView('mypage'); return;
@@ -312,7 +326,10 @@ function panel(on){
   NT.open = on === undefined ? !p.classList.contains('on') : !!on;
   p.classList.toggle('on', NT.open);
   if(b) b.setAttribute('aria-expanded', NT.open ? 'true' : 'false');
-  if(NT.open){ paintList(); notiRefresh() }
+  if(NT.open){
+    document.dispatchEvent(new CustomEvent('feedit:popover', { detail:'noti' }));   /* 계정 메뉴를 닫는다 */
+    paintList(); notiRefresh();
+  }
 }
 
 function openItem(row){
@@ -491,6 +508,7 @@ function bind(){
   });
 
   document.addEventListener('feedit:auth', () => { AUTH.in ? start() : stop() });
+  document.addEventListener('feedit:popover', e => { if(e.detail !== 'noti' && NT.open) panel(false) });
 }
 
 bind();

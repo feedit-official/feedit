@@ -228,8 +228,8 @@ def notify_vote_closed(cards):
         try:
             total = VoteBallot.objects.filter(card_id=card.id).count()
             buys = VoteBallot.objects.filter(card_id=card.id, choice=VoteBallot.Choice.BUY).count()
-            body = (f"{total}명 중 {buys}명이 '살!'이라고 했어요. 결국 어떻게 하셨는지 알려 주세요."
-                    if total else "결국 어떻게 하셨는지 알려 주세요.")
+            body = (f"{total}명 중 {buys}명이 '살!'을 골랐어요. 구매하셨다면 후기를 들려주세요."
+                    if total else "구매하셨다면 후기를 들려주세요.")
             if notify(card.user, rules.VOTE_RESULT, f"VOTE_CLOSED:{card.id}",
                       f"'{(card.title or '내 카드')[:40]}' 투표가 마감됐어요.", body, link="salmal",
                       payload={"card_id": card.id, "total": total, "buy": buys, "closed": True}):
@@ -266,6 +266,41 @@ def notify_job_review(profile, job, approved, reason="", requested_at=""):
                       payload={"job": job, "approved": bool(approved), "reason": reason or ""})
     except Exception:
         logger.exception("직업 인증 알림 실패 user=%s", getattr(profile, "id", None))
+        return None
+
+
+def pending_job_requests():
+    """심사 대기 중인 직업 인증 신청 — [(AppUser, 신청 dict)] 신청 시각 오래된 순."""
+    rows = []
+    for p in AppUser.objects.filter(profile_metadata__has_key="job_request").select_related("user"):
+        req = (p.profile_metadata or {}).get("job_request")
+        if isinstance(req, dict) and req.get("status") == "PENDING":
+            rows.append((p, req))
+    rows.sort(key=lambda r: str(r[1].get("requested_at") or ""))
+    return rows
+
+
+def notify_admin_job_pending(admin_profile):
+    """운영(ADMIN) 계정 — 직업 인증 심사 대기가 있으면 'N건 대기' 알림을 한 번 띄운다.
+
+    ★ 2026-09-19. 알림 목록을 받을 때(30초 폴링) 부른다.
+      키를 '가장 최근 신청 시각'으로 잡아서, 새 신청이 들어올 때마다 한 건씩만 새로 생긴다
+      (같은 대기 목록으로는 다시 만들지 않는다).
+    """
+    try:
+        rows = pending_job_requests()
+        if not rows:
+            return None
+        who, req = rows[-1]
+        n = len(rows)
+        name = who.nickname or who.user.username
+        body = f"새 신청: {name} · {req.get('job') or '-'}" + (f" 외 {n - 1}건" if n > 1 else "")
+        return notify(admin_profile, rules.JOB_REVIEW,
+                      f"JOB_PENDING:{req.get('requested_at') or who.id}",
+                      f"직업 인증 심사 대기 {n}건", body, link="mypage",
+                      payload={"admin_pending": n})
+    except Exception:
+        logger.exception("심사 대기 알림 실패 admin=%s", getattr(admin_profile, "id", None))
         return None
 
 

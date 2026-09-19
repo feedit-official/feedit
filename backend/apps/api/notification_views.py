@@ -74,6 +74,9 @@ def notifications(request):
         return _error("로그인이 필요합니다.", status=401)
 
     if request.method == "GET":
+        # ★ 운영 계정은 직업 인증 심사 대기 건수를 알림으로 받는다
+        if request.user.is_superuser or request.user.is_staff:
+            service.notify_admin_job_pending(profile)
         rows = list(_mine(profile).order_by("-created_at", "-id")[:LIST_LIMIT])
         return _ok({"items": [_row(r) for r in rows], "unread": _unread(profile),
                     "setting": _setting_payload(profile)})

@@ -52,6 +52,8 @@ function applyAccount(user){
   const names=new Set(Array.isArray(user.styles)?user.styles:[]);
   ME.styles.clear();
   STYLES.forEach(s=>{ if(names.has(s.n))ME.styles.add(s.id) });
+  /* 이름·직업·소개가 바뀌었음을 알린다 — 트렌드 머리·사이드바가 받아 다시 칠한다 */
+  try{ document.dispatchEvent(new CustomEvent('feedit:account')) }catch(e){}
 }
 const styleNames=()=>STYLES.filter(s=>ME.styles.has(s.id)).map(s=>s.n);
 
@@ -181,6 +183,8 @@ function acctMenu(on){
   const m = $('#acctMenu');
   if(m){
     m.classList.toggle('on', on === undefined ? !m.classList.contains('on') : on);
+    /* 계정 메뉴와 알림창은 한 번에 하나만 — 메뉴를 열면 알림창을 닫는다 */
+    if(m.classList.contains('on')) document.dispatchEvent(new CustomEvent('feedit:popover', { detail:'acct' }));
     const w = m.closest('.mAuthWrap');
     if(w) w.classList.toggle('open', m.classList.contains('on'));
   }
@@ -873,11 +877,17 @@ if(suW) suW.addEventListener('input', bodyHint);
     if(ME.role !== 'admin') return;   /* 운영 계정만 — 서버도 403 으로 막는다 */
     jobReviewRender(); acctModal('jobReviewModal', true);
   });
+  /* 알림(직업 인증 심사 대기 N건)에서 바로 여는 손잡이 */
+  window.feeditOpenJobReview = () => {
+    if(ME.role !== 'admin') return;
+    acctMenu(false); jobReviewRender(); acctModal('jobReviewModal', true);
+  };
   const ml = $('#menuLogout');
   if(ml) ml.addEventListener('click', () => { acctMenu(false); authLogout() });
   document.addEventListener('click', e => {
     if(!e.target.closest('.mAuthWrap')) acctMenu(false);
   });
+  document.addEventListener('feedit:popover', e => { if(e.detail !== 'acct') acctMenu(false) });
 
   authPaint();
   rkPaintAll();      /* 화면에 이미 떠 있는 아바타들도 한 번 맞춰 둔다 */

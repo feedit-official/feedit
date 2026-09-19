@@ -567,7 +567,6 @@ function paintModalFeedback(v){
   if(f){
     el.hidden=false;
     el.innerHTML='<b>글쓴이의 결과</b><span>'+escapeHtml(f.purchase_label||'')+
-      (f.satisfaction?' · 만족 '+f.satisfaction+'/5':'')+
       (f.helpful===true?' · 투표가 도움이 됐어요':'')+'</span>'+
       (f.comment?'<q>'+escapeHtml(f.comment)+'</q>':'')+
       (v.mine?'<button type="button" class="pill ghost" data-fb-card>수정</button>':'');

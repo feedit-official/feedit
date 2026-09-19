@@ -1,11 +1,12 @@
 import { $ } from '../../../core/static/js/dom.js';
 import { feedbackList, saveFeedback } from '../../../account/static/js/account_api.js';
+import { goView } from '../../../app_shell/static/js/router.js';
 
 /* ══════════════════════════════════════════════════════════════
    살!말? 사후 피드백 (2026-09-19)
    --------------------------------------------------------------
    내가 올린 카드의 투표가 마감되면 글쓴이에게 결과를 묻는다.
-     구매 여부 · 만족도(1~5) · 투표가 도움이 됐나 · 한 줄 후기
+     구매 여부 · 투표가 도움이 됐나 · 한 줄 후기   (★ 2026-09-19 만족도 1~5 는 뺐다)
    · 살말 페이지에 들어오면 아직 안 쓴 피드백이 있을 때 팝업을 띄운다(fbPromptOnce).
      '나중에'를 누르면 이번 접속(sessionStorage) 동안은 같은 카드로 다시 묻지 않는다.
    · 마이페이지 '살말 피드백' 패널이 작성 현황을 보여 준다(fbPanelRender).
@@ -15,10 +16,15 @@ import { feedbackList, saveFeedback } from '../../../account/static/js/account_a
 
 const esc=v=>String(v==null?'':v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const SNOOZE_KEY='feedit.fb.snooze';
-const PURCHASE=[['BOUGHT','샀어요'],['SKIPPED','안 샀어요'],['UNDECIDED','아직 고민 중']];
+const PURCHASE=[['BOUGHT','구매했어요'],['SKIPPED','구매하지 않았어요'],['UNDECIDED','아직 고민 중이에요']];
+/* 고른 답에 따라 후기 질문과 예시가 달라진다 */
+const REVIEW_Q={BOUGHT:'구매하셨다면 후기를 들려주세요',SKIPPED:'구매하지 않은 이유를 들려주세요',UNDECIDED:'어떤 점이 고민인지 남겨 주세요'};
+const REVIEW_PH={BOUGHT:'실물 색이 더 예뻐요, 한 치수 크게 추천해요',SKIPPED:'가격이 부담돼서 비슷한 걸로 샀어요',UNDECIDED:'핏은 좋은데 가격이 고민이에요'};
 
-function snoozed(){ try{ return JSON.parse(sessionStorage.getItem(SNOOZE_KEY)||'[]') }catch(e){ return [] } }
-function snooze(id){ try{ sessionStorage.setItem(SNOOZE_KEY, JSON.stringify([...new Set([...snoozed(), id])])) }catch(e){} }
+/* sessionStorage 를 못 쓰는 환경(사생활 보호 창 등)에서도 이번 화면 동안은 기억하도록 메모리에도 둔다 */
+const SNOOZE_MEM=new Set();
+function snoozed(){ let a=[]; try{ a=JSON.parse(sessionStorage.getItem(SNOOZE_KEY)||'[]') }catch(e){} return [...new Set([...a, ...SNOOZE_MEM])] }
+function snooze(id){ SNOOZE_MEM.add(id); try{ sessionStorage.setItem(SNOOZE_KEY, JSON.stringify(snoozed())) }catch(e){} }
 
 let fbState={loaded:false, pending:[], done:[], error:''};
 export const fbPendingCount=()=>fbState.pending.length;
@@ -45,63 +51,52 @@ function modalRoot(){
 export function fbClose(){ const m=$('#fbModal'); if(m)m.classList.remove('on','in'); }
 
 /* 카드 한 장의 피드백 창. row = {card_id, title, image_url, vote_summary, feedback}
-   ★ 2026-09-19 디자인 개편 — 한 번에 한 질문씩 드러나는 단계형(구매 여부 → 만족도 → 도움 여부 → 후기).
+   ★ 2026-09-19 디자인 개편 — 한 번에 한 질문씩 드러나는 단계형(구매 여부 → 도움 여부 → 후기).
      제목·질문을 h3/b 같은 맨 태그로 두지 않는다 — 전역 스타일·등장 모션에 먹혀 글자가 사라졌다. */
-const SCALE_Q={BOUGHT:'사길 잘했나요?',SKIPPED:'안 사길 잘했나요?'};
-const SCALE_ENDS={BOUGHT:['후회해요','아주 만족'],SKIPPED:['사는 게 나았어요','안 사길 잘했어요']};
 export function fbOpen(row, { onSaved, askLater=true } = {}){
   const m=modalRoot(), card=m.querySelector('.fbCard');
   const fb=row.feedback||{};
-  const st={purchase:fb.purchase||'', satisfaction:fb.satisfaction||null,
-            helpful:fb.helpful??null, comment:fb.comment||''};
+  const st={purchase:fb.purchase||'', helpful:fb.helpful??null, comment:fb.comment||''};
   const vs=row.vote_summary||{};
   const buy=Number.isFinite(+vs.buy_pct)?Math.round(+vs.buy_pct):null;
   const paint=()=>{
-    const scaleOn=st.purchase==='BOUGHT'||st.purchase==='SKIPPED';
-    const helpOn=st.purchase&&(st.purchase==='UNDECIDED'||st.satisfaction);
-    const ends=SCALE_ENDS[st.purchase]||['',''];
+    const helpOn=!!st.purchase;
     card.innerHTML=
       '<button type="button" class="fbX" data-fb="close" aria-label="닫기">'+
         '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>'+
-      '<div class="fbTop">'+
-        '<div class="fbThumb">'+(row.image_url?'<img src="'+esc(row.image_url)+'" alt="">':'')+'</div>'+
-        '<div class="fbTopTx">'+
-          '<span class="fbEyebrow">투표 마감 · 결과 공유</span>'+
+      /* 위쪽 카드 정보를 누르면 그 살말 카드로 간다 */
+      '<button type="button" class="fbTop" data-fb="card" title="이 카드 보러 가기">'+
+        '<span class="fbThumb">'+(row.image_url?'<img src="'+esc(row.image_url)+'" alt="">':'')+'</span>'+
+        '<span class="fbTopTx">'+
+          '<span class="fbEyebrow">투표가 마감됐어요<em class="fbGo">카드 보기 ›</em></span>'+
           '<span class="fbTitle" id="fbTitle">'+esc(row.title||'내 카드')+'</span>'+
           (buy!=null
-            ? '<div class="fbBar"><i style="width:'+buy+'%"></i></div>'+
+            ? '<span class="fbBar"><i style="width:'+buy+'%"></i></span>'+
               '<span class="fbBarTx"><em>살 '+buy+'%</em><em>말 '+(100-buy)+'%</em><em class="n">'+(vs.total||0)+'표</em></span>'
             : '')+
-        '</div>'+
-      '</div>'+
+        '</span>'+
+      '</button>'+
       '<div class="fbStep">'+
-        '<span class="fbLabel">결국 어떻게 하셨나요?</span>'+
+        '<span class="fbLabel">이 아이템, 구매하셨나요?</span>'+
         '<div class="fbSeg c3">'+PURCHASE.map(([k,l])=>'<button type="button" data-p="'+k+'" class="'+(st.purchase===k?'on':'')+'">'+l+'</button>').join('')+'</div>'+
       '</div>'+
-      (scaleOn
-        ? '<div class="fbStep">'+
-            '<span class="fbLabel">'+SCALE_Q[st.purchase]+'</span>'+
-            '<div class="fbScale">'+[1,2,3,4,5].map(n=>'<button type="button" data-s="'+n+'" class="'+(st.satisfaction===n?'on':'')+'" aria-label="'+n+'점">'+n+'</button>').join('')+'</div>'+
-            '<div class="fbEnds"><span>'+ends[0]+'</span><span>'+ends[1]+'</span></div>'+
-          '</div>'
-        : '')+
       (helpOn
         ? '<div class="fbStep">'+
-            '<span class="fbLabel">모두의 투표가 도움이 됐나요?</span>'+
+            '<span class="fbLabel">투표 결과가 결정에 도움이 되었나요?</span>'+
             '<div class="fbSeg c2">'+
               '<button type="button" data-h="1" class="'+(st.helpful===true?'on':'')+'">도움이 됐어요</button>'+
-              '<button type="button" data-h="0" class="'+(st.helpful===false?'on':'')+'">별로였어요</button></div>'+
+              '<button type="button" data-h="0" class="'+(st.helpful===false?'on':'')+'">크게 도움되진 않았어요</button></div>'+
           '</div>'+
           '<div class="fbStep">'+
-            '<span class="fbLabel">한 줄 후기 <small>선택</small></span>'+
-            '<div class="fbInput"><input type="text" maxlength="100" placeholder="실물 색이 더 예뻐요, 한 치수 크게 추천해요" value="'+esc(st.comment)+'">'+
+            '<span class="fbLabel">'+REVIEW_Q[st.purchase]+' <small>선택</small></span>'+
+            '<div class="fbInput"><input type="text" maxlength="100" placeholder="'+esc(REVIEW_PH[st.purchase])+'" value="'+esc(st.comment)+'">'+
               '<span class="fbCount">'+st.comment.length+'/100</span></div>'+
           '</div>'
         : '')+
       '<div class="fbErr" hidden></div>'+
       '<div class="fbActs">'+
-        (askLater?'<button type="button" class="fbLater" data-fb="later">나중에 할게요</button>':'<span></span>')+
-        '<button type="button" class="fbSave" data-fb="save"'+(st.purchase?'':' disabled')+'>'+(row.feedback?'수정하기':'결과 남기기')+'</button>'+
+        (askLater?'<button type="button" class="fbLater" data-fb="later">다음에 할게요</button>':'<span></span>')+
+        '<button type="button" class="fbSave" data-fb="save"'+(st.purchase?'':' disabled')+'>'+(row.feedback?'수정하기':'후기 남기기')+'</button>'+
       '</div>';
   };
   paint();
@@ -112,30 +107,50 @@ export function fbOpen(row, { onSaved, askLater=true } = {}){
   };
   card.onclick=async e=>{
     const b=e.target.closest('button'); if(!b)return;
-    if(b.dataset.p){ st.purchase=b.dataset.p; if(st.purchase==='UNDECIDED')st.satisfaction=null; paint(); return; }
-    if(b.dataset.s){ st.satisfaction=+b.dataset.s; paint(); return; }
+    if(b.dataset.p){ st.purchase=b.dataset.p; paint(); return; }
     if(b.dataset.h){ st.helpful=b.dataset.h==='1'; paint(); return; }
     if(b.dataset.fb==='close'){ fbClose(); return; }
+    if(b.dataset.fb==='card'){ fbGoCard(row.card_id); return; }
     if(b.dataset.fb==='later'){ snooze(row.card_id); fbClose(); return; }
     if(b.dataset.fb==='save'){
       const err=card.querySelector('.fbErr');
       const fail=msg=>{ err.textContent=msg; err.hidden=false; };
-      if(!st.purchase)return fail('구매 여부를 골라 주세요.');
-      if(st.purchase!=='UNDECIDED'&&!st.satisfaction)return fail('만족도를 골라 주세요.');
+      if(!st.purchase)return fail('구매하셨는지 먼저 골라 주세요.');
       b.disabled=true; b.textContent='저장 중…';
       try{
-        const saved=await saveFeedback({cardId:row.card_id, purchase:st.purchase, satisfaction:st.satisfaction,
+        const saved=await saveFeedback({cardId:row.card_id, purchase:st.purchase, satisfaction:null,
                             helpful:st.helpful, comment:st.comment});
         fbApplyLocal(row, saved&&saved.feedback);   /* 목록을 서버 응답 전에 바로 바꾼다 */
         fbClose();
         if(onSaved)onSaved();
         fbLoad();                                   /* 뒤에서 서버 값으로 한 번 더 맞춘다 */
-      }catch(ex){ fail(ex.message||'저장하지 못했습니다.'); b.disabled=false; b.textContent=row.feedback?'수정하기':'결과 남기기'; }
+      }catch(ex){ fail(ex.message||'저장하지 못했습니다.'); b.disabled=false; b.textContent=row.feedback?'수정하기':'후기 남기기'; }
     }
   };
   m.classList.add('on');
   requestAnimationFrame(()=>m.classList.add('in'));
 }
+/* 피드백 창 위 카드 정보 → 그 살말 카드 상세 */
+function fbGoCard(cardId){
+  /* 살말로 들어가면 '안 쓴 피드백' 창이 저절로 다시 뜬다 — 이번 접속 동안 이 카드는 묻지 않게 둔다 */
+  snooze(Number(cardId));
+  fbClose();
+  goView('salmal');
+  const t0=Date.now();
+  (function tick(){
+    if(window.smOpenCard){ window.smOpenCard(Number(cardId)); return }
+    if(Date.now()-t0<4000)setTimeout(tick,80);
+  })();
+}
+/* ★ 2026-09-19 — 마감 알림을 누르면 살말 화면으로 가지 않고 피드백 창만 띄운다.
+   내 카드 목록(작성 전·완료)에 없으면(남의 카드·아직 진행 중) 그 카드로 보낸다. */
+window.feeditOpenFeedback=async cardId=>{
+  const id=Number(cardId);
+  const s=await fbLoad();
+  const row=[...s.pending,...s.done].find(r=>Number(r.card_id)===id);
+  if(!row){ fbGoCard(id); return }
+  fbOpen(row,{askLater:false, onSaved:()=>window.smReloadVotes&&window.smReloadVotes()});
+};
 /* 저장 직후 — 작성 전 → 작성 완료로 바로 옮기고 화면에 알린다 */
 function fbApplyLocal(row, feedback){
   if(!feedback)return;
@@ -168,7 +183,7 @@ export function fbPanelRender(host){
   }
   const row=(r,pending)=>{
     const f=r.feedback;
-    const sub=pending?'작성 전':(f.purchase_label+(f.satisfaction?' · 만족 '+f.satisfaction+'/5':'')+
+    const sub=pending?'작성 전':(f.purchase_label+
       (f.helpful===true?' · 투표 도움됨':f.helpful===false?' · 투표 도움 안 됨':''));
     return '<div class="fbRow'+(pending?' pending':'')+'">'+
       (r.image_url?'<img src="'+esc(r.image_url)+'" alt="">':'<i></i>')+
@@ -189,4 +204,4 @@ export function fbPanelRender(host){
 /* 저장·재조회가 끝나면 마이페이지 패널이 떠 있을 때 바로 다시 그린다 (새로고침 없이) */
 document.addEventListener('feedit:feedback',()=>{ const h=document.getElementById('fbPanelBody'); if(h)fbPanelRender(h); });
 
-export function fbReset(){ fbState={loaded:false,pending:[],done:[],error:''}; }
+export function fbReset(){ SNOOZE_MEM.clear(); fbState={loaded:false,pending:[],done:[],error:''}; }

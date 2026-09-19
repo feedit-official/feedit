@@ -12,7 +12,7 @@ import { gChart, gDraw } from './chart_engine.js';
 import { paintStockPriceChart } from './stock_price_chart.js';
 import { kwWire } from './saved_keywords.js';
 import { rkChip, rkPaintAv } from '../../../account/static/js/rank.js';
-import { jobPlanText } from '../../../account/static/js/job.js';
+import { jobBadgeHTML, jobPlanText, jobShown } from '../../../account/static/js/job.js';
 import { smBarFill, svRender } from './discount_resale.js';
 import { trCountUp } from './count_up.js';
 import { trDial, wkAnimate } from './weekly_report.js';
@@ -1007,11 +1007,7 @@ export function trRender(id){
        data-v="salmal" 을 달아 살!말? 페이지로 보내고, 실제 투표는
        거기서만 일어난다(문서 전역 [data-v] 클릭 위임을 그대로 탄다). */
     /* 프로필은 우리 계정(ME)과 뱃지 시스템을 따른다 */
-    const pv=$('#trProfAv'), pn=$('#trProfNm'), pr=$('#trProfRk');
-    if(pv){ pv.textContent=ME.initial; rkPaintAv(pv, ME.rank) }
-    if(pn)pn.textContent=ME.name;
-    if(pr)pr.outerHTML=rkChip(ME.rank).replace('class="rk','id="trProfRk" class="rk');
-    bioPaint();
+    trProfPaint();
     tpLoad(tpMine(),tpRepaint);   /* 온도·수명주기를 받아 오면 카드 세 장만 다시 채운다 */
     if(HAS_A){
       aAnimate($$('#trBody .tpCard, #trBody .tpPickWrap'),
@@ -1877,7 +1873,30 @@ function sFootPaint(){
   const plan=$('#sFootPlan'); if(plan)plan.textContent=jobPlanText(ME);
   const rk=$('#sFootRk');   if(rk)rk.innerHTML=rkChip(ME.rank);   /* 뱃지는 오른쪽 끝에 따로 선다 */
 }
-document.addEventListener('feedit:job',()=>sFootPaint());
+document.addEventListener('feedit:job',()=>{ sFootPaint(); trProfPaint() });
+
+/* 내 피드 머리 — [아바타] [닉네임][직업 배지] / 소개글
+   ★ 2026-09-19 — 등급(LV) 칩 자리에 직업 배지를 단다. 운영 계정은 검정 ADMIN.
+     승인 전이면 Basic(검정), 승인된 패션 직종은 주황. */
+function trProfPaint(){
+  const pv=$('#trProfAv'), pn=$('#trProfNm'), pr=$('#trProfRk');
+  if(pv){ pv.textContent=ME.initial; rkPaintAv(pv, ME.rank) }
+  if(pn)pn.textContent=ME.name;
+  if(pr)pr.innerHTML=ME.role==='admin'
+    ? '<span class="jobBadge basic" title="운영 계정">ADMIN</span>'
+    : jobBadgeHTML(jobShown(ME));
+  bioPaint();
+}
+/* ★ 2026-09-19 — 계정이 바뀌면(로그아웃 → 다른 계정 로그인, 새로고침 복구) 앞 계정의 화면을 버린다.
+   트렌드 화면은 다시 들어올 때 기존 DOM 을 재사용(router seamless)하므로, 여기서 비워 두지 않으면
+   앞 사람의 이름·피드·리포트가 그대로 남는다. 보고 있는 중이면 그 자리에서 다시 그린다. */
+function trAccountChanged(){
+  sFootPaint(); trProfPaint();
+  if(document.body.dataset.view==='trend'&&TR_CUR){ trRender(TR_CUR); return }
+  const b=$('#trBody'); if(b)b.innerHTML='';
+}
+document.addEventListener('feedit:auth',trAccountChanged);
+document.addEventListener('feedit:account',()=>{ sFootPaint(); trProfPaint() });
 
 export function trBuild(){
   /* ★ 진짜 사전을 받아 둔다.

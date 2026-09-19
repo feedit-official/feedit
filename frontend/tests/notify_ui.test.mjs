@@ -56,6 +56,8 @@ globalThis.fetch = async (url, opts = {}) => {
   }
   if(u.includes('/api/auth/term-request'))
     return reply({ status:'ok', data:{ already:false, created:true, id:3, term:'블로코어', status:'PENDING' } });
+  if(u.includes('/api/salmal/feedback')) return reply({ status:'ok', data:{ pending:[
+    { card_id:5, title:'스퀘어 토 로퍼', image_url:'', vote_summary:{ buy_pct:70, total:10 }, feedback:null } ], done:[] } });
   if(u.includes('/api/auth/saved')) return reply({ status:'ok', data:{ items:[], count:0 } });
   if(u.includes('/api/dictionary')) return reply({ status:'ok', data:[] });
   return reply({ status:'empty', reason:'테스트 데이터 없음', data:null });
@@ -171,6 +173,42 @@ const allSw = document.getElementById('notiSetAll');
 allSw.checked = false;
 allSw.dispatchEvent(new dom.window.Event('change', { bubbles:true }));
 assert.ok(document.getElementById('notiSetKinds').classList.contains('off'));
+
+modal.classList.remove('on');
+
+/* ⑧ 2026-09-19 — 계정 메뉴와 알림창은 한 번에 하나만 */
+const click = el => el.dispatchEvent(new dom.window.MouseEvent('click', { bubbles:true }));
+click(document.getElementById('notiBtn'));
+assert.ok(document.getElementById('notiPanel').classList.contains('on'), '알림창이 열린다');
+click(document.getElementById('mAuthBtn'));
+assert.ok(document.getElementById('acctMenu').classList.contains('on'), '계정 메뉴가 열린다');
+assert.equal(document.getElementById('notiPanel').classList.contains('on'), false, '계정 메뉴를 열면 알림창이 닫힌다');
+click(document.getElementById('notiBtn'));
+assert.ok(document.getElementById('notiPanel').classList.contains('on'));
+assert.equal(document.getElementById('acctMenu').classList.contains('on'), false, '알림창을 열면 계정 메뉴가 닫힌다');
+click(document.getElementById('notiBtn'));
+
+/* ⑨ 마감 알림 → 살말로 가지 않고 피드백 창만. 만족도(1~5)는 없다. 카드 정보를 누르면 그 카드로 */
+router.goView('home');
+await new Promise(r => setTimeout(r, 40));
+await window.feeditOpenFeedback(5);
+const fb = document.getElementById('fbModal');
+assert.ok(fb.classList.contains('on'), '피드백 창이 뜬다');
+assert.equal(document.body.dataset.view, 'home', '살말 화면으로 넘어가지 않는다');
+assert.equal(fb.querySelector('.fbScale'), null, '만족도 1~5 는 뺐다');
+assert.ok(fb.textContent.includes('구매하셨나요'));
+click(fb.querySelector('[data-p="BOUGHT"]'));
+assert.ok(fb.textContent.includes('구매하셨다면 후기를 들려주세요'));
+click(fb.querySelector('.fbTop'));
+await new Promise(r => setTimeout(r, 60));
+assert.equal(fb.classList.contains('on'), false, '카드 정보를 누르면 창을 닫고');
+assert.equal(document.body.dataset.view, 'salmal', '그 카드가 있는 살말로 간다');
+
+/* ⑩ 내 피드 머리 — 지금 계정 이름 + 직업 배지(등급 자리) */
+router.goView('trend');
+await new Promise(r => setTimeout(r, 400));
+assert.equal(document.getElementById('trProfNm').textContent, '피딧회원');
+assert.equal(document.querySelector('#trProfRk .jobBadge').textContent, 'Basic', '승인 전이면 Basic 배지');
 
 console.log('✅ 알림 아이콘 · 패널 · 읽음 · 삭제 · 알림 설정이 실제로 동작합니다.');
 process.exit(0);

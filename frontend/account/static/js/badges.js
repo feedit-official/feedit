@@ -31,17 +31,17 @@ export const BADGES=[
   {id:'b07',cat:'참여/기여',icon:'shield',n:'살말 백전',tier:'500',d:'누적 투표 500회 달성',earned:true,date:'2026.08.05'},
   {id:'b08',cat:'참여/기여',icon:'shield',n:'살말 백전',tier:'1000',d:'누적 투표 1,000회 달성',earned:false,progress:'500/1,000'},
 
-  {id:'b09',cat:'참여/기여',icon:'comment',n:'성실 피드백러',tier:'10',d:'사후 만족도 피드백 10회 응답',earned:false,progress:'4/10'},
-  {id:'b10',cat:'참여/기여',icon:'comment',n:'성실 피드백러',tier:'50',d:'사후 만족도 피드백 50회 응답',earned:false,progress:'4/50'},
-  {id:'b11',cat:'참여/기여',icon:'comment',n:'성실 피드백러',tier:'100',d:'사후 만족도 피드백 100회 응답',earned:false,progress:'4/100'},
+  {id:'b09',cat:'참여/기여',icon:'comment',n:'성실 피드백러',tier:'10',d:'마감된 내 카드에 구매 후기 10회 남기기',earned:false,progress:'4/10'},
+  {id:'b10',cat:'참여/기여',icon:'comment',n:'성실 피드백러',tier:'50',d:'마감된 내 카드에 구매 후기 50회 남기기',earned:false,progress:'4/50'},
+  {id:'b11',cat:'참여/기여',icon:'comment',n:'성실 피드백러',tier:'100',d:'마감된 내 카드에 구매 후기 100회 남기기',earned:false,progress:'4/100'},
 
   {id:'b12',cat:'참여/기여',icon:'calendar',n:'개근상',tier:'7',d:'7일 연속 활동 (투표·댓글·카드·찜·검색·챗봇 중 하나라도 한 날)',earned:true,date:'2026.08.18'},
   {id:'b13',cat:'참여/기여',icon:'calendar',n:'개근상',tier:'30',d:'30일 연속 활동 (투표·댓글·카드·찜·검색·챗봇 중 하나라도 한 날)',earned:false,progress:'7/30'},
   {id:'b14',cat:'참여/기여',icon:'calendar',n:'개근상',tier:'100',d:'100일 연속 활동 (투표·댓글·카드·찜·검색·챗봇 중 하나라도 한 날)',earned:false,progress:'7/100'},
 
-  {id:'b15',cat:'안목/선구안',icon:'target',n:'연속 적중',tier:'5',d:'살/말 판단이 실제 만족도와 5회 연속 일치',earned:false,progress:'3/5'},
-  {id:'b16',cat:'안목/선구안',icon:'target',n:'연속 적중',tier:'10',d:'살/말 판단이 실제 만족도와 10회 연속 일치',earned:false,progress:'3/10'},
-  {id:'b17',cat:'안목/선구안',icon:'target',n:'연속 적중',tier:'20',d:'살/말 판단이 실제 만족도와 20회 연속 일치',earned:false,progress:'3/20'},
+  {id:'b15',cat:'안목/선구안',icon:'target',n:'연속 적중',tier:'5',d:'내 살/말 투표가 글쓴이의 실제 구매 결과와 5회 연속 일치',earned:false,progress:'3/5'},
+  {id:'b16',cat:'안목/선구안',icon:'target',n:'연속 적중',tier:'10',d:'내 살/말 투표가 글쓴이의 실제 구매 결과와 10회 연속 일치',earned:false,progress:'3/10'},
+  {id:'b17',cat:'안목/선구안',icon:'target',n:'연속 적중',tier:'20',d:'내 살/말 투표가 글쓴이의 실제 구매 결과와 20회 연속 일치',earned:false,progress:'3/20'},
 
   {id:'b18',cat:'안목/선구안',icon:'tag',n:'카테고리 안목러',tier:'',d:'특정 카테고리(ex. 아우터) 판단 정확도 상위 도달',earned:false,progress:'상위 24%'},
 

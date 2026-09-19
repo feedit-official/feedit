@@ -266,8 +266,9 @@ def feedback(request):
     purchase = str(data.get("purchase") or "").upper()
     if purchase not in VoteFeedback.Purchase.values:
         return _error("구매 여부를 골라 주세요.")
+    # ★ 2026-09-19 — 화면에서 만족도(1~5)를 뺐다. 값이 오면 검사해 저장하고, 없으면 비워 둔다.
     satisfaction = data.get("satisfaction")
-    if purchase == VoteFeedback.Purchase.UNDECIDED:
+    if purchase == VoteFeedback.Purchase.UNDECIDED or satisfaction in (None, ""):
         satisfaction = None
     else:
         try:

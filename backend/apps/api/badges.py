@@ -12,7 +12,8 @@
   b15~b17  연속 적중 N       내 살/말 투표가 글쓴이의 실제 결과와 연속으로 맞은 횟수
   b03~b05  여론 조력자 N     글쓴이가 '투표가 도움이 됐다'고 했고, 최종 결정이 내 투표와 같은 카드 수
   (적중 판정: 샀고 만족 4~5 · 안 샀고 후회 1~2 → '살'이 정답 / 샀고 불만 1~2 · 안 샀고 만족 4~5 → '말'이 정답.
-   만족 3 · 아직 고민 중은 판정하지 않는다.)
+   만족 3 · 아직 고민 중은 판정하지 않는다.
+   ★ 2026-09-19 만족도 입력을 뺐다 — 만족도가 없으면 샀으면 '살', 안 샀으면 '말'이 정답.)
 그 외(카테고리 안목러 · 결산 공유러)는 계산 근거가 없어 잠금.
 """
 from __future__ import annotations
@@ -62,7 +63,13 @@ def _streak_reach(days, n):
 def correct_choice(fb):
     """글쓴이의 실제 결과로 본 '정답' 투표 — BUY · PASS · None(판정 안 함)."""
     s = fb.satisfaction
-    if s is None or s == 3 or fb.purchase == VoteFeedback.Purchase.UNDECIDED:
+    if fb.purchase == VoteFeedback.Purchase.UNDECIDED:
+        return None
+    # ★ 2026-09-19 — 피드백 창에서 만족도(1~5)를 뺐다. 만족도가 없으면 실제로 한 선택이 정답이다
+    #   (샀으면 '살', 안 샀으면 '말'). 예전에 만족도까지 남긴 기록은 아래 규칙 그대로 판정한다.
+    if s is None:
+        return {"BOUGHT": "BUY", "SKIPPED": "PASS"}.get(fb.purchase)
+    if s == 3:
         return None
     if fb.purchase == VoteFeedback.Purchase.BOUGHT:
         return "BUY" if s >= 4 else "PASS"

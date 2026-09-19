@@ -94,6 +94,9 @@
   flex:0 0 auto;display:grid;place-items:center;font-size:38px;font-weight:500;letter-spacing:0}
 .trProfName{display:flex;align-items:center;gap:10px}
 .trProfName b{font-size:clamp(24px,2.4vw,30px);font-weight:700;letter-spacing:-.03em}
+/* 이름 옆 직업 배지 — 이름 크기에 맞춰 키운다 (2026-09-19, 등급 칩 자리) */
+#trProfRk{display:inline-flex;align-items:center}
+#trProfRk .jobBadge{height:24px;padding:0 9px;border-radius:6px;font-size:12.5px;letter-spacing:.02em}
 .trProfLv{font-family:var(--num);font-size:12.5px;font-weight:600;color:#fff;background:var(--coral);
   border-radius:5px;padding:4px 9px;letter-spacing:.01em}
 .trProfInfo p{margin-top:12px;font-size:15px;color:var(--pink-1);letter-spacing:-.02em}

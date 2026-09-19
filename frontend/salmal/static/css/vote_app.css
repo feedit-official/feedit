@@ -481,10 +481,19 @@ select.cInput{
 .fbX:hover{background:var(--fb-soft);color:var(--fb-ink)}
 .fbX svg{width:16px;height:16px}
 /* 머리 — 썸네일 · 제목 · 투표 결과 막대 */
-.fbTop{display:flex;gap:14px;align-items:center;padding-right:28px}
+/* ★ 2026-09-19 — 누르면 그 카드로 간다. 버튼이지만 머리처럼 보이게 기본 모양을 지운다 */
+.fbTop{display:flex;gap:14px;align-items:center;box-sizing:border-box;width:calc(100% - 28px);
+  margin:-8px 0 -8px -8px;padding:8px;border:0;border-radius:16px;background:transparent;
+  font:inherit;color:inherit;text-align:left;cursor:pointer;transition:background .18s}
+.fbTop:hover{background:var(--fb-soft)}
+.fbTop:focus-visible{outline:2px solid var(--fb-acc);outline-offset:2px}
+.fbGo{float:right;font-style:normal;font-weight:500;color:var(--fb-sub);opacity:0;transition:opacity .18s}
+.fbTop:hover .fbGo,.fbTop:focus-visible .fbGo{opacity:1}
 .fbThumb{width:64px;height:64px;flex:none;border-radius:14px;overflow:hidden;background:var(--fb-soft)}
 .fbThumb img{width:100%;height:100%;object-fit:cover;display:block}
 .fbTopTx{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px}
+.fbTopTx>span{display:block}
+.fbTopTx>.fbBarTx{display:flex}
 .fbEyebrow{font-size:11px;font-weight:600;letter-spacing:.02em;color:var(--fb-acc)}
 .fbTitle{display:block;font-size:16px;font-weight:700;letter-spacing:-.03em;line-height:1.35;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -497,7 +506,7 @@ select.cInput{
 /* 단계 */
 .fbStep{margin-top:22px;animation:fbIn .26s ease both}
 @keyframes fbIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
-.fbTop+.fbStep{padding-top:20px;border-top:1px solid var(--fb-line)}
+.fbTop+.fbStep{margin-top:30px;padding-top:20px;border-top:1px solid var(--fb-line)}
 .fbLabel{display:block;font-size:13.5px;font-weight:600;letter-spacing:-.02em;margin-bottom:10px;color:var(--fb-ink)}
 .fbLabel small{font-size:11.5px;font-weight:400;color:var(--fb-sub);margin-left:4px}
 /* 선택 버튼 — 같은 폭으로 나눈 한 줄 */

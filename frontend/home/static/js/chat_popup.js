@@ -1746,3 +1746,11 @@ async function cpReportShare(btn){
   cpToast(ok?'리포트 이미지를 만들지 못해 답변 글만 복사했습니다.':'공유하지 못했습니다.');
   btn.disabled=false;
 }
+
+/* ★ 2026-09-19 — 계정이 바뀌면 열려 있는 대화창도 그 자리에서 새 계정 기록으로 갈아 끼운다.
+   (닫혀 있을 때는 openChatPopup 이 열 때 맞춘다) */
+document.addEventListener('feedit:auth',()=>{
+  if(!cpSyncOwner())return;
+  const ov=$('#cpOverlay');
+  if(ov&&ov.classList.contains('on')){ cpPaintProfile(); cpRenderList(); cpRenderThread(); void cpHydrate(); }
+});
