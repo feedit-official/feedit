@@ -86,8 +86,7 @@ function paintList(note){
   paintCount();
   if(note){ box.innerHTML = '<div class="notiEmpty"><i>' + BELL + '</i><p>' + esc(note) + '</p></div>'; fitList(); return }
   if(!NT.items.length){
-    box.innerHTML = '<div class="notiEmpty"><i>' + BELL + '</i><b>새 알림이 없어요</b>' +
-      '<p>가격이 내려가거나 투표 결과가 나오면 여기로 알려 드릴게요.</p></div>';
+    box.innerHTML = '<div class="notiEmpty"><i>' + BELL + '</i><b>새 알림이 없어요</b></div>';
     fitList();
     return;
   }
@@ -197,10 +196,23 @@ function toastNew(){
   NT.items.forEach(it => toastSeen.add(it.id));
   toastSave();
   if(!fresh.length || NT.open) return;
-  fresh.slice(0, TOAST_MAX).reverse().forEach((it, i) => setTimeout(() => toastShow(it), i * 140));
+  const batch = fresh.slice(0, TOAST_MAX).reverse().map(it => [it]);
   const more = fresh.length - TOAST_MAX;
-  if(more > 0) setTimeout(() => toastShow(null, more), TOAST_MAX * 140);
+  if(more > 0) batch.push([null, more]);
+  /* ★ 보이지 않는 탭에서는 띄우지 않고 모아 둔다 — 그 사이 6초 타이머가 돌아 사용자가 못 본 채 사라졌다 */
+  if(document.hidden){ TOAST_WAIT.push(...batch); return }
+  toastFlush(batch);
 }
+const TOAST_WAIT = [];
+function toastFlush(batch){
+  batch.forEach(([it, more], i) => setTimeout(() => toastShow(it, more), i * 140));
+}
+/* 탭으로 돌아오면: 모아 둔 토스트를 띄우고, 그동안 못 받은 알림도 바로 받아 온다 */
+document.addEventListener('visibilitychange', () => {
+  if(document.hidden || !AUTH.in) return;
+  if(TOAST_WAIT.length) toastFlush(TOAST_WAIT.splice(0, TOAST_WAIT.length).slice(-(TOAST_MAX + 1)));
+  notiRefresh();
+});
 const XMARK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M7 7l10 10M17 7L7 17"/></svg>';
 function toastShow(it, more){
   const box = toastBox();
@@ -221,7 +233,10 @@ function toastShow(it, more){
         '<span class="ntBody">눌러서 알림 목록을 열어 보세요.</span></span>' +
       '<button type="button" class="ntX" aria-label="닫기">' + XMARK + '</button>';
   box.prepend(el);
-  requestAnimationFrame(() => el.classList.add('in'));
+  /* ★ requestAnimationFrame 은 탭이 가려져 있으면 돌지 않아 토스트가 투명한 채 남았다.
+     강제 리플로우로 시작 상태를 확정한 뒤 바로 켠다. */
+  void el.offsetWidth;
+  el.classList.add('in');
   let timer = setTimeout(close, TOAST_MS);
   function close(){
     clearTimeout(timer);

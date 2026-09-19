@@ -7,6 +7,8 @@ import { JSDOM } from 'jsdom';
 const root = new URL('..', import.meta.url).href.replace(/\/$/, '');
 const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 const dom = new JSDOM(html, { url:'http://localhost:5173/' });
+/* 사용자가 보고 있는 탭처럼 — 가려진 탭에서는 토스트를 모아 두기만 한다 (notify.js) */
+Object.defineProperty(dom.window.document, 'hidden', { configurable:true, get:() => false });
 for(const key of ['window','document','Element','SVGElement','getComputedStyle','Node','HTMLElement','KeyboardEvent','MouseEvent','CustomEvent','Event'])
   globalThis[key] = key === 'window' ? dom.window : dom.window[key];
 globalThis.requestAnimationFrame = fn => setTimeout(fn, 0);
