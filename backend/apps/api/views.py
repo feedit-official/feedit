@@ -279,10 +279,39 @@ def _direct_sentiment_series(rows, days):
     return series, last_date, included
 
 
+# ── 장기 이력 (2026-09-19) ─────────────────────────────────────
+#  RDS 의 YouTube 댓글·설명란을 '쓰인 날'로 되돌려 다시 계산한 일별 지표.
+#  (backend/apps/core/management/commands/rebuild_term_history.py)
+#  플랫폼 합산 버전(feedit-l2-v2)은 하루치뿐이라 수명주기(28일 이상)를 못 낸다.
+#  그래서 '수명주기 · 추이' 에서만 이 버전을 읽는다. 플랫폼별 온도·새 용어는 기존 버전 그대로.
+#  ★ 기본 버전 고르기(_metric_version)에서는 빼야 한다 — 적재 시각이 더 늦어
+#    '가장 최근 버전'으로 잡히면 합산 행이 없는 버전이 기본이 되어 화면 전체가 빈다.
+HISTORY_VERSION = (os.getenv("FEEDIT_HISTORY_METRIC_VERSION") or "feedit-yt-history-v1").strip()
+HISTORY_SOURCE = "YOUTUBE"
+HISTORY_MIN_POINTS = 28
+HISTORY_BASIS = {
+    "source": HISTORY_SOURCE,
+    "metric_version": HISTORY_VERSION,
+    "note": "YouTube 댓글·영상 설명의 작성일 기준 재계산 이력입니다. 다른 플랫폼은 포함되지 않습니다.",
+}
+
+
+def _history_series(term, days):
+    """장기 이력(YouTube) — 마지막 적재일 기준으로 days 만큼."""
+    qs = TermMetricDaily.objects.filter(
+        term=term, metric_version=HISTORY_VERSION, source__code__iexact=HISTORY_SOURCE)
+    last = qs.aggregate(d=Max("metric_date"))["d"]
+    if not last:
+        return []
+    return list(qs.filter(metric_date__gt=last - timedelta(days=days))
+                .order_by("metric_date").values(*METRIC_VALUES))
+
+
 def _metric_version(term_id=None):
-    """여러 지표 버전이 섞여 있을 수 있다 — 환경변수 › 가장 최근 적재 버전."""
+    """여러 지표 버전이 섞여 있을 수 있다 — 환경변수 › 가장 최근 적재 버전.
+    장기 이력 버전(HISTORY_VERSION)은 합산 행이 없으므로 기본 버전 후보에서 뺀다."""
     env = (os.getenv("FEEDIT_METRIC_VERSION") or "").strip()
-    qs = TermMetricDaily.objects.all()
+    qs = TermMetricDaily.objects.exclude(metric_version=HISTORY_VERSION)
     if term_id:
         qs = qs.filter(term_id=term_id)
     if env and qs.filter(metric_version=env).exists():
@@ -563,6 +592,15 @@ def trend(request):
 
     last_date = rows[-1]["metric_date"]
 
+    # 추이 — 합산 이력이 28일보다 짧으면 장기 이력(YouTube)으로 그린다.
+    # 플랫폼별 온도 · 새 용어는 아래에서 그대로 기존 버전(version)을 쓴다.
+    series_basis = None
+    if source is None and len(rows) < HISTORY_MIN_POINTS:
+        hist = _history_series(term, days)
+        if len(hist) > len(rows):
+            series = [_metric_point(r, (r.get("metrics") or {}).get("share_pct")) for r in hist]
+            series_basis = HISTORY_BASIS
+
     # 플랫폼별 최신 온도
     plat_rows = (
         TermMetricDaily.objects.filter(term=term, metric_version=version,
@@ -616,6 +654,8 @@ def trend(request):
             "as_of": last_date.isoformat(),
             "metric_version": version,
             "series": series,
+            "series_as_of": series[-1]["date"] if series else None,
+            "series_basis": series_basis,
             "platforms": platforms,
             "new_terms": [{"term": x["term__canonical_name"],
                            "temp": _num(x["trend_temperature"])} for x in new_terms],
@@ -1634,11 +1674,18 @@ def resale(request):
 
 LIFECYCLE_RULE = (
     "28일 이동평균(ma28)의 관측 기간 최고점 대비 현재 위치와 모멘텀(50=보합)으로 판정합니다. "
-    "모멘텀 ≥ 55: 현재 수준(level) < 35 이면 태동, 아니면 확산 / "
+    "모멘텀 ≥ 55: 최근 7일 수준(ma7) < 35 이면 태동, 아니면 확산 / "
     "45 ≤ 모멘텀 < 55 이고 ma28 이 최고점의 85% 이상이면 정점 / "
-    "그 밖(모멘텀 < 45 등)은 최고점을 지났으면 쇠퇴, 최고점 자체가 낮으면(level 최고 < 35) 태동. "
+    "그 밖(모멘텀 < 45 등)은 최고점을 지났으면 쇠퇴, 최고점 자체가 낮으면(ma7 최고 < 35) 태동. "
     "관측 28일 미만이면 판단을 보류합니다."
 )
+
+
+def _smooth_level(p):
+    """판정에 쓰는 수준 — 하루치 level 은 드문 용어에서 0↔100 으로 튄다(2026-09-19).
+    ma7 이 있으면 ma7, 없으면 level."""
+    v = p.get("ma7")
+    return v if v is not None else p.get("level")
 
 
 def _lifecycle_stage(series):
@@ -1646,7 +1693,7 @@ def _lifecycle_stage(series):
     if len(pts) < 28:
         return None, None, None
     last = pts[-1]
-    lvl = last.get("level") or 0
+    lvl = _smooth_level(last) or 0
     mom = last.get("momentum")
     ma = [p.get("ma28") for p in pts if p.get("ma28") is not None]
     peak = max(ma) if ma else None
@@ -1654,7 +1701,7 @@ def _lifecycle_stage(series):
     ratio = (now / peak) if (peak and now is not None) else None
     peak_i = max(range(len(pts)), key=lambda i: pts[i].get("ma28") or -1)
     after_peak = peak_i < len(pts) - 1 and ratio is not None and ratio < 0.999
-    max_level = max((p.get("level") or 0) for p in pts)
+    max_level = max((_smooth_level(p) or 0) for p in pts)
 
     if mom is None:
         stage = None
@@ -1687,6 +1734,11 @@ def lifecycle(request):
     if term is None:
         return _empty(_term_missing_reason(term_name), label=label or term_name)
     rows, _ = _term_series(term, 365)
+    basis = None
+    if len(rows) < HISTORY_MIN_POINTS:
+        hist = _history_series(term, 365)
+        if len(hist) > len(rows):
+            rows, basis = hist, HISTORY_BASIS
     if not rows:
         return _empty(f"‘{term.canonical_name}’ 의 트렌드 지표가 아직 없습니다.", label=label)
     series = [_metric_point(r) for r in rows]
@@ -1735,6 +1787,7 @@ def lifecycle(request):
         "facet": term.term_type,
         "as_of": last["date"],
         "points": len(series),
+        "basis": basis,
         "stage": stage,
         "progress": progress,
         "peak_date": peak_date,
