@@ -655,8 +655,9 @@ function fsPaintState(){
       el.textContent='입력한 상품명의 후보를 표시합니다. 다른 조건은 그대로 유지됩니다.';
       return;
     }
-    el.textContent=(FS.matched==null?'':'조건에 걸리는 상품 '+FS.matched.toLocaleString()+'개 · ')+
-      '숫자는 그 항목까지 걸었을 때 남는 상품 수입니다.';
+    /* ★ 2026-09-19 — '조건에 걸리는 상품 N개 · 숫자는 …' 안내문은 뺀다.
+       칸마다 붙은 숫자만으로 충분하고, 문구가 길어 검색창 위가 시끄러웠다. */
+    el.textContent='';
     return;
   }
   if(FS.opts&&!FS.narrowed){

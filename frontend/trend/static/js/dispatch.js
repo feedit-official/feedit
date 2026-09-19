@@ -934,14 +934,14 @@ export function trRender(id){
                표본이 없으면 그렇다고 말한다(API 의 reason 을 그대로). */
           (p.simHas
             ? '<div class="tpReasonLine"><span class="tpCheck">✓</span>'+
-                '<span><strong>나와 비슷한 사용자 '+p.simUsers+'명</strong> · 이 중 살 '+p.simPct+'%</span></div>'
+                '<span><strong>나와 비슷한 사용자 '+p.simUsers+'명</strong> · 살 '+p.simPct+'%</span></div>'
             : '<div class="tpReasonLine"><span class="tpCheck">·</span>'+
-                '<span><strong>비슷한 사용자 표본 없음</strong> · '+trEsc(p.simReason||'아직 비슷한 사용자의 투표가 없습니다')+'</span></div>')+
+                '<span><strong>비슷한 사용자 표본 없음</strong></span></div>')+
           (p.matched
             ? '<div class="tpReasonLine"><span class="tpCheck">✓</span>'+
                 '<span><strong>아이템 취향 일치</strong> · '+trEsc(p.itemTag)+'</span></div>'
             : '<div class="tpReasonLine"><span class="tpCheck">·</span>'+
-                '<span><strong>인기 카드</strong> · 내 스타일과 겹치는 카드가 모자라 채웠습니다</span></div>')+
+                '<span><strong>인기 카드</strong> · 내 스타일과 겹치는 카드</span></div>')+
         '</div>'+
         '<div class="tpTags">'+p.tags.map(t=>'<span'+(t.hit?' class="hit"':'')+'>'+t.tx+'</span>').join('')+'</div>'+
       '</div>';
@@ -956,7 +956,7 @@ export function trRender(id){
       '</div>'+
       '<div class="tpSection" style="padding-top:0">'+
         '<div class="tpSalHead"><div><h3>내 취향 맞춤 <em>살!말?</em></h3>'+
-          '<p>전체 살!말? 목록 중 나와 체형·스타일 세그먼트가 유사하고,'+
+          '<p class="tpSalDesc">전체 살!말? 목록 중 나와 체형·스타일 세그먼트가 유사하고, '+
           '동시에 고민 중인 아이템도 내 취향 태그와 겹치는 글만 선별했습니다.</p></div>'+
           '<div class="tpFilterLogic"><span class="tpLogicChip">TOP 4</span></div>'+
         '</div>'+
