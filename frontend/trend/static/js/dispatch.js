@@ -1714,18 +1714,26 @@ export function trRender(id){
       '<div class="trGrid one" style="margin-top:12px">'+
         '<div class="panelC"><div class="gHead"><h3>언급량 · 판매량</h3></div>'+
           '<div data-chart="lifeGap"></div>'+
-          '<div class="note"><i>◆</i>언급량만 많고 실제로 구매하지 않는 구간은 거품입니다. '+
-            '두 선이 붙어 갈수록 진짜 유행입니다. (둘 다 최대=100 지수)</div></div>'+
+          ((D.sales_series||[]).length
+            ? '<div class="note"><i>◆</i>언급량만 많고 실제로 구매하지 않는 구간은 거품입니다. '+
+              '두 선이 붙어 갈수록 진짜 유행입니다. (둘 다 최대=100 지수)</div>'
+            : '<div class="note"><i>◆</i>판매량은 아직 측정 전입니다 — 같은 상품의 판매수가 여러 날 쌓여야 선이 생깁니다. '+
+              '지금은 언급량만 보여 드립니다.'+(D.basis?' (언급량: YouTube 댓글 기준)':'')+'</div>')+
+          '</div>'+
       '</div>';
     G_CFG.lifeMain={key:full+'life',rows:D.series,band:[.88,1],min:0,max:100,
       emptyReason:'화제성 레벨 시계열이 비어 있습니다.',
       sets:[{id:'l',name:'화제성 레벨',field:'level',unit:''}]};
     const sales=D.sales_series||[];
+    /* ★ 2026-09-19 — 판매량이 없으면 카드 전체를 '측정 불가'로 비우지 않고 언급량만 그린다.
+       판매량은 같은 상품을 매일 추적한 판매수 스냅샷이 쌓여야 생긴다(지금은 상품당 1~2일).
+       두 계열을 섞어 그리지 않는다는 규칙은 그대로 — 판매량 선 자체를 빼고, 빠졌다고 적는다. */
+    const gapSets=[{id:'m',name:'언급량',field:'mention',index:true,unit:''}];
+    if(sales.length) gapSets.push({id:'w',name:'판매량',field:'sales',index:true,unit:'',accent:1,rows:sales});
     G_CFG.lifeGap={key:full+'gap',wide:true,min:0,max:100,
       rows:trMergeRows(D.series.map(p=>({date:p.date,mention:p.mention})),sales),
-      emptyReason:sales.length?'언급량 시계열이 비어 있습니다.':'선택한 조건 상품의 판매수 스냅샷(sales_count)이 없어 판매량을 그리지 못했습니다.',
-      sets:[{id:'m',name:'언급량',field:'mention',index:true,unit:''},
-            {id:'w',name:'판매량',field:'sales',index:true,unit:'',accent:1,rows:sales}]};
+      emptyReason:'언급량 시계열이 비어 있습니다.',
+      sets:gapSets};
     gMount(); trFillBars(); trDial();
   }
   if(HAS_A)aAnimate($$('#trBody .kpi, #trBody .panelC, #trBody .concl, #trBody .verdict, #trBody .cheapest, #trBody .svAlso'),

@@ -11,11 +11,13 @@ export const M_QUESTIONS=[
   ['트렌드 TOP 10','알려줘'],['발레코어','아직 유효해?'],['스웨이드','이번 겨울도 갈까?'],
   ['오늘 날씨에','뭐 입어야 해?'],['블록코어','다음은 뭐야?']
 ];
-const HOT=[
-  ['발레코어',248,''],['스웨이드 자켓',186,'classic'],['버건디 니트',142,'classic'],
-  ['블록코어',131,'block'],['로퍼',97,'classic'],['바이크코어',88,'bike'],
-  ['아메카지',74,'ameka'],['카고 스커트',63,'street'],['고프코어',-42,'gorp'],['오버핏 후드',-31,'street']
-];
+/* ★ 2026-09-19 — HOT TREND TOP 10 은 하드코딩 목록을 끊고 /api/trend?rank=hot 을 읽는다.
+   [표시명, 변화율(%), 스타일 id(스타일 용어일 때만), 축 이름] — 상승 8 + 하락 2.
+   못 불러오면 숫자를 지어내지 않고 '순위를 불러오지 못했습니다' 로 둔다. */
+let HOT=[];
+let HOT_STATE='loading';   /* loading | ok | empty | error */
+let HOT_META=null;         /* {as_of, rule, basis} */
+const HOT_FACET={STYLE:'STYLE',ITEM:'ITEM',COLOR:'COLOR',MATERIAL:'MATERIAL',DETAIL:'DETAIL',TPO:'TPO',BRAND:'BRAND'};
 const M_ANSWERS={
   rise:{ url:'feedit.ai / trend / 2026-08-W2', title:'이번 주 급상승 키워드',
     rank:[['발레코어','키워드',248,1],['스웨이드 자켓','아이템',186,1],['버건디 니트','컬러',142,1],
@@ -153,6 +155,10 @@ export function itemCard(o){
 var hotI=0, hotOpen=false;
 function hotStep(){
   const roll=$('#hotRoll'); if(!roll)return;
+  if(!HOT.length){
+    roll.innerHTML='<i>'+(HOT_STATE==='loading'?'순위를 불러오는 중…':'순위를 불러오지 못했습니다')+'</i>';
+    return;
+  }
   const t=HOT[hotI%HOT.length];
   const el=document.createElement('i');
   el.innerHTML='<b>'+String((hotI%HOT.length)+1).padStart(2,'0')+'</b>'+t[0]+
@@ -180,15 +186,45 @@ function hotToggle(){
   aAnimate(rows,{opacity:hotOpen?[0,1]:[1,0],translateX:hotOpen?[-10,0]:[0,-6],
     duration:hotOpen?520:280,delay:aStagger(hotOpen?34:12,{from:'last'}),ease:'out(3)'});
 }
+function hotPaint(){
+  const list=$('#hotList'); if(!list)return;
+  if(!HOT.length){
+    list.innerHTML='<div class="hotNote">'+(HOT_STATE==='loading'?'순위를 불러오는 중입니다.'
+      :'지금은 순위를 불러오지 못했습니다. 잠시 뒤 다시 확인해 주세요.')+'</div>';
+    return;
+  }
+  list.innerHTML=HOT.map((t,i)=>
+    '<button '+(t[2]?'data-style="'+cardEsc(t[2])+'"':'data-hot-q="'+cardEsc(t[0])+'"')+'>'+
+    '<span class="n">'+String(i+1).padStart(2,'0')+'</span>'+
+    '<span class="k">'+cardEsc(t[0])+'</span><span class="ph">'+cardEsc(HOT_FACET[t[3]]||t[3]||'')+'</span>'+
+    '<span class="d '+(t[1]>0?'up':'dn')+'">'+(t[1]>0?'▲':'▼')+Math.abs(t[1])+'%</span></button>').join('')+
+    (HOT_META?'<div class="hotNote">'+cardEsc(HOT_META.as_of)+' 기준 · YouTube 댓글 · 최근 7일 평균 vs 28일 평균</div>':'');
+}
+async function hotLoad(){
+  try{
+    const r=await fetch('/api/trend?rank=hot&limit=8',{headers:{Accept:'application/json'}});
+    const j=await r.json();
+    if(!r.ok||j.status!=='ok'){ HOT_STATE=j&&j.status==='empty'?'empty':'error'; return; }
+    const d=j.data||{};
+    const styleId=n=>(STYLES.find(s=>s.n===n)||{}).id||'';
+    const pick=[...(d.rising||[]).slice(0,8),...(d.falling||[]).slice(0,2)];
+    HOT=pick.map(x=>[x.term,x.change_pct,x.facet==='STYLE'?styleId(x.term):'',x.facet]);
+    HOT_META={as_of:d.as_of,rule:d.rule,basis:d.basis};
+    HOT_STATE=HOT.length?'ok':'empty';
+  }catch(e){ HOT_STATE='error'; }
+}
 export function hotBuild(){
   const list=$('#hotList'); if(!list)return;
-  list.innerHTML=HOT.map((t,i)=>
-    '<button data-style="'+t[2]+'"><span class="n">'+String(i+1).padStart(2,'0')+'</span>'+
-    '<span class="k">'+t[0]+'</span><span class="ph">STYLE</span>'+
-    '<span class="d '+(t[1]>0?'up':'dn')+'">'+(t[1]>0?'▲':'▼')+Math.abs(t[1])+'%</span></button>').join('');
-  hotStep();
+  hotPaint(); hotStep();
+  hotLoad().then(()=>{ hotI=0; hotPaint(); hotStep(); });
   setInterval(()=>{ if(!hotOpen)hotStep() },2400);
   $('#hotBar').addEventListener('click',hotToggle);
+  /* 스타일이 아닌 용어(아이템·소재·색 …)는 챗봇에 바로 물어본다 */
+  list.addEventListener('click',e=>{
+    const b=e.target.closest('[data-hot-q]'); if(!b)return;
+    const q=b.dataset.hotQ+' 요즘 어때?';
+    openChatWith(q, cpKeyFor(q), {forceNew:true});
+  });
 }
 
 /* ── 챗바 안에서 굴러가는 예시 질문 ─────────────────────

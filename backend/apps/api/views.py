@@ -448,9 +448,62 @@ def health(request):
     })
 
 
+HOT_MIN_ACTIVE_28 = 7   # 최근 28일 중 언급된 날이 이보다 적으면 순위에서 뺀다 (하루 튄 용어 방지)
+HOT_RULE = ("최근 7일 평균(ma7)이 28일 평균(ma28)보다 얼마나 높은지(%)로 줄 세웁니다. "
+            f"최근 28일 중 {HOT_MIN_ACTIVE_28}일 이상 언급된 용어만 올립니다.")
+
+
+def _hot_terms(request):
+    """GET /api/trend?rank=hot — 홈 HOT TREND TOP 10.
+
+    장기 이력(YouTube) 버전의 마지막 적재일 기준. 지표는 다시 계산하지 않고
+    적재된 ma7·ma28 을 그대로 읽어 변화율만 낸다.
+    """
+    limit = _int(request, "limit", 10, 1, 30)
+    hist = TermMetricDaily.objects.filter(
+        metric_version=HISTORY_VERSION, source__code__iexact=HISTORY_SOURCE)
+    as_of = hist.aggregate(d=Max("metric_date"))["d"]
+    if not as_of:
+        return _empty("순위를 낼 지표가 아직 없습니다.")
+    active = dict(
+        hist.filter(metric_date__gt=as_of - timedelta(days=28))
+        .values("term_id").annotate(n=Count("id")).values_list("term_id", "n"))
+    latest = (
+        hist.filter(metric_date__gt=as_of - timedelta(days=3),
+                    term_id__in=[k for k, v in active.items() if v >= HOT_MIN_ACTIVE_28])
+        .exclude(term__status="INACTIVE")
+        .order_by("term_id", "-metric_date").distinct("term_id")
+        .values("term_id", "term__canonical_name", "term__term_type", "metric_date",
+                "ma7", "ma28", "trend_temperature")
+    )
+    rows = []
+    for r in latest:
+        ma7, ma28 = _num(r["ma7"]), _num(r["ma28"])
+        if not ma28:
+            continue
+        rows.append({
+            "term": r["term__canonical_name"], "facet": r["term__term_type"],
+            "change_pct": round((ma7 / ma28 - 1) * 100),
+            "temp": _num(r["trend_temperature"]),
+            "active_days_28": active.get(r["term_id"], 0),
+            "date": r["metric_date"].isoformat(),
+        })
+    rising = sorted((x for x in rows if x["change_pct"] > 0), key=lambda x: -x["change_pct"])
+    falling = sorted((x for x in rows if x["change_pct"] < 0), key=lambda x: x["change_pct"])
+    return _ok({
+        "as_of": as_of.isoformat(),
+        "basis": HISTORY_BASIS,
+        "rule": HOT_RULE,
+        "rising": rising[:limit],
+        "falling": falling[:limit],
+    })
+
+
 @require_GET
 def terms(request):
-    """지표가 실제로 있는 용어 목록 — 화면의 검색 후보."""
+    """지표가 실제로 있는 용어 목록 — 화면의 검색 후보. ?rank=hot 이면 HOT 순위."""
+    if (request.GET.get("rank") or "").strip() == "hot":
+        return _hot_terms(request)
     ver = _metric_version()
     qs = (
         TermMetricDaily.objects.filter(source__isnull=True, metric_version=ver)

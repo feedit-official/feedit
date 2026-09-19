@@ -112,6 +112,8 @@
   transition:opacity .3s;
 }
 .hotList button:hover .k{color:var(--coral)}
+/* 기준일·출처 한 줄 (2026-09-19) — 숫자가 어디서 왔는지 밝힌다 */
+.hotList .hotNote{padding:6px 2px 2px;font-size:10px;letter-spacing:-.01em;color:var(--pink-2);opacity:.85}
 .hotList .n{
   font-family:var(--num);font-size:10px;color:var(--pink-2);
   font-feature-settings:'zero' 0;order:-1;
