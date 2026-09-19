@@ -98,6 +98,9 @@
   border-radius:5px;padding:4px 9px;letter-spacing:.01em}
 .trProfInfo p{margin-top:12px;font-size:15px;color:var(--pink-1);letter-spacing:-.02em}
 .trProfDivider{width:480px;max-width:80vw;height:1px;background:var(--pink-3);margin-top:12px}
+/* ★ 2026-09-19 — display:flex 가 hidden 속성을 이겨, 탭을 감춘 파트(할인률 · 리세일 ·
+   수명주기)에서도 빈 줄과 margin 이 남아 검색바가 그만큼 아래로 내려가 있었다. */
+.trTabs[hidden]{display:none}
 .trTabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:22px}
 /* 이 자리에는 커머스 탭과 키워드 챗바가 번갈아 들어온다.
    탭 스타일이 챗바 안 버튼(× 등)까지 먹지 않도록 실제 탭에만 건다. */

@@ -490,11 +490,25 @@ export function fsLoadFacets(itemsOnly=false, itemOffset=0){
         return;
       }
       if(fast&&j&&j.status==='ok'&&j.items_only){
-        FS.opts={...FS.opts,item:Array.isArray(j.data?.item)?j.data.item:[]};
+        const got=Array.isArray(j.data?.item)?j.data.item:[];
+        /* 첫 묶음이면 갈아 끼우고, 이어 받은 묶음이면 뒤에 붙인다 (중복 id 는 버린다) */
+        let merged=got;
+        if(itemOffset>0){
+          const prev=Array.isArray(FS.opts?.item)?FS.opts.item:[];
+          const seen=new Set(prev.map(o=>String(o.id)));
+          merged=[...prev,...got.filter(o=>!seen.has(String(o.id)))];
+        }
+        FS.opts={...FS.opts,item:merged};
         fsStockOffset=itemOffset;
         fsStockHasMore=!!j.item_has_more;
         FS.err='';
-        const host=$('#fsC3'); if(host){host.innerHTML=fsColHTML(getFsCols()[3]);host.classList.remove('isLoading');}
+        const host=$('#fsC3');
+        if(host){
+          const keep=host.scrollTop;
+          host.innerHTML=fsColHTML(getFsCols()[3]);
+          host.classList.remove('isLoading');
+          host.scrollTop=keep;          /* 이어 받아도 보던 자리를 지킨다 */
+        }
         fsPaintState();
         return;
       }
@@ -556,13 +570,18 @@ function fsClosePop(){
   $('#fsPopBg').classList.remove('on'); $('#fsMore').classList.remove('on');
 }
 
+/* ★ 2026-09-19 — '이전 24개 / 다음 24개' 를 걷어냈다. 칸을 끝까지 내리면
+   다음 묶음을 이어 붙인다 — 상품명은 스크롤로만 본다. */
 function fsStockPageHTML(ax){
-  if(FS.id!=='stock'||ax!=='상품명'||(!fsStockOffset&&!fsStockHasMore))return '';
-  return '<div class="fsPageNav">'+
-    (fsStockOffset?'<button type="button" data-stock-page="'+Math.max(0,fsStockOffset-FS_STOCK_PAGE)+'">← 이전 24개</button>':'')+
-    ((FS.opts?.item?.length||0)?'<span>'+(fsStockOffset+1)+'–'+(fsStockOffset+FS.opts.item.length)+'번째 상품</span>':'')+
-    (fsStockHasMore?'<button type="button" data-stock-page="'+(fsStockOffset+FS_STOCK_PAGE)+'">다음 24개 →</button>':'')+
-    '</div>';
+  if(FS.id!=='stock'||ax!=='상품명'||!fsStockHasMore)return '';
+  return '<div class="fsPageNav" data-stock-tail>'+
+    (FS.loading?'상품을 더 불러오는 중입니다…':'스크롤하면 더 불러옵니다')+'</div>';
+}
+/* 칸을 끝까지 내렸을 때 다음 묶음을 이어 받는다 */
+export function fsStockScrollMore(host){
+  if(FS.id!=='stock'||!fsStockHasMore||FS.loading||!host)return;
+  if(host.scrollTop+host.clientHeight < host.scrollHeight-120)return;
+  fsLoadFacets(true,fsStockOffset+FS_STOCK_PAGE);
 }
 
 function fsColHTML(col){
@@ -586,7 +605,8 @@ function fsColHTML(col){
     }
     return '<div class="hint">'+why.replace(/\n/g,'<br>')+'</div>'+fsStockPageHTML(ax);
   }
-  const shown=hit.slice(0,FS_POP_CAP);
+  const cap=(FS.id==='stock'&&ax==='상품명')?hit.length:FS_POP_CAP;   /* 상품명은 스크롤로 이어 본다 */
+  const shown=hit.slice(0,cap);
   return shown.map(o=>{
     const on=FS.id==='stock'&&ax==='상품명'
       ? !!(FS.stockItem&&FS.stockItem.id===o.id) : picked.indexOf(o.label)>=0;
@@ -757,12 +777,6 @@ export function fsBuild(){
   const cols=$('.fsCols');
   if(cols){
     cols.addEventListener('click',e=>{
-      const page=e.target.closest('button[data-stock-page]');
-      if(page&&FS.id==='stock'){
-        e.stopPropagation();
-        if(!FS.loading)fsLoadFacets(true,Number(page.dataset.stockPage));
-        return;
-      }
       const b=e.target.closest('button[data-fv]'); if(!b)return;
       e.stopPropagation();
       if(FS.id==='stock'&&b.dataset.ax==='상품명'){
@@ -773,6 +787,11 @@ export function fsBuild(){
       fsPaintPop();                 /* 누른 티는 즉시 */
       fsLoadFacetsSoon();           /* 다른 칸은 잠시 뒤 서버가 좁혀 준다 */
     });
+    /* 상품명 칸을 끝까지 내리면 다음 묶음을 이어 받는다 (더보기 버튼 대신) */
+    cols.addEventListener('scroll',e=>{
+      const host=e.target.closest&&e.target.closest('#fsC3');
+      if(host)fsStockScrollMore(host);
+    },true);
     /* 칸마다의 찾기 — 브랜드가 수천 개라 칸 안에서도 찾아야 한다 */
     cols.addEventListener('input',e=>{
       const q=e.target.closest('input[data-ax]'); if(!q)return;

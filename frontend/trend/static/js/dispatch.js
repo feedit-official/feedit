@@ -117,13 +117,24 @@ function stockWishlistHTML(){
   return STOCK_SAVED.items.map(item=>{
     const discount=stockCardDiscount(item);
     const selected=FS.stockItem?.id===Number(item.id);
-    return '<button type="button" class="wlItem'+(selected?' on':'')+'" draggable="true" data-source-id="'+Number(item.id)+'" aria-label="'+trEsc(item.name)+' 할인률 분석">'+
+    /* ★ 2026-09-19 — 카드 안에 찜 해제 버튼이 들어가므로 카드는 div(role=button)로 둔다.
+       버튼 안에 버튼은 넣을 수 없다. 클릭으로 고르고, 같은 카드를 다시 누르면 선택이 풀린다. */
+    /* ★ 2026-09-19 — 카드는 사진 한 장이다. 브랜드 · 상품명은 사진 왼쪽 위에 얹고,
+       가격은 고르면 오른쪽 요약에서 보이므로 카드에서는 뺀다.
+       하트는 스타일 페이지 아이템 카드와 같은 모양(.likeBtn)으로 오른쪽 위에 둔다. */
+    return '<div class="wlItem'+(selected?' on':'')+'" role="button" tabindex="0"'+
+      ' data-source-id="'+Number(item.id)+'" aria-pressed="'+(selected?'true':'false')+'"'+
+      ' title="'+trEsc([item.brand||item.source,item.name].filter(Boolean).join(' · '))+
+        (discount==null?'':' · '+discount+'%')+'"'+
+      ' aria-label="'+trEsc(item.name)+' 할인률 분석">'+
       '<span class="wlPic">'+(stockSafeImg(item.image)?'<img src="'+trEsc(item.image)+'" alt="" loading="lazy">':'이미지 없음')+
-        '<span class="wlHeart" aria-hidden="true">♥</span></span>'+
-      '<span class="tx"><b class="wlBrand">'+trEsc(item.brand||item.source||'상품')+'</b>'+
-        '<span class="wlName">'+trEsc(item.name)+'</span>'+
-        '<span class="wlPrice">'+(discount==null?'':'<em>'+discount+'%</em>')+
-          '<strong>'+(item.sale_price==null?'가격 정보 없음':trWon(item.sale_price))+'</strong></span></span></button>';
+        '<button type="button" class="likeBtn wlHeart on" data-wish-off="'+Number(item.id)+'"'+
+          ' aria-label="'+trEsc(item.name)+' 찜 해제" title="찜 해제">'+
+          '<svg viewBox="0 0 24 24"><path d="M12 21s-7.6-4.6-10.3-9.1C.2 9 1 5.5 4 4.1c2.4-1.1 5-.2 6.5 1.8L12 8l1.5-2.1c1.5-2 4.1-2.9 6.5-1.8 3 1.4 3.8 4.9 2.3 7.8C19.6 16.4 12 21 12 21z"/></svg>'+
+        '</button></span>'+
+      /* 브랜드 · 상품명은 사진을 가리지 않게 사진 아래에 적는다 */
+      '<span class="wlTag"><b>'+trEsc(item.brand||item.source||'상품')+'</b>'+
+        '<span>'+trEsc(item.name)+'</span></span></div>';
   }).join('');
 }
 function stockDiscountDial(product, selected){
@@ -143,8 +154,6 @@ function stockSummaryHTML(product, selected){
   if(!product)return '<p class="stockSummaryEmpty">선택한 상품의 가격 정보를 확인 중입니다.</p>';
   const discount=product.discount_rate;
   const days=product.observed_days||0;
-  const atLow=days>=2&&product.sale_price!=null&&product.history_min_price!=null&&
-    product.sale_price<=product.history_min_price;
   const asOf=String(product.observed_at||'').slice(0,10);
   return '<div class="stockSummaryContent">'+
     '<span class="stockEyebrow">'+trEsc([product.brand,product.source].filter(Boolean).join(' · '))+'</span>'+
@@ -156,12 +165,15 @@ function stockSummaryHTML(product, selected){
       '<div><b>'+trWon(product.sale_price)+'</b><span>할인가</span></div>'+
       '<div><b>'+(discount==null?'–':discount+'%')+'</b><span>할인율</span></div>'+
       '<div><b>'+(days>=2?trWon(product.history_min_price):'–')+'</b><span>관측 기간 최저가</span></div></div>'+
-    '<p class="stockSummaryAsOf">'+(asOf?trEsc(asOf)+' 기준 · ':'관측일 미확인 · ')+'가격 관측 '+days+'일'+
-      (atLow?'<br>현재 가격이 관측 기간 최저가입니다.':'')+'</p></div>';
+    '<p class="stockSummaryAsOf">'+(asOf?trEsc(asOf)+' 기준 · ':'관측일 미확인 · ')+'가격 관측 '+days+'일</p></div>';
 }
 function stockPaintSaveButton(){
   const button=$('#dzSaveBtn'), error=$('#dzSaveError'), selected=FS.stockItem;
-  if(!button)return;
+  if(!button){
+    /* 드롭존을 걷어내 저장 버튼이 없다 — 오류만 따로 알린다 */
+    if(error){ error.hidden=!stockSaveError; error.textContent=stockSaveError; }
+    return;
+  }
   const saved=!!selected&&STOCK_SAVED.items.some(item=>Number(item.id)===selected.id);
   button.hidden=!selected;
   button.disabled=stockSavePending||STOCK_SAVED.status!=='ok';
@@ -174,9 +186,8 @@ function stockPaintSaveButton(){
   if(error){error.hidden=!message;error.textContent=message;}
 }
 function stockPaintPicker(product=null){
-  const selected=FS.stockItem, image=$('#dzImage');
-  const placeholder=$('#dzPlaceholder'), zone=$('#dzDropZone'), name=$('#dzSelectedName');
-  const detail=$('#dzSelectedDetail'), clear=$('#dzClearBtn'), list=$('#dzWishListBody');
+  const selected=FS.stockItem;
+  const list=$('#dzWishListBody');
   const dial=$('#stockDiscountSlot'), summary=$('#stockPickerSummary');
   if(stockLastSelectionId!==selected?.id){stockSaveError='';stockLastSelectionId=selected?.id||null;}
   if(product)stockCurrentProduct=product;
@@ -186,31 +197,12 @@ function stockPaintPicker(product=null){
     const scrollTop=list.scrollTop;
     list.innerHTML=stockWishlistHTML();
     list.scrollTop=scrollTop;
+    /* 높이는 CSS 가 잡는다 — 상자는 왼쪽 지표와 같은 세로 길이를 유지하고,
+       카드가 넘치면 이 안에서만 스크롤한다. */
+    list.style.maxHeight='';
   }
-  if(!zone)return;
   if(dial)dial.innerHTML=stockDiscountDial(product,selected);
   if(summary)summary.innerHTML=stockSummaryHTML(product,selected);
-  zone.classList.toggle('has-item',!!selected);
-  if(clear)clear.hidden=!selected;
-  if(name){
-    name.textContent=selected?(product?.name||selected.label):'';
-    name.title=name.textContent;
-  }
-  if(detail)detail.textContent=selected
-    ? [product?.source||selected.source,
-       product?.sale_price!=null?trWon(product.sale_price):'가격 확인 중'].filter(Boolean).join(' · ')
-    : '';
-  const src=stockSafeImg(product?.image||selected?.thumb);
-  if(placeholder)placeholder.hidden=!!selected&&!!src;
-  if(image){
-    image.hidden=!selected||!src;
-    image.onerror=()=>{
-      if(image.getAttribute('src')!==src||FS.stockItem?.id!==selected?.id)return;
-      image.hidden=true;
-      if(placeholder)placeholder.hidden=false;
-    };
-    image.src=selected&&src?src:'';
-  }
   stockPaintSaveButton();
 }
 async function stockToggleSaved(){
@@ -237,8 +229,33 @@ async function stockToggleSaved(){
     stockSavePending=false; stockPaintSaveButton();
   }
 }
+/* ★ 2026-09-19 — 찜 목록 카드의 하트. 스타일 페이지와 같게 다시 누르면 찜이 풀린다.
+   풀린 상품이 지금 고른 상품이면 선택도 같이 푼다. */
+async function stockUnsave(item){
+  if(!item||stockSavePending)return;
+  stockSavePending=true; stockSaveError='';
+  try{
+    const result=await setSavedProduct({itemId:'db-'+item.id,liked:false,
+      name:item.name,brand:item.brand});
+    STOCK_SAVED.items=STOCK_SAVED.items.filter(x=>Number(x.id)!==Number(item.id));
+    if(Number.isFinite(Number(result.saved_count)))ME.saved=Number(result.saved_count);
+    const wasPicked=FS.stockItem?.id===Number(item.id);
+    stockSavePending=false;
+    if(wasPicked){ fsStockClear(); fsChipsPaint(); trRender('stock'); }
+    else stockPaintPicker();
+    document.dispatchEvent(new CustomEvent('feedit:saved'));
+  }catch(e){
+    stockSaveError=e.message||'찜 상태를 바꾸지 못했습니다. 다시 시도해 주세요.';
+    stockSavePending=false;
+    stockPaintPicker();
+  }finally{ stockSavePending=false }
+}
 function stockChoose(item){
   if(!item||!Number.isSafeInteger(Number(item.id)))return;
+  /* 같은 카드를 다시 누르면 선택을 푼다 */
+  if(FS.stockItem&&FS.stockItem.id===Number(item.id)){
+    fsStockClear(); fsChipsPaint(); trRender('stock'); return;
+  }
   FS.pick={}; FS.colq={};
   const input=$('#fsInput'); if(input)input.value='';
   const clear=$('#fsClear'); if(clear)clear.hidden=true;
@@ -247,40 +264,26 @@ function stockChoose(item){
   trRender('stock');
 }
 function stockWirePicker(){
-  const list=$('#dzWishListBody'), zone=$('#dzDropZone'), clear=$('#dzClearBtn'), save=$('#dzSaveBtn');
-  if(!list||!zone)return;
+  /* ★ 2026-09-19 — 드래그해 옮기던 칸(드롭존)을 걷어냈다. 찜 목록에서 클릭으로 고르고,
+     같은 카드를 다시 누르면 풀린다. 하트는 그 자리에서 찜을 해제한다. */
+  const list=$('#dzWishListBody');
+  if(!list)return;
   const itemOf=id=>STOCK_SAVED.items.find(item=>item.id===Number(id));
   list.addEventListener('click',event=>{
     if(event.target.closest('[data-stock-retry]')){
       STOCK_SAVED.status='idle'; STOCK_SAVED.loadedAt=0; stockLoadSaved(); return;
     }
+    const heart=event.target.closest('[data-wish-off]');
+    if(heart){ event.stopPropagation(); stockUnsave(itemOf(heart.dataset.wishOff)); return; }
     const row=event.target.closest('[data-source-id]');
     if(row)stockChoose(itemOf(row.dataset.sourceId));
   });
-  list.addEventListener('dragstart',event=>{
+  list.addEventListener('keydown',event=>{
     const row=event.target.closest('[data-source-id]');
-    if(!row||!event.dataTransfer)return;
-    event.dataTransfer.setData('application/x-feedit-source',row.dataset.sourceId);
-    event.dataTransfer.setData('text/plain',row.dataset.sourceId);
-    event.dataTransfer.effectAllowed='copy';
+    if(!row||(event.key!=='Enter'&&event.key!==' '))return;
+    event.preventDefault();
+    stockChoose(itemOf(row.dataset.sourceId));
   });
-  zone.addEventListener('dragover',event=>{
-    event.preventDefault(); zone.classList.add('dragover');
-  });
-  zone.addEventListener('dragleave',()=>zone.classList.remove('dragover'));
-  zone.addEventListener('drop',event=>{
-    event.preventDefault(); zone.classList.remove('dragover');
-    const id=event.dataTransfer?.getData('application/x-feedit-source');
-    if(id)stockChoose(itemOf(id));
-  });
-  zone.addEventListener('click',()=>$('#fsMore')?.click());
-  zone.addEventListener('keydown',event=>{
-    if(event.key==='Enter'||event.key===' '){event.preventDefault();$('#fsMore')?.click();}
-  });
-  if(clear)clear.addEventListener('click',()=>{
-    fsStockClear(); fsChipsPaint(); trRender('stock');
-  });
-  if(save)save.addEventListener('click',stockToggleSaved);
 }
 
 /* 조회를 이미 한 번 보냈다고 표시한다.
@@ -844,7 +847,14 @@ export function trRender(id){
   if(tw)tw.hidden=isMyFeed;
   if(tp)tp.hidden=!isMyFeed;
   const kk=$('#trKicker'); if(kk)kk.hidden=(id!=='report');
-  const wkSpan=$('.trHead>span'); if(wkSpan)wkSpan.hidden=(id==='report');
+  /* ★ 2026-09-19 — 헤더의 주차 표시가 '2026.08 · W2' 로 박혀 있었다.
+     금주의 리포트와 같은 계산(wkRange)으로 오늘이 속한 주를 적는다. */
+  const wkSpan=$('.trHead>span');
+  if(wkSpan){
+    wkSpan.hidden=(id==='report');
+    const rg=wkRange();
+    wkSpan.textContent=rg[0]+' · '+rg[1].split(' · ')[0];
+  }
   const sw=$('#trSearch');
   if(sw){
     const useSearch=['stock','resale','life'].indexOf(id)>=0;
@@ -1484,22 +1494,12 @@ export function trRender(id){
     if (!document.getElementById('dzDashboard')) {
       const dashHTML = `
         <section class="stockPicker panelC" id="dzDashboard">
-          <div class="ph"><h3>분석할 상품</h3></div>
           <div class="stockPickerGrid">
             <div class="stockPickerRate"><span class="stockPickerRateLabel">현재 할인율</span>
               <div id="stockDiscountSlot"></div></div>
             <div class="stockPickerSummary" id="stockPickerSummary" aria-live="polite"></div>
-            <div class="dzWrap">
-              <div class="dropZone" id="dzDropZone" role="button" tabindex="0" aria-label="상품을 고르려면 세부 검색 열기">
-                <div class="dzPlaceholder" id="dzPlaceholder"><span class="circlePlus">+</span><b>상품을 골라 주세요</b><small>세부 검색 또는 찜목록에서 선택</small></div>
-                <img id="dzImage" hidden alt="선택한 상품 이미지">
-              </div>
-              <div class="dzSelection"><div><b id="dzSelectedName"></b><span id="dzSelectedDetail"></span></div>
-                <div class="dzActions"><button type="button" class="dzSaveBtn" id="dzSaveBtn" hidden>♡ 찜 추가</button>
-                  <button type="button" class="dzClearBtn" id="dzClearBtn" hidden>선택 해제</button></div></div>
-              <span class="dzSaveError" id="dzSaveError" role="alert" hidden></span>
-            </div>
-            <div class="dzWishlist"><div class="wlHead"><b>내 찜목록</b><span>클릭하거나 왼쪽으로 드래그</span></div>
+            <div class="dzWishlist"><div class="wlHead"><b>내 찜목록</b><span>클릭해서 선택 · 다시 누르면 해제</span>
+                <span class="dzSaveError" id="dzSaveError" role="alert" hidden></span></div>
               <div class="wlBody" id="dzWishListBody"></div></div>
           </div>
         </section>
