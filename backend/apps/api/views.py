@@ -144,17 +144,23 @@ def _mean(xs):
     return sum(xs) / len(xs) if xs else None
 
 
+def _pick_measured(qs):
+    """같은 이름이 여러 축에 있을 때(예: '니트' ITEM · MATERIAL) 지표가 가장 많은 쪽.
+    예전에는 순서 없는 .first() 라 지표가 적은 쪽이 잡히기도 했다(2026-09-19)."""
+    return qs.annotate(_n=Count("daily_metrics")).order_by("-_n", "id").first()
+
+
 def _resolve_term(name):
     """화면에서 온 말 → DictionaryTerm. 표준명 › 정규화명 › 별칭 › 브랜드명 순."""
     name = (name or "").strip()
     if not name:
         return None
     base = DictionaryTerm.objects.exclude(status="INACTIVE")
-    t = base.filter(canonical_name=name).first()
+    t = _pick_measured(base.filter(canonical_name=name))
     if t:
         return t
     n = _norm(name)
-    t = base.filter(normalized_name=n).first()
+    t = _pick_measured(base.filter(normalized_name=n))
     if t:
         return t
     alias = (
