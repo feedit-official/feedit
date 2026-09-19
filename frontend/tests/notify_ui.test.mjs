@@ -48,6 +48,7 @@ const setting = { enabled:true, kinds:{ PRICE_DROP:true, VOTE_RESULT:true, WEEKL
 globalThis.fetch = async (url, opts = {}) => {
   const u = String(url), method = (opts.method || 'GET').toUpperCase();
   asked.push({ url:u, method, body:opts.body });
+  if(u.includes('/api/auth/logout')) return reply({ status:'ok', data:{ authenticated:false } });
   if(u.includes('/api/auth/me')) return reply({ status:'ok', data:{ authenticated:true, csrf_token:'csrf', user } });
   if(u.includes('/api/auth/notification-settings')) return reply({ status:'ok', data:setting });
   if(u.includes('/api/auth/notifications')){
@@ -209,6 +210,17 @@ router.goView('trend');
 await new Promise(r => setTimeout(r, 400));
 assert.equal(document.getElementById('trProfNm').textContent, '피딧회원');
 assert.equal(document.querySelector('#trProfRk .jobBadge').textContent, 'Basic', '승인 전이면 Basic 배지');
+
+/* ⑪ 2026-09-20 — 로그아웃 뒤 트렌드 분석: 로그인 안내 뒤편에 앞 계정 이름·피드가 비치면 안 된다 */
+click(document.getElementById('mAuthBtn'));
+click(document.getElementById('menuLogout'));
+await new Promise(r => setTimeout(r, 120));
+assert.equal(profile.AUTH.in, false);
+router.goView('trend');
+await new Promise(r => setTimeout(r, 400));
+assert.ok(document.getElementById('trendGateModal').classList.contains('on'), '로그인 안내가 뜬다');
+assert.notEqual(document.getElementById('trProfNm').textContent, '피딧회원', '앞 계정 이름이 남지 않는다');
+assert.equal(document.querySelector('#sFoot .who b').textContent.includes('피딧회원'), false);
 
 console.log('✅ 알림 아이콘 · 패널 · 읽음 · 삭제 · 알림 설정이 실제로 동작합니다.');
 process.exit(0);

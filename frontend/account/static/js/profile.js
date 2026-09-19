@@ -55,6 +55,15 @@ function applyAccount(user){
   /* 이름·직업·소개가 바뀌었음을 알린다 — 트렌드 머리·사이드바가 받아 다시 칠한다 */
   try{ document.dispatchEvent(new CustomEvent('feedit:account')) }catch(e){}
 }
+/* ★ 2026-09-20 — 로그아웃하면 ME 를 로그인 전 기본값으로 되돌린다.
+   예전엔 값을 그대로 두어서, 로그아웃 뒤 트렌드 분석(로그인 안내 뒤편)에
+   앞 계정의 이름·취향 피드가 그대로 비쳤다. */
+function resetAccount(){
+  Object.assign(ME,{id:null,name:'FEEDiT 사용자',mail:'',initial:'F',xp:0,height:'',weight:'',
+    plan:'FREE',saved:0,role:'user',job:'',jobRequest:null,major:'',votes:0,bio:'',birth:'',ava:0});
+  ME.styles.clear();
+  try{ document.dispatchEvent(new CustomEvent('feedit:account')) }catch(e){}
+}
 const styleNames=()=>STYLES.filter(s=>ME.styles.has(s.id)).map(s=>s.n);
 
 /* 프로필 아이콘 색 — 팔레트 밖으로 나가지 않게 코랄·먹·모래 계열만 썼다 */
@@ -212,6 +221,7 @@ async function authLogout(){
     AUTH.in = false;
     likedClear();
     badgesApply(null);
+    resetAccount();
     fbReset();
     document.dispatchEvent(new CustomEvent('feedit:auth'));
     pendingAfterAuth = null;
