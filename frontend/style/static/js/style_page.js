@@ -13,8 +13,13 @@ let stTotal=null;   /* 이 스타일의 전체 상품 수 — '더 보기 (24 / 
 /* 스타일 사진 — 전용 컷(ph)이 있으면 그걸 쓰고, 없으면 공용 라이브러리로 떨어진다 */
 export const SIMG=s=>s.ph||IMG(s.img);
 export function stBuild(){
+  /* ★ 2026-09-20 — 번호 · 한글명 · 영문명 · 화살표의 목차 한 칸 (누르면 그 스타일 상세로 간다) */
+  const GO='<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 11.5l7-7M5.5 4.5h6v6"/></svg>';
   $('#stCats').innerHTML=STYLES.map((s,i)=>
-    '<button class="stCat'+(i?'':' on')+'" data-style="'+s.id+'">'+s.n+'</button>').join('');
+    '<button type="button" class="stCat" data-style="'+s.id+'" style="--i:'+i+'" aria-label="'+s.n+' 스타일 보기">'+
+      '<span class="stCatNo">'+String(i+1).padStart(2,'0')+'</span>'+
+      '<span class="stCatTx"><b>'+s.n+'</b><em>'+s.en+'</em></span>'+
+      '<i class="stCatGo">'+GO+'</i></button>').join('');
   const six=STYLES.slice(0,6);
   $('#stShow').innerHTML=six.map((s,i)=>
     '<div class="sl'+(i?'':' on')+'" data-style="'+s.id+'"><img src="'+SIMG(s)+'" alt="'+s.n+'">'+

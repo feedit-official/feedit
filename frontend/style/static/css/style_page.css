@@ -1,9 +1,50 @@
 /* ══════════════ Style ══════════════ */
-.stCats{display:flex;gap:7px;flex-wrap:wrap}
-.stCat{border-radius:999px;padding:10px 17px;font-size:13px;color:var(--pink-1);
-  box-shadow:inset 0 0 0 1px var(--pink-3);transition:all .32s var(--ease)}
-.stCat:hover{color:var(--pink-0);box-shadow:inset 0 0 0 1px var(--pink-2);transform:translateY(-2px)}
-.stCat.on{background:var(--pink-0);color:var(--paper);box-shadow:none}
+/* ★ 2026-09-20 — 알약 버튼 줄 → 에디토리얼 인덱스.
+   누르면 그 스타일 상세로 '이동'하는 링크라서, 선택 상태처럼 보이는 알약 대신
+   번호 · 한글명 · 영문명이 한 칸씩 서는 목차로 바꿨다.
+   hover: 위쪽 가는 선이 코랄로 왼쪽에서 차오르고, 글자가 살짝 밀리며 화살표가 나타난다.
+   들어올 때는 칸이 차례로 떠오른다(예전 hover 들림 모션을 등장 모션으로 계승). */
+.stCats{
+  display:grid;grid-template-columns:repeat(5,minmax(0,1fr));column-gap:clamp(14px,2vw,28px);
+}
+.stCat{
+  position:relative;display:flex;align-items:flex-start;gap:12px;min-width:0;
+  padding:18px 2px 20px;border-top:1px solid var(--pink-3);text-align:left;cursor:pointer;
+  color:var(--pink-0);animation:stCatIn .8s var(--ease) both;animation-delay:calc(var(--i,0) * 45ms);
+}
+/* 위쪽 선 위로 코랄 선이 차오른다 */
+.stCat::before{
+  content:"";position:absolute;left:0;right:0;top:-1px;height:1.5px;background:var(--coral);
+  transform:scaleX(0);transform-origin:left;transition:transform .7s var(--ease);
+}
+.stCat:hover::before,.stCat:focus-visible::before{transform:scaleX(1)}
+.stCat:focus-visible{outline:none}
+.stCatNo{
+  flex:none;padding-top:3px;font-family:var(--num);font-size:10.5px;letter-spacing:.08em;
+  color:var(--pink-2);font-feature-settings:'tnum' 1;transition:color .4s var(--ease);
+}
+.stCatTx{display:flex;flex-direction:column;gap:5px;min-width:0;transition:transform .6s var(--ease)}
+.stCatTx b{font-size:clamp(15px,1.25vw,17px);font-weight:600;letter-spacing:-.035em;line-height:1.2;white-space:nowrap}
+.stCatTx em{
+  font-style:normal;font-family:var(--num);font-size:10px;letter-spacing:.16em;text-transform:uppercase;
+  color:var(--pink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.stCatGo{
+  margin-left:auto;flex:none;width:16px;height:16px;margin-top:2px;color:var(--pink-0);
+  opacity:0;transform:translate(-6px,6px);transition:opacity .45s var(--ease),transform .6s var(--ease);
+}
+.stCatGo svg{display:block;width:100%;height:100%}
+.stCat:hover .stCatNo,.stCat:focus-visible .stCatNo{color:var(--coral)}
+.stCat:hover .stCatTx,.stCat:focus-visible .stCatTx{transform:translateX(4px)}
+.stCat:hover .stCatGo,.stCat:focus-visible .stCatGo{opacity:1;transform:none}
+@keyframes stCatIn{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+@media (max-width:1024px){ .stCats{grid-template-columns:repeat(4,minmax(0,1fr))} }
+@media (max-width:720px){
+  .stCats{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .stCat{padding:14px 2px 16px}
+  .stCatGo{opacity:.35;transform:none}   /* 터치 화면엔 hover 가 없으니 화살표를 옅게 둔다 */
+}
+@media (prefers-reduced-motion:reduce){ .stCat{animation:none} }
 /* 자동으로 바뀌는 쇼케이스 */
 .stShow{
   position:relative;margin-top:clamp(24px,3.6vh,44px);border-radius:12px;overflow:hidden;
