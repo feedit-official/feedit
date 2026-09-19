@@ -655,7 +655,7 @@ function renderComments(){
       <div class="cAvatar${RANK_ON?` rkAv rk${rk+1}`:''}">${rkRingHTML(rk)}${RANK_ON&&rk>=3?'<b class="rkGloss"></b>':''}<span>${c.name[0]}</span></div>
       <div class="cBody">
         <div class="cHead">
-          <b>${c.name}</b>${c.me ? (jobShown(ME) ? jobBadgeHTML(jobShown(ME)) : '') : jobBadgeHTML(c.job)}
+          <b>${escapeHtml(c.name)}</b>${c.me ? (jobShown(ME) ? jobBadgeHTML(jobShown(ME)) : '') : jobBadgeHTML(c.job)}
           <span class="cTime">${c.time}</span>
           <button class="cMenuBtn" data-comment-id="${c.id}" aria-label="더보기">⋯</button>
         </div>
@@ -683,7 +683,7 @@ async function sendComment(){
   try{
     const saved=await saveVoteComment({cardId,content:text});
     card.comments.unshift({
-      name:'나',rk:ME.rank,job:jobShown(ME)||'Basic',me:true,deletable:true,text,time:'방금 전',
+      name:ME.name||'나',rk:ME.rank,job:jobShown(ME)||'Basic',me:true,deletable:true,text,time:'방금 전',
       tag:saved?.choice==='BUY'?0:saved?.choice==='PASS'?1:null,id:saved?.id||nextCommentId()
     });
     if(modalState.i!==null && VOTES[modalState.i].id===cardId){
