@@ -34,6 +34,8 @@ export const WK={
  */
 const SALMAL_API='/api/salmal/cards?tab=latest';
 let FEED_SM_CACHE=null;      /* 성공한 목록 — 탭을 오갈 때 다시 부르지 않는다 */
+/* 계정이 바뀌면 '내 투표'가 섞이지 않게 버린다 (2026-09-19) */
+document.addEventListener('feedit:auth',()=>{ FEED_SM_CACHE=null; });
 
 function smCardFromApi(card,seq){
   const summary=card.vote_summary||{};

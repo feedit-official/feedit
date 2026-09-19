@@ -1009,6 +1009,17 @@ window.smReloadVotes=async()=>{
     if(modalState.i!==null) openModal(modalState.i);
   }catch(e){ /* 못 받아 오면 지금 화면을 그대로 둔다 */ }
 };
+/* ★ 2026-09-19 — 계정을 바꿔도(로그아웃 → 다른 계정 로그인) 앞 계정의 투표가 눌린 채 보였다.
+   카드 목록(내 선택 my_choice 포함)을 첫 진입 때 한 번만 받아 두고 계속 썼기 때문이다.
+   로그인·로그아웃이 일어나면 '나'에 딸린 값부터 바로 비우고, 서버에서 새 계정 기준으로 다시 받는다. */
+document.addEventListener('feedit:auth',()=>{
+  VOTES.forEach(v=>{ v.voted=null; v.mine=false; v.deletable=false; v.feedbackPending=false;
+    v.comments=(v.comments||[]).map(c=>({...c, me:false, deletable:false})); });
+  if(modalState.i!==null) closeModal();
+  renderGrid(); renderClosedGrid();
+  window.smReloadVotes();
+  if(AUTH.in) window.smFeedbackPrompt();
+});
 /* 바깥(내 피드 등)에서 특정 탭으로 열어 달라고 할 때 쓴다 */
 window.smGoTab=(tab)=>{
   const b=$$('#smTabs button').filter(x=>x.dataset.tab===tab)[0];
