@@ -569,7 +569,7 @@ function paintModalFeedback(v){
     el.innerHTML='<b>글쓴이의 결과</b><span>'+escapeHtml(f.purchase_label||'')+
       (f.helpful===true?' · 투표가 도움이 됐어요':'')+'</span>'+
       (f.comment?'<q>'+escapeHtml(f.comment)+'</q>':'')+
-      (v.mine?'<button type="button" class="pill ghost" data-fb-card>수정</button>':'');
+      '';   /* ★ 2026-09-20 — 남긴 결과는 뱃지·적중률에 쓰여 수정하지 않는다 */
   }else if(v.feedbackPending){
     el.hidden=false;
     el.innerHTML='<b>투표가 마감됐어요</b><span>결국 어떻게 하셨는지 알려 주세요. 투표한 사람들의 적중이 계산됩니다.</span>'+

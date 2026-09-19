@@ -9,6 +9,7 @@ import secrets
 from datetime import timedelta
 from urllib.parse import urlsplit
 
+from django.db import IntegrityError
 from django.db.models import Q
 from django.http import JsonResponse
 from django.utils import timezone
@@ -232,7 +233,7 @@ def _feedback_card_row(card):
 @require_http_methods(["GET", "POST"])
 def feedback(request):
     """GET /api/salmal/feedback — 내 마감 카드의 피드백 현황 {pending, done}
-    POST {card_id, purchase, satisfaction, helpful, comment} — 작성·수정 (글쓴이만, 마감된 카드만)
+    POST {card_id, purchase, satisfaction, helpful, comment} — 작성 (글쓴이만, 마감된 카드만, 한 번만 · 수정 불가)
     """
     profile = _profile(request)
     if profile is None:
@@ -263,6 +264,9 @@ def feedback(request):
         return _error("내가 올린 카드에만 피드백을 남길 수 있습니다.", 403)
     if card.status != VoteCard.Status.CLOSED:
         return _error("투표가 마감된 뒤에 피드백을 남길 수 있습니다.", 409)
+    # ★ 2026-09-20 — 남긴 결과는 수정하지 않는다. 투표자들의 적중·배지 판정 근거라 한 번 남기면 고정한다.
+    if VoteFeedback.objects.filter(card=card).exists():
+        return _error("이미 결과를 남긴 카드예요. 남긴 결과는 수정할 수 없습니다.", 409)
     purchase = str(data.get("purchase") or "").upper()
     if purchase not in VoteFeedback.Purchase.values:
         return _error("구매 여부를 골라 주세요.")
@@ -280,11 +284,12 @@ def feedback(request):
     helpful = data.get("helpful")
     helpful = None if helpful is None else bool(helpful)
     comment = _clean_text(data.get("comment"), 300)
-    fb, created = VoteFeedback.objects.update_or_create(
-        card=card,
-        defaults={"user": profile, "purchase": purchase, "satisfaction": satisfaction,
-                  "helpful": helpful, "comment": comment},
-    )
+    try:
+        fb = VoteFeedback.objects.create(card=card, user=profile, purchase=purchase,
+                                         satisfaction=satisfaction, helpful=helpful, comment=comment)
+    except IntegrityError:   # 두 번 눌러 동시에 들어온 경우
+        return _error("이미 결과를 남긴 카드예요. 남긴 결과는 수정할 수 없습니다.", 409)
+    created = True
     return _ok({"card_id": card.id, "created": created, "feedback": _feedback_payload(fb)},
                status=201 if created else 200)
 

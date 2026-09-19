@@ -54,6 +54,9 @@ export function fbClose(){ const m=$('#fbModal'); if(m)m.classList.remove('on','
    ★ 2026-09-19 디자인 개편 — 한 번에 한 질문씩 드러나는 단계형(구매 여부 → 도움 여부 → 후기).
      제목·질문을 h3/b 같은 맨 태그로 두지 않는다 — 전역 스타일·등장 모션에 먹혀 글자가 사라졌다. */
 export function fbOpen(row, { onSaved, askLater=true } = {}){
+  /* ★ 2026-09-20 — 이미 남긴 결과는 다시 열지 않는다(수정 기능 없음).
+     결과는 투표자들의 적중·배지 판정에 쓰이므로 한 번 남기면 고정한다. */
+  if(row&&row.feedback)return;
   const m=modalRoot(), card=m.querySelector('.fbCard');
   const fb=row.feedback||{};
   const st={purchase:fb.purchase||'', helpful:fb.helpful??null, comment:fb.comment||''};
@@ -94,9 +97,10 @@ export function fbOpen(row, { onSaved, askLater=true } = {}){
           '</div>'
         : '')+
       '<div class="fbErr" hidden></div>'+
+      '<p class="fbNote">남긴 결과는 투표자들의 적중·배지에 반영돼 이후에 수정할 수 없어요.</p>'+
       '<div class="fbActs">'+
         (askLater?'<button type="button" class="fbLater" data-fb="later">다음에 할게요</button>':'<span></span>')+
-        '<button type="button" class="fbSave" data-fb="save"'+(st.purchase?'':' disabled')+'>'+(row.feedback?'수정하기':'후기 남기기')+'</button>'+
+        '<button type="button" class="fbSave" data-fb="save"'+(st.purchase?'':' disabled')+'>'+'후기 남기기</button>'+
       '</div>';
   };
   paint();
@@ -124,7 +128,7 @@ export function fbOpen(row, { onSaved, askLater=true } = {}){
         fbClose();
         if(onSaved)onSaved();
         fbLoad();                                   /* 뒤에서 서버 값으로 한 번 더 맞춘다 */
-      }catch(ex){ fail(ex.message||'저장하지 못했습니다.'); b.disabled=false; b.textContent=row.feedback?'수정하기':'후기 남기기'; }
+      }catch(ex){ fail(ex.message||'저장하지 못했습니다.'); b.disabled=false; b.textContent='후기 남기기'; }
     }
   };
   m.classList.add('on');
@@ -148,7 +152,8 @@ window.feeditOpenFeedback=async cardId=>{
   const id=Number(cardId);
   const s=await fbLoad();
   const row=[...s.pending,...s.done].find(r=>Number(r.card_id)===id);
-  if(!row){ fbGoCard(id); return }
+  /* 목록에 없거나 이미 남긴 카드면 창 대신 그 카드(글쓴이의 결과가 보인다)로 보낸다 */
+  if(!row||row.feedback){ fbGoCard(id); return }
   fbOpen(row,{askLater:false, onSaved:()=>window.smReloadVotes&&window.smReloadVotes()});
 };
 /* 저장 직후 — 작성 전 → 작성 완료로 바로 옮기고 화면에 알린다 */
@@ -189,7 +194,7 @@ export function fbPanelRender(host){
       (r.image_url?'<img src="'+esc(r.image_url)+'" alt="">':'<i></i>')+
       '<div class="fbRowT"><b>'+esc(r.title)+'</b><span>'+esc(sub)+'</span>'+
         (f&&f.comment?'<q>'+esc(f.comment)+'</q>':'')+'</div>'+
-      '<button type="button" class="pill'+(pending?'':' ghost')+'" data-fb-open="'+r.card_id+'">'+(pending?'작성하기':'수정')+'</button></div>';
+      (pending?'<button type="button" class="pill" data-fb-open="'+r.card_id+'">작성하기</button>':'')+'</div>';
   };
   host.innerHTML=
     '<div class="fbSum"><span>작성 전 <b>'+s.pending.length+'</b></span><span>작성 완료 <b>'+s.done.length+'</b></span></div>'+
@@ -197,7 +202,7 @@ export function fbPanelRender(host){
   host.onclick=e=>{
     const b=e.target.closest('[data-fb-open]'); if(!b)return;
     const id=+b.dataset.fbOpen;
-    const r=[...s.pending,...s.done].find(x=>x.card_id===id);
+    const r=s.pending.find(x=>x.card_id===id);
     if(r)fbOpen(r,{askLater:false});
   };
 }
