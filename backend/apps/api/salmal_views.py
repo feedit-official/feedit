@@ -21,6 +21,7 @@ from apps.core.models import (
     UserTaste,
     VoteBallot,
     VoteCard,
+    VoteComment,
 )
 
 from .salmal_storage import VoteImageError, delete_vote_image, upload_vote_image, vote_image_url
@@ -158,6 +159,36 @@ def _similar_summary(card, profile, tastes_by_user):
     return summary
 
 
+def _buyer_rating(snapshot):
+    """판매처가 보여 주는 구매 평점 — 0~5 점 기준, 후기 수와 관측 시각을 같이."""
+    if not snapshot or snapshot.get("rating") is None:
+        return None
+    try:
+        rating = float(snapshot["rating"])
+    except (TypeError, ValueError):
+        return None
+    if rating <= 0:
+        return None
+    scale = 5 if rating <= 5 else 100
+    return {
+        "rating": round(rating, 2),
+        "scale": scale,
+        "review_count": snapshot.get("review_count"),
+        "observed_at": snapshot.get("observed_at"),
+    }
+
+
+def _activity(hours=24):
+    """최근 N시간 안에 살말에 참여(투표·댓글·카드 작성)한 사람 수 — 지어낸 실시간 인원 대신."""
+    since = timezone.now() - timedelta(hours=hours)
+    users = set(VoteBallot.objects.filter(created_at__gte=since).values_list("user_id", flat=True))
+    users |= set(VoteComment.objects.filter(created_at__gte=since, is_deleted=False)
+                 .values_list("user_id", flat=True))
+    users |= set(VoteCard.objects.filter(created_at__gte=since, seed_key__startswith="user:")
+                 .values_list("user_id", flat=True))
+    return {"hours": hours, "participants": len(users)}
+
+
 def _card_payload(card, profile, tastes_by_user, taste_names_by_user):
     source = card.product_source
     product = card.product
@@ -166,7 +197,7 @@ def _card_payload(card, profile, tastes_by_user, taste_names_by_user):
         snapshot = (
             ProductSourceSnapshot.objects.filter(product_source=source)
             .order_by("-observed_at")
-            .values("sale_price", "list_price", "rating")
+            .values("sale_price", "list_price", "rating", "review_count", "observed_at")
             .first()
         )
     ballots = list(card.ballots.all())
@@ -248,6 +279,9 @@ def _card_payload(card, profile, tastes_by_user, taste_names_by_user):
             "name": card.user.nickname or card.user.user.username,
             "story": card.description or "이 상품을 살지 말지 의견이 궁금해요.",
         },
+        # ★ 2026-09-19 — 화면의 '구매자 만족도'는 투표율로 만든 계산값이었다.
+        #   실제 구매자 신호인 판매처 평점·후기 수(상품 스냅샷)를 보낸다. 없으면 None.
+        "buyer_rating": _buyer_rating(snapshot),
         "vote_summary": summary,
         "similar_user_summary": similar,
         "taste_match_count": taste_match_count,
@@ -317,6 +351,7 @@ def cards(request):
     return _ok({
         "tab": tab,
         "count": len(rows),
+        "activity": _activity(),
         "items": [_card_payload(row, profile, tastes_by_user, taste_names_by_user) for row in rows],
     })
 

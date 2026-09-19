@@ -36,6 +36,8 @@ function cardFromApi(card,i){
     tasteMatch:card.taste_match_count||0,
     tasteTags:Array.isArray(card.taste_match_tags)?card.taste_match_tags:[],
     tone:['#302d2b','#6e6660'], imgURL:card.image_url,
+    /* 판매처 구매 평점 — 없으면 null. 예전 '구매자 만족도'(투표율 계산값)를 대신한다 (2026-09-19) */
+    buyer:card.buyer_rating||null,
     youtubeId:source.video_id||'', upload_date:source.upload_date||'',
     productSourceId:card.product_source_id,
     closed:Boolean(card.closed), st:Array.isArray(card.style_tags)?card.style_tags:[],
@@ -52,14 +54,17 @@ function cardFromApi(card,i){
     seq:i
   };
 }
+let ACTIVITY=null;   /* {hours, participants} — 최근 N시간 실제 참여자 수 */
 async function loadVotes(){
   const groups=await Promise.all(['latest','result'].map(tab=>
     fetch('/api/salmal/cards?tab='+tab,{credentials:'same-origin',headers:{Accept:'application/json'}})
       .then(async response=>{
         const payload=await response.json();
         if(!response.ok||payload.status!=='ok') throw new Error(payload.reason||'살말 데이터를 불러오지 못했습니다.');
+        if(tab==='latest'&&payload.data.activity) ACTIVITY=payload.data.activity;
         return payload.data.items||[];
       })));
+  paintActivity();
   const unique=new Map([...groups[0],...groups[1]].map(card=>[card.id,card]));
   VOTES=[...unique.values()].map(cardFromApi);
   BRAND_LIST=[...new Set(VOTES.map(v=>v.b))].sort();
@@ -87,9 +92,6 @@ function syncExpiredCards(){
     renderClosedGrid();
   }
 }
-const TONE_PALETTE=[['#332e2a','#75695c'],['#2c2c2e','#5f5f63'],['#302f2c','#6a655c'],
-  ['#2b2c2d','#585d60'],['#33322d','#736c5e'],['#2e2a2c','#5c5459']];
-const randomTone=()=>TONE_PALETTE[Math.floor(Math.random()*TONE_PALETTE.length)];
 
 const $=(s,el=document)=>el.querySelector(s);
 const $$=(s,el=document)=>[...el.querySelectorAll(s)];
@@ -102,47 +104,10 @@ const styleNameOf=v=>(v&&Array.isArray(v.st)?v.st:[])
 const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
 /* 비슷한 사용자들의 살 비율. 표본이 없으면 null — 숫자를 만들어 내지 않는다. */
 const simA=v=>v.simHas?v.simPct:null;
-const satisfaction=v=>clamp(v.taste+Math.round((v.base-70)/5),30,99);
-/* ── 댓글 시드 데이터 ─────────────────────────────────── */
-/* rk: 작성자 등급(0~4) — 아바타 링(rkPaintAv)이 여기서 색을 가져온다
-   job: 관리자 승인이 끝난 직업 — 닉네임 오른쪽 배지. 없으면 Basic(검정) */
-const COMMENT_SEED=[
- {name:'민지', tag:0, rk:1, job:'Basic', text:'실물이 훨씬 예뻐요, 색감도 안 뜨고 좋았어요.', time:'2시간 전'},
- {name:'현우', tag:1, rk:3, job:'MD', text:'핏이 생각보다 커요. 한 사이즈 다운 추천드려요.', time:'4시간 전'},
- {name:'소은', tag:0, rk:0, job:'Student', text:'가격 대비 소재가 꽤 괜찮은 편이에요.', time:'6시간 전'},
- {name:'재훈', tag:null, rk:2, job:'Basic', text:'구매 전에 후기 더 보고 싶어요, 다들 어떠세요?', time:'9시간 전'},
- {name:'다인', tag:0, rk:4, job:'Stylist', text:'재구매 의사 있어요! 세탁 후에도 변형 없었어요.', time:'11시간 전'},
- {name:'유진', tag:1, rk:1, job:'Creator', text:'다음 시즌엔 색상이 더 다양하게 나왔으면 좋겠어요.', time:'24시간 전'},
- {name:'태윤', tag:0, rk:2, job:'Buyer', text:'매장에서 직접 보고 왔는데 사진보다 훨씬 낫습니다.', time:'27시간 전'},
- {name:'하은', tag:1, rk:0, job:'Basic', text:'배송이 좀 느렸어요, 아이템 자체는 무난해요.', time:'48시간 전'}
-];
-function seedComments(i){
-  const out=[];
-  for(let k=0;k<3;k++) out.push(COMMENT_SEED[(i*3+k)%COMMENT_SEED.length]);
-  return out;
-}
+/* 새로 단 댓글의 임시 id — 서버 id 가 오면 그걸 쓴다 */
 let COMMENT_UID=1;
 const nextCommentId=()=>COMMENT_UID++;
-/* 시드 댓글을 각 아이템의 실제 comments 배열로 한 번만 옮겨 담아서
-   (신고/삭제 등) 개별 조작이 가능하게 만든다. 이후 새로 만든 게시글은
-   비어있는 comments 배열을 그대로 유지한다. */
-VOTES.forEach((v,i)=>{
-  if(v.comments.length===0&&!v.youtubeId){
-    v.comments=seedComments(i).map(c=>({...c, id:nextCommentId()}));
-  }else{
-    v.comments=v.comments.map(c=>({...c, id:c.id||nextCommentId()}));
-  }
-});
 
-/* ── 작성자 사연 시드 ─────────────────────────────────── */
-const NOTE_POOL=[
- {name:'benni_92', text:'평소에는 심플한 스타일을 입는데 이런 스타일에 도전해보고 싶어서 올려봅니다.'},
- {name:'ju_da', text:'제 눈에는 예쁜데 다른 분들 의견은 어떨지 궁금해서 올려봅니다.'},
- {name:'minsu.k', text:'이 가격에 구매하는 거 어떻게 생각하시는지 궁금해서 올려봅니다.'},
- {name:'hyeree', text:'친구가 추천해준 아이템인데 저한테 어울릴지 감이 안 잡혀서 올려봅니다.'},
- {name:'wonjin_c', text:'세일 마지막 날이라 고민 중인데, 사도 후회 안 할지 봐주세요.'}
-];
-function noteFor(i){ return NOTE_POOL[i%NOTE_POOL.length]; }
 
 function orderFor(tab){
   let idx=VOTES.map((_,i)=>i).filter(i=>!VOTES[i].deleted);
@@ -566,7 +531,7 @@ function openModal(i){
   const segmentTitle=$('#modalSegLabel').parentElement;
   segmentTitle.firstChild.textContent='나와 비슷한 사용자들';
   $('#modalSegLabel').textContent=' (체형 · 스타일 · 나이)';
-  const note=v.authorNote||noteFor(i);
+  const note=v.authorNote||{name:'FEEDiT 사용자',text:''};
   $('#modalNoteName').textContent=note.name;
   $('#modalNote').textContent=note.text;
   closeAiModal();
@@ -618,7 +583,7 @@ function updateModalVote(){
 }
 
 function buildAIReport(i){
-  const v=VOTES[i], sim=simA(v), sat=satisfaction(v);
+  const v=VOTES[i], sim=simA(v), br=v.buyer;
   const simTx=sim==null
     ? '나와 비슷한 사용자의 투표가 아직 없어 이 부분은 비교하지 못했습니다.'
     : `성별·체형·나이·취향이 겹치는 사용자 ${v.simUsers}명 중 ${sim}%가 구매에 동의했습니다.`;
@@ -629,12 +594,14 @@ function buildAIReport(i){
   $('#aiWhy').textContent=
     `전체 투표에서는 ${v.a>=50?'살':'말'} 의견이 우세합니다. `+
     `${simTx} `+
-    `구매자 만족도는 ${sat}%로 ${sat>=80?'높은 편':sat>=60?'무난한 편':'다소 낮은 편'}입니다. `+
+    (br
+      ? `판매처 구매 평점은 ${br.rating}/${br.scale}${br.review_count?`(후기 ${fmtNum(Number(br.review_count))}개)`:''}입니다. `
+      : '판매처 구매 평점 정보가 없어 이 부분은 보지 못했습니다. ')+
     (v.closed?'투표가 종료되어 최종 결과를 보여드립니다.':`마감까지 ${fmtHours(v.hours)} 남았습니다.`);
   $('#aiStats').innerHTML=`
     <div><div class="k">전체 살 비율</div><div class="v">${v.a}%</div></div>
     <div><div class="k">유사 세그먼트</div><div class="v">${sim==null?'–':sim+'%'}</div></div>
-    <div><div class="k">구매자 만족도</div><div class="v">${sat}%</div></div>`;
+    <div><div class="k">구매 평점</div><div class="v">${br?br.rating+'<small>/'+br.scale+'</small>':'–'}</div></div>`;
 }
 
 function renderComments(){
@@ -970,19 +937,13 @@ $('#createSubmit').addEventListener('click',async()=>{
   }
 });
 
-/* ── 실시간 인원 카운터 미세 변동 ────────────────────── */
-setInterval(()=>{
-  const el=$('#liveCount');
-  const cur=+el.textContent;
-  const next=Math.max(96, cur+(Math.random()>0.5?1:-1));
-  if(HAS_A){
-    const o={v:cur};
-    aAnimate(o,{v:next,duration:520,ease:'out(2)',
-      onUpdate:()=>{ el.textContent=Math.round(o.v) }});
-    aAnimate(el,{keyframes:[{translateY:-2,duration:150,ease:'out(2)'},
-      {translateY:0,duration:420,ease:aSpring({stiffness:150,damping:12})}]});
-  }else el.textContent=next;
-},2600);
+/* ── 최근 24시간 참여자 수 (2026-09-19) ─────────────────
+   예전에는 102 에서 시작해 2.6초마다 ±1 씩 무작위로 흔들리는 가짜 인원이었다.
+   이제 서버가 센 실제 참여자(투표·댓글·카드 작성, 중복 제거)를 그대로 쓴다. */
+function paintActivity(){
+  const el=$('#liveCount'); if(!el)return;
+  el.textContent=ACTIVITY&&Number.isFinite(ACTIVITY.participants)?fmtNum(ACTIVITY.participants):'–';
+}
 
 /* ── 초기 렌더 ───────────────────────────────────────── */
 $('#voteGrid').innerHTML='<div class="smDataState">살!말? 데이터를 불러오는 중이에요.</div>';

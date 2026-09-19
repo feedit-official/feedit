@@ -16,6 +16,12 @@ export const M_QUESTIONS=[
    못 불러오면 숫자를 지어내지 않고 '순위를 불러오지 못했습니다' 로 둔다. */
 let HOT=[];
 let HOT_STATE='loading';   /* loading | ok | empty | error */
+/* 살!말? 모드에서는 같은 자리가 'LIVE 투표 TOP 10' 이 된다 — 진행 중 카드를 투표 수 순으로.
+   [카드 제목, 살 비율(%), 투표 수, 카드 id] */
+let HOT_VOTE=[];
+let HOT_VOTE_STATE='loading';
+const hotCur=()=>SM_ON?HOT_VOTE:HOT;
+const hotCurState=()=>SM_ON?HOT_VOTE_STATE:HOT_STATE;
 let HOT_META=null;         /* {as_of, rule, basis} */
 const HOT_FACET={STYLE:'STYLE',ITEM:'ITEM',COLOR:'COLOR',MATERIAL:'MATERIAL',DETAIL:'DETAIL',TPO:'TPO',BRAND:'BRAND'};
 const M_ANSWERS={
@@ -155,8 +161,21 @@ export function itemCard(o){
 var hotI=0, hotOpen=false;
 function hotStep(){
   const roll=$('#hotRoll'); if(!roll)return;
-  if(!HOT.length){
-    roll.innerHTML='<i>'+(HOT_STATE==='loading'?'순위를 불러오는 중…':'순위를 불러오지 못했습니다')+'</i>';
+  const L=hotCur();
+  if(!L.length){
+    roll.innerHTML='<i>'+(hotCurState()==='loading'?'순위를 불러오는 중…'
+      :hotCurState()==='empty'?(SM_ON?'진행 중인 투표가 없습니다':'순위를 낼 지표가 없습니다')
+      :'순위를 불러오지 못했습니다')+'</i>';
+    return;
+  }
+  if(SM_ON){
+    const t=L[hotI%L.length];
+    const el=document.createElement('i');
+    el.innerHTML='<b>'+String((hotI%L.length)+1).padStart(2,'0')+'</b>'+cardEsc(t[0])+'<em>살 '+t[1]+'%</em>';
+    roll.innerHTML=''; roll.appendChild(el);
+    if(HAS_A)aAnimate(el,{opacity:[0,1],translateY:['110%','0%'],duration:620,
+      ease:aSpring({stiffness:88,damping:16})});
+    hotI++;
     return;
   }
   const t=HOT[hotI%HOT.length];
@@ -188,6 +207,17 @@ function hotToggle(){
 }
 function hotPaint(){
   const list=$('#hotList'); if(!list)return;
+  if(SM_ON){
+    list.innerHTML=HOT_VOTE.length
+      ? HOT_VOTE.map((t,i)=>
+          '<button data-v="salmal" data-sm="popular"><span class="n">'+String(i+1).padStart(2,'0')+'</span>'+
+          '<span class="k">'+cardEsc(t[0])+'</span>'+
+          '<span class="d '+(t[1]>=50?'up':'dn')+'">살 '+t[1]+'% · '+t[2]+'표</span></button>').join('')+
+        '<div class="hotNote">진행 중인 투표 · 참여 많은 순</div>'
+      : '<div class="hotNote">'+(HOT_VOTE_STATE==='loading'?'투표 순위를 불러오는 중입니다.'
+          :HOT_VOTE_STATE==='empty'?'진행 중인 투표가 없습니다.':'지금은 투표 순위를 불러오지 못했습니다.')+'</div>';
+    return;
+  }
   if(!HOT.length){
     list.innerHTML='<div class="hotNote">'+(HOT_STATE==='loading'?'순위를 불러오는 중입니다.'
       :'지금은 순위를 불러오지 못했습니다. 잠시 뒤 다시 확인해 주세요.')+'</div>';
@@ -213,10 +243,26 @@ async function hotLoad(){
     HOT_STATE=HOT.length?'ok':'empty';
   }catch(e){ HOT_STATE='error'; }
 }
+async function hotVoteLoad(){
+  try{
+    const r=await fetch('/api/salmal/cards?tab=popular',{credentials:'same-origin',headers:{Accept:'application/json'}});
+    const j=await r.json();
+    if(!r.ok||j.status!=='ok'){ HOT_VOTE_STATE='error'; return; }
+    const items=(j.data&&j.data.items)||[];
+    HOT_VOTE=items.filter(c=>!c.closed&&(c.vote_summary||{}).total>0).slice(0,10)
+      .map(c=>[c.title,c.vote_summary.buy_pct,c.vote_summary.total,c.id]);
+    HOT_VOTE_STATE=HOT_VOTE.length?'ok':'empty';
+  }catch(e){ HOT_VOTE_STATE='error'; }
+}
+/* 모드가 바뀌면 같은 자리를 다시 그린다 (smSwitch 에서 부른다) */
+export function hotRefresh(){
+  hotI=0; hotPaint(); hotStep();
+  if(SM_ON&&HOT_VOTE_STATE!=='ok') hotVoteLoad().then(()=>{ if(SM_ON){ hotI=0; hotPaint(); hotStep(); } });
+}
 export function hotBuild(){
   const list=$('#hotList'); if(!list)return;
   hotPaint(); hotStep();
-  hotLoad().then(()=>{ hotI=0; hotPaint(); hotStep(); });
+  hotLoad().then(()=>{ if(!SM_ON){ hotI=0; hotPaint(); hotStep(); } });
   setInterval(()=>{ if(!hotOpen)hotStep() },2400);
   $('#hotBar').addEventListener('click',hotToggle);
   /* 스타일이 아닌 용어(아이템·소재·색 …)는 챗봇에 바로 물어본다 */
@@ -461,6 +507,7 @@ export function smSwitch(on,ev,force){
     qI=0; qStep();
     const lbl=$('.hotTop .lbl');
     if(lbl)lbl.innerHTML=on?'<u>LIVE</u> 투표 TOP 10':'<u>HOT</u> TREND TOP 10';
+    hotRefresh();
     const inp=$('#mInput');
     if(inp)inp.placeholder='';
   };
