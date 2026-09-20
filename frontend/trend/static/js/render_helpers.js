@@ -30,6 +30,15 @@ export function fsItemFull(){
   const b=(p['브랜드']||[])[0], i=(p['아이템명']||[])[0];
   return (b&&i)?(b+' '+i):fsItem();
 }
+/* 화면 제목은 API가 고른 대표 용어 하나가 아니라 사용자가 고른 조건 전체를 적는다.
+   지표 계산의 대표 용어와 검색 범위를 같은 말처럼 보이게 하지 않는다. */
+export function fsSelectionLabel(){
+  const p=FS.pick||{}, out=[];
+  ['스타일','종류','브랜드','아이템명'].concat(FS_ORDER.filter(ax=>
+    !['스타일','종류','브랜드','아이템명','카테고리','상품명'].includes(ax)))
+    .forEach(ax=>(p[ax]||[]).forEach(v=>{ if(!out.includes(v))out.push(v) }));
+  return out.join(' · ');
+}
 /* 받침 유무로 조사를 고른다 */
 export function josa(w,a,b){
   const c=String(w).trim().slice(-1).charCodeAt(0);

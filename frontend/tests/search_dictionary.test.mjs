@@ -160,7 +160,7 @@ await t('★ 서버 후보: STYLE 칸은 핵심 10종만, 0건도 0 으로 남�
   assert.ok(bike.classList.contains('zero'), '0건은 흐리게 구분된다');
   assert.equal(countOf(colBtns(0).find((b) => labelOf(b) === '고프코어')), 122);
   assert.ok(!names.includes('캐주얼') && !names.includes('발레코어'), '핵심이 아닌 스타일이 섞였다');
-  assert.match(stateText(), /조건에 걸리는 상품/);
+  assert.equal(stateText(), '', '정상 응답이면 불필요한 상태 문구를 띄우지 않는다');
 });
 
 await t('★ 서버를 못 봐도 STYLE 칸은 같은 10종이고, 그 사실을 적는다', async () => {
@@ -175,15 +175,23 @@ await t('★ 서버를 못 봐도 STYLE 칸은 같은 10종이고, 그 사실을
 });
 
 /* ══ ④ 네 칸은 독립 필터 ═════════════════════════════════════ */
-await t('스타일을 고르면 칩이 생기고, 박아 둔 계층 안에서 종류가 좁혀진다', async () => {
+await t('스타일을 고르면 칩이 생기고, 박아 둔 계층 안에서 카테고리가 좁혀진다', async () => {
   facetMode = 'down'; S.fsReset();
   click(colBtns(0).find((b) => labelOf(b) === '고프코어'));
   assert.deepEqual(S.FS.pick['스타일'], ['고프코어']);
   assert.ok(document.getElementById('fsPicked').textContent.includes('고프코어'));
-  const kinds = colBtns(1).map(labelOf);
+  const kinds = colBtns(2).map(labelOf);
   assert.deepEqual(kinds, ['테크 셸', '플리스', '트레일 러너', '카고 팬츠'], kinds.join(','));
   await wait(250);   // 뒤따라 도는 후보 요청이 상태를 덮어도 칩은 그대로여야 한다
   assert.deepEqual(S.FS.pick['스타일'], ['고프코어']);
+});
+
+await t('★ 스타일은 한 번에 하나만 선택되고 새 선택이 이전 선택을 바꾼다', async () => {
+  facetMode = 'ok'; S.fsReset(); await S.fsLoadFacets();
+  click(colBtns(0).find((b) => labelOf(b) === '고프코어'));
+  click(colBtns(0).find((b) => labelOf(b) === '아메카지'));
+  assert.deepEqual(S.FS.pick['스타일'], ['아메카지']);
+  assert.equal(document.querySelectorAll('#fsPicked [data-drop^="스타일|"]').length, 1);
 });
 
 await t('계층이 없는 핵심 스타일(바이크코어)을 고르면 "후보 없음" 을 사실대로 적는다', async () => {
@@ -197,7 +205,7 @@ await t('계층이 없는 핵심 스타일(바이크코어)을 고르면 "후보
 await t('칸끼리 겹쳐 걸리고, 칩 하나만 뗄 수 있다', async () => {
   facetMode = 'ok'; S.fsReset(); await S.fsLoadFacets();
   click(colBtns(0).find((b) => labelOf(b) === '고프코어'));
-  click(colBtns(2).find((b) => labelOf(b) === '살로몬'));
+  click(colBtns(1).find((b) => labelOf(b) === '살로몬'));
   assert.deepEqual(S.FS.pick, { 스타일: ['고프코어'], 브랜드: ['살로몬'] });
   const x = document.querySelector('#fsPicked [data-drop="스타일|고프코어"]');
   assert.ok(x, '뗄 단추가 있어야 한다');
@@ -226,6 +234,20 @@ await t('★ 조회 대상 — 없으면 빈 문자열, 속성만 있어도 대�
   assert.equal(RH.fsItem(), '블랙');
   S.FS.pick = { 색: ['블랙'], 브랜드: ['키르시'] };
   assert.equal(RH.fsItem(), '키르시');
+});
+
+await t('★ 화면 제목은 대표 용어 하나가 아니라 고른 검색 조건 전체를 적는다', () => {
+  S.FS.pick = { 스타일: ['아메카지'], 종류: ['재킷'] };
+  assert.equal(RH.fsSelectionLabel(), '아메카지 · 재킷');
+});
+
+await t('★ 리세일·수명주기도 할인률과 같은 검색 축 순서와 이름을 쓴다', () => {
+  for (const id of ['resale', 'life']) {
+    D.trRender(id);
+    assert.deepEqual(S.getFsCols().map(c => [c.head, c.param]), [
+      ['STYLE', 'style'], ['브랜드', 'brand'], ['카테고리', 'kind'], ['상품명', 'item'],
+    ]);
+  }
 });
 
 /* ══ ⑥ 할인률은 개별 상품 ID, 리세일·수명주기는 기존 사전 검색 ══ */

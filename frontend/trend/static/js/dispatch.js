@@ -3,7 +3,7 @@ import { WK, feedSmPicks, feedSmLoad } from './my_feed.js';
 import { STYLES } from '../../../home/static/js/chat.js';
 import { SIMG } from '../../../style/static/js/style_page.js';
 import { FS, getFsCols, fsBuild, fsChipsPaint, fsDropDisallowed, fsHideSug, fsLoadDictionary, fsReset, fsPaintPop, fsStockSelect, fsStockClear } from '../../../style/static/js/search.js';
-import { G_CFG, KW, fsItem, fsItemFull, gMount, josa, trEmpty, trFillBars } from './render_helpers.js';
+import { G_CFG, KW, fsItem, fsItemFull, fsSelectionLabel, gMount, josa, trEmpty, trFillBars } from './render_helpers.js';
 import { ME, bioPaint } from '../../../account/static/js/profile.js';
 import { S_EDIT, S_FEED, TR_META } from './nav_meta.js';
 import { assocClosePop, assocOpenPop } from './assoc_popover.js';
@@ -882,11 +882,11 @@ export function trRender(id){
       FS.id = useSearch ? id : null;
       if (FS.id) fsPaintPop(); /* 미리 칸 모양을 바꿔 둔다 */
     }
-    /* 수명주기는 스타일 · 종류 · 브랜드까지만 — 다른 탭에서 걸어 온 아이템명 조건은 뗀다 */
+    /* 탭마다 허용 축이 달라질 경우 보이지 않는 조건을 제거한다. */
     if(useSearch&&fsDropDisallowed())fsChipsPaint();
     const fi=$('#fsInput');
     if(fi)fi.placeholder=id==='stock'?'상품명을 입력하고 Enter · 또는 찜에서 선택':
-      id==='life'?'스타일 · 종류 · 브랜드로 검색':'소재 · 아이템 · 스타일 · 브랜드로 검색';
+      '스타일 · 브랜드 · 카테고리 · 상품명으로 검색';
   }
   const body=$('#trBody'); if(!body)return;
 
@@ -1577,7 +1577,7 @@ export function trRender(id){
      값: /api/resale → snapshot.resale_snapshot (중고·리셀 매물) ÷ 정가 */
   else if(id==='resale'){
     const D=editGate(body,editUrl('resale'),'리세일 시세를'); if(!D)return;
-    const full=D.label||fsItemFull();
+    const full=fsSelectionLabel()||D.label||fsItemFull();
     if(D.keep_pct==null){
       body.innerHTML=unavailableHTML('‘'+full+'’ 매물 '+D.listings+'건은 있지만 정가를 알 수 없어 가치 유지율을 계산하지 못했습니다.',
         '매물의 정가(market_metrics.regular_price) 또는 같은 상품의 판매가 스냅샷이 필요합니다.');
@@ -1663,7 +1663,7 @@ export function trRender(id){
      값: /api/lifecycle → 대표 용어의 level·ma28·momentum 으로 단계를 판정(규칙은 응답의 rule) */
   else{
     const D=editGate(body,editUrl('life'),'수명주기 지표를'); if(!D)return;
-    const full=D.label||fsItemFull();
+    const full=fsSelectionLabel()||D.label||fsItemFull();
     const stages=['태동','확산','정점','쇠퇴'];
     const si=stages.indexOf(D.stage);
     if(si<0){

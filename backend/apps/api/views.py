@@ -1163,6 +1163,35 @@ def _selected_sources(sel, market=None):
     return qs
 
 
+def _selection_term(sel, preferred=""):
+    """검색 조건에서 실제 지표가 있는 대표 용어를 고른다.
+
+    카테고리·상품명은 commerce 쪽 값이라 같은 이름의 사전 용어가 없을 수 있다.
+    그때 선택 상품에 붙은 태그 중 지표 이력이 가장 많은 용어로 내려가면,
+    검색 조건은 유지하면서도 빈 수명주기를 잘못 보여 주지 않는다.
+    """
+    candidates = [preferred]
+    for key in ("item", "kind", "style", "brand"):
+        candidates.extend(sel.get(key) or [])
+    seen = set()
+    for name in candidates:
+        key = _norm(name)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        term = _resolve_term(name)
+        if term:
+            return term
+    if not any(sel.values()):
+        return None
+    source_ids = _selected_sources(sel).values("id")
+    return _pick_measured(
+        DictionaryTerm.objects.exclude(status="INACTIVE")
+        .filter(product_terms__product_source_id__in=source_ids)
+        .distinct()
+    )
+
+
 def _selection_label(sel):
     b, i = (sel["brand"] or [None])[0], (sel["item"] or [None])[0]
     if b and i:
@@ -1614,6 +1643,7 @@ def resale(request):
     days = _int(request, "days", 90, 14, 365)
     label = _selection_label(sel)
     term_name = (request.GET.get("term") or "").strip() or label
+    metric_term = _selection_term(sel, term_name)
 
     # 리셀 매물에는 스타일·종류 태그가 안 붙어 있는 경우가 많다 →
     # 조건에 걸린 상품과 같은 표준 상품(product)으로 묶인 매물까지 함께 본다.
@@ -1763,7 +1793,7 @@ def resale(request):
         "spread": spread,
         "basis_note": basis_note,
         "series": series,
-        "temperature": _temp_block(term_name, days),
+        "temperature": _temp_block(metric_term.canonical_name if metric_term else term_name, days),
     })
 
 
@@ -1829,7 +1859,7 @@ def lifecycle(request):
     term_name = (request.GET.get("term") or "").strip() or label
     if not term_name:
         return _no_selection()
-    term = _resolve_term(term_name)
+    term = _selection_term(sel, term_name)
     if term is None:
         return _empty(_term_missing_reason(term_name), label=label or term_name)
     rows, _ = _term_series(term, 365)

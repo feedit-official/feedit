@@ -104,8 +104,8 @@ const FALIAS={
    ══════════════════════════════════════════════════════ */
 export const FS_COLS_DEFAULT=[
   {ax:'스타일',   param:'style', head:'STYLE'},
-  {ax:'종류',     param:'kind',  head:'종류'},
   {ax:'브랜드',   param:'brand', head:'브랜드'},
+  {ax:'종류',     param:'kind',  head:'카테고리'},
   {ax:'아이템명', param:'item',  head:'상품명'}
 ];
 export const FS_COLS_DISCOUNT=[
@@ -123,10 +123,10 @@ export const FS_COLS = FS_COLS_DEFAULT;
 const FS_ATTR=['소재','색','디테일','TPO'];
 /* 구체적인 것부터 — 지표를 물을 때 무엇을 대표로 삼을지의 순서다 */
 export const FS_ORDER=['상품명','아이템명','브랜드','카테고리','종류','스타일'].concat(FS_ATTR);
-/* 탭마다 걸 수 있는 축 — null 이면 전부.
-   ★ 수명주기는 사전에 있는 키워드(스타일 · 종류 · 브랜드)까지만 받는다.
-     아이템명(개별 상품)과 속성(소재 · 색 · 디테일 · TPO)은 유행 곡선이 붙는 단위가 아니다. */
-const FS_TAB_AXES={life:['스타일','종류','브랜드']};
+/* 세 지표 모두 같은 네 축을 쓴다.
+   수명주기의 유행 곡선은 아래 조건 중 지표가 붙는 대표 용어를 기준으로 계산하고,
+   실제로 고른 전체 조건은 상품 집합과 화면 제목에 그대로 남긴다. */
+const FS_TAB_AXES={};
 export function fsAxesFor(id){ return FS_TAB_AXES[id]||null }
 export function fsAxOk(ax){ const a=fsAxesFor(FS.id); return !a||a.indexOf(ax)>=0 }
 /* 탭을 옮겼을 때 그 탭에서 못 쓰는 조건은 뗀다 — 보이지 않는 조건이 결과에 남으면 안 된다 */
@@ -266,7 +266,9 @@ export function fsToggle(ax,v){
   if(FS.id==='stock')fsStockClear();
   const a=FS.pick[ax]||(FS.pick[ax]=[]);
   const i=a.indexOf(v);
-  if(i>=0)a.splice(i,1); else a.push(v);
+  if(i>=0)a.splice(i,1);
+  else if(ax==='스타일'){ FS.pick[ax]=[v]; return true }
+  else a.push(v);
   if(!a.length)delete FS.pick[ax];
   return i<0;
 }
