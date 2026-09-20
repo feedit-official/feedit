@@ -930,3 +930,17 @@ if(suW) suW.addEventListener('input', bodyHint);
     if(document.body.dataset.view==='mypage')myRender();
   }).catch(e=>console.warn('[account]',e.message||e));
 }
+
+/* 알파 테스트 모드 — 시연 15일 한정 (app_shell/static/js/alpha.js 와 한 쌍).
+   방문자에게 알파 계정이 자동 발급되면 헤더·프로필을 로그인 상태로 다시 그린다.
+   alpha.js 를 여기서 import 하지 않고 이벤트로만 받는다 — 모듈 순환을 만들지 않기 위해서다.
+   기간이 끝나면 이 블록만 지우면 된다. */
+document.addEventListener('feedit:alpha-issued', () => {
+  session(true).then(data=>{
+    if(!data.authenticated||!data.user)return;
+    applyAccount(data.user); AUTH.in=true; authPaint();
+    likedAfterAuth();
+    acctChips($('#styleWrap'),ME.styles);
+    if(document.body.dataset.view==='mypage')myRender();
+  }).catch(()=>{});
+});

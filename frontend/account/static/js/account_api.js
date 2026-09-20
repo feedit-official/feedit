@@ -43,6 +43,16 @@ export function session(force=false) {
   return sessionPromise;
 }
 
+/* ── 알파 테스트 계정 (해커톤 시연 15일 한정) ──────────────────
+   백엔드 apps/api/alpha_views.py 와 한 쌍이다. 기간이 끝나면 이 블록과
+   app_shell/static/js/alpha.js 를 함께 지우면 된다. */
+export const alphaAccount = ({ nickname = '', styles = [] } = {}) =>
+  request('alpha', { method:'POST', body:{ nickname, styles } });
+export const alphaQuota = () =>
+  request('alpha/quota');
+export const alphaChatUse = () =>
+  request('alpha/chat-use', { method:'POST', body:{} });
+
 export const loginAccount = (username, password) =>
   request('login', { method:'POST', body:{ username, password } });
 

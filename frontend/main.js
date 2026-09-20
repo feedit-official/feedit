@@ -7,6 +7,7 @@ import './intro/static/js/loader.js';
 import './intro/static/js/deck.js';
 import './intro/static/js/visuals.js';
 import './app_shell/static/js/router.js';
+import './app_shell/static/js/alpha.js';   /* 알파 테스트 모드 — 시연 15일 한정 */
 import './home/static/js/chat.js';
 import './home/static/js/chat_popup.js';
 import './trend/static/js/nav_meta.js';

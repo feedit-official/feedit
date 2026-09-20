@@ -16,6 +16,10 @@
      목업 데모가 깨지면 안 된다. isUp() 이 false 면 부르는 쪽이 기존 응답으로 떨어진다.
    ══════════════════════════════════════════════════════ */
 
+/* 알파 테스트 모드 — 시연 15일 한정 (app_shell/static/js/alpha.js 와 한 쌍) */
+import { alphaChatUse } from '../../../account/static/js/account_api.js';
+import { setAlphaState } from '../../../app_shell/static/js/alpha.js';
+
 /* ★ 배포된 곳에서는 같은 도메인의 /api 를 쓴다.
  *
  *   전에는 5173·4173(로컬 vite) 이 아니면 무조건 `http://127.0.0.1:8770` 을
@@ -125,6 +129,22 @@ export async function isUp(){
 /* ── SSE 스트림 읽기 ──────────────────────────────────
    EventSource 는 POST 를 못 보낸다. fetch + ReadableStream 으로 직접 판다. */
 export async function askStream(payload, on, options={}){
+  /* ── 알파 테스트 모드 (시연 15일 한정) ─────────────────
+     보내기 직전에 서버에서 한 번 차감한다. 남은 횟수가 0이면 여기서 끊고
+     사람이 읽을 수 있는 문구를 던진다. 알파 계정이 아니면 그냥 통과한다.
+     기간이 끝나면 이 블록과 위 import 한 줄만 지우면 원래대로 돌아간다. */
+  try {
+    setAlphaState(await alphaChatUse());
+  } catch (err) {
+    if (/횟수/.test((err && err.message) || '')) {
+      /* 소진 — 목업 답으로 떨어지지 않도록 표식을 달아 던진다 (chat_popup.js 가 본다) */
+      const stop = new Error(err.message);
+      stop.alphaQuota = true;
+      throw stop;
+    }
+    /* 그 밖의 실패(백엔드 미기동 등)로 챗봇을 막지는 않는다 */
+  }
+
   const res = await fetch(API_BASE + '/v1/chat', {
     method:'POST', headers:{'Content-Type':'application/json'},
     body: JSON.stringify(payload), signal:options.signal

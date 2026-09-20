@@ -6,7 +6,7 @@
 
 from django.urls import path
 
-from . import activity_views, auth_views, chat_views, job_views, notification_views, salmal_views, views
+from . import activity_views, alpha_views, auth_views, chat_views, job_views, notification_views, salmal_views, views
 from .crawl_views import (
     CrawlRunDetailAPIView,
     CrawlRunListAPIView,
@@ -19,6 +19,10 @@ app_name = "api"
 urlpatterns = [
     # ── 사용자 세션·프로필 ──
     path("auth/me", auth_views.me, name="auth-me"),
+    # ── 알파 테스트 계정 (해커톤 시연 15일 한정 · alpha_views.py 통째로 제거 가능) ──
+    path("auth/alpha", alpha_views.alpha_account, name="auth-alpha"),
+    path("auth/alpha/quota", alpha_views.alpha_quota, name="auth-alpha-quota"),
+    path("auth/alpha/chat-use", alpha_views.alpha_chat_use, name="auth-alpha-chat-use"),
     path("auth/signup", auth_views.signup, name="auth-signup"),
     path("auth/login", auth_views.login, name="auth-login"),
     path("auth/google", auth_views.google_login, name="auth-google"),

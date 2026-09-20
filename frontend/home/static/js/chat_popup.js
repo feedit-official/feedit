@@ -1254,6 +1254,14 @@ function cpAskInto(c,text,key,images){
         aiMsg.pending=false; aiMsg.html='<p>답변 생성을 중단했습니다.</p>';
         aiMsg.cardHtml=''; aiMsg.followHtml=''; aiMsg.cueHtml=''; aiMsg.actionsHtml='';
         if(cpActiveConvo()===c)cpRenderThread();
+      }else if(e&&e.alphaQuota){
+        /* 알파 테스트 계정의 챗봇 횟수 소진 — 목업 답으로 떨어지면 안 된다.
+           (시연 15일 한정. chat_api.js 의 같은 표식과 한 쌍) */
+        aiMsg.pending=false; aiMsg.cardHtml=''; aiMsg.followHtml='';
+        aiMsg.cueHtml=''; aiMsg.actionsHtml=''; aiMsg.turn=null;
+        aiMsg.html='<p>'+String(e.message||'').replace(/&/g,'&amp;').replace(/</g,'&lt;')
+                          .replace(/\n/g,'<br>')+'</p>';
+        if(cpActiveConvo()===c)cpRenderThread();
       }else{
         const last=c.messages[c.messages.length-1];
         if(last===aiMsg) cpAskMock(c,aiMsg,key);
