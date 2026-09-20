@@ -363,6 +363,24 @@ SPECS: list[dict] = [
                     "description": "왜 없는지 한 줄. 축들에 공통으로 붙는다"}},
         ["term", "axes", "reason"],
     ),
+    # ★ 2026-09-20 — 가격 · 할인 · 리세일 · 수명주기. 트렌드 분석 화면과 같은 API 를 읽는다.
+    _fn(
+        "get_market",
+        "브랜드·아이템 종류·스타일 조건으로 실제 판매·거래 기록을 조회한다. "
+        "axis=discount: 무신사·지그재그·에이블리 판매처별 평균/최대 할인율·최저 판매가·품절 수. "
+        "axis=resale: 무신사 유즈드·크림 중고/리셀 거래가, 정가 대비 유지율(keep_pct), 거래량, 사이즈별 시세. "
+        "axis=lifecycle: 태동·확산·정점·쇠퇴 수명주기 단계와 최근 온도 추이. "
+        "'얼마야/할인해?/최저가', '리셀가/중고 시세/프리미엄', '아직 유행해?/끝물이야?' 같은 질문에 쓴다. "
+        "조건은 아는 것만 넣고 모르는 칸은 null. 결과에 unavailable 이 있으면 그 축은 없다고 말한다. "
+        "숫자는 결과에 있는 값만 쓰고, 판매처·기간(as_of, days)을 함께 적는다.",
+        {"axis": {"type": "string", "enum": ["discount", "resale", "lifecycle"]},
+         "brand": {"type": ["string", "null"], "description": "브랜드 (예: 나이키, 아크테릭스)"},
+         "kind": {"type": ["string", "null"], "description": "아이템 종류 (예: 스니커즈, 바람막이)"},
+         "style": {"type": ["string", "null"], "description": "스타일 (예: 고프코어)"},
+         "item": {"type": ["string", "null"], "description": "정확한 상품명을 알 때만"},
+         "days": {"type": ["integer", "null"], "description": "기간(일). 기본 30"}},
+        ["axis", "brand", "kind", "style", "item", "days"],
+    ),
 ]
 
 NAMES = [s["name"] for s in SPECS]
@@ -447,6 +465,12 @@ def progress_say(name: str, args: dict) -> str | None:
         cand = [str(t).strip() for t in (args.get("terms") or []) if str(t).strip()]
         first = cand[0] if cand else term
         return f"{first} 비슷한 것 찾는 중" if first else "비슷한 것 찾는 중"
+    if name == "get_market":
+        what = " ".join(str(args.get(k)).strip() for k in ("brand", "kind", "style", "item")
+                        if args.get(k)) or "조건"
+        axis = {"discount": "할인·최저가", "resale": "리셀·중고 시세",
+                "lifecycle": "수명주기"}.get(args.get("axis"), "시장 기록")
+        return f"{what} {axis} 보는 중"
     if name == "get_salmal":
         return "살!말? 투표 보는 중"
     if name == "search_salmal":
@@ -554,8 +578,9 @@ class Toolbox:
     """
 
     def __init__(self, store, gate, ctx: dict | None = None,
-                 salmal=None, taste=None, websearch=None) -> None:
+                 salmal=None, taste=None, websearch=None, market=None) -> None:
         self.store = store
+        self.market = market   # 없으면 처음 부를 때 MarketHTTPAdapter 를 만든다
         self.gate = gate
         self.ctx = ctx or {}
         self.salmal = salmal
@@ -851,6 +876,32 @@ class Toolbox:
                              "주소를 짐작해서 만들지 마라."}
 
     # ── 살!말? ──────────────────────────────────────────
+    def t_get_market(self, axis: str, brand=None, kind=None, style=None,
+                     item=None, days=None) -> dict:
+        if self.market is None:
+            from .adapters import MarketHTTPAdapter
+            self.market = MarketHTTPAdapter()
+        sel = {"brand": brand, "kind": kind, "style": style, "item": item}
+        if not any(v for v in sel.values()):
+            return {"unavailable": "브랜드·아이템 종류·스타일 중 하나는 있어야 조회할 수 있습니다.",
+                    "axis": axis}
+        try:
+            d = max(7, min(int(days or 30), 365))
+        except (TypeError, ValueError):
+            d = 30
+        if axis == "discount":
+            out = self.market.discount(sel, days=d)
+        elif axis == "resale":
+            out = self.market.resale(sel, days=max(14, d))
+        elif axis == "lifecycle":
+            out = self.market.lifecycle(sel, term=style or kind or brand or item)
+        else:
+            return {"error": "axis 는 discount · resale · lifecycle 중 하나입니다."}
+        if isinstance(out, dict):
+            out.setdefault("axis", axis)
+            out.setdefault("query", {k: v for k, v in sel.items() if v})
+        return out
+
     def t_get_salmal(self, card_id: int) -> dict:
         if self.salmal is None:
             return {"unavailable": "살!말? 데이터 연결이 아직 없습니다.",

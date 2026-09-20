@@ -18,6 +18,7 @@ ALLOWED_HOSTS = [
     "localhost",
     "15.164.151.62",
     "feedit-official.duckdns.org",
+    "feedit-api",   # ★ 2026-09-20 챗봇 컨테이너가 같은 도커 네트워크에서 이 이름으로 부른다
 ]
 
 INSTALLED_APPS = [

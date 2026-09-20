@@ -46,6 +46,14 @@ services:
       FEEDIT_CHAT_PORT: 8770
       FEEDIT_DATA_BACKEND: rds
       FEEDIT_EXTRACTOR_DIR: /tools
+      # ★ 2026-09-20 — 살!말? · 가격 · 리셀 · 수명주기 도구가 부르는 Django API.
+      #   컨테이너 안의 127.0.0.1 은 챗봇 자신이라 닿지 않는다(기본값이 그랬다).
+      #   feedit-api 네트워크에 함께 붙어 컨테이너 이름으로 부른다.
+      FEEDIT_BACKEND_API: ${FEEDIT_BACKEND_API:-http://feedit-api:8000/api}
+
+    networks:
+      - default
+      - feedit-api
 
     volumes:
       # 질문 추출 코드만 사용한다. SQLite 데이터는 마운트하지 않는다.
@@ -116,3 +124,9 @@ volumes:
   caddy_data:
   caddy_config:
   caddy_logs:
+
+# ★ 2026-09-20 — compose.api.yml(프로젝트 feedit-api)이 만든 네트워크. api 를 먼저 띄워야 한다.
+networks:
+  feedit-api:
+    external: true
+    name: feedit-api_default

@@ -1598,6 +1598,8 @@ export function trRender(id){
             '<div><b>'+(D.keep_change_pp==null?'–':(D.keep_change_pp>0?'+':'')+D.keep_change_pp+'%p')+'</b><span>전주 대비</span></div>'+
             '<div><b>'+D.listings+'건</b><span>관측 매물</span></div>'+
           '</div>'+
+          /* ★ 2026-09-20 스타일 태그 매물이 적어 대표 브랜드로 넓혔으면 그 기준을 밝힌다 */
+          (D.basis_note?'<p class="vdBasis" style="margin-top:10px;font-size:12px;color:var(--pink-2)">'+trEsc(D.basis_note)+'</p>':'')+
         '</div></div>'+
       '<div class="note" style="margin:0 0 12px"><i>◆</i>'+trEsc(String(D.as_of).slice(0,10))+' 기준 · 최근 '+D.days+'일 · '+
         (D.platforms||[]).map(p=>trEsc(p.label)).join(' · ')+'</div>'+

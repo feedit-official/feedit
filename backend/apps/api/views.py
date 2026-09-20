@@ -1569,6 +1569,22 @@ def discount(request):
 #  리세일 시세 — snapshot.resale_snapshot
 # ══════════════════════════════════════════════════════════════
 
+RESALE_STYLE_MIN = 30        # 스타일로 고른 매물이 이보다 적으면 대표 브랜드로 넓힌다
+STYLE_PROXY_BRANDS = 6       # 대표 브랜드 수
+
+
+def _style_proxy_brands(styles, limit=STYLE_PROXY_BRANDS):
+    """스타일 태그가 붙은 일반 판매 상품에서 가장 많이 나온 브랜드 (최소 3개 상품)."""
+    rows = (ProductTerm.objects
+            .filter(term__term_type="STYLE", term__canonical_name__in=styles,
+                    product_source__market_type="RETAIL",
+                    product_source__source_brand__brand__isnull=False)
+            .values("product_source__source_brand__brand__name")
+            .annotate(n=Count("product_source_id", distinct=True))
+            .order_by("-n")[:limit])
+    return [r["product_source__source_brand__brand__name"] for r in rows if r["n"] >= 3]
+
+
 def _resale_price(r):
     for k in ("last_trade_price", "median_price", "avg_price", "min_price", "lowest_ask"):
         v = _num(r.get(k))
@@ -1599,6 +1615,21 @@ def resale(request):
         | Q(product_id__in=matched.exclude(product_id__isnull=True).values("product_id")))
     resale_src = sources.filter(Q(market_type="RESALE") | Q(resale_snapshots__isnull=False)).distinct()
     ps = list(resale_src.values("id", "product_id", "source__code", "source__name")[:5000])
+    basis_note = None
+    # ★ 2026-09-20 — 크림 · 무신사 유즈드 매물에는 스타일 태그가 거의 없다(크림 0 · 유즈드 5건).
+    #   스타일로 고르면 매물이 몇 건뿐이라, 그 스타일로 태그된 일반 판매 상품의 **대표 브랜드**
+    #   매물로 넓혀 본다. 대표 브랜드와 기준을 응답에 적어 화면·챗봇이 밝힐 수 있게 한다.
+    if sel.get("style") and len(ps) < RESALE_STYLE_MIN:
+        brands = _style_proxy_brands(sel["style"])
+        if brands:
+            proxy_sel = {**sel, "style": [], "brand": brands}
+            proxy = ProductSource.objects.filter(
+                Q(id__in=_selected_sources(proxy_sel).values("id")), Q(market_type="RESALE"))
+            extra = list(proxy.values("id", "product_id", "source__code", "source__name")[:5000])
+            have = {p["id"] for p in ps}
+            ps += [p for p in extra if p["id"] not in have]
+            basis_note = (f"‘{label}’ 태그가 붙은 중고·리셀 매물이 적어, 이 스타일의 대표 브랜드 "
+                          f"({', '.join(brands)}) 매물로 넓혀 계산했습니다.")
     if not ps:
         return _empty(f"‘{label}’ 조건에 맞는 리셀·중고 매물이 없습니다.", label=label)
     ps_by_id = {p["id"]: p for p in ps}
@@ -1722,6 +1753,7 @@ def resale(request):
         "grades": group("grade"),
         "platforms": group("platform"),
         "spread": spread,
+        "basis_note": basis_note,
         "series": series,
         "temperature": _temp_block(term_name, days),
     })
