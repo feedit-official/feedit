@@ -16,28 +16,7 @@ export function stBuild(){
   /* ★ 2026-09-20 — 스타일 홈을 [쇼케이스] + [코어 · 원형 인덱스] 둘로 합쳤다.
      예전의 사진 타일 그리드(#stGrid)와 알약 버튼 줄은 인덱스 한 칸(사진 + 번호 · 한/영 · 화살표)으로 들어왔다.
      누르면 그 스타일 상세로 간다(문서 전역 [data-style] 위임). */
-  const six=STYLES.slice(0,6);
-  $('#stShow').innerHTML=six.map((s,i)=>
-    '<div class="sl'+(i?'':' on')+'" data-style="'+s.id+'"><img src="'+SIMG(s)+'" alt="'+s.n+'">'+
-    '<div class="vg"></div><div class="cap"><em>'+s.en.toUpperCase()+' · '+s.pk+'</em>'+
-    '<b>'+s.n+'</b><span>'+s.kw.join(' · ')+'</span></div></div>').join('')+
-    '<div class="dots">'+six.map((s,i)=>'<i'+(i?'':' class="on"')+'></i>').join('')+'</div>';
-  /* ★ 2026-09-20 — 쇼케이스 바탕을 사진 왼쪽 가장자리 색으로 칠한다.
-     사진 가장자리를 투명하게 녹여도 바탕이 흰색이면 경계가 도드라져서,
-     가장자리 12% 띠의 평균색을 바탕(--edge)으로 쓴다. 같은 출처 이미지라 캔버스로 읽을 수 있다. */
-  $$('#stShow .sl img').forEach(img=>{
-    const paint=()=>{
-      try{
-        const c=document.createElement('canvas'); c.width=12; c.height=48;
-        const x=c.getContext('2d',{willReadFrequently:true});
-        x.drawImage(img,0,0,Math.max(1,img.naturalWidth*.12),img.naturalHeight,0,0,12,48);
-        const d=x.getImageData(0,0,12,48).data; let r=0,g=0,b=0,n=0;
-        for(let i=0;i<d.length;i+=4){ r+=d[i]; g+=d[i+1]; b+=d[i+2]; n++ }
-        const sl=img.closest('.sl'); if(sl&&n)sl.style.setProperty('--edge','rgb('+Math.round(r/n)+','+Math.round(g/n)+','+Math.round(b/n)+')');
-      }catch(e){ /* 읽지 못하면 흰 바탕 그대로 */ }
-    };
-    if(img.complete&&img.naturalWidth)paint(); else img.addEventListener('load',paint,{once:true});
-  });
+  /* ★ 쇼케이스는 뺐다 — 스타일 홈은 코어 · 원형 인덱스만 둔다 */
   const GO='<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 11.5l7-7M5.5 4.5h6v6"/></svg>';
   let no=0;
   const cell=s=>{ const i=no++;
@@ -54,13 +33,6 @@ export function stBuild(){
   $('#stCats').innerHTML=
     group('코어','CORE','지금 이름이 붙어 도는 흐름',core)+
     group('원형','ROOTS','코어들이 갈라져 나온 뿌리',root.concat(rest));
-  setInterval(()=>{
-    const sl=$$('#stShow .sl'), dt=$$('#stShow .dots i');
-    if(!sl.length)return;
-    sl[stShowI%sl.length].classList.remove('on'); dt[stShowI%dt.length].classList.remove('on');
-    stShowI++;
-    sl[stShowI%sl.length].classList.add('on'); dt[stShowI%dt.length].classList.add('on');
-  },3400);
   $('#stBack').addEventListener('click',()=>{
     $('#styleDetail').style.display='none'; $('#styleHome').style.display=''; scrollTo(0,0) });
   $('#stFitClose')&&$('#stFitClose').addEventListener('click',stCloseFit);

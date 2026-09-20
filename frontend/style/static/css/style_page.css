@@ -54,38 +54,6 @@
   .stCatGo{opacity:.35;transform:none}   /* 터치 화면엔 hover 가 없으니 화살표를 옅게 둔다 */
 }
 @media (prefers-reduced-motion:reduce){ .stCat{animation:none} }
-/* 자동으로 바뀌는 쇼케이스 */
-.stShow{
-  position:relative;margin-top:clamp(18px,2.6vh,30px);border-radius:12px;overflow:hidden;
-  height:clamp(240px,32vh,340px);background:#fff;
-}
-/* ★ 2026-09-20 (2) — 낮은 띠에 사진을 꽉 채우면(cover) 인물이 다 잘려 의미가 없었다.
-   흰 바탕 위에 사진을 전신 그대로(contain) 오른쪽에 세우고, 왼쪽부터 넓게 번지는 검은 그라데이션 위에
-   글자를 가운데 쪽으로 옮겨 얹는다. */
-.stShow .sl{position:absolute;inset:0;opacity:0;transition:opacity 1.1s var(--ease);
-  background:var(--edge,#fff)}   /* ★ 사진 왼쪽 가장자리 색 (style_page.js stEdgeColor) */
-.stShow .sl.on{opacity:1}
-/* 사진은 제 비율 그대로 오른쪽에 세우고, 왼쪽 가장자리를 바탕색으로 녹여 경계선을 없앤다 */
-.stShow .sl img{position:absolute;top:0;right:0;height:100%;width:auto;max-width:none;transform-origin:100% 50%;
-  -webkit-mask-image:linear-gradient(90deg,transparent 0%,#000 38%);mask-image:linear-gradient(90deg,transparent 0%,#000 38%);
-  animation:stDrift 9s ease-in-out infinite alternate}
-/* 전신이 잘리지 않도록 아주 작게만 움직인다 */
-@keyframes stDrift{from{transform:scale(1)}to{transform:scale(1.035)}}
-.stShow .vg{position:absolute;inset:0;
-  background:linear-gradient(90deg,rgba(10,10,10,.95) 0%,rgba(10,10,10,.86) 32%,rgba(10,10,10,.5) 52%,rgba(10,10,10,.14) 66%,transparent 76%)}
-.stShow .cap{position:absolute;left:clamp(28px,11vw,170px);top:50%;transform:translateY(-50%);color:#fff;max-width:44%}
-.stShow .cap em{font-style:normal;font-family:var(--num);font-size:9.5px;letter-spacing:.26em;
-  color:rgba(255,255,255,.62);display:block;margin-bottom:12px}
-.stShow .cap b{display:block;font-weight:600;font-size:clamp(24px,3.2vw,46px);letter-spacing:-.045em;line-height:1}
-.stShow .cap span{display:block;margin-top:12px;font-size:13px;color:rgba(255,255,255,.76);max-width:34ch}
-.stShow .dots{position:absolute;left:clamp(28px,11vw,170px);bottom:20px;display:flex;gap:6px}
-.stShow .dots i{width:6px;height:6px;border-radius:50%;background:rgba(255,255,255,.34);
-  transition:background .4s,transform .4s}
-.stShow .dots i.on{background:var(--coral);transform:scale(1.4)}
-@media (max-width:720px){
-  .stShow .cap{left:22px;max-width:70%}
-  .stShow .dots{left:22px}
-}
 /* 스타일 상세 */
 .stHero{position:relative;min-height:clamp(320px,52vh,520px);display:flex;align-items:flex-end;
   overflow:hidden;border-radius:12px;background:#e8e4dd}
