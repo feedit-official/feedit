@@ -473,7 +473,11 @@ const WK_DAY=['월','화','수','목','금','토','일'];
    점 세 개가 차례로 뛰는 표시(wkDots)와, 값 자리를 지키는 뼈대(wkSkel)로 대신하고
    실제 값이 오면 그 자리에서 숫자가 굴러 올라온다(trCountUp). */
 const WK_DOTS=(cls)=>'<span class="wkDots'+(cls?' '+cls:'')+'"><i></i><i></i><i></i></span>';
-const WK_SKEL=(cls)=>'<span class="wkSkel'+(cls?' '+cls:'')+'"></span>';
+/* 히어로 이미지 로딩 — 원형 스피너 + 작은 안내 문구 */
+const WK_HERO_LOAD='<span class="wkHeroSpin" aria-hidden="true"></span>'+
+  '<small>키워드 이미지를 불러오고 있어요</small>';
+/* 값 자리 로딩 — 회색 뼈대 대신 점 세 개를 둔다 */
+const WK_SKEL=(cls)=>WK_DOTS('val'+(cls?' '+cls:''));
 const wkSign=n=>(n>0?'+':'')+n;
 /* ── 이번 주 리포트의 축 = 가장 많이 검색한 키워드 ──
    ★ 2026-09-17 · 한 줄 요약 · 히어로 카드 · 추천 영상 · 추천 웹매거진이 모두 같은 키워드를 말한다.
@@ -496,14 +500,16 @@ function wkLineHTML(K,rp){
 }
 /* 히어로 카드 — 이미지 · 키워드 이름 · 트렌드 온도 3칸 · 더 보기 버튼 */
 function wkHeroHTML(K){
-  if(!K)return '<div class="wkHeroImg wkHeroType wkHeroWait"><b>'+WK_DOTS('lg')+'</b></div>'+
+  if(!K)return '<div class="wkHeroImg wkHeroType wkHeroLoad">'+WK_HERO_LOAD+'</div>'+
     '<div class="wkCopy"><div class="wkState">THIS WEEK</div><h3>'+WK_DOTS('md')+'</h3>'+
-    '<div class="wkLedger c3">'+wkLedgerHTML(null)+'</div></div>';
+    '<div class="wkLedger c3">'+wkLedgerHTML(null)+'</div>'+
+    '<button type="button" class="pill sm wkBtnWait" style="margin-top:20px" disabled>→ 언급량 · 온도에서 보기</button>'+
+    '</div>';
   const sub=K.style?K.style.en:(K.facet||'KEYWORD');
   /* 스타일은 스타일 대표 사진, 그 밖의 키워드는 관련 상품 사진을 받아 온 뒤 채운다(wkHeroImage) */
   const img=K.style
     ? '<div class="wkHeroImg"><img src="'+SIMG(K.style)+'" alt="'+trEsc(K.label)+'" loading="lazy"></div>'
-    : '<div class="wkHeroImg wkHeroType" id="wkHeroImg"><b>'+trEsc(K.label)+'</b></div>';
+    : '<div class="wkHeroImg wkHeroType wkHeroLoad" id="wkHeroImg">'+WK_HERO_LOAD+'</div>';
   const btn=K.style
     ? '<button type="button" class="pill sm" style="margin-top:20px" data-fit-style="'+K.style.id+'">→ 이 스타일 더 보기</button>'
     : '<button type="button" class="pill sm" style="margin-top:20px" data-tr="temp" data-wk-kw="'+trEsc(K.label)+'" data-wk-facet="'+trEsc(K.facet||'')+'">→ 언급량 · 온도에서 보기</button>';
@@ -530,7 +536,11 @@ async function wkHeroImage(K){
       el.classList.remove('wkHeroType');
       el.innerHTML='<img src="'+trEsc(src)+'" alt="'+trEsc(K.label)+'" loading="lazy">';
     }
-  }catch(e){ /* 사진이 없어도 카드는 글자 판으로 충분하다 */ }
+    else if(el&&WKEY===K){ el.classList.remove('wkHeroLoad'); el.innerHTML='<b>'+trEsc(K.label)+'</b>' }
+  }catch(e){
+    const el=$('#wkHeroImg');
+    if(el&&WKEY===K){ el.classList.remove('wkHeroLoad'); el.innerHTML='<b>'+trEsc(K.label)+'</b>' }
+  }
 }
 /* '언급량 · 온도에서 보기' — 라우터가 화면을 바꾸기 전에(capture) 검색어를 넘겨 둔다 */
 document.addEventListener('click',e=>{

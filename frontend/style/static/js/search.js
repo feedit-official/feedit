@@ -106,7 +106,7 @@ export const FS_COLS_DEFAULT=[
   {ax:'스타일',   param:'style', head:'STYLE'},
   {ax:'종류',     param:'kind',  head:'종류'},
   {ax:'브랜드',   param:'brand', head:'브랜드'},
-  {ax:'아이템명', param:'item',  head:'아이템명'}
+  {ax:'아이템명', param:'item',  head:'상품명'}
 ];
 export const FS_COLS_DISCOUNT=[
   {ax:'스타일', param:'style', head:'STYLE'},
@@ -423,6 +423,14 @@ function fsOptsFor(ax){
    고른 조건을 그대로 넘기고, 축별 후보를 받아 온다.
    늦게 온 응답이 최신 상태를 덮지 않게 표(seq)를 단다. */
 let fsSeq=0, fsFacetT=null, fsFacetAbort=null, fsStockFullReady=false;
+/* 상품명 후보가 '지금 이 조건'의 것인가 — 깃발 대신 조건 지문(signature)을 쓴다.
+   깃발은 호출 순서(누른 티를 먼저 그리고 나중에 다시 세는)에 따라 한 박자
+   늦게 내려가서 옛 목록이 찰나에 비쳤다. 지문은 그릴 때마다 비교하므로
+   조건이 바뀐 그 프레임부터 바로 안 맞는다. */
+let fsItemSig=null;
+function fsPickSig(){
+  return ['스타일','종류','브랜드'].map(a=>(FS.pick[a]||[]).slice().sort().join('|')).join('//');
+}
 let fsStockOffset=0, fsStockHasMore=false;
 function fsFacetURL(itemsOnly=false, itemOffset=0){
   const p=new URLSearchParams();
@@ -526,6 +534,7 @@ export function fsLoadFacets(itemsOnly=false, itemOffset=0){
              로컬 목록으로 떨어져서, 없는 후보를 있는 것처럼 보여 준다.
              축마다 빈 배열을 명시해 '여긴 없다'가 그대로 그려지게 한다. */
         FS.opts={}; getFsCols().forEach(c=>{ FS.opts[c.param]=[] });
+        if(FS.id!=='stock')fsItemSig=fsPickSig();
         FS.narrowed=!!j.narrowed; FS.matched=(j.matched==null?0:j.matched);
         FS.err=''; FS.note=j.reason||'';
         if(FS.id==='stock'){
@@ -533,6 +542,7 @@ export function fsLoadFacets(itemsOnly=false, itemOffset=0){
         }
       }else{
         FS.opts=j.data||{}; FS.narrowed=!!j.narrowed;
+        if(FS.id!=='stock')fsItemSig=fsPickSig();
         FS.matched=(j.matched==null?null:j.matched);
         FS.note=j.note||''; FS.err='';
         if(FS.id==='stock'){
@@ -565,6 +575,7 @@ function fsOpenPop(){
     FS.colq['상품명']=$('#fsInput')?.value.trim()||'';
     fsStockFullReady=false;
   }
+  if(FS.id!=='stock')fsItemSig=null;
   FS.open=true; $('#fsPopBg').classList.add('on'); $('#fsMore').classList.add('on');
   fsPaintPop(); fsLoadFacets();
 }
@@ -589,8 +600,22 @@ export function fsStockScrollMore(host){
   fsLoadFacets(true,fsStockOffset+FS_STOCK_PAGE);
 }
 
+/* 상품명 칸의 잠금 — 앞 세 칸 중 하나도 안 골랐으면 후보를 내지 않는다.
+   조건 없이 내려오는 이름은 상품의 대표 이름(canonical_name)이라
+   실제 상품명으로 읽히지 않는다(‘청’ · ‘반소매 티셔츠 M’). */
+function fsItemLocked(ax){
+  if(FS.id==='stock'||ax!=='아이템명')return false;
+  return !['스타일','종류','브랜드'].some(a=>(FS.pick[a]||[]).length);
+}
 function fsColHTML(col){
   const ax=col.ax;
+  if(fsItemLocked(ax))
+    return '<div class="hint">스타일 · 종류 · 브랜드 중 하나를 먼저 고르면<br>'+
+      '그 조건에 실제로 있는 상품명이 나옵니다.</div>';
+  /* 조건이 바뀌어 다시 세는 동안에는 지난 목록을 그대로 두지 않는다 —
+     새 조건과 상관없는 이름이 잠깐 비친다. */
+  if(FS.id!=='stock'&&ax==='아이템명'&&(FS.loading||fsItemSig!==fsPickSig()))
+    return '<div class="hint">상품명을 불러오는 중입니다...</div>';
   const {list,from}=fsOptsFor(ax);
   const q=fsNorm(FS.colq[ax]||'');
   const hit=q?list.filter(o=>fsNorm(o.label).indexOf(q)>=0):[...list];
@@ -637,19 +662,21 @@ export function fsPaintPop(){
   if(pop) {
     if(FS.id === 'stock') pop.classList.add('is-discount');
     else pop.classList.remove('is-discount');
+    pop.dataset.fs = FS.id||'';
   }
   $$('.fsCol').forEach(col => col.hidden = true);
   getFsCols().forEach((c,lv)=>{
     const col=$('.fsCol[data-lv="'+lv+'"]'), ok=fsAxOk(c.ax);
     if(col){
       col.hidden=!ok;
-      const ch = col.querySelector('.fsColH'); if(ch) ch.textContent = c.ax;
+      const hd = c.head||c.ax;          /* 화면에 적는 이름 — 내부 축 이름과 다를 수 있다 */
+      const ch = col.querySelector('.fsColH'); if(ch) ch.textContent = hd;
       const inp = col.querySelector('input');
       if(inp) {
         inp.dataset.ax = c.ax;
         inp.value = FS.colq[c.ax]||'';
-        inp.placeholder = c.ax + ' 찾기';
-        inp.setAttribute('aria-label', c.ax + ' 찾기');
+        inp.placeholder = hd + ' 찾기';
+        inp.setAttribute('aria-label', hd + ' 찾기');
       }
     }
     if(ok)shown++;

@@ -298,6 +298,8 @@
 .fsX:hover{background:var(--coral);color:#fff}
 .fsCols{flex:1;min-height:0;display:grid;grid-template-columns:repeat(var(--fsN,4),1fr)}
 .fsPop.is-discount .fsCols{grid-template-columns:minmax(150px, 190px) minmax(150px, 190px) minmax(150px, 190px) 1fr}
+/* 리세일 시세 지수 — 상품명이 길어 1:1:1:2 로 준다 */
+.fsPop[data-fs="resale"] .fsCols{grid-template-columns:1fr 1fr 1fr 2fr}
 .fsCol{min-height:0;display:flex;flex-direction:column;border-right:1px solid var(--pink-3)}
 .fsCol:last-child{border-right:none}
 /* 탭에서 못 쓰는 축(수명주기의 아이템명)은 칸째 접는다 — search.js fsPaintPop */
