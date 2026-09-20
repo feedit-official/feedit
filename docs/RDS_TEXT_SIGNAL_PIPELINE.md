@@ -146,7 +146,8 @@ YouTube 댓글과 커머스 리뷰를 서로 다른 일회성 스크립트로 �
 ### 필수 환경변수
 
 ```dotenv
-OPENAI_API_KEY=...
+OPENAI_API_KEY=...                # 챗봇 전용
+FEEDIT_TEXT_OPENAI_API_KEY=...    # 리뷰·댓글 분석 전용 (2026-09-20 분리 — 챗봇 키로 대신하지 않는다)
 YOUTUBE_API_KEY=...
 AWS_STORAGE_BUCKET_NAME=...
 AWS_REGION=ap-northeast-2

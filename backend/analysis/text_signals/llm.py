@@ -37,14 +37,16 @@ class OpenAITextSignalClient:
     """Responses API의 구조화 출력만 사용하는 작은 클라이언트."""
 
     def __init__(self):
-        self.api_key = (os.getenv("OPENAI_API_KEY") or "").strip()
+        # ★ 2026-09-20 — 챗봇(OPENAI_API_KEY)과 키를 나눈다. 리뷰·댓글 분석은 이 키만 쓴다.
+        #   챗봇 키로 몰래 넘어가지 않도록 OPENAI_API_KEY 로 대신하지 않는다.
+        self.api_key = (os.getenv("FEEDIT_TEXT_OPENAI_API_KEY") or "").strip()
         self.base_url = (os.getenv("OPENAI_BASE_URL") or "https://api.openai.com/v1").rstrip("/")
         self.model = os.getenv("FEEDIT_TEXT_LLM_MODEL", "gpt-5.6-luna")
         self.effort = os.getenv("FEEDIT_TEXT_LLM_EFFORT", "low")
         self.timeout = int(os.getenv("FEEDIT_TEXT_LLM_TIMEOUT", "90"))
         self.max_output_tokens = int(os.getenv("FEEDIT_TEXT_LLM_MAX_OUTPUT_TOKENS", "12000"))
         if not self.api_key:
-            raise TextSignalLLMError("OPENAI_API_KEY가 없습니다.")
+            raise TextSignalLLMError("FEEDIT_TEXT_OPENAI_API_KEY가 없습니다 (리뷰·댓글 분석 전용 키).")
 
     def analyze(
         self,
