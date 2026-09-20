@@ -252,7 +252,9 @@ def sync_content_documents(*, limit: int | None = None) -> dict:
             to_create.append(TextDocument(
                 source_id=item.source_id, content_item_id=item.id,
                 document_type=TextDocument.DocumentType.DESCRIPTION,
-                external_id=f"content:{item.id}"[:255], body=body, language="ko",
+                # 기존 설명 문서와 같은 모양: "<영상 ID>:description"
+                external_id=f"{item.external_content_id or item.id}:description"[:255],
+                body=body, language="ko",
                 source_published_at=published, source_payload_hash=payload_hash,
                 analysis_metadata={"origin": "content.content_item", "content_item_id": item.id},
                 analysis_status=TextDocument.AnalysisStatus.PENDING,
