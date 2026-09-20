@@ -40,14 +40,32 @@ async function boot(){
   if(!me || !me.authenticated){
     /* 한 번 거절한 사람에게 매번 다시 묻지 않는다 */
     if(askedAlready()) return;
-    setTimeout(openInvite, 700);           /* 인트로가 걷히고 난 뒤에 띄운다 */
+    /* 로딩·소개 화면에서는 띄우지 않는다 — 메인에 실제로 들어온 뒤에만 묻는다 */
+    whenMainView(() => setTimeout(openInvite, 600));
     return;
   }
 
   try { setAlphaState(await alphaQuota()); } catch(_){ return; }
   if(!state.alpha) return;                 /* 정식 회원은 배너도 가이드도 없다 */
-  mountBanner();
-  if(!seen(TOUR_KEY)) setTimeout(startTour, 900);
+  whenMainView(() => {
+    mountBanner();
+    if(!seen(TOUR_KEY)) setTimeout(startTour, 700);
+  });
+}
+
+/* 메인 화면에 들어왔을 때 한 번만 실행한다.
+   router.js 의 enterMain() 이 body 에 'mainmode' 를 붙이는 것이 유일한 신호다
+   (#startBtn · #jumpBtn · 뒤로가기 복원이 모두 그 함수를 지난다).
+   router 를 import 하지 않고 클래스만 지켜본다 — 모듈 순환을 만들지 않기 위해서다. */
+function whenMainView(run){
+  const inMain = () => document.body.classList.contains('mainmode');
+  if(inMain()) return run();
+  const watch = new MutationObserver(() => {
+    if(!inMain()) return;
+    watch.disconnect();
+    run();
+  });
+  watch.observe(document.body, { attributes:true, attributeFilter:['class'] });
 }
 
 /* ── 1-1. 빠른 계정 만들기 창 ────────────────────────── */
