@@ -83,7 +83,7 @@
 .acct .pageHead{margin-bottom:clamp(24px,3.4vh,34px)}
 .acct .pageHead h1{font-size:clamp(24px,3vw,30px);font-weight:600;letter-spacing:-.035em;margin-bottom:8px}
 .acct .pageHead p{font-size:13.5px;color:var(--pink-1);line-height:1.6}
-.acct .myGrid{display:grid;grid-template-columns:320px 1fr;gap:20px;align-items:start}
+.acct .myGrid{display:grid;grid-template-columns:320px max-content minmax(240px,1fr);gap:20px;align-items:start}
 .acct .myCol{display:flex;flex-direction:column;gap:18px}
 .acct .panel{background:#fff;border:1px solid var(--pink-3);border-radius:16px;padding:24px}
 .acct .panelHead{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:20px}
@@ -146,7 +146,7 @@
 .acct .rangeSlider::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:18px;border-radius:50%;background:var(--coral);cursor:pointer;box-shadow:0 2px 10px rgba(255,107,74,.45)}
 .acct .rangeSlider::-moz-range-thumb{width:18px;height:18px;border:none;border-radius:50%;background:var(--coral);cursor:pointer}
 .acct .rangeLab{display:flex;justify-content:space-between;font-size:10.5px;color:var(--pink-2);margin-top:9px}
-.acct .recGrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
+.acct .recGrid{display:grid;grid-template-columns:repeat(3,var(--recCardW));gap:14px}
 @media(max-width:980px){
   .acct .myGrid{grid-template-columns:1fr}
   .acct .recGrid{grid-template-columns:repeat(2,1fr)}
@@ -159,6 +159,10 @@
 /* 앱 안에 얹으면서 손본 것 — 세 화면 공통 지면과 헤더 여백 */
 .acct{padding-top:clamp(30px,4vh,54px);padding-bottom:clamp(48px,8vh,96px)}
 .acct .wrap,.acct .authWrap{width:min(1180px,90vw);margin:0 auto}
+/* 마이페이지만 지면을 넓게 쓴다 — 오른쪽에 피드백 칸이 하나 더 붙기 때문이다.
+   ★ 넓어진 만큼 추천 카드를 키우지 않는다. 카드 폭은 --recCardW 로 고정이고,
+     남는 폭은 전부 피드백 칸이 가져간다. */
+.acct .myWrap{width:min(1300px,94vw)}
 .acct .authWrap{display:grid;place-items:center;min-height:calc(100vh - 200px)}
 .acctModal{
   position:fixed;inset:0;z-index:60;display:none;place-items:center;
@@ -216,7 +220,14 @@
 .acct .pageHead{margin-bottom:clamp(24px,3.4vh,34px)}
 .acct .pageHead h1{font-size:clamp(24px,3vw,30px);font-weight:600;letter-spacing:-.035em;margin-bottom:8px}
 .acct .pageHead p{font-size:13.5px;color:var(--pink-1);line-height:1.6}
-.acct .myGrid{display:grid;grid-template-columns:320px minmax(0,1fr);gap:20px;align-items:start}
+/* ★ 2026-09-20 — 세 칸이다.
+   왼쪽: 프로필 · 즐겨입는 스타일 / 가운데: 오늘의 추천 / 오른쪽: 살!말? 피드백 */
+/* 추천 카드 한 장 폭 — 4열이던 예전 화면의 카드와 같은 크기다.
+   (지면 1180px · 왼쪽 320px 기준 (1180-320-20-48-42)/4 ≈ 188px) */
+.acct{--recCardW:188px}
+.acct .myGrid{display:grid;
+  grid-template-columns:320px max-content minmax(220px,1fr);
+  gap:20px;align-items:start}
 .acct .myCol{display:flex;flex-direction:column;gap:18px;min-width:0}
 /* 로그아웃 버튼을 걷어낸 만큼 위아래 여백을 고르게 다시 나눠 준다.
    패널이 위로 쏠리지 않게 padding 을 키우고 각 요소 간격을 비례로 늘렸다. */
@@ -404,6 +415,12 @@
 .acct .formRow>label{display:block;font-size:12.5px;font-weight:600;color:var(--pink-1);margin-bottom:11px}
 .acct .formRow>label span{font-weight:400;color:var(--pink-2);margin-left:5px}
 .acctModal .itemGrid{max-height:56vh;overflow-y:auto;padding-right:2px}
+/* 1280px 아래에서는 세 칸을 넣으면 추천 카드가 엄지손톱만 해진다.
+   그 폭에서는 피드백이 아래로 내려와 가로로 눕는다. */
+@media(max-width:1279px){
+  .acct .myGrid{grid-template-columns:320px max-content}
+  .acct .myColFb{grid-column:1 / -1}
+}
 @media(max-width:1080px){
   .acct .myGrid{grid-template-columns:1fr}
   .acct .recGrid{grid-template-columns:repeat(2,1fr)}
@@ -432,9 +449,20 @@
 .acctMenu button[hidden]{display:none}
 
 
-/* ── 오늘의 추천 패널 — 높이는 profile.js 가 왼쪽 두 패널 합산 높이에 맞춰 인라인으로
-   맞춘다(syncTodayRecHeight). 카드가 그 높이를 넘으면 잘리지 않고 안에서 스크롤한다. */
-.acct #todayRecPanel{overflow-y:auto}
+/* ── 오늘의 추천 패널 — 높이는 profile.js 가 왼쪽 칸(프로필+즐겨입는 스타일)
+   높이에 맞춰 인라인으로 박는다(syncTodayRecHeight). 카드가 그 높이를 넘으면
+   잘리지 않고 스크롤한다.
+   ★ 2026-09-20 — 스크롤하는 것은 패널이 아니라 **안쪽 칸(.recScroll)** 이다.
+     패널이 직접 스크롤하면 막대가 패널의 둥근 모서리(16px) 위에 얹혀
+     오른쪽 위아래 모서리가 각져 보였다. 안쪽에서 스크롤하면 막대가
+     패널 안쪽 여백(24px) 안에 서므로 모서리를 건드리지 않는다. */
+.acct #todayRecPanel{display:flex;flex-direction:column;overflow:hidden}
+.acct #todayRecPanel .recScroll{flex:1;min-height:0;overflow-y:auto;padding-right:6px}
+
+/* 살!말? 피드백도 같은 높이로 선다(syncTodayRecHeight). 목록이 길면 안쪽에서 스크롤한다 —
+   여기서도 스크롤하는 것은 패널이 아니라 안쪽 칸이다. */
+.acct .fbPanel{display:flex;flex-direction:column;overflow:hidden}
+.acct .fbPanel #fbPanelBody{flex:1;min-height:0;overflow-y:auto;padding-right:6px}
 /* 두 칸(내 취향 / 지금 뜨는 코어) — 칸 제목은 패널 제목보다 한 단계 작게 */
 .acct .recBlock+.recBlock{margin-top:28px;padding-top:22px;border-top:1px solid var(--pink-3)}
 .acct .recBlockHead{font-size:12.5px;font-weight:600;color:var(--pink-1);margin-bottom:12px}

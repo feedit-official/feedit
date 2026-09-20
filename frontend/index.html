@@ -864,19 +864,25 @@
             </div>
           </div>
         </div>
-        <div class="myCol">
+        <div class="myCol myColMid">
           <div class="panel" id="todayRecPanel">
             <div class="panelHead"><h3>오늘의 추천</h3></div>
-            <div class="recBlock">
-              <div class="recBlockHead" id="recMineTitle">내 취향 0개 기준</div>
-              <div class="recGrid" id="recMine"></div>
-            </div>
-            <div class="recBlock">
-              <div class="recBlockHead">지금 뜨는 코어 기준</div>
-              <div class="recGrid" id="recHot"></div>
+            <!-- 스크롤은 이 안쪽 칸이 한다. 패널이 직접 스크롤하면 막대가
+                 패널의 둥근 모서리 위에 얹혀 모서리가 각져 보인다. -->
+            <div class="recScroll" id="recScroll">
+              <div class="recBlock">
+                <div class="recBlockHead" id="recMineTitle">내 취향 0개 기준</div>
+                <div class="recGrid" id="recMine"></div>
+              </div>
+              <div class="recBlock">
+                <div class="recBlockHead">지금 뜨는 코어 기준</div>
+                <div class="recGrid" id="recHot"></div>
+              </div>
             </div>
           </div>
         </div>
+        <!-- 살!말? 피드백 자리 — 패널은 profile.js 의 fbPanelMount() 가 넣는다 -->
+        <div class="myCol myColFb" id="myColFb"></div>
       </div>
     </div>
   </section>

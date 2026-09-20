@@ -345,7 +345,7 @@ export function openStyleSelect(){
 /* 아이템 카드 — '스타일' 상세와 마이페이지가 같은 chat.js 의 itemCard() 를 그대로 쓴다 */
 
 /* ── 오늘의 추천 (실데이터) ─────────────────────────── */
-const REC_PER_BLOCK = 8;       /* 칸마다 보여 줄 카드 수 */
+const REC_PER_BLOCK = 6;       /* 칸마다 보여 줄 카드 수 — 한 줄에 3개씩 두 줄 */
 const REC_POOL = 16;           /* 스타일마다 받아 오는 후보 수 — 여기서 날짜별로 골라 쓴다 */
 const REC_RISE = ['확산','재상승','재점화','정점 통과'];
 const recCache = new Map();    /* 스타일명 → 상품 목록 Promise. 칩을 누를 때마다 다시 받지 않는다 */
@@ -468,26 +468,44 @@ export function myRender(){
   }
 }
 
-/* '오늘의 추천' 패널 높이를 왼쪽 컬럼(프로필+필터) 높이에 정확히 맞춘다 */
+/* 살!말? 피드백 패널 — 오른쪽 칸(#myColFb)에 넣는다.
+   ★ 2026-09-20 — 예전에는 '오늘의 추천' 바로 뒤에 끼워 넣어 가운데 칸 아래에 달렸다. */
 function fbPanelMount(){
-  const rec = $('#todayRecPanel');
-  if(!rec) return;
+  const host = $('#myColFb') || $('#todayRecPanel');
+  if(!host) return;
   if(!$('#fbPanel')){
-    rec.insertAdjacentHTML('afterend',
-      '<div class="panel fbPanel" id="fbPanel" style="margin-top:20px">'+
-        '<div class="panelHead"><h3>살!말? 피드백</h3><span class="sub">마감된 내 카드의 결과</span></div>'+
-        '<div id="fbPanelBody"></div></div>');
+    const html = '<div class="panel fbPanel" id="fbPanel">'+
+      '<div class="panelHead"><h3>살!말? 피드백</h3><span class="sub">마감된 내 카드의 결과</span></div>'+
+      '<div id="fbPanelBody"></div></div>';
+    if(host.id === 'myColFb') host.insertAdjacentHTML('beforeend', html);
+    else host.insertAdjacentHTML('afterend', html);   /* 칸이 없는 예전 화면 대비 */
   }
   const body = $('#fbPanelBody');
   if(!AUTH.in){ body.innerHTML = '<div class="fbEmpty">로그인하면 확인할 수 있습니다.</div>'; return; }
   fbPanelRender(body);
+  syncTodayRecHeight();
   fbLoad().then(() => fbPanelRender($('#fbPanelBody')));
 }
+/* 가운데 '오늘의 추천'과 오른쪽 '살!말? 피드백' 높이를
+   왼쪽 칸(프로필 + 즐겨입는 스타일) 높이에 맞춘다.
+   피드백만 그 3분의 2 높이다(FB_HEIGHT_RATIO).
+   넘치는 내용은 패널 안쪽(.recScroll · #fbPanelBody)에서 스크롤한다.
+   패널 자신이 스크롤하면 막대가 둥근 모서리 위에 얹혀 모서리가 각져 보인다(2026-09-20).
+
+   ★ 1280px 미만에서는 피드백이 아래로 내려와 가로로 눕는다(profile.css 의 같은 기준).
+     그때는 높이를 박지 않는다 — 가로로 누운 패널에 세로 길이를 강제하면 빈 칸만 길어진다. */
+const MY_THREE_COL = 1280;
+const FB_HEIGHT_RATIO = 2 / 3;   /* 피드백 패널 높이 = 오늘의 추천 × 2/3 */
 function syncTodayRecHeight(){
   const left = $('.myGrid .myCol:first-child');
   const panel = $('#todayRecPanel');
   if(!left || !panel || !panel.offsetParent) return;
-  panel.style.height = Math.round(left.getBoundingClientRect().height) + 'px';
+  const h = Math.round(left.getBoundingClientRect().height);
+  panel.style.height = h + 'px';
+  /* 피드백은 '오늘의 추천'의 3분의 2 높이. 같은 높이로 세우면 빈 칸이 너무 길다. */
+  const fb = $('#fbPanel');
+  if(fb) fb.style.height = (innerWidth >= MY_THREE_COL)
+    ? Math.round(h * FB_HEIGHT_RATIO) + 'px' : '';
 }
 if(!window.__recHeightBound){
   window.__recHeightBound = true;
