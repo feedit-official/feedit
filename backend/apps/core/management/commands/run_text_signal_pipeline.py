@@ -5,7 +5,7 @@ import os
 
 from django.core.management.base import BaseCommand, CommandError
 
-from analysis.text_signals import run_text_signal_pipeline, sync_product_reviews
+from analysis.text_signals import run_text_signal_pipeline, sync_content_documents, sync_product_reviews
 
 
 class Command(BaseCommand):
@@ -15,6 +15,8 @@ class Command(BaseCommand):
         parser.add_argument("--plan", action="store_true", help="DB·LLM을 건드리지 않고 대상 건수만 확인")
         parser.add_argument("--collect-youtube", action="store_true", help="최근 영상 댓글 수집부터 실행")
         parser.add_argument("--skip-review-sync", action="store_true", help="commerce.product_review 동기화 생략")
+        parser.add_argument("--skip-content-sync", action="store_true",
+                            help="content_item(영상 제목+설명) → DESCRIPTION 문서 동기화 생략")
         parser.add_argument("--include-stale", action="store_true", help="이전 분석 버전 문서까지 재분석(비용 발생)")
         parser.add_argument("--limit", type=int, default=None, help="이번 실행의 최대 LLM 분석 문서 수")
         parser.add_argument("--metric-days", type=int, default=35, help="다시 계산할 최근 지표 일수")
@@ -30,11 +32,11 @@ class Command(BaseCommand):
             from apps.core.models import ProductReview, TextDocument
             from analysis.text_signals.metrics import METRIC_VERSION
             pending = TextDocument.objects.filter(
-                document_type__in=["COMMENT", "REVIEW"],
+                document_type__in=["COMMENT", "REVIEW", "DESCRIPTION", "TRANSCRIPT", "ARTICLE"],
                 analysis_status="PENDING",
             ).count()
             stale = TextDocument.objects.filter(
-                document_type__in=["COMMENT", "REVIEW"],
+                document_type__in=["COMMENT", "REVIEW", "DESCRIPTION", "TRANSCRIPT", "ARTICLE"],
             ).exclude(analysis_version="feedit-text-signals-v2").count()
             result = {
                 "product_reviews": ProductReview.objects.count(),
@@ -60,6 +62,8 @@ class Command(BaseCommand):
             result["youtube"] = collect_daily_youtube_comments()
         if not options["skip_review_sync"]:
             result["reviews"] = sync_product_reviews()
+        if not options["skip_content_sync"]:
+            result["content"] = sync_content_documents()
         result["analysis"] = run_text_signal_pipeline(
             limit=options["limit"],
             include_stale=options["include_stale"],

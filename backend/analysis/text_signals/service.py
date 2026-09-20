@@ -13,6 +13,7 @@ from django.utils import timezone
 
 from apps.core.models import (
     AnalysisPipelineRun,
+    ContentItem,
     DictionaryTerm,
     ProductReview,
     TermAlias,
@@ -209,6 +210,75 @@ def sync_product_reviews(*, limit: int | None = None) -> dict:
     return {"created": created, "updated": updated, "unchanged": unchanged}
 
 
+# ★ 2026-09-20 — 콘텐츠 본문(영상 제목 + 설명)도 분석 대상 문서로 만든다.
+#   댓글만 분석하면 '고프코어' 같은 스타일 용어가 거의 잡히지 않는다. 크리에이터가 영상 제목·설명에
+#   쓰는 말이 트렌드의 본체다. 자막(TRANSCRIPT) · 기사(ARTICLE) 문서가 들어오면 같은 흐름을 탄다.
+CONTENT_DOC_TYPES = ("DESCRIPTION", "TRANSCRIPT", "ARTICLE")
+ANALYZED_DOC_TYPES = ("COMMENT", "REVIEW", *CONTENT_DOC_TYPES)
+CONTENT_BODY_MAX = 6000
+
+
+def _content_body(item) -> str:
+    title = str(item.title or "").strip()
+    desc = str(item.description or "").strip()
+    return (title + ("\n\n" + desc if desc else "")).strip()[:CONTENT_BODY_MAX]
+
+
+def sync_content_documents(*, limit: int | None = None) -> dict:
+    """content.content_item(영상 등) → text_document(DESCRIPTION) 한 건씩.
+
+    · 본문 = 제목 + 설명. 바뀌었으면 다시 분석 대기(PENDING)로 돌린다.
+    · 작성일(source_published_at) = 콘텐츠 게시 시각 — 예전에 만든 설명 문서는 이 값이 비어
+      지표에서 통째로 빠졌다(2026-09-20 실측 968건 전부).
+    """
+    items = ContentItem.objects.exclude(published_at__isnull=True).order_by("id")
+    if limit:
+        items = items[:limit]
+    items = list(items.only("id", "source_id", "title", "description", "published_at",
+                            "external_content_id"))
+    existing = {d.content_item_id: d for d in TextDocument.objects.filter(
+        document_type=TextDocument.DocumentType.DESCRIPTION,
+        content_item_id__in=[i.id for i in items])}
+    created = updated = unchanged = dated = 0
+    to_create: list[TextDocument] = []
+    for item in items:
+        body = _content_body(item)
+        if not body:
+            continue
+        payload_hash = hashlib.sha256(body.encode("utf-8")).hexdigest()
+        published = _published(item.published_at)
+        doc = existing.get(item.id)
+        if doc is None:
+            to_create.append(TextDocument(
+                source_id=item.source_id, content_item_id=item.id,
+                document_type=TextDocument.DocumentType.DESCRIPTION,
+                external_id=f"content:{item.id}"[:255], body=body, language="ko",
+                source_published_at=published, source_payload_hash=payload_hash,
+                analysis_metadata={"origin": "content.content_item", "content_item_id": item.id},
+                analysis_status=TextDocument.AnalysisStatus.PENDING,
+            ))
+            created += 1
+            continue
+        if doc.body != body:
+            doc.body = body
+            doc.source_payload_hash = payload_hash
+            doc.source_published_at = published
+            doc.analysis_status = TextDocument.AnalysisStatus.PENDING
+            doc.analysis_version = ""
+            doc.save(update_fields=["body", "source_payload_hash", "source_published_at",
+                                    "analysis_status", "analysis_version", "updated_at"])
+            updated += 1
+        elif doc.source_published_at != published:
+            doc.source_published_at = published
+            doc.save(update_fields=["source_published_at", "updated_at"])
+            dated += 1
+        else:
+            unchanged += 1
+    if to_create:
+        TextDocument.objects.bulk_create(to_create, batch_size=500, ignore_conflicts=True)
+    return {"created": created, "updated": updated, "dated": dated, "unchanged": unchanged}
+
+
 def _iter_tag_values(value):
     if isinstance(value, str):
         yield value
@@ -230,6 +300,13 @@ def _attributed(document: TextDocument, slot: str, canonical: str) -> bool:
 
 def _llm_input(document: TextDocument) -> dict:
     context = {}
+    if document.content_item_id and document.document_type in CONTENT_DOC_TYPES:
+        context = {
+            "kind": "creator_content",   # 영상 제목·설명 · 자막 — 크리에이터가 쓴 본문
+            "document_type": document.document_type,
+            "analysis_tags": document.content_item.analysis_tags,
+        }
+        return {"id": document.id, "body": document.body[:3200], "context": context}
     if document.content_item_id:
         context = {
             "kind": "youtube_comment",
@@ -266,7 +343,9 @@ def _validated_result(document: TextDocument, raw: dict, dictionary: DictionaryI
     mention_objects: list[TextTermMention] = []
     candidates: list[dict] = []
     errors: list[dict] = []
-    role = TextTermMention.MentionRole.REVIEW if document.document_type == TextDocument.DocumentType.REVIEW else TextTermMention.MentionRole.COMMENT
+    role = (TextTermMention.MentionRole.REVIEW if document.document_type == TextDocument.DocumentType.REVIEW
+            else TextTermMention.MentionRole.TARGET if document.document_type in CONTENT_DOC_TYPES
+            else TextTermMention.MentionRole.COMMENT)
 
     merged: dict[int, tuple[dict, TextTermMention]] = {}
     for item in raw.get("mentions") or []:
@@ -379,7 +458,7 @@ def run_text_signal_pipeline(
     )
     query = TextDocument.objects.select_related(
         "content_item", "product_source__source", "product_source__source_brand", "product_source__source_category"
-    ).filter(document_type__in=[TextDocument.DocumentType.COMMENT, TextDocument.DocumentType.REVIEW])
+    ).filter(document_type__in=list(ANALYZED_DOC_TYPES))
     if include_stale:
         query = query.filter(~Q(analysis_version=PIPELINE_VERSION) | Q(analysis_status=TextDocument.AnalysisStatus.PENDING))
     else:
@@ -452,10 +531,10 @@ def run_text_signal_pipeline(
                 },
             })
             with transaction.atomic():
-                TextTermMention.objects.filter(
-                    document=document,
-                    mention_role=extra["role"],
-                ).delete()
+                old = TextTermMention.objects.filter(document=document)
+                if document.document_type not in CONTENT_DOC_TYPES:
+                    old = old.filter(mention_role=extra["role"])
+                old.delete()   # 콘텐츠 본문은 예전 역할(문맥 등)로 남은 언급까지 새 결과로 바꾼다
                 if extra["objects"]:
                     TextTermMention.objects.bulk_create(extra["objects"], batch_size=500)
                 document.analysis_metadata = meta

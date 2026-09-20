@@ -560,15 +560,16 @@ def dispatch_due_targets():
     time_limit=60 * 180,
 )
 def refresh_text_signals_daily():
-    """YouTube 댓글 수집 → 리뷰 동기화 → 공통 LLM 분석 → 지표 적재."""
+    """YouTube 댓글 수집 → 리뷰 · 콘텐츠 본문 동기화 → 공통 LLM 분석 → 지표 적재."""
 
     import os
 
-    from analysis.text_signals import run_text_signal_pipeline, sync_product_reviews
+    from analysis.text_signals import run_text_signal_pipeline, sync_content_documents, sync_product_reviews
     from collection.youtube.daily import collect_daily_youtube_comments
 
     collection_result = collect_daily_youtube_comments()
     review_result = sync_product_reviews()
+    content_result = sync_content_documents()   # ★ 2026-09-20 영상 제목+설명도 분석한다
     configured_limit = int(os.getenv("FEEDIT_TEXT_DAILY_ANALYSIS_LIMIT", "0"))
     analysis_result = run_text_signal_pipeline(
         limit=configured_limit or None,
@@ -578,5 +579,6 @@ def refresh_text_signals_daily():
     return {
         "youtube": collection_result,
         "reviews": review_result,
+        "content": content_result,
         "analysis": analysis_result,
     }

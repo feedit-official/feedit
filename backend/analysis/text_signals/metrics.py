@@ -51,7 +51,10 @@ def rebuild_text_metrics(
     until: date,
     metric_version: str = METRIC_VERSION,
 ) -> dict:
-    """검증된 YouTube 댓글과 커머스 리뷰를 같은 식으로 일별 지표화한다."""
+    """검증된 텍스트 언급을 같은 식으로 일별 지표화한다.
+
+    ★ 2026-09-20 — 댓글 · 리뷰만 세던 것을 콘텐츠 본문(영상 제목+설명 · 자막 · 기사)까지 넓혔다.
+      댓글만으로는 스타일 용어(고프코어 등)가 거의 잡히지 않아 트렌드가 얇아졌다."""
 
     history_since = since - timedelta(days=27)
     sql = """
@@ -59,13 +62,14 @@ def rebuild_text_metrics(
                (d.source_published_at AT TIME ZONE 'Asia/Seoul')::date AS metric_date,
                m.document_id, d.content_item_id, d.product_source_id,
                m.sentiment_score, m.intent_code, m.evidence_status,
-               d.analysis_metadata
+               d.analysis_metadata, d.document_type, ci.profile_id
           FROM analysis.text_term_mention m
           JOIN analysis.text_document d ON d.id = m.document_id
+          LEFT JOIN content.content_item ci ON ci.id = d.content_item_id
          WHERE d.source_published_at IS NOT NULL
            AND (d.source_published_at AT TIME ZONE 'Asia/Seoul')::date BETWEEN %s AND %s
            AND d.analysis_status = 'DONE'
-           AND d.document_type IN ('COMMENT','REVIEW')
+           AND d.document_type IN ('COMMENT','REVIEW','DESCRIPTION','TRANSCRIPT','ARTICLE')
            AND m.evidence_status IN ('EXACT', 'EXPANDED', 'LEGACY')
     """
     with connection.cursor() as cursor:
@@ -73,7 +77,8 @@ def rebuild_text_metrics(
         rows = cursor.fetchall()
 
     grouped: dict[tuple[date, int | None, int], dict] = {}
-    for term_id, source_id, day, document_id, content_id, product_id, sentiment, intent, _status, meta in rows:
+    for (term_id, source_id, day, document_id, content_id, product_id, sentiment, intent, _status,
+         meta, doc_type, profile_id) in rows:
         if day is None:
             continue
         for source_key in (source_id, None):
@@ -89,7 +94,10 @@ def rebuild_text_metrics(
             if product_id:
                 item["entities"].add(f"product:{product_id}")
             metadata = meta if isinstance(meta, dict) else {}
+            # 댓글은 쓴 사람, 영상 제목·설명·자막 같은 콘텐츠 본문은 그 크리에이터(채널)를 센다
             creator = metadata.get("author_channel_id") or metadata.get("author")
+            if not creator and doc_type in ("DESCRIPTION", "TRANSCRIPT", "ARTICLE") and profile_id:
+                creator = f"profile:{profile_id}"
             if creator:
                 item["creators"].add(str(creator))
             if sentiment is not None:
@@ -195,7 +203,7 @@ def rebuild_term_associations(
          WHERE d.source_published_at IS NOT NULL
            AND (d.source_published_at AT TIME ZONE 'Asia/Seoul')::date BETWEEN %s AND %s
            AND d.analysis_status='DONE'
-           AND d.document_type IN ('COMMENT','REVIEW')
+           AND d.document_type IN ('COMMENT','REVIEW','DESCRIPTION','TRANSCRIPT','ARTICLE')
            AND m.evidence_status IN ('EXACT','EXPANDED','LEGACY')
     """
     universe_sql = """
@@ -205,7 +213,7 @@ def rebuild_term_associations(
          WHERE source_published_at IS NOT NULL
            AND (source_published_at AT TIME ZONE 'Asia/Seoul')::date BETWEEN %s AND %s
            AND analysis_status='DONE'
-           AND document_type IN ('COMMENT','REVIEW')
+           AND document_type IN ('COMMENT','REVIEW','DESCRIPTION','TRANSCRIPT','ARTICLE')
          GROUP BY 1
     """
     with connection.cursor() as cursor:
@@ -293,7 +301,7 @@ def rebuild_platform_metrics(*, since: date, until: date) -> int:
              FROM analysis.text_document d
              WHERE d.source_published_at IS NOT NULL
                AND (d.source_published_at AT TIME ZONE 'Asia/Seoul')::date BETWEEN %s AND %s
-               AND d.document_type IN ('COMMENT','REVIEW')
+               AND d.document_type IN ('COMMENT','REVIEW','DESCRIPTION','TRANSCRIPT','ARTICLE')
         ), mention_stats AS (
             SELECT m.document_id,
                    count(*) AS mentions,
