@@ -72,3 +72,10 @@ six==1.17.0
 pgvector==0.5.0
 numpy
 djangorestframework==3.18.1
+
+# ★ 2026-09-20 텍스트 신호 파이프라인(celery-worker) — 유튜브 API · OpenAI API 호출.
+#   torch · CUDA · OCR · Playwright 는 넣지 않는다(이 서버는 크롤링하지 않는다).
+requests==2.34.2
+certifi==2026.7.22
+charset-normalizer==3.5.1
+idna==3.19

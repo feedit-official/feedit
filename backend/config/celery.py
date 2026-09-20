@@ -76,6 +76,12 @@ app.conf.beat_schedule = {
 # SERIALIZER
 # ============================================================
 
+# ★ 2026-09-20 — 크롤 대상 실행(1분마다)은 크롤링하는 서버에서만 돈다.
+#   API 서버(EC2, compose.api.yml)는 Playwright · OCR 없이 가볍게 돌리므로
+#   CELERY_CRAWL_DISPATCH=0 으로 끈다. 켜 두면 아무도 안 받는 crawl_live 큐에 작업만 쌓인다.
+if os.getenv("CELERY_CRAWL_DISPATCH", "1") == "0":
+    app.conf.beat_schedule.pop("dispatch-due-crawl-targets", None)
+
 app.conf.task_serializer = (
     "json"
 )

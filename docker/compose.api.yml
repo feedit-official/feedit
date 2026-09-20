@@ -60,6 +60,9 @@ services:
     build:
       context: ..
       dockerfile: docker/api.Dockerfile
+    # ★ 2026-09-20 — 이미지 이름을 고정해 celery-worker · celery-beat 가 같은 이미지를 쓴다
+    #   (따로 무거운 이미지를 만들지 않는다 — 예전 web.Dockerfile 은 torch·CUDA 까지 깔다가 디스크가 찼다)
+    image: feedit-api:latest
 
     container_name: feedit-api
 
@@ -122,4 +125,75 @@ services:
     dns:
       - ${CHAT_DNS:-169.254.169.253}
 
+    restart: unless-stopped
+
+  # ══════════════════════════════════════════════════════════════
+  #  ★ 2026-09-20 텍스트 신호 자동화 — redis + celery-worker + celery-beat
+  # ══════════════════════════════════════════════════════════════
+  #  매일 04:10  유튜브 댓글 수집 → 커머스 리뷰 동기화 → LLM(OpenAI API) 분석 → 지표 적재
+  #  매일 10:00  알림(가격 하락 · 용어 등재),  월 09:00 주간 리포트 알림
+  #  · 모두 API 이미지(feedit-api:latest) 그대로 쓴다. GPU · CUDA · OCR · Playwright 없음.
+  #  · 크롤 대상 실행(1분마다)은 크롤러 서버 몫이라 여기서는 끈다(CELERY_CRAWL_DISPATCH=0).
+  #  · migrate 는 여기서도 돌리지 않는다 — 표는 사람이 확인하고 한 번만 migrate 한다.
+  redis:
+    image: redis:7-alpine
+    container_name: feedit-redis
+    # 큐 전용 — 디스크에 저장하지 않고 메모리도 작게 묶는다
+    command: ["redis-server", "--save", "", "--appendonly", "no",
+              "--maxmemory", "64mb", "--maxmemory-policy", "noeviction"]
+    restart: unless-stopped
+
+  celery-worker:
+    build:
+      context: ..
+      dockerfile: docker/api.Dockerfile
+    image: feedit-api:latest
+    container_name: feedit-celery-worker
+    env_file:
+      - ../.env
+    environment: &celery_env
+      DJANGO_DEBUG: "False"
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      CELERY_CRAWL_DISPATCH: "0"
+      # 하루 LLM 분석 문서 수 상한 — 0(무제한)이면 첫날 밀린 문서를 한꺼번에 돌려 비용이 튄다.
+      # 늘리려면 .env 에 FEEDIT_TEXT_DAILY_ANALYSIS_LIMIT=숫자 를 넣는다.
+      FEEDIT_TEXT_DAILY_ANALYSIS_LIMIT: "${FEEDIT_TEXT_DAILY_ANALYSIS_LIMIT:-300}"
+    depends_on:
+      - redis
+    # analysis(텍스트 신호) · default(알림) 큐만 받는다. 작은 서버라 한 번에 하나씩.
+    command:
+      - sh
+      - -c
+      - >
+        celery -A config worker
+        --loglevel=INFO
+        --queues=default,analysis
+        --concurrency=1
+        --max-tasks-per-child=20
+    dns:
+      - ${CHAT_DNS:-169.254.169.253}
+    restart: unless-stopped
+
+  celery-beat:
+    build:
+      context: ..
+      dockerfile: docker/api.Dockerfile
+    image: feedit-api:latest
+    container_name: feedit-celery-beat
+    env_file:
+      - ../.env
+    environment: *celery_env
+    depends_on:
+      - redis
+    # 스케줄 파일은 컨테이너 안 /tmp 에 둔다 (앱 폴더를 더럽히지 않는다)
+    command:
+      - sh
+      - -c
+      - >
+        celery -A config beat
+        --loglevel=INFO
+        --schedule=/tmp/celerybeat-schedule
+    dns:
+      - ${CHAT_DNS:-169.254.169.253}
     restart: unless-stopped

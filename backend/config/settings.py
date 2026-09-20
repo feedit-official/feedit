@@ -150,6 +150,10 @@ CELERY_BEAT_SCHEDULE = {
     },
 }
 
+# ★ 2026-09-20 — config/celery.py 와 같은 스위치 (크롤하지 않는 서버에서는 끈다)
+if os.getenv("CELERY_CRAWL_DISPATCH", "1") == "0":
+    CELERY_BEAT_SCHEDULE.pop("dispatch-due-crawl-targets", None)
+
 AWS_STORAGE_BUCKET_NAME = os.getenv(
     "AWS_STORAGE_BUCKET_NAME"
 )
