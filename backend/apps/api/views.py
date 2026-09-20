@@ -25,6 +25,7 @@
 
 from __future__ import annotations
 
+import math
 import os
 import statistics
 from collections import defaultdict
@@ -38,6 +39,7 @@ from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from django.views.decorators.http import require_GET
 
+from .notifications import josa
 from apps.core.models import (
     Brand,
     BrandSource,
@@ -1574,15 +1576,21 @@ STYLE_PROXY_BRANDS = 6       # 대표 브랜드 수
 
 
 def _style_proxy_brands(styles, limit=STYLE_PROXY_BRANDS):
-    """스타일 태그가 붙은 일반 판매 상품에서 가장 많이 나온 브랜드 (최소 3개 상품)."""
-    rows = (ProductTerm.objects
-            .filter(term__term_type="STYLE", term__canonical_name__in=styles,
-                    product_source__market_type="RETAIL",
-                    product_source__source_brand__brand__isnull=False)
-            .values("product_source__source_brand__brand__name")
-            .annotate(n=Count("product_source_id", distinct=True))
-            .order_by("-n")[:limit])
-    return [r["product_source__source_brand__brand__name"] for r in rows if r["n"] >= 3]
+    """그 스타일에 **몰려 있는** 브랜드 — 스타일 태그 상품 수만 보면 나이키·무신사 스탠다드처럼
+    상품이 많은 범용 브랜드가 모든 스타일의 대표가 된다(2026-09-20 실측: 고프코어 대표에 무신사 스탠다드).
+    그래서 '그 브랜드 태그 상품 중 이 스타일 비율'(집중도) × √(이 스타일 상품 수)로 고른다. 최소 3개."""
+    key = "product_source__source_brand__brand__name"
+    base = ProductTerm.objects.filter(term__term_type="STYLE", product_source__market_type="RETAIL",
+                                      product_source__source_brand__brand__isnull=False)
+    in_style = dict(base.filter(term__canonical_name__in=styles).values_list(key)
+                    .annotate(n=Count("product_source_id", distinct=True)))
+    in_style = {b: n for b, n in in_style.items() if b and n >= 3}
+    if not in_style:
+        return []
+    total = dict(base.filter(**{f"{key}__in": list(in_style)}).values_list(key)
+                 .annotate(n=Count("product_source_id", distinct=True)))
+    score = {b: (n / max(1, total.get(b, n))) * math.sqrt(n) for b, n in in_style.items()}
+    return [b for b, _ in sorted(score.items(), key=lambda kv: -kv[1])[:limit]]
 
 
 def _resale_price(r):
@@ -2125,5 +2133,5 @@ def salmal_search(request):
              .order_by("-created_at")[:limit])
     rows = [_salmal_card_payload(c) for c in cards]
     if not rows:
-        return _empty(f"‘{term}’과 연결된 살!말? 카드가 없습니다.", term=term)
+        return _empty(f"‘{term}’{josa(term, '과', '와')} 연결된 살!말? 카드가 없습니다.", term=term)
     return _ok({"term": term, "items": rows, "count": len(rows)})
