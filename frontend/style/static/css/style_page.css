@@ -14,8 +14,9 @@
   position:relative;display:flex;flex-direction:column;min-width:0;text-align:left;cursor:pointer;
   color:var(--pink-0);animation:stCatIn .8s var(--ease) both;animation-delay:calc(var(--i,0) * 45ms);
 }
-.stCatPh{display:block;aspect-ratio:16/11;border-radius:9px;overflow:hidden;background:#e8e4dd}
-.stCatPh img{display:block;width:100%;height:100%;object-fit:cover;filter:grayscale(.3);
+/* ★ 2026-09-20 (2) — 16:11 로 낮췄더니 인물이 잘렸다. 예전 타일처럼 3:4 세로로 전신이 보이게 되돌린다. */
+.stCatPh{display:block;aspect-ratio:3/4;border-radius:9px;overflow:hidden;background:#e8e4dd}
+.stCatPh img{display:block;width:100%;height:100%;object-fit:cover;object-position:50% 20%;filter:grayscale(.3);
   transition:transform 1.1s var(--ease),filter 1.1s var(--ease)}
 .stCat:hover .stCatPh img,.stCat:focus-visible .stCatPh img{transform:scale(1.07);filter:grayscale(0)}
 .stCatMeta{position:relative;display:flex;align-items:flex-start;gap:12px;margin-top:12px;
@@ -56,24 +57,33 @@
 /* 자동으로 바뀌는 쇼케이스 */
 .stShow{
   position:relative;margin-top:clamp(18px,2.6vh,30px);border-radius:12px;overflow:hidden;
-  height:clamp(200px,27vh,300px);background:#e8e4dd;   /* ★ 2026-09-20 16:7 → 낮게: 한 화면에 인덱스까지 */
+  height:clamp(240px,32vh,340px);background:#fff;
 }
+/* ★ 2026-09-20 (2) — 낮은 띠에 사진을 꽉 채우면(cover) 인물이 다 잘려 의미가 없었다.
+   흰 바탕 위에 사진을 전신 그대로(contain) 오른쪽에 세우고, 왼쪽부터 넓게 번지는 검은 그라데이션 위에
+   글자를 가운데 쪽으로 옮겨 얹는다. */
 .stShow .sl{position:absolute;inset:0;opacity:0;transition:opacity 1.1s var(--ease)}
 .stShow .sl.on{opacity:1}
-.stShow .sl img{width:100%;height:100%;object-fit:cover;transform:scale(1.06);
-  animation:stDrift 9s linear infinite alternate}
-@keyframes stDrift{from{transform:scale(1.04) translate3d(-1%,0,0)}to{transform:scale(1.12) translate3d(1%,-1%,0)}}
+.stShow .sl img{width:100%;height:100%;object-fit:contain;object-position:100% 50%;transform-origin:100% 50%;
+  animation:stDrift 9s ease-in-out infinite alternate}
+/* 전신이 잘리지 않도록 아주 작게만 움직인다 */
+@keyframes stDrift{from{transform:scale(1)}to{transform:scale(1.035)}}
 .stShow .vg{position:absolute;inset:0;
-  background:linear-gradient(90deg,rgba(10,10,10,.72) 0%,rgba(10,10,10,.24) 46%,transparent 74%)}
-.stShow .cap{position:absolute;left:clamp(22px,3.4vw,48px);top:50%;transform:translateY(-50%);color:#fff}
+  background:linear-gradient(90deg,rgba(10,10,10,.95) 0%,rgba(10,10,10,.88) 34%,rgba(10,10,10,.55) 54%,rgba(10,10,10,.18) 70%,transparent 80%)}
+.stShow .cap{position:absolute;left:clamp(28px,11vw,170px);top:50%;transform:translateY(-50%);color:#fff;max-width:44%}
 .stShow .cap em{font-style:normal;font-family:var(--num);font-size:9.5px;letter-spacing:.26em;
   color:rgba(255,255,255,.62);display:block;margin-bottom:12px}
 .stShow .cap b{display:block;font-weight:600;font-size:clamp(24px,3.2vw,46px);letter-spacing:-.045em;line-height:1}
 .stShow .cap span{display:block;margin-top:12px;font-size:13px;color:rgba(255,255,255,.76);max-width:34ch}
-.stShow .dots{position:absolute;right:clamp(20px,2.6vw,34px);bottom:20px;display:flex;gap:6px}
+.stShow .dots{position:absolute;left:clamp(28px,11vw,170px);bottom:20px;display:flex;gap:6px}
 .stShow .dots i{width:6px;height:6px;border-radius:50%;background:rgba(255,255,255,.34);
   transition:background .4s,transform .4s}
 .stShow .dots i.on{background:var(--coral);transform:scale(1.4)}
+@media (max-width:720px){
+  .stShow .cap{left:22px;max-width:70%}
+  .stShow .dots{left:22px}
+  .stShow .sl img{object-position:100% 50%}
+}
 /* 스타일 상세 */
 .stHero{position:relative;min-height:clamp(320px,52vh,520px);display:flex;align-items:flex-end;
   overflow:hidden;border-radius:12px;background:#e8e4dd}
