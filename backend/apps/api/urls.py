@@ -20,9 +20,11 @@ urlpatterns = [
     # ── 사용자 세션·프로필 ──
     path("auth/me", auth_views.me, name="auth-me"),
     # ── 알파 테스트 계정 (해커톤 시연 15일 한정 · alpha_views.py 통째로 제거 가능) ──
+    #   주소를 한 조각으로 둔다 — 프론트의 버셀 중계(frontend/api/auth/[action].js)가
+    #   경로의 첫 조각만 보고 넘기므로 auth/alpha/quota 는 auth/alpha 로 잘린다.
     path("auth/alpha", alpha_views.alpha_account, name="auth-alpha"),
-    path("auth/alpha/quota", alpha_views.alpha_quota, name="auth-alpha-quota"),
-    path("auth/alpha/chat-use", alpha_views.alpha_chat_use, name="auth-alpha-chat-use"),
+    path("auth/alpha-quota", alpha_views.alpha_quota, name="auth-alpha-quota"),
+    path("auth/alpha-chat-use", alpha_views.alpha_chat_use, name="auth-alpha-chat-use"),
     path("auth/signup", auth_views.signup, name="auth-signup"),
     path("auth/login", auth_views.login, name="auth-login"),
     path("auth/google", auth_views.google_login, name="auth-google"),

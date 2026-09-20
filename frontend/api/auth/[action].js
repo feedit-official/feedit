@@ -10,7 +10,10 @@ const ALLOWED = new Set(['me', 'signup', 'login', 'logout', 'profile', 'weekly-v
   // 챗봇 대화 기록 (backend/apps/api/chat_views.py)
   'chats',
   // 알림 · 알림 설정 · 용어 등재 요청 (backend/apps/api/notification_views.py)
-  'notifications', 'notification-settings', 'term-request']);
+  'notifications', 'notification-settings', 'term-request',
+  // 알파 테스트 계정 (해커톤 시연 15일 한정 · backend/apps/api/alpha_views.py)
+  //   이 함수는 경로의 첫 조각만 보고 넘기므로 'alpha/quota' 같은 두 조각 주소는 쓰지 않는다.
+  'alpha', 'alpha-quota', 'alpha-chat-use']);
 
 export default async function handler(req, res) {
   const url = new URL(req.url, 'http://x');

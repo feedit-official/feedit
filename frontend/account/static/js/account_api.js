@@ -49,9 +49,9 @@ export function session(force=false) {
 export const alphaAccount = ({ nickname = '', styles = [] } = {}) =>
   request('alpha', { method:'POST', body:{ nickname, styles } });
 export const alphaQuota = () =>
-  request('alpha/quota');
+  request('alpha-quota');
 export const alphaChatUse = () =>
-  request('alpha/chat-use', { method:'POST', body:{} });
+  request('alpha-chat-use', { method:'POST', body:{} });
 
 export const loginAccount = (username, password) =>
   request('login', { method:'POST', body:{ username, password } });
