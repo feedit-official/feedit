@@ -44,6 +44,25 @@ class TextDocument(models.Model):
         verbose_name="콘텐츠",
     )
 
+    product_source = models.ForeignKey(
+        "core.ProductSource",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="text_documents",
+        verbose_name="소스 상품",
+        help_text="커머스 리뷰가 귀속되는 실제 플랫폼 상품",
+    )
+
+    analysis_run = models.ForeignKey(
+        "core.AnalysisPipelineRun",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="documents",
+        verbose_name="분석 실행",
+    )
+
     document_type = models.CharField(
         max_length=30,
         choices=DocumentType.choices,
@@ -65,6 +84,31 @@ class TextDocument(models.Model):
         max_length=10,
         default="ko",
         verbose_name="언어",
+    )
+
+    source_published_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        db_index=True,
+        verbose_name="원문 작성일시",
+        help_text="수집일이 아니라 댓글·리뷰가 실제 작성된 시각",
+    )
+
+    source_payload_hash = models.CharField(
+        max_length=64,
+        null=True,
+        blank=True,
+        db_index=True,
+        verbose_name="원문 해시",
+        help_text="원문이 바뀐 경우에만 재분석하기 위한 SHA-256",
+    )
+
+    analysis_version = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+        db_index=True,
+        verbose_name="분석 버전",
     )
 
     analysis_metadata = models.JSONField(
@@ -118,6 +162,25 @@ class TextDocument(models.Model):
                 fields=["-created_at"],
                 name="idx_text_doc_created",
             ),
+            models.Index(
+                fields=["product_source", "document_type"],
+                name="idx_text_doc_product",
+            ),
+            models.Index(
+                fields=["source", "analysis_version", "analysis_status"],
+                name="idx_text_doc_anl_ver",
+            ),
+        ]
+
+        constraints = [
+            models.UniqueConstraint(
+                fields=["source", "document_type", "external_id"],
+                condition=(
+                    models.Q(external_id__isnull=False)
+                    & ~models.Q(external_id="")
+                ),
+                name="uq_text_doc_source_type_external",
+            ),
         ]
 
     def __str__(self):
@@ -150,6 +213,14 @@ class TextTermMention(models.Model):
         TARGET = "TARGET", "주요 대상"
         CONTEXT = "CONTEXT", "문맥 언급"
         COMPARISON = "COMPARISON", "비교 대상"
+        COMMENT = "COMMENT", "유튜브 댓글"
+        REVIEW = "REVIEW", "커머스 리뷰"
+
+    class EvidenceStatus(models.TextChoices):
+        EXACT = "EXACT", "LLM 근거와 원문이 정확히 일치"
+        EXPANDED = "EXPANDED", "검증 후 같은 문장 안에서 확장"
+        INVALID = "INVALID", "근거 검증 실패"
+        LEGACY = "LEGACY", "기존 데이터"
 
     document = models.ForeignKey(
         "TextDocument",
@@ -201,6 +272,34 @@ class TextTermMention(models.Model):
         verbose_name="추출 신뢰도",
     )
 
+    evidence_start = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        verbose_name="근거 시작 문자 위치",
+    )
+
+    evidence_end = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        verbose_name="근거 끝 문자 위치",
+    )
+
+    evidence_status = models.CharField(
+        max_length=20,
+        choices=EvidenceStatus.choices,
+        default=EvidenceStatus.LEGACY,
+        db_index=True,
+        verbose_name="근거 검증 상태",
+    )
+
+    analysis_version = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+        db_index=True,
+        verbose_name="분석 버전",
+    )
+
     start_seconds = models.DecimalField(
         max_digits=10,
         decimal_places=3,
@@ -248,8 +347,140 @@ class TextTermMention(models.Model):
             ),
         ]
 
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    models.Q(evidence_start__isnull=True, evidence_end__isnull=True)
+                    | models.Q(
+                        evidence_start__isnull=False,
+                        evidence_end__gt=models.F("evidence_start"),
+                    )
+                ),
+                name="ck_mention_evidence_range",
+            ),
+        ]
+
     def __str__(self):
         return f"{self.term} / {self.document_id}"
+
+
+class AnalysisPipelineRun(models.Model):
+    """수집 이후 텍스트 분석·적재·지표 계산 실행 이력."""
+
+    class Status(models.TextChoices):
+        RUNNING = "RUNNING", "실행 중"
+        SUCCESS = "SUCCESS", "성공"
+        PARTIAL = "PARTIAL", "일부 성공"
+        FAILED = "FAILED", "실패"
+
+    source = models.ForeignKey(
+        "core.Source",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="analysis_pipeline_runs",
+        verbose_name="플랫폼",
+    )
+    run_date = models.DateField(db_index=True, verbose_name="기준일")
+    pipeline_version = models.CharField(max_length=64, db_index=True)
+    prompt_version = models.CharField(max_length=64, blank=True, default="")
+    model_name = models.CharField(max_length=100, blank=True, default="")
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.RUNNING,
+        db_index=True,
+    )
+    started_at = models.DateTimeField(auto_now_add=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+    input_count = models.BigIntegerField(default=0)
+    analyzed_count = models.BigIntegerField(default=0)
+    skipped_count = models.BigIntegerField(default=0)
+    failure_count = models.BigIntegerField(default=0)
+    prompt_tokens = models.BigIntegerField(default=0)
+    cached_tokens = models.BigIntegerField(default=0)
+    output_tokens = models.BigIntegerField(default=0)
+    estimated_cost_usd = models.DecimalField(
+        max_digits=12,
+        decimal_places=6,
+        default=0,
+    )
+    metrics = models.JSONField(default=dict, blank=True)
+    error_message = models.TextField(blank=True, default="")
+
+    class Meta:
+        db_table = '"analysis"."pipeline_run"'
+        indexes = [
+            models.Index(
+                fields=["-run_date", "status"],
+                name="idx_pipeline_run_day_status",
+            ),
+        ]
+
+
+class PlatformMetricDaily(models.Model):
+    """플랫폼별 분석 커버리지와 신호 품질을 감시하는 일별 운영 지표."""
+
+    source = models.ForeignKey(
+        "core.Source",
+        on_delete=models.CASCADE,
+        related_name="platform_daily_metrics",
+    )
+    metric_date = models.DateField()
+    document_count = models.BigIntegerField(default=0)
+    analyzed_document_count = models.BigIntegerField(default=0)
+    kept_document_count = models.BigIntegerField(default=0)
+    mention_count = models.BigIntegerField(default=0)
+    candidate_count = models.BigIntegerField(default=0)
+    analysis_coverage_rate = models.DecimalField(
+        max_digits=7,
+        decimal_places=4,
+        null=True,
+        blank=True,
+    )
+    evidence_valid_rate = models.DecimalField(
+        max_digits=7,
+        decimal_places=4,
+        null=True,
+        blank=True,
+    )
+    positive_rate = models.DecimalField(
+        max_digits=7,
+        decimal_places=4,
+        null=True,
+        blank=True,
+    )
+    negative_rate = models.DecimalField(
+        max_digits=7,
+        decimal_places=4,
+        null=True,
+        blank=True,
+    )
+    purchase_intent_rate = models.DecimalField(
+        max_digits=7,
+        decimal_places=4,
+        null=True,
+        blank=True,
+    )
+    metric_version = models.CharField(max_length=64, default="feedit-platform-v1")
+    metrics = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = '"analysis"."platform_metric_daily"'
+        constraints = [
+            models.UniqueConstraint(
+                fields=["source", "metric_date", "metric_version"],
+                name="uq_platform_metric_day_ver",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=["metric_date", "source"],
+                name="idx_platform_metric_day_src",
+            ),
+        ]
 
 class TermMetricDaily(models.Model):
     """

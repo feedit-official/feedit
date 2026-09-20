@@ -7,7 +7,7 @@ from django.conf import settings
 from collection.common.pipeline import BasePlatformPipeline
 
 from .collector import YoutubeCollector
-from .constants import DEFAULT_VIDEO_LIMIT
+from .constants import DEFAULT_COMMENT_LIMIT, DEFAULT_VIDEO_LIMIT, WATCH_URL
 
 
 class YoutubePipeline(BasePlatformPipeline):
@@ -26,6 +26,12 @@ class YoutubePipeline(BasePlatformPipeline):
 
         if target_type == "CREATOR":
             return self._collect_creator(
+                target_url=target_url,
+                params=params,
+            )
+
+        if target_type == "VIDEO":
+            return self._collect_video_comments(
                 target_url=target_url,
                 params=params,
             )
@@ -160,6 +166,80 @@ class YoutubePipeline(BasePlatformPipeline):
                 "profile": profile,
                 "videos": videos,
                 "collected_at": collected_at,
+            },
+        }
+
+    # ============================================================
+    # VIDEO COMMENTS
+    # ============================================================
+
+    def _collect_video_comments(
+        self,
+        *,
+        target_url: str | None,
+        params: dict,
+    ) -> dict:
+        """영상 한 건의 댓글 원본을 S3에 남기고 후처리용 목록을 반환한다."""
+
+        video_id = str(params.get("video_id") or "").strip()
+        if not video_id:
+            raise ValueError(
+                "YOUTUBE VIDEO target에는 params.video_id가 필요합니다."
+            )
+
+        comment_limit = self._to_int(
+            params.get("comment_limit"),
+            default=DEFAULT_COMMENT_LIMIT,
+        )
+        comment_order = str(params.get("comment_order") or "relevance").lower()
+        if comment_order not in {"time", "relevance"}:
+            comment_order = "relevance"
+
+        with YoutubeCollector(api_key=settings.YOUTUBE_API_KEY) as collector:
+            result = collector.collect_comments(
+                video_id,
+                limit=comment_limit,
+                order=comment_order,
+            )
+
+        collected_at = datetime.now(timezone.utc).isoformat()
+        comments = result.get("comments") or []
+        error = result.get("error")
+        disabled = bool(result.get("disabled"))
+
+        payload = {
+            "video": {
+                "video_id": video_id,
+            },
+            "comments": comments,
+            "meta": {
+                "source": "YOUTUBE",
+                "source_url": target_url or WATCH_URL.format(video_id=video_id),
+                "collected_at": collected_at,
+                "comment_limit": comment_limit,
+                "comment_order": comment_order,
+                "comments_disabled": disabled,
+                "error": error,
+                "summary": result.get("summary") or {},
+            },
+        }
+
+        return {
+            "entity_type": "COMMENT",
+            "source_entity_id": video_id,
+            "source_url": target_url or WATCH_URL.format(video_id=video_id),
+            "collected_at": collected_at,
+            "http_status": 200 if not error else None,
+            "content_type": "application/json",
+            "payload": payload,
+            "discovered_count": len(comments),
+            "success_count": len(comments),
+            "failure_count": 1 if error else 0,
+            "platform_data": {
+                "video_id": video_id,
+                "comments": comments,
+                "disabled": disabled,
+                "error": error,
             },
         }
 

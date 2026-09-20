@@ -41,6 +41,9 @@ app.conf.task_routes = {
     "core.dispatch_due_targets": {
         "queue": "crawl_live",
     },
+    "core.refresh_text_signals_daily": {
+        "queue": "analysis",
+    },
 }
 
 
@@ -60,6 +63,12 @@ app.conf.beat_schedule = {
     "notify-weekly": {
         "task": "app.notify_weekly",
         "schedule": crontab(hour=9, minute=0, day_of_week=1),
+    },
+    # 매일 04:10 — 최근 YouTube 댓글 수집, 커머스 리뷰 동기화,
+    # 공통 LLM 분석과 35일 지표 재계산.
+    "refresh-text-signals-daily": {
+        "task": "core.refresh_text_signals_daily",
+        "schedule": crontab(hour=4, minute=10),
     },
 }
 

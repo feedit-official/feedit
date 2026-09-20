@@ -94,6 +94,61 @@ services:
         --error-logfile -
     restart: unless-stopped
 
+  celery-worker:
+    build:
+      context: ..
+      dockerfile: docker/web.Dockerfile
+    container_name: feedit-celery-worker
+    env_file:
+      - ../.env
+    environment:
+      DB_HOST: ssm-tunnel
+      DB_PORT: 5433
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      DJANGO_DEBUG: "False"
+    depends_on:
+      web:
+        condition: service_started
+      redis:
+        condition: service_started
+    command:
+      - sh
+      - -c
+      - >
+        until python manage.py migrate --check; do sleep 5; done;
+        celery -A config worker
+        --loglevel=INFO
+        --queues=default,crawl_live,analysis
+        --concurrency=2
+    restart: unless-stopped
+
+  celery-beat:
+    build:
+      context: ..
+      dockerfile: docker/web.Dockerfile
+    container_name: feedit-celery-beat
+    env_file:
+      - ../.env
+    environment:
+      DB_HOST: ssm-tunnel
+      DB_PORT: 5433
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      DJANGO_DEBUG: "False"
+    depends_on:
+      web:
+        condition: service_started
+      redis:
+        condition: service_started
+    command:
+      - sh
+      - -c
+      - >
+        until python manage.py migrate --check; do sleep 5; done;
+        celery -A config beat --loglevel=INFO
+    restart: unless-stopped
+
   caddy:
     image: caddy:2-alpine
     container_name: feedit-caddy

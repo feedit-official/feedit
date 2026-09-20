@@ -93,9 +93,12 @@ def at_iso(at) -> str | None:
 
 def platform_label(source_code: str, doc_kind: str | None) -> str:
     """사용자에게 보일 출처 이름. '어디서' 가 성립해야 한다."""
-    return (_KIND_KO.get(doc_kind or "")
-            or _PLATFORM_KO.get(source_code or "")
-            or (source_code or "출처 미상"))
+    platform = _PLATFORM_KO.get((source_code or "").lower()) or source_code or "출처 미상"
+    if doc_kind == "COMMENT":
+        return f"{platform} 댓글"
+    if doc_kind == "REVIEW":
+        return f"{platform} 리뷰"
+    return _KIND_KO.get(doc_kind or "") or platform
 
 
 class ReadOnlyStore:

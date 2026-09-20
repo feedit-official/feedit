@@ -157,6 +157,7 @@ def run_live_target(
         source_ingestion_result = None
         profile_id = None
         video_result = None
+        comment_result = None
 
         # ----------------------------------------------------
         # ZIGZAG RANKING -> Source Ingestion
@@ -264,6 +265,31 @@ def run_live_target(
                             video_result["failure_count"],
                         )
 
+        # ----------------------------------------------------
+        # YOUTUBE VIDEO -> Comments -> TextDocument(PENDING)
+        # ----------------------------------------------------
+        if (
+            source_code == "YOUTUBE"
+            and entity_type == "COMMENT"
+        ):
+            from apps.core.models import ContentItem
+            from apps.core.services.content import upsert_youtube_comments
+
+            platform_data = result.get("platform_data") or {}
+            video_id = (
+                platform_data.get("video_id")
+                or result.get("source_entity_id")
+            )
+            content_item = ContentItem.objects.get(
+                source=target.source,
+                external_content_id=video_id,
+            )
+            comment_result = upsert_youtube_comments(
+                source=target.source,
+                content_item=content_item,
+                comments=platform_data.get("comments") or [],
+            )
+
         # ====================================================
         # 4. RUN SUCCESS
         # ====================================================
@@ -336,6 +362,7 @@ def run_live_target(
                 if video_result
                 else 0
             ),
+            "comment_ingestion": comment_result,
         }
 
     except Exception as exc:
@@ -524,4 +551,32 @@ def dispatch_due_targets():
     return {
         "dispatched": dispatched,
         "target_ids": target_ids,
+    }
+
+
+@shared_task(
+    name="core.refresh_text_signals_daily",
+    soft_time_limit=60 * 170,
+    time_limit=60 * 180,
+)
+def refresh_text_signals_daily():
+    """YouTube 댓글 수집 → 리뷰 동기화 → 공통 LLM 분석 → 지표 적재."""
+
+    import os
+
+    from analysis.text_signals import run_text_signal_pipeline, sync_product_reviews
+    from collection.youtube.daily import collect_daily_youtube_comments
+
+    collection_result = collect_daily_youtube_comments()
+    review_result = sync_product_reviews()
+    configured_limit = int(os.getenv("FEEDIT_TEXT_DAILY_ANALYSIS_LIMIT", "0"))
+    analysis_result = run_text_signal_pipeline(
+        limit=configured_limit or None,
+        include_stale=False,
+        rebuild_metrics=True,
+    )
+    return {
+        "youtube": collection_result,
+        "reviews": review_result,
+        "analysis": analysis_result,
     }

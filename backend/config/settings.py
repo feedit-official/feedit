@@ -144,6 +144,10 @@ CELERY_BEAT_SCHEDULE = {
         "task": "app.notify_weekly",
         "schedule": crontab(hour=9, minute=0, day_of_week=1),
     },
+    "refresh-text-signals-daily": {
+        "task": "core.refresh_text_signals_daily",
+        "schedule": crontab(hour=4, minute=10),
+    },
 }
 
 AWS_STORAGE_BUCKET_NAME = os.getenv(

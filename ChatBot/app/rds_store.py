@@ -183,13 +183,16 @@ class RDSStore:
         rows = self.q(
             """SELECT lower(s.code) source_code,d.document_type doc_kind,d.body,
                       tm.mention_text surface,tm.sentiment_score sentiment,
-                      coalesce(ci.published_at,d.created_at) at,ci.content_url url
+                      coalesce(d.source_published_at,ci.published_at,d.created_at) at,
+                      coalesce(ci.content_url,ps.product_url) url
                  FROM analysis.text_term_mention tm
                  JOIN analysis.text_document d ON d.id=tm.document_id
                  JOIN dictionary.dictionary_term t ON t.id=tm.term_id
                  JOIN collection.source s ON s.id=d.source_id
                  LEFT JOIN content.content_item ci ON ci.id=d.content_item_id
+                 LEFT JOIN commerce.product_source ps ON ps.id=d.product_source_id
                 WHERE t.canonical_name=%s AND d.body IS NOT NULL
+                  AND tm.evidence_status IN ('EXACT','EXPANDED','LEGACY')
                 ORDER BY tm.confidence DESC NULLS LAST,d.created_at DESC LIMIT 60""",
             (_term(term_key),),
         )

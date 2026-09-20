@@ -31,7 +31,7 @@ LEXICON_PATH = Path(os.getenv("FEEDIT_CHAT_LEXICON", CRAWLER / "config" / "lexic
 # 어휘 추출기 (검증 완료 — 설계서 3.3)
 EXTRACTOR_DIR = Path(os.getenv("FEEDIT_EXTRACTOR_DIR") or (CRAWLER.parent / "tools"))
 
-METRIC_VERSION = os.getenv("FEEDIT_METRIC_VERSION", "feedit-l2-v2")
+METRIC_VERSION = os.getenv("FEEDIT_METRIC_VERSION", "feedit-unified-text-v1")
 
 # ── 시계열을 말해도 되는 최소 관측 (2026-09-02 실측으로 정한 값) ──
 #   최신일 기준 창 안에 관측이 이만큼은 있어야 그 지표를 입에 올린다.

@@ -672,6 +672,36 @@ class ResaleSnapshot(models.Model):
             f"{self.observed_at}"
         )
 
+class ProductReview(models.Model):
+    """기존 commerce.product_review 테이블을 분석 파이프라인에서 읽기 위한 모델.
+
+    이 테이블은 이미 운영 RDS와 외부 적재 코드가 관리하므로 Django가 생성하거나
+    삭제하지 않는다. 분석 파이프라인은 원문을 TextDocument로 동기화할 때만 읽는다.
+    """
+
+    product_source = models.ForeignKey(
+        "core.ProductSource",
+        on_delete=models.DO_NOTHING,
+        related_name="reviews",
+    )
+    source_review_id = models.CharField(max_length=100)
+    review_type = models.CharField(max_length=30)
+    content = models.TextField()
+    grade = models.IntegerField(null=True, blank=True)
+    goods_option = models.CharField(max_length=200)
+    like_count = models.IntegerField()
+    reviewer_sex = models.CharField(max_length=20)
+    reviewer_height = models.IntegerField(null=True, blank=True)
+    reviewer_weight = models.IntegerField(null=True, blank=True)
+    survey = models.JSONField(default=dict)
+    source_created_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField()
+
+    class Meta:
+        managed = False
+        db_table = '"commerce"."product_review"'
+
+
 class ProductTerm(models.Model):
     product_source = models.ForeignKey(
         "core.ProductSource",

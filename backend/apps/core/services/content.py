@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+
 from django.db import transaction
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
@@ -577,8 +579,8 @@ def upsert_youtube_comments(
     원댓글과 대댓글 모두 document_type=COMMENT 이며
     analysis_metadata.is_reply / parent_id 로 구분한다.
 
-    (source, external_id) 조합으로 중복을 막는다.
-    유니크 제약이 없으므로 조회 후 분기한다.
+    (source, document_type, external_id) 조합으로 중복을 막는다.
+    조회 후 분기하고, 동시 실행 충돌은 DB 유니크 제약으로 한 번 더 막는다.
     """
 
     rows = [
@@ -645,6 +647,12 @@ def upsert_youtube_comments(
                 ),
                 "video_id": data.get("video_id"),
             }
+            published_at = parse_datetime(
+                str(data.get("published_at") or "")
+            )
+            payload_hash = hashlib.sha256(
+                body.encode("utf-8")
+            ).hexdigest()
 
             document = existing.get(comment_id)
 
@@ -661,6 +669,8 @@ def upsert_youtube_comments(
                         external_id=comment_id,
                         body=body,
                         language="ko",
+                        source_published_at=published_at,
+                        source_payload_hash=payload_hash,
                         analysis_metadata=metadata,
                         analysis_status=(
                             TextDocument
@@ -671,10 +681,26 @@ def upsert_youtube_comments(
                 )
 
             else:
-                # 이미 있는 댓글은 본문과 좋아요 수만 갱신.
-                # 분석 결과(sentiment_score 등)는 건드리지 않는다.
+                # 본문이 바뀌면 분석 결과가 더 이상 유효하지 않으므로
+                # PENDING으로 되돌린다. 좋아요·작성자 메타만 바뀐 경우에는
+                # 비싼 LLM 분석을 다시 하지 않는다.
+                body_changed = (
+                    document.body != body
+                    or (
+                        document.source_payload_hash is not None
+                        and document.source_payload_hash != payload_hash
+                    )
+                )
                 document.body = body
                 document.content_item = content_item
+                document.source_published_at = published_at
+                document.source_payload_hash = payload_hash
+
+                if body_changed:
+                    document.analysis_status = (
+                        TextDocument.AnalysisStatus.PENDING
+                    )
+                    document.analysis_version = ""
 
                 current = (
                     document.analysis_metadata
@@ -694,7 +720,11 @@ def upsert_youtube_comments(
                     update_fields=[
                         "body",
                         "content_item",
+                        "source_published_at",
+                        "source_payload_hash",
                         "analysis_metadata",
+                        "analysis_status",
+                        "analysis_version",
                         "updated_at",
                     ]
                 )
@@ -721,6 +751,7 @@ def upsert_youtube_comments(
         TextDocument.objects.bulk_create(
             to_create,
             batch_size=500,
+            ignore_conflicts=True,
         )
         created = len(to_create)
 
