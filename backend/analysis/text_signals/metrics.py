@@ -109,7 +109,12 @@ def rebuild_text_metrics(
     }
 
     objects: list[TermMetricDaily] = []
-    for (day, source_id, term_id), value in sorted(grouped.items()):
+    # ★ 2026-09-20 — source_id 는 출처별 행(정수)과 전체 합산 행(None)이 섞여 있다.
+    #   그대로 sorted() 하면 None 과 정수를 비교하다 TypeError 가 나서 지표가 하나도 안 만들어졌다.
+    #   합산 행(None)을 앞에 두는 키로 정렬한다.
+    ordered_keys = sorted(grouped, key=lambda k: (k[0], -1 if k[1] is None else k[1], k[2]))
+    for (day, source_id, term_id) in ordered_keys:
+        value = grouped[(day, source_id, term_id)]
         if day < since:
             continue
         history = [levels.get((day - timedelta(days=offset), source_id, term_id), 0.0) for offset in range(27, -1, -1)]
