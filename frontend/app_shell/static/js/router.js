@@ -25,7 +25,15 @@ let curTr='myfeed', curStyleId=null, navSkip=false, viewSeq=0;
 function navState(){
   return { view:curView, tr:curView==='trend'?curTr:null, style:curView==='style'?curStyleId:null };
 }
+/* ★ 새로고침해도 보던 화면 그대로 — 지금 화면을 세션에 적어 둔다.
+   (탭을 닫으면 지워지므로 다음에 새로 들어오면 인트로부터 본다) */
+const NAV_KEY='feedit.nav.v1';
+function saveNav(){
+  if(!mainMode)return;
+  try{ sessionStorage.setItem(NAV_KEY,JSON.stringify(navState())) }catch(e){}
+}
 function pushNav(){
+  saveNav();
   if(navSkip){ navSkip=false; return }
   if(!mainMode)return;   /* 랜딩(인트로) 단계에서는 기록하지 않는다 */
   history.pushState(navState(), '', location.href);
@@ -368,3 +376,19 @@ addEventListener('popstate', e=>{
 });
 
 /* 아이템 목록은 '더 보기' 버튼으로 넘긴다 — 무한 스크롤은 걷어냈다(2026-09-18) */
+
+/* ── 새로고침 복원 ──────────────────────────────────────
+   인트로(로딩 + 설명 페이지)는 처음 들어온 사람에게만 보여 준다.
+   이미 본문에 들어와 있던 세션이면 같은 화면을 그 자리에 다시 그린다.
+   (로딩 시퀀스 자체는 intro/loader.js 의 boot 이 같은 열쇠를 보고 건너뛴다) */
+(function resumeNav(){
+  let st=null;
+  try{ st=JSON.parse(sessionStorage.getItem(NAV_KEY)||'null') }catch(e){}
+  if(!st||!st.view)return;
+  document.body.classList.add('loaded');
+  const site=$('#site'); if(site)site.classList.add('on');
+  enterMain();
+  if(st.view==='style'&&st.style){ goStyle(st.style); return }
+  if(st.view==='trend')window.__trWant=st.tr||'myfeed';
+  if(st.view!=='home')goView(st.view);
+})();

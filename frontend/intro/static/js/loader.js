@@ -286,6 +286,14 @@ $('#again').addEventListener('click',()=>{
 /* 이미지 + 폰트 프리로드 후 시작
    (Syne 이 늦게 오면 글자 분할 폭이 어긋나므로 폰트를 먼저 기다린다) */
 (function boot(){
+  /* ★ 새로고침 복원 — 이미 본문을 보던 세션이면 로딩 시퀀스를 건너뛴다 */
+  try{
+    if(sessionStorage.getItem('feedit.nav.v1')){
+      stage.style.opacity=0;
+      const g=$('#gauge'); if(g)g.style.opacity=0;
+      return;
+    }
+  }catch(e){}
   let n=0, done=false;
   const start=()=>{
     const f=(document.fonts&&document.fonts.ready)?document.fonts.ready:Promise.resolve();

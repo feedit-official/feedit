@@ -176,7 +176,7 @@ function cardHTML(i){
         <button class="${noOn?'picked':''}" data-vote="1">말?</button>
       </div>`;
   return `
-  <div class="voteCard" data-i="${i}">
+  <div class="voteCard" data-i="${i}" data-card-id="${v.id}">
     <div class="fig">
       <div class="plate" style="${plateStyle(v)}"></div>
       <div class="vig"></div>
@@ -435,11 +435,15 @@ function closeCtxMenu(){
 async function deleteCard(i){
   if(!(VOTES[i]?.deletable||ME.role==='admin')){ showToast('직접 등록한 내 카드만 삭제할 수 있어요.'); return; }
   try{
-    await deleteVoteCard(VOTES[i].id);
+    const gone=VOTES[i].id;
+    await deleteVoteCard(gone);
     VOTES[i].deleted=true;
     if(modalState.i===i) closeModal();
-    if(VOTES[i].closed){ renderClosedGrid(); }
-    else renderGrid();
+    /* ★ 카드가 어느 자리에 그려져 있었는지 따지지 않는다 — 두 격자를 모두 다시 그리고,
+       혹시 남아 있는 DOM 은 바로 걷어낸다(다시 그리기 전 잔상 방지). */
+    $$('.voteCard[data-card-id="'+gone+'"]').forEach(el=>el.remove());
+    renderGrid();
+    renderClosedGrid();
     showToast('게시글이 삭제됐어요.');
   }catch(error){ showToast(error.message||'카드를 삭제하지 못했습니다.'); }
 }

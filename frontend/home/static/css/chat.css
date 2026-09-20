@@ -98,6 +98,7 @@
   font-feature-settings:'tnum' 1,'zero' 0;
 }
 .hotRoll i em{font-style:normal;font-family:var(--num);font-size:11px;color:var(--pink-2)}
+.hotRoll i em.up{color:var(--coral)}
 .hotBar .cv{font-size:10px;color:var(--pink-2);transition:transform .4s var(--ease)}
 .hot.open .hotBar .cv{transform:rotate(180deg)}
 

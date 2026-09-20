@@ -182,7 +182,12 @@ export function itemCard(o){
   return '<div class="itemCard"' + (o.style ? ' data-style="' + cardEsc(o.style) + '"' : '') +
     (url ? ' data-product-url="' + cardEsc(url) + '" role="link" tabindex="0"' : '') + '>' +
     '<div class="itemFig">' +
-      (img?'<img src="'+cardEsc(img)+'" alt="'+cardEsc(o.nm||'')+'" loading="lazy">':'<div class="itemNoImage">이미지 없음</div>') +
+      /* ★ 쇼핑몰 CDN 일부(무신사 등)는 Referer 가 붙으면 핫링크를 막아 사진이 깨진다 —
+         referrerpolicy 로 주소를 떼고 부르고, 그래도 실패하면 '이미지 없음' 판으로 바꾼다. */
+      (img?'<img src="'+cardEsc(img)+'" alt="'+cardEsc(o.nm||'')+'" loading="lazy" '+
+        'referrerpolicy="no-referrer" '+
+        'onerror="this.onerror=null;this.insertAdjacentHTML(\'afterend\',\'&lt;div class=&quot;itemNoImage&quot;&gt;이미지 없음&lt;/div&gt;\');this.remove()">'
+        :'<div class="itemNoImage">이미지 없음</div>') +
       (o.tag ? '<span class="matchTag">' + cardEsc(o.tag) + '</span>' : '') +
       (o.pick ? '<span class="pickTag">FEEDiT Pick!</span>' : '') +
       (o.id ? '<button type="button" class="likeBtn' + (liked ? ' on' : '') + '" data-like-id="' + cardEsc(o.id) + '" aria-label="찜하기">' +
@@ -216,8 +221,9 @@ function hotStep(){
   }
   const t=HOT[hotI%HOT.length];
   const el=document.createElement('i');
+  /* ★ 펼친 목록(.d.up)과 같은 규칙 — 상승은 코랄, 하락은 회색 */
   el.innerHTML='<b>'+String((hotI%HOT.length)+1).padStart(2,'0')+'</b>'+t[0]+
-    '<em>'+(t[1]>0?'▲':'▼')+Math.abs(t[1])+'%</em>';
+    '<em class="'+(t[1]>0?'up':'dn')+'">'+(t[1]>0?'▲':'▼')+Math.abs(t[1])+'%</em>';
   roll.innerHTML=''; roll.appendChild(el);
   if(HAS_A)aAnimate(el,{opacity:[0,1],translateY:['110%','0%'],duration:620,
     ease:aSpring({stiffness:88,damping:16})});
