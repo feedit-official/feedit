@@ -289,12 +289,51 @@ const STEPS = [
 
 let tourAt = 0;
 let tourNodes = null;
+let tourTarget = null;      /* 지금 가리키는 요소 */
+let tourRaf = 0;            /* 위치 동기화 루프 */
 
 export function startTour(){
   closeTour();
   tourAt = 0;
   tourNodes = buildTour();
   showStep();
+  /* 웹폰트가 늦게 적용되면 글자 폭이 바뀌면서 버튼 위치가 밀린다.
+     한 번 더 맞춰 준다 (아래 동기화 루프가 이미 잡지만, 첫 프레임을 아끼려고). */
+  if(document.fonts && document.fonts.ready) document.fonts.ready.then(syncRing).catch(()=>{});
+}
+
+/* 링과 말풍선을 대상의 '지금' 위치에 붙인다.
+   한 번만 재서 고정하면 웹폰트 적용·진입 애니메이션·스크롤 때문에 어긋난다.
+   투어가 열려 있는 동안 매 프레임 다시 맞춘다 — 읽기 몇 번이라 부담이 없다. */
+function syncRing(){
+  if(!tourNodes || !tourTarget || !tourTarget.isConnected) return;
+  const r = tourTarget.getBoundingClientRect();
+  if(!r.width && !r.height) return;
+  const pad = 8;
+  const { ring, tip } = tourNodes;
+  ring.style.left = (r.left - pad) + 'px';
+  ring.style.top = (r.top - pad) + 'px';
+  ring.style.width = (r.width + pad * 2) + 'px';
+  ring.style.height = (r.height + pad * 2) + 'px';
+
+  const t = tip.getBoundingClientRect();
+  if(!t.width) return;
+  let left = r.left + r.width / 2 - t.width / 2;
+  left = Math.max(16, Math.min(left, window.innerWidth - t.width - 16));
+  let top = r.bottom + 14;
+  if(top + t.height > window.innerHeight - 16) top = Math.max(16, r.top - t.height - 14);
+  tip.style.left = left + 'px';
+  tip.style.top = top + 'px';
+}
+
+function startSync(){
+  stopSync();
+  const tick = () => { syncRing(); tourRaf = requestAnimationFrame(tick); };
+  tourRaf = requestAnimationFrame(tick);
+}
+function stopSync(){
+  if(tourRaf) cancelAnimationFrame(tourRaf);
+  tourRaf = 0;
 }
 
 function buildTour(){
@@ -336,33 +375,22 @@ function showStep(){
     if(tourAt >= STEPS.length) return finishTour();
     return showStep();
   }
-  const r = target.getBoundingClientRect();
-  const pad = 8;
-  const { ring, tip } = tourNodes;
-  ring.style.left = (r.left - pad) + 'px';
-  ring.style.top = (r.top - pad) + 'px';
-  ring.style.width = (r.width + pad * 2) + 'px';
-  ring.style.height = (r.height + pad * 2) + 'px';
+  tourTarget = target;
 
+  const { tip } = tourNodes;
   tip.querySelector('.alphaStep').textContent = `${tourAt + 1} / ${STEPS.length}`;
   tip.querySelector('h4').textContent = step.title;
   tip.querySelector('p').textContent = step.body;
   tip.querySelector('.alphaNext').textContent =
     tourAt === STEPS.length - 1 ? '시작하기' : '다음';
 
-  /* 말풍선은 대상 아래에, 화면 밖으로 나가면 위로 붙인다 */
+  /* 글이 바뀌면 말풍선 크기도 바뀐다 — 새 크기로 잰 뒤에 보여 준다 */
   tip.style.visibility = 'hidden';
-  tip.style.left = '0px';
-  tip.style.top = '0px';
+  syncRing();
   requestAnimationFrame(() => {
-    const t = tip.getBoundingClientRect();
-    let left = r.left + r.width / 2 - t.width / 2;
-    left = Math.max(16, Math.min(left, window.innerWidth - t.width - 16));
-    let top = r.bottom + 14;
-    if(top + t.height > window.innerHeight - 16) top = Math.max(16, r.top - t.height - 14);
-    tip.style.left = left + 'px';
-    tip.style.top = top + 'px';
+    syncRing();
     tip.style.visibility = 'visible';
+    startSync();
   });
 }
 
@@ -372,13 +400,12 @@ function finishTour(){
 }
 
 function closeTour(){
+  stopSync();
   const old = document.getElementById('alphaTour');
   if(old) old.remove();
   tourNodes = null;
+  tourTarget = null;
 }
-
-/* 창 크기가 바뀌면 하이라이트 위치도 따라간다 */
-window.addEventListener('resize', () => { if(tourNodes) showStep(); });
 
 if(document.readyState === 'loading'){
   document.addEventListener('DOMContentLoaded', boot);
