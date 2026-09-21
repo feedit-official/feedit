@@ -919,6 +919,9 @@ class Toolbox:
             item_name = item_name or self.product.get("item_name")
             brand = brand or self.product.get("brand")
             price = price if price is not None else self.product.get("price_krw")
+            image = self.product.get("image_url")
+        else:
+            image = None
         metric = self.t_get_metric(term, ["온도", "모멘텀"])
         temp = metric.get("온도") if isinstance(metric, dict) else None
         trend = {"temp": temp.get("temp")} if isinstance(temp, dict) else None
@@ -942,7 +945,7 @@ class Toolbox:
                        "card": (card or {}).get("card"), "product": product or None,
                        "price_snapshot": (card or {}).get("price_snapshot"),
                        "vote_summary": (card or {}).get("vote_summary"),
-                       "item_draft": _item_draft(item_name, brand, price)})
+                       "item_draft": _item_draft(item_name, brand, price, image)})
         return result
 
     def t_get_user_taste(self) -> dict:
@@ -1327,7 +1330,7 @@ def hosted_specs() -> list[dict]:
     return out
 
 
-def _item_draft(name, brand, price) -> dict | None:
+def _item_draft(name, brand, price, image=None) -> dict | None:
     """모델이 확인한 상품의 정체를 그대로 적어 둔다. 값을 만들지 않는다.
 
     ★ 왜 지수 도구에 붙였나 (2026-09-11)
@@ -1349,7 +1352,10 @@ def _item_draft(name, brand, price) -> dict | None:
         digits = re.sub(r"[^0-9]", "", str(price))
         if digits:
             won = int(digits[:9])
-    draft = {"name": _text(name, 120), "brand": _text(brand, 60), "price": won}
+    img = _text(image, 2000)
+    if img and not img.startswith("https://"):
+        img = None
+    draft = {"name": _text(name, 120), "brand": _text(brand, 60), "price": won, "image": img}
     filled = [k for k, v in draft.items() if v is not None]
     if not filled:
         return None

@@ -1181,7 +1181,7 @@ export function trRender(id){
           '</div>'+
         '</div></div>'+
       '<div class="note" style="margin:0 0 12px"><i>◆</i>'+
-          S.asOf+' 기준 · 관측 '+S.points+'일'+
+          (S.dataAsOf||S.asOf)+' 기준 · 관측 '+S.points+'일'+
           (S.thin?' — 자료가 짧아 변화값은 참고만 하세요':'')+'</div>'+
       '<div class="kpis" style="grid-template-columns:repeat(3,minmax(0,1fr))">'+kpi('플랫폼 점유율',nOr(share),share===null?'':'%',
               share===null?'아직 계산 전':'같은 날 전체 언급 중 비중',1)+
@@ -1269,7 +1269,7 @@ export function trRender(id){
       '<div class="vdMeta">' +
       '<div><b>' + ALL.length + '건</b><span>연관어 총량</span></div>' +
       '<div><b>' + newCnt + '건</b><span>신규 연관어</span></div>' +
-      '<div><b>' + trEsc(A.as_of) + '</b><span>기준일</span></div>' +
+      '<div><b>' + trEsc(A.data_as_of || A.as_of) + '</b><span>기준일</span></div>' +
       '</div>' +
       '</div></div>' +
       '<div class="kpis" style="grid-template-columns:repeat(3,minmax(0,1fr))">' +
@@ -1492,7 +1492,7 @@ export function trRender(id){
           '<div class="vdMeta">'+
             '<div><b>'+(posPct==null?'–':posPct+'%')+'</b><span>긍정 반응 비율 · 28일</span></div>'+
             '<div><b>'+(negPct==null?'–':negPct+'%')+'</b><span>부정 반응 비율 · 28일</span></div>'+
-            '<div><b>'+trEsc(last.date)+'</b><span>기준일</span></div>'+
+            '<div><b>'+trEsc(D.data_as_of||last.date)+'</b><span>기준일</span></div>'+
           '</div>'+
         '</div></div>'+
       '<div class="kpis" style="grid-template-columns:repeat(3,minmax(0,1fr))">'+
@@ -1737,7 +1737,7 @@ export function trRender(id){
             '<div><b>'+(mom==null?'–':mom>=0?'상승':'하강')+'</b><span>현재 방향</span></div>'+
           '</div>'+
         '</div></div>'+
-      '<div class="note" style="margin:0 0 12px"><i>◆</i>'+trEsc(D.as_of)+' 기준 · ‘'+trEsc(D.term)+'’ 관측 '+D.points+'일</div>'+
+      '<div class="note" style="margin:0 0 12px"><i>◆</i>'+trEsc(D.data_as_of||D.as_of)+' 기준 · ‘'+trEsc(D.term)+'’ 관측 '+D.points+'일</div>'+
       '<div class="kpis">'+
         kpi('구매 타이밍',timing,'',MSG[0],si<2?1:0)+
         kpi('신규 유입률',D.inflow_pct==null?'–':(D.inflow_pct>0?'+':'')+Math.round(D.inflow_pct),D.inflow_pct==null?'':'%','최근 4주 언급 · 직전 4주 대비',(D.inflow_pct||0)>0?1:0)+

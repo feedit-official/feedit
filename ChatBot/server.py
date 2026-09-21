@@ -321,7 +321,7 @@ def actions_for(rep: dict, mode: str = "general") -> list[dict]:
         draft = rep.get("item_draft")
         keep = {}
         if isinstance(draft, dict):
-            keep = {k: draft.get(k) for k in ("title", "brand", "price", "source")
+            keep = {k: draft.get(k) for k in ("title", "brand", "price", "image", "source")
                     if draft.get(k) not in (None, "")}
         # 실제 상품을 확인했거나 사용자가 다른 사람의 의견을 요청했을 때만 커뮤니티로.
         if keep or intent == "buy.opinion" or _COMMUNITY_ASK.search(question):

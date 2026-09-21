@@ -374,6 +374,8 @@ export function summaryOf(term) {
 
   return {
     asOf: last.date,
+    /* 화면에 띄우는 기준일은 DB 최신화 일자로 통일한다 (2026-09-21) */
+    dataAsOf: (e.data && e.data.data_as_of) || last.date,
     points: rows.length,
     temp: need(num(last.temp), '온도'),
     momentum: need(num(last.momentum), '가속'),

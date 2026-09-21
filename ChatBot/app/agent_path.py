@@ -96,7 +96,8 @@ def _item_draft(trace) -> dict | None:
         tool, res = c.get("tool"), c.get("result")
         if tool == "inspect_product_link" and isinstance(res, dict) and res.get("found"):
             draft = {"title": res.get("item_name") or "", "brand": res.get("brand") or "",
-                     "price": res.get("price_krw"), "source": "상품 링크에서 확인한 값"}
+                     "price": res.get("price_krw"), "image": res.get("image_url") or "",
+                     "source": "상품 링크에서 확인한 값"}
         if tool == "search_terms" and not searched:
             q = str((c.get("args") or {}).get("q") or "").strip()
             if q and not q.lower().startswith(("http://", "https://")):
@@ -106,11 +107,12 @@ def _item_draft(trace) -> dict | None:
         item = res.get("item_draft")
         if isinstance(item, dict) and item.get("recorded"):
             draft = {"title": item.get("name") or "", "brand": item.get("brand") or "",
-                     "price": item.get("price"), "source": "챗봇이 확인한 값"}
+                     "price": item.get("price"), "image": item.get("image") or "",
+                     "source": "챗봇이 확인한 값"}
     if draft and draft["title"]:
         return draft
     if searched:
-        base = draft or {"title": "", "brand": "", "price": None}
+        base = draft or {"title": "", "brand": "", "price": None, "image": ""}
         base["title"] = searched
         base["source"] = "챗봇이 찾아본 이름"
         return base

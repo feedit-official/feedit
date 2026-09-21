@@ -178,6 +178,6 @@ def term_added_text(raw_term, canonical_name=""):
 def weekly_report_text(week_start):
     """week_start: 이번 주 월요일 date."""
     return (
-        "이번 주 트렌드 리포트가 도착했어요.",
-        f"{week_start.month}월 {week_start.day}일부터의 활동을 정리했어요.",
+        "일요일이 왔어요.",
+        "금주의 리포트를 확인해 보세요.",
     )

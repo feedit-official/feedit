@@ -1403,7 +1403,9 @@ document.addEventListener('click', e=>{
       title:(served&&served.title)||cpTitleFromText(user&&user.text),
       brand:(served&&served.brand)||'',
       price:(served&&served.price!=null)?served.price:'',
-      image:(user&&user.images&&user.images[0])||''};
+      /* 사진을 올려 물었으면 그 사진, 링크로 물었으면 서버가 상품 페이지에서
+         확인한 대표 이미지를 그대로 들고 간다 (2026-09-21). */
+      image:(user&&user.images&&user.images[0])||(served&&served.image)||''};
     closeChatPopup();
     const nav=document.querySelector('#mNav [data-v="salmal"]');
     if(nav)nav.click();

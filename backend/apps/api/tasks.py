@@ -1,7 +1,7 @@
 """알림 배치 — Celery.
 
   app.notify_daily    매일 10:00 KST   찜한 상품 가격 하락 · 용어 사전 등재
-  app.notify_weekly   월요일 09:00 KST 주간 트렌드 리포트
+  app.notify_weekly   일요일 18:00 KST 주간 트렌드 리포트
 
 시각은 config/celery.py 의 beat 스케줄에 있다 (app.conf.timezone = Asia/Seoul).
 

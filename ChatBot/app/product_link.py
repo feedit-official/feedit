@@ -1,8 +1,9 @@
 """상품 링크에서 화면에 실제로 표시된 상품명·브랜드·가격을 구조화한다."""
 from __future__ import annotations
 
+import re
 from datetime import datetime, timezone
-from urllib.parse import urlsplit
+from urllib.parse import urljoin, urlsplit
 
 from . import llm
 
@@ -32,6 +33,36 @@ SCHEMA = llm.strict_schema(
 )
 
 
+# 상품 대표 이미지 — 페이지의 og:image · twitter:image 메타 태그에서 읽는다.
+# 모델에게 이미지 주소를 묻지 않는다(지어낸 주소가 카드에 그대로 실린다).
+_IMG_META = re.compile(
+    r"""<meta[^>]+(?:property|name)\s*=\s*["'](?:og:image(?::secure_url|:url)?|twitter:image(?::src)?)["'][^>]*>""",
+    re.I)
+_CONTENT = re.compile(r"""content\s*=\s*["']([^"']+)["']""", re.I)
+
+
+def _page_image(url: str, timeout: float = 6.0) -> str | None:
+    """상품 페이지를 직접 열어 대표 이미지(og:image) 주소만 읽는다. 실패하면 None."""
+    try:
+        import requests
+        r = requests.get(url, timeout=timeout, allow_redirects=True,
+                         headers={"User-Agent": "Mozilla/5.0 (FEEDiT product link)"})
+        if r.status_code >= 400:
+            return None
+        head = r.text[:200_000]
+    except Exception:                                    # noqa: BLE001
+        return None
+    for tag in _IMG_META.findall(head):
+        hit = _CONTENT.search(tag)
+        if not hit:
+            continue
+        src = urljoin(r.url or url, hit.group(1).strip())
+        # 카드에 그대로 실리는 주소다 — https 만 받는다(살!말? 등록 API 와 같은 기준).
+        if src.startswith("https://") and len(src) <= 2000 and not any(c in src for c in ('"', "'", "\\")):
+            return src
+    return None
+
+
 def inspect(url: str, *, timeout: int = 18) -> dict:
     value = str(url or "").strip()
     parsed = urlsplit(value)
@@ -55,6 +86,7 @@ def inspect(url: str, *, timeout: int = 18) -> dict:
     return {
         "found": bool(got.get("found")),
         "url": value,
+        "image_url": _page_image(value),
         "item_name": (str(got.get("item_name") or "").strip()[:160] or None),
         "brand": (str(got.get("brand") or "").strip()[:80] or None),
         "price_krw": price,

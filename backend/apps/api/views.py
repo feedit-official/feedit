@@ -315,6 +315,17 @@ def _history_series(term, days):
                 .order_by("metric_date").values(*METRIC_VALUES))
 
 
+def _data_as_of():
+    """데이터베이스 최신화 일자 — 지표 화면의 '기준일' 은 전부 이 날짜로 통일한다.
+
+    용어마다 마지막 적재일이 다르면 화면마다 다른 기준일이 떠서
+    같은 데이터를 보는데도 날짜가 어긋나 보인다.
+    """
+    d = (TermMetricDaily.objects.exclude(metric_version=HISTORY_VERSION)
+         .aggregate(d=Max("metric_date"))["d"])
+    return d.isoformat() if d else None
+
+
 def _metric_version(term_id=None):
     """여러 지표 버전이 섞여 있을 수 있다 — 환경변수 › 가장 최근 적재 버전.
     장기 이력 버전(HISTORY_VERSION)은 합산 행이 없으므로 기본 버전 후보에서 뺀다."""
@@ -713,6 +724,7 @@ def trend(request):
             "days": days,
             "points": len(series),
             "as_of": last_date.isoformat(),
+            "data_as_of": _data_as_of(),
             "metric_version": version,
             "series": series,
             "series_as_of": series[-1]["date"] if series else None,
@@ -844,6 +856,7 @@ def sentiment(request):
         "days": days,
         "points": len(series),
         "as_of": last_date.isoformat(),
+        "data_as_of": _data_as_of(),
         "metric_version": "direct-text-mention-v1",
         "method": method,
         "scope_label": "브랜드 언급 문맥" if method == "BRAND_CONTEXT" else "용어 직접 언급",
@@ -1096,6 +1109,7 @@ def assoc(request):
     return _ok({
         "term": term.canonical_name,
         "as_of": latest.isoformat(),
+        "data_as_of": _data_as_of(),
         "previous": prev.isoformat() if prev else None,
         "metric_version": ver_row["metric_version"],
         "items": items,
@@ -1916,6 +1930,7 @@ def lifecycle(request):
         "term": term.canonical_name,
         "facet": term.term_type,
         "as_of": last["date"],
+        "data_as_of": _data_as_of(),
         "points": len(series),
         "basis": basis,
         "stage": stage,

@@ -59,10 +59,10 @@ app.conf.beat_schedule = {
         "task": "app.notify_daily",
         "schedule": crontab(hour=10, minute=0),
     },
-    #   월요일 09:00 — 주간 트렌드 리포트 (주 1회)
+    #   일요일 18:00 — 주간 트렌드 리포트 (주 1회)
     "notify-weekly": {
         "task": "app.notify_weekly",
-        "schedule": crontab(hour=9, minute=0, day_of_week=1),
+        "schedule": crontab(hour=18, minute=0, day_of_week=0),
     },
     # 매일 04:10 — 최근 YouTube 댓글 수집, 커머스 리뷰 동기화,
     # 공통 LLM 분석과 35일 지표 재계산.

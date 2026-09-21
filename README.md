@@ -506,7 +506,7 @@ docker compose --env-file .env -f docker/compose.chat.yml up -d --build
 |---|---|---|
 | 매일 04:10 | `core.refresh_text_signals_daily` | YouTube 댓글 수집 → 커머스 리뷰 동기화 → LLM 분석 → 35일 지표 재계산 |
 | 매일 10:00 | `app.notify_daily` | 찜한 상품 가격 하락(하루 한 번 묶어서) · 용어 사전 등재 알림 |
-| 월요일 09:00 | `app.notify_weekly` | 주간 트렌드 리포트 알림 |
+| 일요일 18:00 | `app.notify_weekly` | 주간 트렌드 리포트 알림 |
 | 1분마다 | `core.dispatch_due_targets` | 크롤 대상 실행 — **API 서버에서는 꺼 둠**(`CELERY_CRAWL_DISPATCH=0`) |
 
 ### 8-9. Vercel 배포 · 환경변수

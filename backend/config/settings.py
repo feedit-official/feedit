@@ -140,10 +140,10 @@ CELERY_BEAT_SCHEDULE = {
         "task": "app.notify_daily",
         "schedule": crontab(hour=10, minute=0),
     },
-    #   월요일 09:00 — 주간 트렌드 리포트 (주 1회)
+    #   일요일 18:00 — 주간 트렌드 리포트 (주 1회)
     "notify-weekly": {
         "task": "app.notify_weekly",
-        "schedule": crontab(hour=9, minute=0, day_of_week=1),
+        "schedule": crontab(hour=18, minute=0, day_of_week=0),
     },
     "refresh-text-signals-daily": {
         "task": "core.refresh_text_signals_daily",
