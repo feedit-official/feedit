@@ -89,5 +89,3 @@ body.mainmode .mainpage{opacity:1;visibility:visible}
 /* ── 뷰 전환 ────────────────────────────────────────── */
 .view{display:none}
 .view.on{display:block}
-/* 홈은 챗 화면 하나로 끝나므로 푸터를 두지 않는다 */
-body.athome .mFoot{display:none}

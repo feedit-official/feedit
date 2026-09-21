@@ -66,6 +66,14 @@
 }
 .acct .divider::before, .acct .divider::after{content:"";flex:1;height:1px;background:var(--pink-3)}
 .acct .authForm .cField{margin-bottom:16px}
+.acct .signupConsent{
+  display:grid;gap:9px;margin:20px 0 4px;padding:15px 16px;
+  background:var(--paper);border:1px solid var(--pink-3);border-radius:12px;
+}
+.acct .signupConsent label{display:flex;align-items:flex-start;gap:9px;font-size:12px;line-height:1.55;color:var(--pink-1);cursor:pointer}
+.acct .signupConsent input{width:15px;height:15px;margin-top:2px;accent-color:var(--coral);flex:0 0 auto}
+.acct .signupConsent b{font-weight:600;color:var(--coral)}
+.acct .signupConsent a{color:var(--pink-0);text-decoration:underline;text-underline-offset:3px}
 .acct .authSubmit{
   width:100%;justify-content:center;margin-top:6px;padding:15px;font-size:14px;
 }

@@ -805,6 +805,11 @@
           <p class="fieldMsg" id="suJobMsg"></p>
         </div>
         <p class="fieldMsg err" id="signupErr" style="display:none;margin-top:14px"></p>
+        <div class="signupConsent">
+          <label><input type="checkbox" id="suAgeAgree"> <span><b>[필수]</b> 만 14세 이상입니다.</span></label>
+          <label><input type="checkbox" id="suTermsAgree"> <span><b>[필수]</b> <a href="/terms.html" target="_blank" rel="noopener">이용약관</a>에 동의합니다.</span></label>
+          <label><input type="checkbox" id="suPrivacyAgree"> <span><b>[필수]</b> <a href="/privacy.html" target="_blank" rel="noopener">개인정보처리방침</a>을 확인했습니다.</span></label>
+        </div>
         <button type="submit" class="pill authSubmit">가입하기</button>
       </form>
       <p class="authFoot">이미 계정이 있으신가요? <a href="#" data-v="login">로그인</a></p>
@@ -886,8 +891,16 @@
   </section>
 
   <footer class="mFoot"><div class="mwrap footRow">
-    <span>FEEDiT — Fashion Trend Intelligence</span>
-    <span>2026 · Seoul</span>
+    <div class="footBrand">
+      <strong>FEEDıT</strong>
+      <span>Fashion Trend Intelligence<br>FEEDiT 프로젝트 팀 · 2026 Seoul</span>
+    </div>
+    <nav class="footNav" aria-label="서비스 안내">
+      <a href="/about.html">회사소개</a>
+      <a href="/terms.html">이용약관</a>
+      <a class="em" href="/privacy.html">개인정보처리방침</a>
+      <a href="/support.html">고객센터</a>
+    </nav>
   </div></footer>
 </main>
 

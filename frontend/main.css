@@ -5,6 +5,7 @@
 @import './intro/static/css/logo_mark.css';
 @import './intro/static/css/visuals.css';
 @import './app_shell/static/css/layout.css';
+@import './app_shell/static/css/footer.css';
 @import './app_shell/static/css/alpha.css';   /* 알파 테스트 모드 — 시연 15일 한정 */
 @import './home/static/css/chat.css';
 @import './home/static/css/chat_report.css';

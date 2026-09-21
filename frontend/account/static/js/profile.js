@@ -653,6 +653,9 @@ export function acctBoot(){
       }
     }
     if(!msg) msg = jobFieldCheck('su', null);
+    if(!msg && !$('#suAgeAgree').checked) msg = '만 14세 이상만 가입할 수 있습니다.';
+    if(!msg && !$('#suTermsAgree').checked) msg = '이용약관에 동의해 주세요.';
+    if(!msg && !$('#suPrivacyAgree').checked) msg = '개인정보처리방침을 확인해 주세요.';
     if(msg){ err.textContent = msg; err.style.display = 'block'; return; }
     err.style.display = 'none';
     const submit=sf.querySelector('[type="submit"]'); if(submit)submit.disabled=true;

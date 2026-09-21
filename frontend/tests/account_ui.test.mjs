@@ -20,6 +20,7 @@ globalThis.matchMedia=()=>({matches:false,addEventListener(){},addListener(){}})
 globalThis.scrollTo=()=>{};
 globalThis.IntersectionObserver=class{observe(){} unobserve(){} disconnect(){}};
 globalThis.ResizeObserver=class{observe(){} unobserve(){} disconnect(){}};
+globalThis.MutationObserver=class{observe(){} disconnect(){} takeRecords(){return []}};
 
 const asked=[];
 const user={username:'feedit01',email:'feedit01',nickname:'피딧회원',initial:'피',birth_date:'2000-01-02',
@@ -45,6 +46,13 @@ document.getElementById('suPw2').value='Secret!234';
 document.getElementById('suBirth').value='2000-01-02';
 document.getElementById('suHeight').value='170';
 document.getElementById('suWeight').value='60';
+document.getElementById('signupForm').dispatchEvent(new dom.window.Event('submit',{bubbles:true,cancelable:true}));
+await new Promise(resolve=>setTimeout(resolve,20));
+assert.equal(asked.some(x=>x.url.includes('/api/auth/signup')),false,'필수 동의 전에는 가입 요청을 보내지 않아야 한다');
+assert.equal(document.getElementById('signupErr').textContent,'만 14세 이상만 가입할 수 있습니다.');
+document.getElementById('suAgeAgree').checked=true;
+document.getElementById('suTermsAgree').checked=true;
+document.getElementById('suPrivacyAgree').checked=true;
 document.getElementById('signupForm').dispatchEvent(new dom.window.Event('submit',{bubbles:true,cancelable:true}));
 await new Promise(resolve=>setTimeout(resolve,80));
 

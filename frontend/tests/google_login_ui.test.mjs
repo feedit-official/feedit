@@ -21,6 +21,7 @@ globalThis.matchMedia=()=>({matches:false,addEventListener(){},addListener(){}})
 globalThis.scrollTo=()=>{};
 globalThis.IntersectionObserver=class{observe(){} unobserve(){} disconnect(){}};
 globalThis.ResizeObserver=class{observe(){} unobserve(){} disconnect(){}};
+globalThis.MutationObserver=class{observe(){} disconnect(){} takeRecords(){return []}};
 
 /* GIS 대역 — requestCode() 가 불리면 코드를 콜백으로 돌려준다 */
 let initCfg=null, requested=0;
@@ -69,6 +70,9 @@ assert.equal(document.getElementById('suNickname').value,'구글회원');
 
 document.getElementById('suHeight').value='170';
 document.getElementById('suWeight').value='60';
+document.getElementById('suAgeAgree').checked=true;
+document.getElementById('suTermsAgree').checked=true;
+document.getElementById('suPrivacyAgree').checked=true;
 document.getElementById('signupForm').dispatchEvent(new dom.window.Event('submit',{bubbles:true,cancelable:true}));
 await wait(80);
 const s=asked.find(x=>x.url.includes('/api/auth/google-signup'));
