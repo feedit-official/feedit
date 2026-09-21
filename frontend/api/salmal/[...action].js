@@ -1,4 +1,11 @@
-/* 살!말? 조회·카드 생성·사후 피드백을 Django로 중계한다. */
+/* 살!말? 조회·카드 생성·삭제·사후 피드백을 Django로 중계한다.
+ *
+ * ★ 2026-09-21 — 파일 이름이 `[action].js` 였을 때는 **한 조각 주소만** 받았다.
+ *   그래서 카드 삭제가 부르는 `/api/salmal/cards/42` (DELETE) 는 버셀에
+ *   맞는 함수가 없어 버셀이 자기 404 쪽(HTML)을 돌려줬고 — Django 까지 가지도
+ *   못했다 — 화면에는 "404" 만 떴다. `[...action].js` 로 바꿔 뒤에 몇 조각이
+ *   붙든 받는다. 첫 조각으로 허용 여부를 가리는 건 그대로다.
+ *   (버셀 Hobby 요금제의 함수 12개 제한은 그대로 — 파일 수는 늘지 않는다.) */
 import { backendBase, backendToken } from '../_lib/db.js';
 
 const ALLOWED = new Set(['cards', 'feedback']);
@@ -22,7 +29,7 @@ export default async function handler(req, res) {
   if (req.headers.origin) headers.Origin = req.headers.origin;
   if (req.headers.referer) headers.Referer = req.headers.referer;
   let body;
-  if (method === 'POST') {
+  if (method === 'POST' || method === 'DELETE') {
     headers['Content-Type'] = 'application/json';
     body = typeof req.body === 'string' ? req.body : JSON.stringify(req.body || {});
   }

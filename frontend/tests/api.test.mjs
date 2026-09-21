@@ -331,6 +331,33 @@ await t('★ 긍부정 — Vercel 동적 함수가 Django 직접 집계 API를 �
   delete process.env.BACKEND_API_URL;
 });
 
+await t('★ 살말 — 카드 삭제처럼 조각이 더 붙는 주소도 중계한다', async () => {
+  /* ★ 2026-09-21 회귀 방지 — 중계 파일이 [action].js 였을 때는 한 조각만 받아서
+     /api/salmal/cards/42 (DELETE) 가 버셀 404 로 떨어졌다. 카드 삭제가 안 됐다. */
+  process.env.BACKEND_API_URL = 'http://feedit-official.duckdns.org/api';
+  process.env.BACKEND_API_TOKEN = 'server-only-token';
+  const salmal = (await import('../api/salmal/[...action].js')).default;
+  let called = null, options = null;
+  globalThis.fetch = async (url, opts) => {
+    called = url; options = opts;
+    return { status:200, text:async()=>JSON.stringify({status:'ok',data:{id:42,deleted:true}}) };
+  };
+  const res = mkRes();
+  await salmal({
+    url:'/api/salmal/cards/42', method:'DELETE',
+    headers:{cookie:'sessionid=abc','x-csrftoken':'tok'},
+    body:{},
+  }, res);
+  assert.equal(called, 'http://feedit-official.duckdns.org/api/salmal/cards/42');
+  assert.equal(options.method, 'DELETE');
+  assert.equal(options.headers['X-CSRFToken'], 'tok');
+  assert.equal(options.headers.Cookie, 'sessionid=abc');
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.data.deleted, true);
+  delete process.env.BACKEND_API_URL;
+  delete process.env.BACKEND_API_TOKEN;
+});
+
 await t('★ 인증 — 세션·CSRF 쿠키와 POST 본문을 Django로 중계한다', async () => {
   process.env.BACKEND_API_URL = 'http://feedit-official.duckdns.org/api';
   process.env.BACKEND_API_TOKEN = 'server-only-token';
