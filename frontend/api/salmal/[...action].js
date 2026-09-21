@@ -33,8 +33,17 @@ export default async function handler(req, res) {
     headers['Content-Type'] = 'application/json';
     body = typeof req.body === 'string' ? req.body : JSON.stringify(req.body || {});
   }
+  /* ★ 2026-09-21 — 카드 삭제는 `/api/salmal/cards/42` 처럼 조각이 하나 더 붙는다.
+     파일 이름의 캐치올(`[...action]`)로 받는 게 정석이지만, 버셀이 그 주소를
+     함수로 잡아 주지 않는 경우가 있어 vercel.json 의 rewrite 로도 같은 곳에
+     닿게 해 뒀다. 그때는 경로가 `/api/salmal/cards` + `__card=42` 로 들어오므로,
+     여기서 다시 `/salmal/cards/42` 로 펴서 Django 에 넘긴다.
+     `__card` 는 우리가 붙인 내부 값이라 그대로 흘려보내지 않는다. */
+  const cardId = (url.searchParams.get('__card') || '').replace(/[^0-9]/g, '');
+  url.searchParams.delete('__card');
   const query = url.searchParams.toString();
-  const upstreamPath = url.pathname.replace(/^\/api/, '');
+  let upstreamPath = url.pathname.replace(/^\/api/, '');
+  if (cardId && /^\/salmal\/cards\/?$/.test(upstreamPath)) upstreamPath = `/salmal/cards/${cardId}`;
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 10000);

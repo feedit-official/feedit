@@ -358,6 +358,24 @@ await t('★ 살말 — 카드 삭제처럼 조각이 더 붙는 주소도 중�
   delete process.env.BACKEND_API_TOKEN;
 });
 
+await t('★ 살말 — rewrite 로 들어온 __card 도 같은 Django 주소로 편다', async () => {
+  /* 버셀이 캐치올 주소를 함수로 안 잡아 줄 때를 대비한 두 번째 길
+     (vercel.json rewrite). 내부 값 __card 는 Django 로 새 나가면 안 된다. */
+  process.env.BACKEND_API_URL = 'http://feedit-official.duckdns.org/api';
+  let called = null;
+  globalThis.fetch = async (url) => {
+    called = url;
+    return { status:200, text:async()=>JSON.stringify({status:'ok',data:{id:42,deleted:true}}) };
+  };
+  const salmal = (await import('../api/salmal/[...action].js')).default;
+  const res = mkRes();
+  await salmal({ url:'/api/salmal/cards?__card=42', method:'DELETE', headers:{}, body:{} }, res);
+  assert.equal(called, 'http://feedit-official.duckdns.org/api/salmal/cards/42');
+  assert.ok(!/__card/.test(called), '내부 값이 백엔드로 새 나가면 안 된다');
+  assert.equal(res.statusCode, 200);
+  delete process.env.BACKEND_API_URL;
+});
+
 await t('★ 인증 — 세션·CSRF 쿠키와 POST 본문을 Django로 중계한다', async () => {
   process.env.BACKEND_API_URL = 'http://feedit-official.duckdns.org/api';
   process.env.BACKEND_API_TOKEN = 'server-only-token';

@@ -9,6 +9,10 @@
     {
       "source": "/api/discount/facets",
       "destination": "/api/discount?__facets=1"
+    },
+    {
+      "source": "/api/salmal/cards/:id",
+      "destination": "/api/salmal/cards?__card=:id"
     }
   ],
   "headers": [
