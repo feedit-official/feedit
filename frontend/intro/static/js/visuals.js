@@ -292,9 +292,9 @@ const ANZ=[
     '</div>'+
     '<div class="zp" style="margin-top:6px"><div class="zh"><b>내 취향 맞춤 살!말?</b>'+
       '<em>TOP 4</em></div><div class="zf zf4">'+
-      [[11,'스웨이드 봄버','매치 96'],[7,'와이드 셀비지','매치 92'],
-       [20,'모노 테일러드','매치 89'],[25,'케이블 니트','매치 87']]
-      .map(c=>'<div class="zc"><img src="'+IMGF(c[0])+'" alt="">'+
+      [['p-suede','스웨이드 봄버','매치 96'],['p-selvedge','와이드 셀비지','매치 92'],
+       ['p-tailored','모노 테일러드','매치 89'],['p-knit','케이블 니트','매치 87']]
+      .map(c=>'<div class="zc"><img src="assets/hi/'+c[0]+'.jpg" alt="'+c[1]+'">'+
         '<b>'+c[1]+'</b><span>'+c[2]+'</span></div>').join('')+
     '</div></div>'},
 
@@ -372,7 +372,7 @@ function anzBuild(){
             '<i>'+s.ic+'</i><b>'+s.t+'</b></button>').join('')+
         '</aside>'+
         '<div class="zmain"><div class="ztitle"><b id="anzT"></b><span id="anzD"></span></div>'+
-          '<div class="ztabs"><u class="on">통합</u><u>무신사</u><u>지그재그</u><u>29CM</u></div>'+
+          '<div class="ztabs"><u class="on">통합</u><u>무신사</u><u>지그재그</u><u>에이블리</u></div>'+
           '<div class="zks" id="anzK"></div><div class="zbd" id="anzB"></div></div>'+
       '</div>'+
     '</div>'+
