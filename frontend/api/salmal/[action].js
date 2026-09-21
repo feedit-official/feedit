@@ -35,7 +35,7 @@ export default async function handler(req, res) {
       method, headers, body, signal:controller.signal, redirect:'manual',
     });
     clearTimeout(timer);
-    return sendText(res, upstream.status, await upstream.text());
+    return relay(res, upstream.status, await upstream.text());
   } catch (error) {
     return send(res, 502, {
       status:'error', reason:'살말 서버에 연결하지 못했습니다.',
@@ -46,6 +46,21 @@ export default async function handler(req, res) {
 
 function send(res, status, body) {
   return sendText(res, status, JSON.stringify(body));
+}
+
+/* ★ 2026-09-21 — Django 가 500 을 내면 JSON 이 아니라 HTML 오류 쪽을 돌려준다.
+   예전에는 그 HTML 을 Content-Type: application/json 으로 그대로 흘려보내서
+   화면이 "Unexpected token '<'" 로 깨졌다. JSON 이 아니면 사유로 바꿔 보낸다. */
+function relay(res, status, body) {
+  const head = String(body || '').trimStart().charAt(0);
+  if (head === '{' || head === '[') return sendText(res, status, body);
+  const plain = String(body || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+  return send(res, status >= 400 ? status : 502, {
+    status: 'error',
+    reason: `살말 서버가 ${status} 를 돌려줬습니다. 잠시 뒤 다시 시도해 주세요.`,
+    detail: plain.slice(0, 140) || null,
+    data: null,
+  });
 }
 
 function sendText(res, status, body) {

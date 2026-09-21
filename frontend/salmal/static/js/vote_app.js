@@ -70,7 +70,14 @@ async function loadVotes(){
   const groups=await Promise.all(['latest','result'].map(tab=>
     fetch('/api/salmal/cards?tab='+tab,{credentials:'same-origin',cache:'no-store',headers:{Accept:'application/json'}})
       .then(async response=>{
-        const payload=await response.json();
+        /* ★ 2026-09-21 — 백엔드가 500 을 내면 장고가 HTML 오류 쪽을 돌려준다.
+           그대로 response.json() 하면 "Unexpected token '<'" 같은 자바스크립트 말이
+           화면에 그대로 찍힌다. 먼저 글로 받아서 JSON 일 때만 푼다. */
+        const raw=await response.text();
+        let payload=null;
+        try{ payload=JSON.parse(raw); }catch(_){
+          throw new Error('살말 서버가 응답을 주지 못했습니다 ('+response.status+'). 잠시 뒤 다시 시도해 주세요.');
+        }
         if(!response.ok||payload.status!=='ok') throw new Error(payload.reason||'살말 데이터를 불러오지 못했습니다.');
         if(tab==='latest'&&payload.data.activity) ACTIVITY=payload.data.activity;
         return payload.data.items||[];

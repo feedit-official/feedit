@@ -89,10 +89,9 @@ class Command(BaseCommand):
             if row["term_id"] in active_term_ids:
                 prod_terms[row["product_source_id"]].add(row["term_id"])
 
-        for row in ProductSource.objects.filter(product__style__term__isnull=False).values("id", "product__style__term_id"):
-            term_id = row["product__style__term_id"]
-            if term_id in active_term_ids:
-                prod_terms[row["id"]].add(term_id)
+        # ★ 2026-09-21 — 예전에는 표준 상품의 단일 스타일 FK(product.style) 를 한 번 더 긁었다.
+        #   스타일이 여러 개 달릴 수 있게 바뀌면서 그 칸은 없어졌고, 위 ProductTerm 루프가
+        #   스타일까지 모두 포함한다.
 
         self.stdout.write("Loading ContentItem.analysis_tags...")
         for row in ContentItem.objects.exclude(analysis_tags={}).values("id", "analysis_tags").iterator(chunk_size=2000):

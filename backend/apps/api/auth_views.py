@@ -202,14 +202,14 @@ def _weekly_interests(profile):
 
     saved = list(
         UserSavedItem.objects.filter(user=profile, product__isnull=False)
-        .select_related("product__brand", "product__category", "product__style__term")
+        .select_related("product__brand", "product__category")
         .order_by("-created_at")[:100]
     )
     product_ids = [row.product_id for row in saved]
     for row in saved:
         product = row.product
-        if product.style_id:
-            add(product.style.term.canonical_name, "style", 7.0, "찜한 상품")
+        # ★ 2026-09-21 — 스타일은 단일 FK 가 아니라 연결 표에 여러 개로 달린다.
+        #   아래 '찜 상품 태그' 에서 product_term 으로 함께 읽는다.
         if product.brand_id:
             add(product.brand.name or product.brand.english_name, "brand", 6.0, "찜한 상품")
         if product.category_id:
@@ -219,7 +219,9 @@ def _weekly_interests(profile):
             product_source__product_id__in=product_ids,
         ).select_related("term").distinct()
         for tag in tags:
-            add(tag.term.canonical_name, str(tag.term.term_type or "").lower(), 5.0, "찜 상품 태그")
+            kind = str(tag.term.term_type or "").lower()
+            # 스타일은 취향을 가장 잘 나타내는 축이라, 예전 단일 FK 가 갖던 무게를 그대로 준다.
+            add(tag.term.canonical_name, kind, 7.0 if kind == "style" else 5.0, "찜 상품 태그")
     return sorted(interests.values(), key=lambda row: row["weight"], reverse=True)[:80]
 
 

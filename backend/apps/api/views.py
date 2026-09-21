@@ -942,7 +942,7 @@ def _direct_assoc(term, limit):
         stats[row["term_id"]]["documents"] = row["n"]
 
     source_products = (
-        ProductSource.objects.filter(Q(product_terms__term=term) | Q(product__style__term=term))
+        ProductSource.objects.filter(product_terms__term=term)
         .values("id")
         .distinct()
     )
@@ -1134,11 +1134,12 @@ def _selection(request):
 def _apply(qs, sel, skip=None):
     """고른 조건을 ProductSource 목록에 건다. `skip` 축은 뺀다(자기 축 제외)."""
     if skip != "style" and sel["style"]:
+        # ★ 2026-09-21 — 스타일은 상품마다 여러 개 달린다. 연결 표(product_term)만 본다.
+        #   예전 단일 FK(product.style) 갈래는 칸 자체가 없어져 떼어냈다.
         qs = qs.filter(
-            Q(id__in=ProductTerm.objects.filter(term__term_type="STYLE",
-                                                term__canonical_name__in=sel["style"])
-              .values("product_source_id"))
-            | Q(product__style__term__canonical_name__in=sel["style"]))
+            id__in=ProductTerm.objects.filter(term__term_type="STYLE",
+                                              term__canonical_name__in=sel["style"])
+            .values("product_source_id"))
     if skip != "kind" and sel["kind"]:
         qs = qs.filter(
             Q(id__in=ProductTerm.objects.filter(term__term_type="ITEM",
@@ -1941,8 +1942,8 @@ def lifecycle(request):
 def products(request):
     """GET /api/products?style=고프코어&limit=16&offset=0 — 태그된 상품 목록.
 
-    스타일은 자동 태깅 결과(`commerce.product_term`)와 표준 상품의
-    단일 스타일 FK(`commerce.product.style`) 둘 중 하나라도 일치하면 포함한다.
+    스타일은 자동 태깅 결과(`commerce.product_term` · term_type='STYLE')로 고른다.
+    한 상품에 스타일이 여러 개 달릴 수 있어, 그중 하나라도 맞으면 포함한다.
     화면에서 쓸 수 있게 원본 상품 이미지와 최신 가격도 같이 돌려준다.
     """
     kw = (request.GET.get("q") or "").strip()

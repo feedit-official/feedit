@@ -34,14 +34,10 @@ class Product(models.Model):
         verbose_name="표준 카테고리",
     )
 
-    style = models.ForeignKey(
-        "core.Style",
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="products",
-        verbose_name="스타일",
-    )
+    # ★ 2026-09-21 — 스타일 단일 FK(style_id) 를 걷어냈다.
+    #   한 상품에 스타일을 하나만 박을 수 있던 구조라, DB 팀이 여러 개를 달 수 있게
+    #   연결 표(``commerce.product_term`` · term_type='STYLE')로 옮겼다.
+    #   상품의 스타일은 ProductSource → product_terms 로 읽는다.
 
     canonical_name = models.CharField(
         max_length=500,
@@ -104,10 +100,6 @@ class Product(models.Model):
             models.Index(
                 fields=["category"],
                 name="idx_product_cat",
-            ),
-            models.Index(
-                fields=["style"],
-                name="idx_product_style",
             ),
         ]
 
