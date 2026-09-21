@@ -37,6 +37,7 @@ from __future__ import annotations
 from django.contrib import messages
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.db import transaction
 from django.db.models import (
     BooleanField,
@@ -3033,7 +3034,13 @@ def exclude_brand_source(
 def dashboard_login(request):
     """관리자 대시보드 로그인."""
 
-    if request.user.is_authenticated:
+    # ★ 운영 계정일 때만 대시보드로 보낸다.
+    #   일반 계정도 앱 로그인으로 세션을 갖고 있을 수 있는데, 그 사람을
+    #   대시보드로 보내면 미들웨어가 403 을 주고 다시 여기로 돌아와 반복된다.
+    #   로그인 폼을 그대로 보여 줘서 운영 계정으로 다시 들어오게 한다.
+    if request.user.is_authenticated and (
+        request.user.is_staff or request.user.is_superuser
+    ):
         return redirect("dashboard:dashboard")
 
     if request.method == "POST":
@@ -3066,7 +3073,13 @@ def dashboard_login(request):
                 or request.POST.get("next")
             )
 
-            if next_url and next_url.startswith("/"):
+            # ★ "/" 로 시작하는지만 보면 "//evil.com" 이 통과한다(프로토콜 상대 URL).
+            #   호스트까지 확인해 우리 사이트 안쪽인 주소만 따라간다.
+            if next_url and url_has_allowed_host_and_scheme(
+                next_url,
+                allowed_hosts={request.get_host()},
+                require_https=request.is_secure(),
+            ):
                 return redirect(next_url)
 
             return redirect("dashboard:dashboard")

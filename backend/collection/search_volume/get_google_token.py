@@ -17,8 +17,8 @@
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent))
-from config.settings import GoogleKeywordConfig      # noqa: E402  (.env 로딩을 겸한다)
+sys.path.append(str(Path(__file__).parent))   # ★ insert(0) 금지
+from sv_config.settings import GoogleKeywordConfig      # noqa: E402  (.env 로딩을 겸한다)
 
 SCOPES = ["https://www.googleapis.com/auth/adwords"]
 

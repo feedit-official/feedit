@@ -9,9 +9,31 @@ ROOT_DIR = BASE_DIR.parent
 
 load_dotenv(ROOT_DIR / ".env")
 
-SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "dev-secret-key")
-
 DEBUG = os.getenv("DJANGO_DEBUG", "False").lower() == "true"
+
+# ── SECRET_KEY (2026-09-21) ─────────────────────────────────
+#
+# 예전에는 없으면 조용히 "dev-secret-key" 로 떨어졌다. 이 저장소는 public
+# 이라, 배포 서버에서 그 값이 쓰이면 **세션 쿠키와 CSRF 토큰을 누구나 위조**
+# 할 수 있다. 조용히 취약한 것보다 시끄럽게 안 뜨는 쪽이 낫다.
+#
+# ★ 배포 전에 서버에서 이 한 줄을 먼저 확인할 것:
+#       grep -c '^DJANGO_SECRET_KEY=.\+' .env      →  1 이 나와야 한다
+#   0 이면 아래처럼 만들어 넣고 나서 올린다:
+#       python3 -c "import secrets;print(secrets.token_urlsafe(64))"
+_SECRET = os.getenv("DJANGO_SECRET_KEY", "").strip()
+if not _SECRET:
+    if DEBUG:
+        _SECRET = "dev-only-insecure-key"     # 로컬에서만. 배포에는 안 온다.
+    else:
+        from django.core.exceptions import ImproperlyConfigured
+
+        raise ImproperlyConfigured(
+            "DJANGO_SECRET_KEY 가 비어 있습니다. 이 저장소는 public 이라 "
+            "기본값을 쓰면 세션을 위조당합니다. 서버 .env 에 넣고 다시 띄우세요:\n"
+            '    python3 -c "import secrets;print(secrets.token_urlsafe(64))"'
+        )
+SECRET_KEY = _SECRET
 
 ALLOWED_HOSTS = [
     "127.0.0.1",
@@ -47,6 +69,8 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     # /api/ 공유 토큰 검사 (FEEDIT_API_TOKEN 이 비어 있으면 검사하지 않음)
     'apps.api.middleware.ApiTokenMiddleware',
+    # /admin-dashboard/ 는 운영 계정(is_staff)만 — 앱 로그인 세션으로는 못 들어온다
+    'apps.dashboard.middleware.DashboardStaffMiddleware',
 ]
 
 ROOT_URLCONF = 'config.urls'
@@ -198,6 +222,29 @@ STORAGES = {
 if os.getenv("DJANGO_BEHIND_PROXY", "False").lower() == "true":
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
     USE_X_FORWARDED_HOST = True
+
+# ── 쿠키 보안 (2026-09-21) ──────────────────────────────────
+#
+# ★ 기본값은 꺼짐이다. 일부러 그렇게 뒀다.
+#   지금 이 서버는 http 로만 열려 있다(443 미개방). 그 상태에서 Secure 를
+#   켜면 브라우저가 쿠키를 아예 저장하지 않아 **운영 대시보드 로그인이
+#   그 자리에서 막힌다.** 시연 중인 배포를 깨뜨리지 않으려고 스위치로 뒀다.
+#
+#   TLS 를 붙인 다음(보안 가이드 2번) 서버 .env 에 한 줄만 넣으면 켜진다:
+#       DJANGO_SECURE_COOKIES=1
+#   코드를 다시 고칠 필요가 없다.
+if os.getenv("DJANGO_SECURE_COOKIES", "0") == "1":
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_SSL_REDIRECT = True
+    SECURE_HSTS_SECONDS = 31536000
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
+
+# 켜든 말든 항상 좋은 것들 — 쿠키를 자바스크립트가 못 읽게, 크로스사이트 전송 제한.
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SAMESITE = "Lax"
+CSRF_COOKIE_SAMESITE = "Lax"
 
 _LOCAL_FRONTEND_PORTS = (4173, 4174, *range(5173, 5184))
 CSRF_TRUSTED_ORIGINS = list(dict.fromkeys([

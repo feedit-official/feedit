@@ -20,8 +20,8 @@ from typing import List, Dict, Optional
 
 import sys
 from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent.parent))
-from config.settings import GoogleKeywordConfig
+sys.path.append(str(Path(__file__).parent.parent))   # ★ insert(0) 금지 — Django 모듈을 가린다
+from sv_config.settings import GoogleKeywordConfig
 
 logger = logging.getLogger(__name__)
 

@@ -22,8 +22,8 @@ import requests
 
 import sys
 from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent.parent))
-from config.settings import NaverSearchAdConfig
+sys.path.append(str(Path(__file__).parent.parent))   # ★ insert(0) 금지 — Django 모듈을 가린다
+from sv_config.settings import NaverSearchAdConfig
 
 logger = logging.getLogger(__name__)
 

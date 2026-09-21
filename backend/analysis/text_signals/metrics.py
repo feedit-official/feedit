@@ -264,6 +264,7 @@ def rebuild_term_associations(
                     else 100.0 * (len(scored) - rank) / denominator
                 )
                 objects.append(TermAssocDaily(
+                    basis=TermAssocDaily.Basis.TEXT,
                     source_term_id=source_term_id,
                     target_term_id=target_term_id,
                     metric_date=day,
@@ -278,9 +279,14 @@ def rebuild_term_associations(
                 ))
 
     with transaction.atomic():
+        # ★ 2026-09-21 — basis="TEXT" 로 한정한다.
+        #   이 조건이 없으면 검색 기반(SEARCH) 연관어까지 같이 지워진다.
+        #   텍스트 재계산은 매일 돌고 검색 수집은 주기가 달라서,
+        #   조건 없이 지우면 "어제는 있었는데 오늘 없어졌다" 가 된다.
         TermAssocDaily.objects.filter(
             metric_version=metric_version,
             metric_date__range=(since, until),
+            basis=TermAssocDaily.Basis.TEXT,
         ).delete()
         TermAssocDaily.objects.bulk_create(objects, batch_size=2000)
     return len(objects)

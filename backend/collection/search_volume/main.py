@@ -27,9 +27,9 @@ import pandas as pd
 
 # 프로젝트 루트
 PROJECT_ROOT = Path(__file__).parent
-sys.path.insert(0, str(PROJECT_ROOT))
+sys.path.append(str(PROJECT_ROOT))   # ★ insert(0) 금지 — Django 모듈을 가린다
 
-from config.settings import (
+from sv_config.settings import (
     load_keywords_from_csv, get_keyword_names, check_all_configs,
     NaverSearchAdConfig, NaverDatalabConfig,
     GoogleTrendsConfig, GoogleKeywordConfig,

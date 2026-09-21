@@ -79,3 +79,21 @@ requests==2.34.2
 certifi==2026.7.22
 charset-normalizer==3.5.1
 idna==3.19
+
+# ★ 2026-09-21 검색 신호 수집(celery-worker) — core.collect_search_daily/weekly 가 쓴다.
+#   이게 없으면 beat 는 태스크를 띄우지만 워커가 ModuleNotFoundError 로 즉시 죽는다.
+#   그리고 그 실패는 화면에 아무 티도 안 난다 — 지표가 그냥 안 늘 뿐이다.
+#
+#   pandas 를 2.x 로 묶는 이유: pytrends 마지막 릴리스가 4.9.2(2023-04)인데
+#   의존성이 'pandas>=0.25' 로 상한이 없다. 그대로 두면 pip 가 pandas 3.x 를
+#   깔고, 3.0 에서 걷어낸 API 를 pytrends 가 부르다 런타임에 터진다.
+#   (lxml 은 pytrends 가 직접 요구한다.)
+pytrends==4.9.2
+pandas>=2.2.2,<3
+lxml
+
+# ※ 네이버 검색광고·구글 키워드플래너(google-ads)는 여기 없다 — 일부러 뺐다.
+#   그쪽은 절대 검색량 앵커라 상대→절대 환산(processors/normalizer.py)이 붙고,
+#   CSV 를 거치는 2단계 파이프라인이라 로컬에서 사람이 돌린다.
+#     python collection/search_volume/main.py --source naver
+#     python manage.py load_search_metrics --dir .../output/processed/<타임스탬프>

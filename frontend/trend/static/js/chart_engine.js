@@ -11,7 +11,15 @@ export function gSeed(s){ let h=2166136261; s=String(s);
 }
 function gRand(seed){ let x=seed*10000%1||0.137;
   return ()=>{ x=(x*9301+0.49297)%1; return x } }
-const GRAN=[['d','일별',30],['w','주별',26],['m','월별',18]];
+/* ★ 2026-09-22 — 일별 기본 창을 30일 → 7일로 줄였다.
+     화면은 '지금 뜨는 것'을 보는 곳이라 최근 1주가 기본이 맞다.
+     창의 끝은 오늘이 아니라 **마지막 적재일**이다(resample 이 그렇게 잡는다).
+     그래서 하루가 적재될 때마다 9/1~9/30 → 9/2~10/1 처럼 저절로 하루씩 민다.
+     다만 1주에 관측이 몇 개 없으면 점 두어 개짜리 그래프가 되므로
+     아래에서 30일로 넓힌다(WIDE_D). 넓혔다는 사실은 화면에 밝힌다. */
+const GRAN=[['d','일별',7],['w','주별',26],['m','월별',18]];
+const WIDE_D=30;        // 1주가 너무 비면 넓힐 창
+const MIN_OBS_D=4;      // 1주 창에 이만큼은 관측이 있어야 그대로 쓴다
 const G_UNIT={d:'일',w:'주',I:'',m:'개월'};
 /* 오늘로부터 거슬러 올라가는 눈금 라벨 */
 function gLabels(g,n,endIso){
@@ -67,7 +75,7 @@ export function gChart(host,cfg){
        한 점을 앞뒤로 이어 30일짜리 평평한 선을 만들면, 없던 과거를 지어낸 그림이 된다. */
   /* cfg.type==='bar' — 건수 막대. 주·월은 구간 합(agg:'sum'), 빈 구간은 잇지 않는다(fill:false). */
   const isBar=cfg.type==='bar';
-  const opt=(s)=>({points:N,step:g,raw:true,agg:s.agg||(isBar?'sum':'avg'),fill:!isBar});
+  const opt=(s,n)=>({points:n||N,step:g,raw:true,agg:s.agg||(isBar?'sum':'avg'),fill:!isBar});
   const obsDays=(rows,field)=>new Set((rows||[]).filter(r=>r&&r[field]!=null&&r.date)
     .map(r=>String(r.date).slice(0,10))).size;
   const THIN='관측된 날짜가 하루뿐이라 추이를 그리지 않습니다. 적재가 쌓이면 자동으로 그려집니다.';
@@ -102,10 +110,33 @@ export function gChart(host,cfg){
         el.dataset.live='thin';
         return;
       }
-      const live=cfg.sets.map(s=>toLive(s,seriesOf(cfg.term,Object.assign(opt(s),{field:s.field||'mention'}))));
+      /* 창 안에 '진짜 관측'이 몇 개인지 센다.
+         fill:true 면 빈 날을 앞뒤 값으로 메우므로, 그려진 점 수를 세면 안 된다.
+         원본 byDate 에서 실제로 있는 날짜만 센다. */
+      const obsInWindow=(n)=>{
+        const endIso=lastDateOf(st.byDate); if(!endIso)return 0;
+        const end=new Date(endIso+'T00:00:00Z'); let c=0;
+        for(const k of st.byDate.keys()){
+          const diff=(end-new Date(k+'T00:00:00Z'))/86400000;
+          if(diff>=0&&diff<n)c++;
+        }
+        return c;
+      };
+      const build=(n)=>cfg.sets.map(s=>toLive(s,seriesOf(cfg.term,Object.assign(opt(s,n),{field:s.field||'mention'}))));
+
+      let win=N, widened=false, live=build(win);
+      if(g==='d'&&N<WIDE_D&&obsInWindow(N)<MIN_OBS_D){
+        win=WIDE_D; widened=true; live=build(win);
+      }
       if(live.every(Boolean)){
         el.dataset.live='ok';
-        return gPaint(el,cfg,g,gLabels(g,N,lastDateOf(st.byDate)),live);
+        el.dataset.window=String(win);
+        el.dataset.widened=widened?'1':'';
+        el.dataset.unit=g;
+        /* 단위 토글로 다시 그릴 때도 화면 각주가 따라오게 알린다.
+           안 그러면 주별로 바꿔도 각주는 '최근 7일' 인 채로 남아 거짓말이 된다. */
+        el.dispatchEvent(new CustomEvent('gwin',{bubbles:true}));
+        return gPaint(el,cfg,g,gLabels(g,win,lastDateOf(st.byDate)),live);
       }
       /* 계열 중 하나라도 값이 없으면 섞어 그리지 않는다.
          반은 진짜, 반은 난수인 그래프는 읽는 사람을 속인다. */

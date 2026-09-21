@@ -582,3 +582,43 @@ def refresh_text_signals_daily():
         "content": content_result,
         "analysis": analysis_result,
     }
+
+
+# ══════════════════════════════════════════════════════════════
+#  검색 신호 (2026-09-21)
+#   '뭐라고 말했나'(refresh_text_signals_daily) 와 짝을 이루는 '뭘 찾아봤나' 쪽.
+#   쿼터 계산과 요일 배분 근거는 management/commands/collect_search_signals.py 참고.
+# ══════════════════════════════════════════════════════════════
+
+@shared_task(
+    name="core.collect_search_daily",
+    soft_time_limit=60 * 110,
+    time_limit=60 * 120,
+)
+def collect_search_daily():
+    """매일 — 구글 트렌즈(추이·연관어·지역) + 네이버 데이터랩 전체 추이."""
+    from django.core.management import call_command
+    from io import StringIO
+
+    out = StringIO()
+    call_command("collect_search_signals", mode="daily", stdout=out)
+    return out.getvalue()[-2000:]
+
+
+@shared_task(
+    name="core.collect_search_weekly",
+    soft_time_limit=60 * 110,
+    time_limit=60 * 120,
+)
+def collect_search_weekly():
+    """평일 — 데이터랩 성별·연령 컷. 요일에 따라 한 덩어리씩만 돈다.
+
+    세그먼트는 일간 변동값이 아니라 캐릭터 규정이라 주 1회로 충분하고,
+    나눠 돌아야 하루 1,000회 한도에 여유가 남는다.
+    """
+    from django.core.management import call_command
+    from io import StringIO
+
+    out = StringIO()
+    call_command("collect_search_signals", mode="weekly", stdout=out)
+    return out.getvalue()[-2000:]

@@ -98,7 +98,7 @@ class Command(BaseCommand):
     #  사전 매칭
     # ──────────────────────────────────────────────────────────
 
-    def _build_term_map(self, base_dir) -> dict:
+    def _build_term_map(self, base_dir, valid_ids) -> dict:
         """검색 키워드 → term_id.
 
         CSV 에 term_id 가 이미 있는 파일도 있지만(무신사 전처리 산출물),
@@ -133,6 +133,10 @@ class Command(BaseCommand):
                         tid = _int(row.get("id"))
                         raw = row.get("search_keyword") or row.get("canonical_name") or ""
                         if not tid:
+                            continue
+                        if tid not in valid_ids:
+                            # keywords/*.csv 도 만들어진 날의 사전 스냅샷이다.
+                            # 지금 DB 에 없는 id 를 지도에 넣으면 FK 위반으로 번진다.
                             continue
                         for piece in str(raw).split("|"):
                             key = _norm(piece)
@@ -187,8 +191,27 @@ class Command(BaseCommand):
         self.stdout.write(f"   기준 월 {month} · 버전 {version}"
                           + ("  [DRY-RUN — 쓰지 않습니다]" if dry else ""))
 
-        terms = self._build_term_map(base)
-        self.stdout.write(f"🔎 사전 매칭표 {len(terms):,}개 키")
+        # ★ 2026-09-21 — id 가 '살아 있는지' 만으로는 부족하다.
+        #   사전에서 id 가 재부여되면 id 는 멀쩡한데 **다른 용어**를 가리킨다.
+        #   그걸 그대로 믿으면 에러 없이 엉뚱한 용어에 검색량이 붙는다 —
+        #   터지는 것보다 나쁘다. 그래서 id 가 지금 어떤 말인지도 같이 들고 본다.
+        self.valid_ids = set()
+        self.id_to_names = {}
+        self.code_to_id = {}
+        for tid, canonical, normalized, english, code in DictionaryTerm.objects.values_list(
+            "id", "canonical_name", "normalized_name", "english_name", "term_code"
+        ):
+            self.valid_ids.add(tid)
+            self.id_to_names[tid] = {_norm(x) for x in (canonical, normalized, english) if x}
+            if code:
+                self.code_to_id.setdefault(str(code).strip().upper(), tid)
+        self.by_code = 0
+        self.remapped = 0
+        self.stale_ids = set()
+        self.mismatched = {}
+        self.deduped = 0
+        terms = self._build_term_map(base, self.valid_ids)
+        self.stdout.write(f"🔎 사전 {len(self.valid_ids):,}개 · 매칭표 {len(terms):,}개 키")
         sources = self._sources(dry)
 
         self.miss = defaultdict(int)     # 사전에서 떨어진 키워드
@@ -214,6 +237,37 @@ class Command(BaseCommand):
         self.stdout.write("\n" + "─" * 56)
         for name, rows, hit, missed in summary:
             self.stdout.write(f"  {name:<40} {hit:>7,} / {rows:,}")
+        if self.by_code:
+            self.stdout.write(
+                f"\n  ✅ {self.by_code:,}행은 term_code 로 붙였습니다 "
+                f"(이름·id 가 바뀌어도 안 흔들리는 키).")
+        if self.deduped:
+            self.stdout.write(
+                f"\n  ℹ️  중복 {self.deduped:,}행을 합치거나 버렸습니다 "
+                f"(변형 키워드 여러 개가 같은 용어로 붙은 경우) — 합계가 원본 행수보다 적은 이유입니다.")
+        if self.mismatched:
+            self.stdout.write(
+                f"\n  ⚠️ CSV 의 term_id {len(self.mismatched)}개가 지금 **다른 용어**를 가리킵니다.")
+            for tid, n in sorted(self.mismatched.items())[:8]:
+                self.stdout.write(
+                    f"     id {tid} — CSV: '{n['csv']}'  /  사전 id {tid} 의 이름: {n['db']}")
+                if n["to"] and n["same"]:
+                    self.stdout.write(
+                        "              → 같은 id 로 정상 적재됨 (영문명·별칭이 이어 줌) — 단순 개명입니다")
+                elif n["to"]:
+                    self.stdout.write(
+                        f"              → id {n['to']} {n['to_names']} 로 다시 붙임")
+                else:
+                    self.stdout.write("              → 붙일 곳을 못 찾음 (이 행은 빠집니다)")
+            self.stdout.write("     → 이름으로 다시 붙였습니다. id 를 그대로 넣었다면 "
+                              "에러 없이 엉뚱한 용어에 검색량이 붙을 뻔했습니다.")
+        if self.stale_ids:
+            self.stdout.write(
+                f"\n  ⚠️ CSV 의 term_id {len(self.stale_ids)}개가 지금 사전에 없습니다 "
+                f"(예: {sorted(self.stale_ids)[:8]}).")
+            self.stdout.write(
+                f"     CSV 가 만들어진 2026-09-14 이후 사전이 바뀐 것입니다 — "
+                f"{self.remapped:,}행은 키워드로 다시 붙였습니다.")
         if self.miss:
             top = sorted(self.miss.items(), key=lambda kv: -kv[1])[:15]
             self.stdout.write("\n  사전에서 못 찾은 키워드 상위 15개 "
@@ -243,14 +297,52 @@ class Command(BaseCommand):
                 written += len(chunk)
         return written
 
-    def _term_id(self, row, terms, *keys):
-        """행에서 term_id 를 찾는다. 칼럼에 있으면 그걸 쓰고, 없으면 키워드로 붙인다."""
+    def _term_id(self, row, terms, *keys, canonical=None):
+        """행에서 term_id 를 찾는다.
+
+        ★ 2026-09-21 — CSV 의 term_id 를 **그대로 믿으면 안 된다.**
+          이 CSV 들은 만들어진 날(2026-09-14)의 사전 스냅샷 기준이다.
+          그 뒤 사전이 바뀌면(삭제·재부여) 지금 DB 에 없는 id 가 남는다.
+          실제로 term_id=788 이 그래서 FK 위반을 냈고, 적재가 통째로 죽었다.
+          → DB 에 실재하는 id 인지 먼저 보고, 아니면 키워드로 다시 붙인다.
+        """
+        # ★ 2026-09-21 — 1순위는 term_code 다.
+        #   이름은 바뀐다(오버사이즈 → 오버핏). id 는 재부여된다.
+        #   term_code(DETAIL_OVERSIZED) 는 이름이 바뀌어도 그대로라 개명에 면역이다.
+        #   공짜고, 틀릴 여지가 없다 — LLM 을 부르기 전에 이것부터 쓴다.
+        code = str(row.get("term_code") or "").strip().upper()
+        if code:
+            coded = self.code_to_id.get(code)
+            if coded:
+                self.by_code += 1
+                return coded
+
         direct = _int(row.get("term_id"))
-        if direct:
-            return direct
+        if direct and direct in self.valid_ids:
+            want = _norm(row.get(canonical)) if canonical else ""
+            if not want or want in self.id_to_names.get(direct, set()):
+                return direct
+            # id 는 살아 있는데 다른 말을 가리킨다 → 이름으로 다시 붙인다
+            self.mismatched[direct] = {
+                "csv": want,
+                "db": sorted(self.id_to_names.get(direct, set())),
+                "to": None, "to_names": [], "same": False,
+            }
+        elif direct:
+            self.stale_ids.add(direct)
         for key in keys:
             tid = terms.get(_norm(row.get(key)))
-            if tid:
+            if tid and tid in self.valid_ids:
+                note = self.mismatched.get(direct) if direct else None
+                if direct and tid != direct:
+                    self.remapped += 1
+                # ★ 같은 id 로 다시 붙은 경우도 기록해야 한다.
+                #   안 그러면 리포트가 "붙일 곳을 못 찾음" 이라고 거짓말을 한다
+                #   (실제로는 영문명이 이어 줘서 정상 적재된 것이었다).
+                if note is not None and note["to"] is None:
+                    note["to"] = tid
+                    note["to_names"] = sorted(self.id_to_names.get(tid, set()))
+                    note["same"] = (tid == direct)
                 return tid
         return None
 
@@ -261,7 +353,7 @@ class Command(BaseCommand):
         agg = {}                     # (term, platform) → 합계. term 당 1행이 보장 안 돼도 안 터지게.
         for row in _read(path):
             rows += 1
-            tid = self._term_id(row, terms, "keyword", "english_name")
+            tid = self._term_id(row, terms, "keyword", "english_name", canonical="keyword")
             if not tid:
                 missed += 1
                 self.miss[row.get("keyword", "?")] += 1
@@ -297,7 +389,7 @@ class Command(BaseCommand):
         agg = {}
         for row in _read(path):
             rows += 1
-            tid = self._term_id(row, terms, "matched_keyword", "keyword")
+            tid = self._term_id(row, terms, "matched_keyword", "keyword", canonical="keyword")
             if not tid or src is None:
                 missed += 1
                 self.miss[row.get("matched_keyword") or row.get("keyword", "?")] += 1
@@ -395,6 +487,7 @@ class Command(BaseCommand):
             # 먼저 온 것(대표 키워드)만 남긴다. 상대지수는 합산하면 안 되는 값이다.
             key = (tid, metric_date)
             if key in seen:
+                self.deduped += 1
                 continue
             seen.add(key)
             hit += 1
@@ -428,6 +521,7 @@ class Command(BaseCommand):
                 continue
             key = (tid, region)
             if key in seen:
+                self.deduped += 1
                 continue
             seen.add(key)
             hit += 1

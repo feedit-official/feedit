@@ -32,7 +32,7 @@ from collections import defaultdict
 from datetime import timedelta
 
 from django.db import connection
-from django.db.models import Case, Count, Exists, F, FloatField, Max, Min, OuterRef, Q, Subquery, Sum, Value, When
+from django.db.models import Avg, Case, Count, Exists, F, FloatField, IntegerField, Max, Min, OuterRef, Q, Subquery, Sum, Value, When
 from django.db.models.functions import Cast, Coalesce, Ln
 from django.http import JsonResponse
 from django.utils import timezone
@@ -53,6 +53,9 @@ from apps.core.models import (
     TermAlias,
     TermAssocDaily,
     TermMetricDaily,
+    TermSearchMetricMonthly,
+    TermSearchRegion,
+    TermSearchTrend,
     TextDocument,
     TextTermMention,
     VoteBallot,
@@ -704,7 +707,13 @@ def trend(request):
         .filter(term=term, source__isnull=False,
                 metric_date__gte=last_date - timedelta(days=_platform_window()))
         .exclude(metric_version=HISTORY_VERSION)
-        .order_by("source_id", "-metric_date")
+        # ★ 2026-09-22 — 같은 소스에 여러 버전이 있으면 **지금 버전을 먼저** 집는다.
+        #   옛 버전(feedit-l2-v2)은 mention_count 가 0 인데 trend_temperature 만 차 있다.
+        #   그 행이 이기면 화면에 "무신사 82.51도 · 언급 0건" 이 뜬다 — 거짓말이다.
+        #   지금 버전에 행이 있으면 그쪽을, 없을 때만 옛 버전을 쓴다.
+        .annotate(_ver_rank=Case(When(metric_version=version, then=Value(0)),
+                                 default=Value(1), output_field=IntegerField()))
+        .order_by("source_id", "_ver_rank", "-metric_date")
         .values("source__code", "source__name", "metric_date", "trend_temperature",
                 "level", "mention_count", "metric_version")
     )
@@ -718,6 +727,8 @@ def trend(request):
                           "date": p["metric_date"].isoformat(),
                           "days_ago": age, "stale": age > STALE_AFTER_DAYS,
                           "metric_version": p["metric_version"],
+                          # 지금 버전이 아니면 화면이 조심해서 다뤄야 한다.
+                          "legacy": p["metric_version"] != version,
                           "temp": _num(p["trend_temperature"]), "level": _num(p["level"]),
                           "mention": p["mention_count"]})
     platforms.sort(key=lambda x: (x["temp"] is None, -(x["temp"] or 0)))
@@ -1070,9 +1081,50 @@ def assoc(request):
     limit = _int(request, "limit", 60, 5, 200)
     days = _int(request, "days", 120, 7, 730)
 
-    base = TermAssocDaily.objects.filter(source_term=term)
-    ver_row = base.order_by("-metric_date").values("metric_version").first()
-    if ver_row is None:
+    # ★ 2026-09-21 — 연관어 출처가 두 갈래가 됐다.
+    #   TEXT    같은 문서 안에서 함께 언급 (유튜브 댓글 · 커머스 리뷰)
+    #   SEARCH  같은 검색에서 함께 찾음 (구글 related queries · 네이버 연관검색어)
+    #
+    #   섞을 때 lift·PMI 로 줄 세우면 안 된다 — 문서 통계라 검색 쪽엔 없는 값이고,
+    #   있더라도 단위가 다르다. 비교 가능한 건 association_percentile 하나뿐이다
+    #   — 각 소스 **안에서의** 상대순위라 단위가 없다.
+    #
+    #   점수 = 둘 중 높은 백분위 + (양쪽에 다 잡혔으면 +10, 최대 100)
+    #   두 소스가 같은 말을 가리키면 그게 가장 믿을 만한 연관어라는 뜻이다.
+    ASSOC_BOTH_BONUS = 10
+
+    def _basis_rows(basis_value):
+        """basis 하나의 최신 기준일 행들 + 전일 순위."""
+        qs = TermAssocDaily.objects.filter(source_term=term, basis=basis_value)
+        ver = qs.order_by("-metric_date").values("metric_version").first()
+        if ver is None:
+            return [], None, None, {}
+        qs = qs.filter(metric_version=ver["metric_version"])
+        days_seen = list(qs.values_list("metric_date", flat=True)
+                         .distinct().order_by("-metric_date")[:2])
+        if not days_seen:
+            return [], None, None, {}
+        newest = days_seen[0]
+        before = days_seen[1] if len(days_seen) > 1 else None
+        got = list(
+            qs.filter(metric_date=newest).order_by(*order_clause)
+            .values("target_term_id", "target_term__canonical_name", "target_term__term_type",
+                    "cooccurrence_count", "lift", "pmi", "association_percentile",
+                    "association_rank", "is_new", "metrics")[:limit * 2]
+        )
+        ranks = {}
+        if before:
+            ranks = dict(qs.filter(metric_date=before)
+                         .values_list("target_term_id", "association_rank"))
+        return got, newest, ver["metric_version"], ranks
+
+    sort_method = request.GET.get("sort", "pmi")
+    order_clause = ["-cooccurrence_count", "-pmi"] if sort_method == "cooc" else [Coalesce("association_rank", 999999), "-pmi", "-cooccurrence_count"]
+
+    text_rows, text_date, text_ver, text_prev = _basis_rows(TermAssocDaily.Basis.TEXT)
+    srch_rows, srch_date, srch_ver, srch_prev = _basis_rows(TermAssocDaily.Basis.SEARCH)
+
+    if not text_rows and not srch_rows:
         direct = _direct_assoc(term, limit)
         if direct["items"]:
             return _ok(direct)
@@ -1081,25 +1133,43 @@ def assoc(request):
             f"‘{term.canonical_name}’ 과 공통 문서·상품·콘텐츠 태그를 가진 연관 용어가 없습니다.",
             term=term.canonical_name, total_rows=total,
             source_records=direct["source_records"])
-    base = base.filter(metric_version=ver_row["metric_version"])
-    dates = list(base.values_list("metric_date", flat=True).distinct().order_by("-metric_date")[:2])
-    latest = dates[0]
-    prev = dates[1] if len(dates) > 1 else None
 
-    sort_method = request.GET.get("sort", "pmi")
-    order_clause = ["-cooccurrence_count", "-pmi"] if sort_method == "cooc" else [Coalesce("association_rank", 999999), "-pmi", "-cooccurrence_count"]
+    # 화면의 기준일·추이 차트는 여전히 언급(TEXT) 쪽을 기준으로 그린다.
+    base = TermAssocDaily.objects.filter(source_term=term,
+                                         basis=TermAssocDaily.Basis.TEXT)
+    if text_ver:
+        base = base.filter(metric_version=text_ver)
+    latest = text_date or srch_date
+    prev = None
 
-    rows = list(
-        base.filter(metric_date=latest)
-        .order_by(*order_clause)
-        .values("target_term_id", "target_term__canonical_name", "target_term__term_type",
-                "cooccurrence_count", "lift", "pmi", "association_percentile",
-                "association_rank", "is_new")[:limit]
-    )
+    merged = {}
+    for bucket, rows_in, prev_ranks in (("text", text_rows, text_prev),
+                                        ("search", srch_rows, srch_prev)):
+        for r in rows_in:
+            tid = r["target_term_id"]
+            item = merged.setdefault(tid, {"row": r, "bases": [], "pct": {},
+                                           "prev": {}, "meta": {}})
+            item["bases"].append(bucket)
+            item["pct"][bucket] = _num(r["association_percentile"]) or 0.0
+            item["prev"][bucket] = prev_ranks.get(tid)
+            item["meta"][bucket] = r.get("metrics") or {}
+            # 언급 기반 행이 있으면 그쪽을 대표로 삼는다 (lift·PMI·근거문장이 있다)
+            if bucket == "text":
+                item["row"] = r
+
+    scored = []
+    for tid, item in merged.items():
+        both = len(item["bases"]) > 1
+        score = max(item["pct"].values() or [0.0]) + (ASSOC_BOTH_BONUS if both else 0)
+        scored.append((min(100.0, score), tid, item))
+    scored.sort(key=lambda x: -x[0])
+    scored = scored[:limit]
+
+    rows = [item["row"] for _, _, item in scored]
     prev_rank = {}
-    if prev:
-        prev_rank = dict(base.filter(metric_date=prev).values_list("target_term_id",
-                                                                     "association_rank"))
+    for _, tid, item in scored:
+        prev_rank[tid] = item["prev"].get("text", item["prev"].get("search"))
+    merged_by_id = {tid: (score, item) for score, tid, item in scored}
 
     target_ids = [r["target_term_id"] for r in rows]
     evidence = _assoc_evidence(term, target_ids)
@@ -1113,6 +1183,24 @@ def assoc(request):
             change = before - rank          # 양수 = 순위 상승
         else:
             change = None
+        tid = r["target_term_id"]
+        score, item = merged_by_id.get(tid, (None, {"bases": ["text"], "meta": {}}))
+        bases = item["bases"]
+        # 근거 문장은 언급 기반에만 있다. 검색만으로 잡힌 말은 빈칸이 되므로
+        # 그 자리에 "어떤 검색 신호였는지" 를 대신 넣는다 — 빈 칸보다 낫다.
+        proof = evidence.get(tid, [])
+        if not proof and "search" in bases:
+            meta = item["meta"].get("search") or {}
+            kind = {"rising": "급상승 연관검색어", "top": "인기 연관검색어"}.get(
+                meta.get("kind"), "연관검색어")
+            raw = meta.get("raw_value")
+            tail = ""
+            if isinstance(raw, str) and raw.strip().lower() in ("breakout", "급상승"):
+                tail = " · 증가율 측정 불가(급등)"
+            elif raw not in (None, ""):
+                tail = f" · {raw}"
+            proof = [{"text": f"{meta.get('platform', '검색')} {kind}{tail}",
+                      "source": meta.get("platform"), "kind": "search"}]
         items.append({
             "term": r["target_term__canonical_name"],
             "facet": r["target_term__term_type"],
@@ -1123,7 +1211,11 @@ def assoc(request):
             "percentile": _num(r["association_percentile"], 2),
             "rank": rank,
             "change": change,
-            "evidence": evidence.get(r["target_term_id"], []),
+            # ★ 어느 소스에서 나온 연관어인지 — 화면은 이걸로 배지를 단다.
+            #   ["text","search"] 면 두 소스가 같은 말을 가리킨 것 — 가장 믿을 만하다.
+            "basis": bases,
+            "score": round(score, 2) if score is not None else None,
+            "evidence": proof,
         })
 
     hist = (
@@ -1140,7 +1232,14 @@ def assoc(request):
         "as_of": latest.isoformat(),
         "data_as_of": _data_as_of(),
         "previous": prev.isoformat() if prev else None,
-        "metric_version": ver_row["metric_version"],
+        "metric_version": text_ver or srch_ver,
+        "bases": {
+            "text": {"as_of": text_date.isoformat() if text_date else None,
+                     "metric_version": text_ver, "count": len(text_rows)},
+            "search": {"as_of": srch_date.isoformat() if srch_date else None,
+                       "metric_version": srch_ver, "count": len(srch_rows)},
+        },
+        "blend_rule": "높은 쪽 백분위 + 양쪽 모두 잡힐 경우 +10 (최대 100)",
         "items": items,
         "history": history,
     })
@@ -2210,3 +2309,207 @@ def salmal_search(request):
     if not rows:
         return _empty(f"‘{term}’{josa(term, '과', '와')} 연결된 살!말? 카드가 없습니다.", term=term)
     return _ok({"term": term, "items": rows, "count": len(rows)})
+
+
+# ══════════════════════════════════════════════════════════════
+#  검색 지표 (2026-09-22)
+#
+#  ★ 언급(term_metric_daily) 과 **일부러 나눈다.**
+#    저쪽은 '사람이 뭐라고 말했나'(유튜브 댓글 · 커머스 리뷰),
+#    이쪽은 '사람이 뭘 찾아봤나'(네이버 · 구글 검색량)다.
+#    다른 현상이라 같은 '온도' 라는 이름으로 한 줄에 세우면
+#    "무신사 82도 / 구글 56도" 처럼 비교 불가능한 숫자가 나란히 선다.
+#    그래서 표도 API 도 화면 카드도 따로 둔다.
+#
+#  값이 없으면 지어내지 않는다 — 칸은 null 로 두고 사유를 적는다.
+# ══════════════════════════════════════════════════════════════
+
+SEARCH_SOURCES = (("naver", "NAVER_SEARCH"), ("google", "GOOGLE_SEARCH"))
+
+
+def _search_monthly(term):
+    """월간 절대 검색량 — 소스별 '가장 최근 달' 한 줄씩.
+
+    네이버 검색광고(N1·N4)와 구글 키워드플래너(K1)가 주는 절대값이다.
+    상대지수(트렌드)를 절대값으로 환산할 때의 앵커이기도 하다.
+    """
+    out, months = {}, []
+    for key, code in SEARCH_SOURCES:
+        row = (TermSearchMetricMonthly.objects
+               .filter(term=term, source__code=code)
+               .order_by("-metric_month").values(
+                   "metric_month", "search_volume", "pc_volume",
+                   "mobile_volume", "competition").first())
+        if not row:
+            out[key] = None
+            continue
+        months.append(row["metric_month"])
+        out[key] = {
+            "month": row["metric_month"].isoformat(),
+            "total": row["search_volume"],
+            "pc": row["pc_volume"],
+            "mobile": row["mobile_volume"],
+            # ★ '광고 경쟁 강도' 다. '시장 포화도' 로 읽히지 않게 이름을 그대로 쓴다.
+            "competition": row["competition"],
+        }
+
+    naver = (out.get("naver") or {}).get("total") or 0
+    google = (out.get("google") or {}).get("total") or 0
+    total = naver + google
+    share = None
+    if total:
+        share = {"naver": round(naver / total * 100, 1),
+                 "google": round(google / total * 100, 1)}
+    return {"by_source": out, "total": total or None, "share": share,
+            "as_of": max(months).isoformat() if months else None}
+
+
+def _search_trend(term, days, segment="all"):
+    """주간 상대지수 추이 — 창의 끝은 '마지막 적재일' 이다.
+
+    오늘을 끝으로 잡으면 적재가 하루라도 밀린 날 화면이 빈다.
+    마지막 적재일 기준이라 하루 적재될 때마다 창이 저절로 하루 민다.
+    """
+    qs = TermSearchTrend.objects.filter(term=term, segment=segment)
+    last = qs.aggregate(d=Max("metric_date"))["d"]
+    if not last:
+        return [], None
+    rows = (qs.filter(metric_date__gt=last - timedelta(days=days))
+            .order_by("metric_date")
+            .values("metric_date", "source__code", "ratio", "estimated_volume"))
+    merged = {}
+    for r in rows:
+        day = r["metric_date"].isoformat()
+        slot = merged.setdefault(day, {"date": day, "naver": None, "google": None,
+                                       "naver_volume": None, "google_volume": None})
+        key = "naver" if r["source__code"] == "NAVER_SEARCH" else "google"
+        slot[key] = _num(r["ratio"], 2)
+        slot[key + "_volume"] = r["estimated_volume"]
+    return [merged[k] for k in sorted(merged)], last.isoformat()
+
+
+def _search_seasonality(term):
+    """12개월 시즌성 — 구글 키워드플래너의 월별 절대 검색량(K2).
+
+    상대지수가 아니라 절대값이라 '작년 이맘때와 비교' 가 된다.
+    수명주기 탭이 쓰기 좋은 모양이다.
+    """
+    rows = (TermSearchMetricMonthly.objects
+            .filter(term=term, source__code="GOOGLE_SEARCH")
+            .order_by("metric_month")
+            .values("metric_month", "search_volume"))
+    series = [{"month": r["metric_month"].strftime("%Y-%m"),
+               "volume": r["search_volume"]} for r in rows]
+    if len(series) < 3:
+        return []          # 두 점으로 시즌성을 말하지 않는다
+    return series
+
+
+def _search_regions(term, limit=17):
+    """시·도별 관심도 (G5).
+
+    ★ 이 값은 '용어 하나짜리 요청' 으로 받은 것이어야 의미가 있다.
+      여러 용어를 한 번에 물으면 구글이 '그 지역 안에서의 용어 점유율' 을 준다.
+      수집 쪽에서 collect_region() 만 쓰도록 막아 뒀다.
+      값은 '그 시·도 검색량 대비 비율' 이라 인구 보정이 이미 들어가 있다.
+    """
+    last = (TermSearchRegion.objects.filter(term=term)
+            .aggregate(d=Max("metric_date"))["d"])
+    if not last:
+        return [], None
+    rows = (TermSearchRegion.objects.filter(term=term, metric_date=last)
+            .order_by("-value").values("region", "value")[:limit])
+    return [{"region": r["region"], "value": r["value"]} for r in rows], last.isoformat()
+
+
+def _search_segments(term, days):
+    """성별·연령 분해 (D2·D3) — 세그먼트별 최근 평균.
+
+    일간 변동값이 아니라 '이 말을 누가 찾나' 라는 캐릭터 규정이라
+    수집도 주 1회고, 여기서도 구간 평균 한 숫자로 준다.
+    """
+    last = (TermSearchTrend.objects.filter(term=term)
+            .exclude(segment="all").aggregate(d=Max("metric_date"))["d"])
+    if not last:
+        return None
+    rows = (TermSearchTrend.objects
+            .filter(term=term, metric_date__gt=last - timedelta(days=days))
+            .exclude(segment="all")
+            .values("segment").annotate(avg=Avg("ratio")).order_by("segment"))
+    gender, age = {}, {}
+    for r in rows:
+        seg, value = r["segment"], _num(r["avg"], 2)
+        if seg.startswith("gender:"):
+            gender[seg.split(":", 1)[1]] = value
+        elif seg.startswith("age:"):
+            age[seg.split(":", 1)[1]] = value
+    if not gender and not age:
+        return None
+    return {"as_of": last.isoformat(), "gender": gender or None, "age": age or None}
+
+
+@require_GET
+def search(request):
+    """GET /api/search?term=팬츠&days=90
+
+    검색 기반 지표만 돌려준다. 언급 기반(/api/trend)과 섞지 않는다.
+    """
+    name = (request.GET.get("term") or "").strip()
+    if not name:
+        return _empty("term 을 지정해 주세요. 예: /api/search?term=팬츠")
+    term = _resolve_term(name)
+    if term is None:
+        return _empty(_term_missing_reason(name), term=name)
+
+    days = _int(request, "days", 90, 7, 730)
+
+    monthly = _search_monthly(term)
+    trend, trend_as_of = _search_trend(term, days)
+    seasonality = _search_seasonality(term)
+    regions, regions_as_of = _search_regions(term)
+    segments = _search_segments(term, days)
+
+    if not any((monthly["total"], trend, seasonality, regions)):
+        return _empty(
+            f"‘{term.canonical_name}’ 의 검색 지표가 아직 없습니다. "
+            "검색량 수집(collect_search_signals)이 돌면 채워집니다.",
+            term=term.canonical_name)
+
+    # 무엇이 아직 없는지 숨기지 않는다 — 화면이 '측정 불가' 로 그릴 수 있게 알린다.
+    missing = []
+    if not monthly["total"]:
+        missing.append("절대 검색량")
+    if not trend:
+        missing.append("주간 추이")
+    if not seasonality:
+        missing.append("시즌성(12개월)")
+    if not regions:
+        missing.append("지역별")
+    if not segments:
+        missing.append("성별·연령")
+
+    extra = {}
+    if missing:
+        extra["unavailable"] = {
+            "fields": missing,
+            "reason": "아직 수집되지 않은 항목입니다 ("
+                      + " · ".join(missing) + ").",
+        }
+
+    return _ok(
+        {
+            "term": term.canonical_name,
+            "facet": term.term_type,
+            "days": days,
+            "volume": monthly,
+            "trend": trend,
+            "trend_as_of": trend_as_of,
+            "seasonality": seasonality,
+            "regions": regions,
+            "regions_as_of": regions_as_of,
+            "segments": segments,
+            "note": "검색량은 '무엇을 찾아봤나' 입니다. "
+                    "언급량(트렌드 온도)과는 다른 현상이라 따로 봅니다.",
+        },
+        **extra,
+    )

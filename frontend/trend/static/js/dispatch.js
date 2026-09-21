@@ -837,6 +837,69 @@ function primeOnce(id,url){
   }
 }
 
+/* 검색 지표 주소 — 창은 화면 기본(7일)보다 넉넉히 받아 두고 그릴 때 자른다. */
+function searchUrl(term){
+  return '/api/search?term='+encodeURIComponent(term)+'&days=90';
+}
+
+/* 검색량 카드. 값이 없으면 지어내지 않고 '아직 없음'을 적는다. */
+function searchCardHTML(term){
+  if(!term) return '';
+  const st=stateOfUrl(searchUrl(term));
+  const head='<div class="panelC" style="margin-top:12px"><div class="ph">'+
+    '<h3>검색량</h3><em>네이버 · 구글</em></div>';
+  if(st.status==='unknown')
+    return head+'<div class="note" data-live="loading"><i>◆</i><span>검색 지표를 불러오는 중입니다…</span></div></div>';
+  if(st.status!=='ok')
+    return head+unavailableHTML(st.reason||'검색 지표가 아직 없습니다.',
+      st.detail||'수집(collect_search_signals)이 돌면 채워집니다.')+'</div>';
+
+  const D=st.data||{}, V=D.volume||{}, by=V.by_source||{};
+  const n=by.naver, g=by.google, sh=V.share;
+  const num=v=>v==null?'–':Number(v).toLocaleString('ko-KR');
+
+  /* 절대 검색량 — 두 플랫폼은 집계 방식이 달라 합계보다 '비중'이 정직하다 */
+  let rows='';
+  if(n||g){
+    rows='<table class="mTable"><tr><th>플랫폼</th><th>월간 검색량</th><th>비중</th></tr>'+
+      [['네이버',n,sh&&sh.naver],['구글',g,sh&&sh.google]].map(([label,d,pct])=>
+        '<tr><td>'+label+'</td><td class="n">'+num(d&&d.total)+'</td>'+
+        '<td class="n">'+(pct==null?'–':pct+'%')+'</td></tr>').join('')+'</table>';
+  }
+
+  /* 시즌성 — 12개월 절대값이라 "작년 이맘때" 비교가 된다 */
+  let season='';
+  const S=D.seasonality||[];
+  if(S.length>=3){
+    const mx=Math.max.apply(null,S.map(x=>x.volume||0))||1;
+    const top=S.reduce((a,b)=>(b.volume||0)>(a.volume||0)?b:a,S[0]);
+    season='<div class="note" style="margin-top:8px"><i>◆</i>12개월 중 <b>'+
+      trEsc(top.month)+'</b> 이 가장 높습니다 ('+num(top.volume)+').</div>'+
+      '<div class="axList" style="margin-top:6px">'+S.map(x=>
+        '<div class="axRow" style="pointer-events:none">'+
+        '<span class="axName" style="min-width:64px">'+trEsc(x.month)+'</span>'+
+        '<span class="axBar"><i style="width:'+Math.round((x.volume||0)/mx*100)+'%"></i></span>'+
+        '<span class="axNum" style="min-width:68px;text-align:right">'+num(x.volume)+'</span>'+
+        '</div>').join('')+'</div>';
+  }
+
+  /* 지역 — 값은 '그 시·도 검색량 대비 비율'이라 인구 보정이 이미 들어가 있다 */
+  let region='';
+  const R=D.regions||[];
+  if(R.length){
+    region='<div class="note" style="margin-top:8px"><i>◆</i>시·도별 관심도 — '+
+      R.slice(0,3).map(r=>trEsc(r.region)+' '+r.value).join(' · ')+
+      ' <small style="opacity:.6">(그 지역 검색량 대비 비율이라 인구가 많은 곳이 자동으로 높지 않습니다)</small></div>';
+  }
+
+  const miss=(st.extra&&st.extra.unavailable&&st.extra.unavailable.fields)||[];
+  const note=miss.length
+    ? '<div class="note"><i>◆</i>아직 없는 항목: '+miss.map(trEsc).join(' · ')+'</div>'
+    : '';
+
+  return head+(rows||unavailableHTML('절대 검색량이 아직 없습니다.',''))+season+region+note+'</div>';
+}
+
 export function trRender(id){
   TR_CUR=id;
   if(FS.id==='stock'&&id!=='stock'){
@@ -871,6 +934,9 @@ export function trRender(id){
   }
   /* 연관어 · 할인률 · 리세일 · 수명주기는 URL 단위로 받는다 */
   if(id==='assoc'&&KW.q) primeOnce(id,'/api/assoc?term='+encodeURIComponent(KW.q));
+  /* ★ 2026-09-22 — 검색 지표는 언급 지표(/api/trend)와 **다른 주소**다.
+     '뭐라고 말했나'와 '뭘 찾아봤나'를 한 카드에 섞지 않기로 해서 호출도 따로 간다. */
+  if(id==='temp'&&KW.q) primeOnce(id,searchUrl(KW.q));
   if(id==='sentiment'&&KW.q) primeOnce(id,sentimentUrl(KW.q,KW.f));
   if(EDIT_API[id]&&(id==='stock'?!!FS.stockItem:fsItem())) primeOnce(id,editUrl(id));
   const m=TR_META[id]||TR_META.myfeed;
@@ -1153,7 +1219,13 @@ export function trRender(id){
     const wk=S?(S.tempWk===null?null:Math.round(S.tempWk)):null;
     const nOr=v=>v===null||v===undefined?'–':v;   /* 없는 값은 대시로 */
     const newKw=(ED.new_terms||[]).filter(x=>x.term!==kw)[0]||null;
-    const plats=(ED.platforms||[]).filter(p=>p.temp!=null);
+    /* ★ 2026-09-22 — 옛 지표 버전(feedit-l2-v2) 행은 언급 수가 0 인데 온도만 차 있다.
+       언급 0 에서 나온 82도를, 댓글 24건에서 나온 유튜브 86.8도 옆에 세우면
+       "무신사가 약간 낮네" 라는 틀린 해석을 부른다. 계산 근거가 아예 다른 값이다.
+       → 빼 두고, 뺐다는 사실을 아래 각주에 밝힌다. 틀린 숫자를 띄우느니 빈칸이 낫다. */
+    const platsAll=(ED.platforms||[]).filter(p=>p.temp!=null);
+    const plats=platsAll.filter(p=>!(p.legacy && !p.mention));
+    const platsHeld=platsAll.filter(p=>p.legacy && !p.mention);
     const band=temp>=85?0:temp>=65?1:temp>=40?2:3;
     /* 색은 가장 낮은 구간에서 시작해 최종 구간까지 걸어 올라간다 */
     const RAMP=['#3d7fd6','#c98a1b','#1f9e6e','#b23b3b'].slice(0,4-band);
@@ -1181,7 +1253,7 @@ export function trRender(id){
           '</div>'+
         '</div></div>'+
       '<div class="note" style="margin:0 0 12px"><i>◆</i>'+
-          (S.dataAsOf||S.asOf)+' 기준 · 관측 '+S.points+'일'+
+          (S.dataAsOf||S.asOf)+' 기준 · <span data-win-label>최근 7일</span>'+
           (S.thin?' — 자료가 짧아 변화값은 참고만 하세요':'')+'</div>'+
       '<div class="kpis" style="grid-template-columns:repeat(3,minmax(0,1fr))">'+kpi('플랫폼 점유율',nOr(share),share===null?'':'%',
               share===null?'아직 계산 전':'같은 날 전체 언급 중 비중',1)+
@@ -1190,7 +1262,10 @@ export function trRender(id){
         kpi('신규 진입 키워드',newKw?trEsc(newKw.term):'–','',newKw?'최근 7일 새로 감지 · '+Math.round(newKw.temp||0)+'°':'최근 7일 새로 잡힌 말 없음',1)+'</div>'+
       '<div class="trGrid">'+
         '<div class="panelC"><div class="gHead"><h3>언급량 · 온도 추이</h3></div>'+
-          '<div data-chart="tempMain"></div>'+
+          /* ★ 2026-09-22 — 기본 단위를 '일별' 로. 차트 엔진 기본값은 'w'(26주) 라
+             그대로 두면 최근 1주가 아니라 반년치가 뜬다. 여기서 못 박는다.
+             사용자가 주별·월별을 누르면 그때 바뀐다(토글은 그대로 동작). */
+          '<div data-chart="tempMain" data-g="d"></div>'+
           '<div class="note"><i>◆</i>언급량(최대=100 지수)과 트렌드 온도를 나란히 겹쳐 봅니다.</div></div>'+
         '<div class="panelC"><div class="ph"><h3>플랫폼별 온도</h3><em>0–100</em></div>'+
           (plats.length
@@ -1202,17 +1277,41 @@ export function trRender(id){
                 return '<tr><td>'+(v>=85?'<b>'+trEsc(t.name)+'</b>':trEsc(t.name))+age+'</td>'+
                 '<td><span class="bar" style="display:block"><i class="'+(v>=85?'c':'')+'" style="width:'+v+'%"></i></span></td>'+
                 '<td class="n '+(v>=65?'up':'dn')+'">'+v+'°</td></tr>'}).join('')+
-              '</table><div class="note"><i>◆</i>'+(plats.some(p=>p.stale)
-                  ? '기준일이 적힌 플랫폼은 그날의 값입니다 — 리뷰는 쓰인 날로 쌓여 유튜브보다 달력이 느립니다.'
-                  : '플랫폼마다 온도차가 있다면 아직 확산 초반 구간입니다.')+'</div>'
+              '</table><div class="note"><i>◆</i>'+(
+                  platsHeld.length
+                    ? platsHeld.map(p=>trEsc(p.name)).join('·')+' 는 옛 지표 버전이라 온도를 빼 뒀습니다 (언급 수가 없어 다른 플랫폼과 같은 잣대가 아닙니다).'
+                  : plats.some(p=>p.stale)
+                    ? '기준일이 적힌 플랫폼은 그날의 값입니다 — 리뷰는 쓰인 날로 쌓여 유튜브보다 달력이 느립니다.'
+                    : '플랫폼마다 온도차가 있다면 아직 확산 초반 구간입니다.')+'</div>'
             : unavailableHTML('플랫폼별 지표 행이 아직 없습니다.','전체 합산 행만 적재돼 있습니다.'))+
         '</div>'+
-      '</div>';
+      '</div>'+
+      /* ══ 검색량 — 언급량과 **다른 카드**로 둔다 ══
+         언급(유튜브 댓글·커머스 리뷰)은 "뭐라고 말했나",
+         검색(네이버·구글)은 "뭘 찾아봤나"다. 계산 근거가 달라
+         한 막대그래프에 세우면 "무신사 82도 / 구글 56도"처럼
+         비교 불가능한 숫자가 나란히 서게 된다. 그래서 칸을 나눈다. */
+      searchCardHTML(KW.q);
     /* ★ term 을 넘겨야 실데이터를 본다. field 는 API 가 돌려주는 열 이름이다 — mention(언급량) · temp(온도). */
     G_CFG.tempMain={key:kw+'temp',term:kw,min:0,max:100,
       sets:[{id:'m',name:'언급량 지수',field:'mention',index:true,unit:''},
             {id:'t',name:'트렌드 온도 (°)',field:'temp',unit:'°',accent:1}]};
     gChart('[data-chart="tempMain"]',G_CFG.tempMain); trDial(); trFillBars();
+    /* ★ 2026-09-22 — 차트가 실제로 어떤 창을 썼는지 각주에 적는다.
+       1주에 관측이 적으면 차트가 알아서 30일로 넓히는데,
+       각주가 계속 '최근 7일' 이면 화면이 거짓말을 한다. */
+    (function(){
+      const box=$('#trBody [data-chart="tempMain"]'), lab=$('#trBody [data-win-label]');
+      if(!box||!lab)return;
+      const paintWin=()=>{
+        const win=+box.dataset.window||7, unit=box.dataset.unit||'d';
+        const u=unit==='d'?'일':unit==='w'?'주':'개월';
+        lab.textContent='최근 '+win+u+(box.dataset.widened
+          ? ' (1주는 관측이 적어 넓혔습니다)' : '');
+      };
+      paintWin();
+      box.addEventListener('gwin',paintWin);   /* 일별·주별·월별 토글에도 따라온다 */
+    })();
   }
   /* ══════════════ 연관어 ══════════════
      값: /api/assoc → analysis.term_assoc_daily (lift · PMI · 백분위 · 순위) + 근거 문장 */
@@ -1246,6 +1345,20 @@ export function trRender(id){
     const MAX_TAGS = 50; /* 축 5개 × 축당 최대 10개 */
     const density = Math.min(100, Math.round(ALL.length / MAX_TAGS * 100));
     const strength = a => a.percentile != null ? a.percentile : (a.lift != null ? a.lift * 10 : a.cooccurrence);
+    /* ★ 2026-09-21 — 연관어 출처가 두 갈래가 됐다.
+         text   같은 문서 안에서 함께 언급 (유튜브 댓글 · 커머스 리뷰)
+         search 같은 검색에서 함께 찾아짐 (구글 related queries · 네이버 연관검색어)
+       검색 기반 행에는 '동시 언급 문서 수'가 없어 0 이다 — 그대로 쓰면 막대가 전부 0이 된다.
+       그래서 막대 길이는 언급 수가 있으면 그걸로, 없으면 섞은 점수(score)로 그린다. */
+    const axWeight = a => (a.cooccurrence || 0) || (a.score || 0);
+    const basisChip = a => {
+      const b = a.basis || [];
+      if (b.length > 1) return '<span class="axSrc" title="언급·검색 양쪽에서 잡힌 연관어 — 가장 믿을 만합니다"' +
+        ' style="margin-left:6px;font-size:10px;padding:1px 5px;border-radius:8px;border:1px solid currentColor;opacity:.75">둘 다</span>';
+      if (b[0] === 'search') return '<span class="axSrc" title="검색에서만 잡힌 연관어"' +
+        ' style="margin-left:6px;font-size:10px;padding:1px 5px;border-radius:8px;border:1px solid currentColor;opacity:.55">검색</span>';
+      return '';   /* 언급 기반은 기본값이라 배지를 안 단다 — 전부 달면 시끄럽다 */
+    };
     const topTag = ALL.slice().sort((a, b) => strength(b) - strength(a))[0];
     const catTotals = cats.map(c => [c, groups[c].reduce((s, a) => s + (a.cooccurrence || 0), 0)]);
     const topCat = catTotals.slice().sort((a, b) => b[1] - a[1])[0][0];
@@ -1300,7 +1413,7 @@ export function trRender(id){
       '<div class="assocGrid" style="margin-top:12px">' +
       cats.map((cat, ci) => {
         const arr = groups[cat];
-        const max = Math.max.apply(null, arr.map(a => a.cooccurrence || 0)) || 1;
+        const max = Math.max.apply(null, arr.map(axWeight)) || 1;
         return '<div class="panelC" data-cat="' + trEsc(cat) + '" data-ci="' + ci + '">' +
           '<div class="axHead">' +
           '<span class="dot"></span><h3>' + trEsc(cat) + '</h3>' +
@@ -1310,10 +1423,10 @@ export function trRender(id){
           '</div>' +
           '</div>' +
           '<div class="axList" data-ci="' + ci + '">' + arr.map((a, ai) => {
-            const pct = Math.round((a.cooccurrence || 0) / max * 100);
+            const pct = Math.round(axWeight(a) / max * 100);
             return '<button class="axRow' + (ai === 0 ? ' top' : '') + '" data-ci="' + ci + '" data-ai="' + ai + '">' +
               '<span class="axNum">' + (ai + 1) + '</span>' +
-              '<span class="axName">' + trEsc(a.term) + '</span>' +
+              '<span class="axName">' + trEsc(a.term) + basisChip(a) + '</span>' +
               '<span class="axBar"><i class="' + (ai === 0 ? 'c' : '') + '" style="width:' + pct + '%"></i></span>' +
               badgeHtml(a.change) +
               '</button>'
@@ -1363,12 +1476,12 @@ export function trRender(id){
         /* 해당 카테고리의 axList만 다시 그리기 (페이지 초기화 없음) */
         const list = panel.querySelector('.axList');
 
-        const max = Math.max.apply(null, arr.map(a => a.cooccurrence || 0)) || 1;
+        const max = Math.max.apply(null, arr.map(axWeight)) || 1;
         list.innerHTML = arr.map((a, ai) => {
-          const pct = Math.round((a.cooccurrence || 0) / max * 100);
+          const pct = Math.round(axWeight(a) / max * 100);
           return '<button class="axRow' + (ai === 0 ? ' top' : '') + '" data-ci="' + ci + '" data-ai="' + ai + '">' +
             '<span class="axNum">' + (ai + 1) + '</span>' +
-            '<span class="axName">' + trEsc(a.term) + '</span>' +
+            '<span class="axName">' + trEsc(a.term) + basisChip(a) + '</span>' +
             '<span class="axBar"><i class="' + (ai === 0 ? 'c' : '') + '" style="width:' + pct + '%"></i></span>' +
             (badge ? badge(a.change) : '') +
             '</button>';
@@ -1383,7 +1496,7 @@ export function trRender(id){
             ev.stopPropagation();
             const a2 = grps[cat][+row.dataset.ai];
             const stat2 = [a2.lift != null ? 'lift ' + a2.lift.toFixed(2) : '', a2.pmi != null ? 'PMI ' + a2.pmi.toFixed(2) : '',
-            '동시 언급 ' + (a2.cooccurrence || 0) + '건'].filter(Boolean).join(' · ');
+            ((a2.basis || []).indexOf('search') >= 0 && !(a2.cooccurrence) ? '검색 연관어' : '동시 언급 ' + (a2.cooccurrence || 0) + '건')].filter(Boolean).join(' · ');
             assocOpenPop(row, cat, {
               n: a2.term, spark: null,
               src: [{ tag: '지표', text: stat2 }].concat(a2.evidence || [])
@@ -1400,7 +1513,7 @@ export function trRender(id){
         const cat = cats[+btn.dataset.ci];
         const a = groups[cat][+btn.dataset.ai];
         const stat = [a.lift != null ? 'lift ' + a.lift.toFixed(2) : '', a.pmi != null ? 'PMI ' + a.pmi.toFixed(2) : '',
-        '동시 언급 ' + (a.cooccurrence || 0) + '건'].filter(Boolean).join(' · ');
+        ((a.basis || []).indexOf('search') >= 0 && !(a.cooccurrence) ? '검색 연관어' : '동시 언급 ' + (a.cooccurrence || 0) + '건')].filter(Boolean).join(' · ');
         assocOpenPop(btn, cat, {
           n: a.term, spark: null,
           src: [{ tag: '지표', text: stat }].concat(a.evidence || [])

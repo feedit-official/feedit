@@ -44,6 +44,12 @@ app.conf.task_routes = {
     "core.refresh_text_signals_daily": {
         "queue": "analysis",
     },
+    "core.collect_search_daily": {
+        "queue": "analysis",
+    },
+    "core.collect_search_weekly": {
+        "queue": "analysis",
+    },
 }
 
 
@@ -69,6 +75,24 @@ app.conf.beat_schedule = {
     "refresh-text-signals-daily": {
         "task": "core.refresh_text_signals_daily",
         "schedule": crontab(hour=4, minute=10),
+    },
+    # ── 검색 신호 (2026-09-21) ──
+    #   ★ 주의: 이 파일의 beat_schedule 은 config_from_object(django.conf:settings) 로
+    #     읽어 온 settings.CELERY_BEAT_SCHEDULE 을 **통째로 덮어쓴다**(위 대입문).
+    #     그래서 새 작업은 반드시 여기에 넣어야 한다 — settings.py 에만 넣으면 안 돈다.
+    #
+    #   매일 05:30 — 구글 트렌즈(추이·연관어·지역) + 데이터랩 전체 추이.
+    #   텍스트 파이프라인(04:10)이 끝난 뒤에 돌려 지표 재계산과 겹치지 않게 한다.
+    "collect-search-daily": {
+        "task": "core.collect_search_daily",
+        "schedule": crontab(hour=5, minute=30),
+    },
+    #   평일 06:10 — 데이터랩 성별·연령 컷을 요일별로 나눠 돈다.
+    #     월 성별(m·f) · 화 10~20대 · 수 30~40대 · 목 50대+ · 금 여유(재시도)
+    #   하루 최대 327회로 1,000회 한도에 여유를 남긴다.
+    "collect-search-weekly": {
+        "task": "core.collect_search_weekly",
+        "schedule": crontab(hour=6, minute=10, day_of_week="1-5"),
     },
 }
 

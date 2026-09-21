@@ -832,7 +832,27 @@ class TermAssocDaily(models.Model):
 
     최근 문서 단위 co-occurrence를 기반으로
     Lift / PMI를 계산한다.
+
+    ★ 2026-09-21 — basis 추가.
+      연관어의 출처가 두 갈래가 됐다.
+        TEXT   같은 문서 안에서 함께 언급됨 (유튜브 댓글 · 커머스 리뷰)
+        SEARCH 같은 검색에서 함께 찾아짐 (구글 related queries · 네이버 연관검색어)
+      둘은 다른 현상이라 한 줄로 못 세운다. lift·PMI 의 단위부터 다르다.
+      그래서 행을 나눠 담고, 화면에서 배지로 구분해 보여 준다.
+      섞는 규칙은 apps/api/views.py 의 assoc() 에 적어 뒀다 —
+      비교 가능한 건 association_percentile(소스 안 상대순위) 뿐이다.
     """
+
+    class Basis(models.TextChoices):
+        TEXT = "TEXT", "언급 동시출현"
+        SEARCH = "SEARCH", "검색 동시질의"
+
+    basis = models.CharField(
+        max_length=10,
+        choices=Basis.choices,
+        default=Basis.TEXT,
+        verbose_name="연관 근거",
+    )
 
     source_term = models.ForeignKey(
         "core.DictionaryTerm",
@@ -918,14 +938,17 @@ class TermAssocDaily(models.Model):
         verbose_name_plural = "용어 일별 연관"
 
         constraints = [
+            # ★ basis 를 키에 넣어야 한다. 안 넣으면 같은 용어쌍·같은 날의
+            #   TEXT 행과 SEARCH 행이 서로를 덮어쓴다.
             models.UniqueConstraint(
                 fields=[
                     "source_term",
                     "target_term",
                     "metric_date",
                     "metric_version",
+                    "basis",
                 ],
-                name="uq_term_assoc_day_ver",
+                name="uq_term_assoc_day_ver_basis",
             ),
 
             models.CheckConstraint(
@@ -948,6 +971,11 @@ class TermAssocDaily(models.Model):
             models.Index(
                 fields=["source_term", "association_rank"],
                 name="idx_assoc_src_rank",
+            ),
+
+            models.Index(
+                fields=["source_term", "basis", "-metric_date"],
+                name="idx_assoc_src_basis",
             ),
         ]
 

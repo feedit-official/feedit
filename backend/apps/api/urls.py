@@ -56,6 +56,9 @@ urlpatterns = [
     path("dictionary", views.dictionary, name="dictionary"),
     path("facets", views.facets, name="facets"),
     path("trend", views.trend, name="trend"),            # 언급량·온도 / 긍부정
+    # ★ 2026-09-22 — 검색 지표. 언급(trend)과 일부러 나눈 주소다.
+    #   "뭐라고 말했나" 와 "뭘 찾아봤나" 는 다른 현상이라 한 응답에 섞지 않는다.
+    path("search", views.search, name="search"),         # 검색량·검색추이·지역·세그먼트
     path("sentiment", views.sentiment, name="sentiment"),  # 댓글 원문 기반 긍부정
     path("assoc", views.assoc, name="assoc"),            # 연관어
     path("discount", views.discount, name="discount"),   # 할인률 변화
