@@ -2,6 +2,8 @@
    색은 전부 tokens.css 의 변수를 쓴다 (새 색을 만들지 않는다). */
 
 .notiWrap{position:relative;display:inline-flex;align-items:center;margin-left:2px}
+/* 점이 종 밖으로 나가도 잘리지 않게 */
+.notiBtn{overflow:visible}
 
 .notiBtn{
   position:relative;width:32px;height:32px;border:0;background:none;padding:0;
@@ -14,7 +16,7 @@
 /* 안 읽은 알림이 있을 때만 뜨는 점 — 숫자를 적지 않는다.
    몇 건인지는 패널을 열면 보인다. 헤더에 숫자가 붙으면 읽어야 할 빚처럼 보인다. */
 .notiDot{
-  position:absolute;top:5px;right:6px;width:7px;height:7px;border-radius:50%;
+  position:absolute;top:4px;right:4px;width:7px;height:7px;border-radius:50%;
   background:var(--coral);border:1.5px solid var(--paper);
 }
 

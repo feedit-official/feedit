@@ -522,6 +522,44 @@ function wkHeroHTML(K){
     '</div>';
 }
 /* 스타일이 아닌 키워드의 히어로 사진 — /api/products 의 첫 상품 사진. 없으면 글자 판을 그대로 둔다 */
+/* ★ 상품 사진이 없을 때 — 글자판 대신 '이 키워드와 가장 가까운 스타일'의 대표컷을 세운다.
+   색 · TPO · 시즌처럼 상품 한 장으로 설명되지 않는 말도 옷 사진으로 받는다.
+   ① /api/assoc 의 연관어 중 STYLE 을 먼저 찾고 ② 없으면 스타일 키워드(kw)에 그 말이 든 스타일,
+   ③ 그래도 없으면 키워드 글자를 씨앗으로 늘 같은 스타일을 고른다(새로고침해도 안 바뀐다). */
+async function wkAssocStyle(label){
+  try{
+    const r=await fetch('/api/assoc?term='+encodeURIComponent(label)+'&limit=20',{headers:{Accept:'application/json'}});
+    const j=await r.json();
+    const rows=(j&&j.status==='ok'&&(j.data&&(j.data.items||j.data)))||[];
+    for(const row of rows){
+      const hit=STYLES.find(st=>st.n===(row.term||row.label));
+      if(hit)return hit;
+    }
+  }catch(e){}
+  /* 스타일 키워드(kw)에 그 말이 실제로 들어 있을 때만 — 없으면 null 을 돌려준다.
+     근거 없이 아무 스타일이나 골라 '연관 스타일'이라 적으면 거짓말이 된다. */
+  return STYLES.find(st=>(st.kw||[]).some(k=>k===label))
+      || STYLES.find(st=>(st.kw||[]).some(k=>k.length>1&&(k.indexOf(label)>=0||label.indexOf(k)>=0)))
+      || null;
+}
+async function wkHeroFallback(K){
+  const el=$('#wkHeroImg'); if(!el||WKEY!==K)return;
+  const st=await wkAssocStyle(K.label);
+  if(!el.isConnected||WKEY!==K)return;
+  if(!st){
+    /* 근거가 없으면 사진을 지어내지 않는다 — 키워드와 facet 만 담은 조용한 판 */
+    el.classList.remove('wkHeroLoad','wkHeroType');
+    el.classList.add('wkHeroPlain');
+    el.innerHTML='<span class="wkHeroPlainFacet">'+trEsc(K.facet||'KEYWORD')+'</span>'+
+      '<b>'+trEsc(K.label)+'</b>'+
+      '<span class="wkHeroPlainNote">이 키워드를 대표할 사진을 아직 찾지 못했어요</span>';
+    return;
+  }
+  el.classList.remove('wkHeroType','wkHeroLoad');
+  el.classList.add('wkHeroAlt');
+  el.innerHTML='<img src="'+trEsc(SIMG(st))+'" alt="'+trEsc(st.n)+'" loading="lazy">'+
+    '<span class="wkHeroAltTag">연관 스타일 · '+trEsc(st.n)+'</span>';
+}
 async function wkHeroImage(K){
   if(!K||K.style)return;
   const p=new URLSearchParams({limit:'1'});
@@ -531,16 +569,15 @@ async function wkHeroImage(K){
     const j=await r.json();
     const it=j&&j.status==='ok'&&j.data&&(j.data.items||j.data)[0];
     const src=it&&(it.image||it.thumbnail_url);
+    if(src&&!/^https?:\/\//.test(src))return wkHeroFallback(K);
     const el=$('#wkHeroImg');
-    if(src&&/^https?:\/\//.test(src)&&el&&WKEY===K){
-      el.classList.remove('wkHeroType');
-      el.innerHTML='<img src="'+trEsc(src)+'" alt="'+trEsc(K.label)+'" loading="lazy">';
+    if(src&&el&&WKEY===K){
+      el.classList.remove('wkHeroType','wkHeroLoad');
+      el.innerHTML='<img src="'+trEsc(src)+'" alt="'+trEsc(K.label)+'" loading="lazy" referrerpolicy="no-referrer">';
+      return;
     }
-    else if(el&&WKEY===K){ el.classList.remove('wkHeroLoad'); el.innerHTML='<b>'+trEsc(K.label)+'</b>' }
-  }catch(e){
-    const el=$('#wkHeroImg');
-    if(el&&WKEY===K){ el.classList.remove('wkHeroLoad'); el.innerHTML='<b>'+trEsc(K.label)+'</b>' }
-  }
+    await wkHeroFallback(K);
+  }catch(e){ await wkHeroFallback(K) }
 }
 /* '언급량 · 온도에서 보기' — 라우터가 화면을 바꾸기 전에(capture) 검색어를 넘겨 둔다 */
 document.addEventListener('click',e=>{

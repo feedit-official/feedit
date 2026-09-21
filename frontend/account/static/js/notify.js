@@ -190,6 +190,21 @@ function stop(){
    · 같은 알림은 두 번 띄우지 않는다(sessionStorage). 가려진 탭에서는 모았다가 돌아오면 띄운다.
    · 누르면 그 알림이 가리키는 곳으로 간다(openTarget). '외 N개'를 누르면 알림 목록을 연다. */
 const TOAST_MS = 6000, TOAST_KEY = 'feedit.noti.toasted';
+/* ★ 토스트는 본문(홈)에 들어온 뒤부터 — 로딩 · 설명 페이지 위에는 띄우지 않는다 */
+const inMain = () => document.body.classList.contains('mainmode');
+/* 인트로를 지나 본문으로 들어오면 모아 둔 토스트를 그때 띄운다 */
+(function waitForMain(){
+  if(inMain())return;
+  const ob = new MutationObserver(() => {
+    if(!inMain())return;
+    ob.disconnect();
+    if(TOAST_WAIT && !document.hidden && AUTH.in){
+      const w = TOAST_WAIT; TOAST_WAIT = null;
+      setTimeout(() => toastShow(w.latest, w.count), 600);
+    }
+  });
+  ob.observe(document.body, { attributes:true, attributeFilter:['class'] });
+})();
 let TOAST_PRIMED = false, TOAST_WAIT = null;
 const toastSeen = new Set();
 function toastLoad(){ try{ JSON.parse(sessionStorage.getItem(TOAST_KEY) || '[]').forEach(id => toastSeen.add(id)) }catch(e){} }
@@ -213,9 +228,10 @@ function toastNew(){
   NT.items.forEach(it => toastSeen.add(it.id));
   toastSave();
   if(!fresh.length || NT.open) return;
-  /* 가려진 탭이면 모아 둔다 — 돌아왔을 때 한 장으로 합쳐 띄운다 */
+  /* 가려진 탭이거나 아직 인트로(로딩 · 설명 페이지)면 모아 둔다 —
+     본문(홈)에 들어온 뒤 한 장으로 합쳐 띄운다 */
   const pack = { latest: fresh[0], count: fresh.length + (TOAST_WAIT ? TOAST_WAIT.count : 0) };
-  if(document.hidden){ TOAST_WAIT = pack; return }
+  if(document.hidden || !inMain()){ TOAST_WAIT = pack; return }
   TOAST_WAIT = null;
   toastShow(pack.latest, pack.count);
 }
