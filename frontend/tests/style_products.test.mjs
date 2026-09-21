@@ -39,10 +39,11 @@ t('없는 가격과 이미지를 목업으로 지어내지 않는다',()=>{
   assert.match(renderer,/cardEsc\(o\.nm\)/);
 });
 
-t('백엔드가 자동 태그와 표준 스타일 FK를 모두 본다',()=>{
+t('백엔드는 스타일을 연결 표에서만 읽는다 (단일 FK 는 없어졌다)',()=>{
   const src=fs.readFileSync(new URL('../../backend/apps/api/views.py',import.meta.url),'utf8');
   assert.match(src,/ProductTerm\.objects\.filter\(term__term_type="STYLE"/);
-  assert.match(src,/product__style__term__canonical_name__in/);
+  /* commerce.product.style_id 는 DB 에서 떨어져 나갔다 — 다시 바라보면 조회가 통째로 500 이 난다 */
+  assert.ok(!/product__style__term/.test(src),'없어진 단일 스타일 FK 를 참조하면 안 된다');
   assert.match(src,/"thumbnail_url"/);
 });
 

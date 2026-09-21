@@ -64,18 +64,17 @@ export default async function handler(req, res) {
                  OR bs.name = $${args.length} OR LOWER(bs.english_name) = LOWER($${args.length}))`);
   }
   if (style) {
+    /* ★ 2026-09-21 — 스타일은 상품마다 여러 개 달린다. 연결 표(product_term)만 본다.
+       예전에는 표준 상품의 단일 스타일 FK(p.style_id)도 같이 봤는데, 그 칸이 없어졌다. */
     args.push(style);
-    where.push(`(
-      direct_style.canonical_name = $${args.length}
-      OR EXISTS (
+    where.push(`EXISTS (
         SELECT 1
           FROM commerce.product_term pt
           JOIN dictionary.dictionary_term tagged_style ON tagged_style.id = pt.term_id
          WHERE pt.product_source_id = ps.id
            AND tagged_style.term_type = 'STYLE'
            AND tagged_style.canonical_name = $${args.length}
-      )
-    )`);
+      )`);
   }
   args.push(limit + 1);
   const limitArg = args.length;
@@ -88,7 +87,6 @@ export default async function handler(req, res) {
        LEFT JOIN dictionary.brand b ON b.id = p.brand_id
        LEFT JOIN dictionary.brand_source bs ON bs.id = ps.source_brand_id
        LEFT JOIN dictionary.category_source cs ON cs.id = ps.source_category_id
-       LEFT JOIN dictionary.dictionary_term direct_style ON direct_style.id = p.style_id
        LEFT JOIN collection.source src ON src.id = ps.source_id
        LEFT JOIN LATERAL (
             SELECT list_price, sale_price, discount_rate, stock_status, observed_at,
