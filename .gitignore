@@ -227,3 +227,16 @@ feedit-chat-bundle.tar.gz
 .DS_Store
 ._*
 _to_delete/
+
+# ★ 2026-09-21 — .env 백업/임시본도 반드시 무시한다.
+#   ".env" 패턴은 정확히 .env 만 잡는다. .env.bak-20260921 같은 이름은
+#   그냥 커밋 대상이 되어 키가 통째로 깃허브에 올라간다.
+.env.bak-*
+.env.example.bak-*
+.env.*.bak
+*.tmp
+_sv_env_values.tmp
+
+# Claude 작업 산출물 — 보안 점검 보고서/조치 가이드가 들어간다.
+# 취약점 내용이 그대로 적힌 문서라 절대 공개 저장소로 나가면 안 된다.
+Claude outputs/

@@ -1196,10 +1196,15 @@ export function trRender(id){
           (plats.length
             ? '<table class="mTable"><tr><th>플랫폼</th><th></th><th>온도</th></tr>'+
               plats.map(t=>{const v=Math.round(t.temp);
-                return '<tr><td>'+(v>=85?'<b>'+trEsc(t.name)+'</b>':trEsc(t.name))+'</td>'+
+                /* ★ 2026-09-21 — 커머스 리뷰는 '리뷰가 쓰인 날'로 쌓여 최신 행이 몇 달 전일 수 있다.
+                   그런 값을 날짜 없이 "70°"로만 띄우면 오늘자 같이 보인다 — 기준일을 밝힐다. */
+                const age=t.stale?'<small style="display:block;opacity:.55;font-size:11px;font-weight:400">'+trEsc(t.date)+' 기준</small>':'';
+                return '<tr><td>'+(v>=85?'<b>'+trEsc(t.name)+'</b>':trEsc(t.name))+age+'</td>'+
                 '<td><span class="bar" style="display:block"><i class="'+(v>=85?'c':'')+'" style="width:'+v+'%"></i></span></td>'+
                 '<td class="n '+(v>=65?'up':'dn')+'">'+v+'°</td></tr>'}).join('')+
-              '</table><div class="note"><i>◆</i>플랫폼마다 온도차가 있다면 아직 확산 초반 구간입니다.</div>'
+              '</table><div class="note"><i>◆</i>'+(plats.some(p=>p.stale)
+                  ? '기준일이 적힌 플랫폼은 그날의 값입니다 — 리뷰는 쓰인 날로 쌓여 유튜브보다 달력이 느립니다.'
+                  : '플랫폼마다 온도차가 있다면 아직 확산 초반 구간입니다.')+'</div>'
             : unavailableHTML('플랫폼별 지표 행이 아직 없습니다.','전체 합산 행만 적재돼 있습니다.'))+
         '</div>'+
       '</div>';

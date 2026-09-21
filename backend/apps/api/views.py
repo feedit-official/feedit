@@ -304,6 +304,20 @@ HISTORY_BASIS = {
 }
 
 
+# ── 플랫폼별 온도 창 (2026-09-21) ─────────────────────
+#  커머스 리뷰는 '쓰인 날'로 지표가 쌓여 최신 행이 몇 달 전일 수 있다.
+#  창을 좀게 잡으면 적재가 됐는데도 화면에서 사라진다 — 그게 9월까지의 상황이었다.
+PLATFORM_WINDOW_DAYS = 90
+STALE_AFTER_DAYS = 14
+
+
+def _platform_window():
+    try:
+        return max(1, int(os.getenv("FEEDIT_PLATFORM_WINDOW_DAYS") or PLATFORM_WINDOW_DAYS))
+    except ValueError:
+        return PLATFORM_WINDOW_DAYS
+
+
 def _history_series(term, days):
     """장기 이력(YouTube) — 마지막 적재일 기준으로 days 만큼."""
     qs = TermMetricDaily.objects.filter(
@@ -674,21 +688,36 @@ def trend(request):
             series_basis = HISTORY_BASIS
 
     # 플랫폼별 최신 온도
+    #  ★ 2026-09-21 — 커머스(무신사·지그재그·에이블리·크림)가 한 줄도 안 뜼던 이유가
+    #    여기 두 줄에 있었다. 적재는 돼 있었고(rows_by_source: musinsa 3601,
+    #    zigzag 1634, ABLY 202, kream 118), 읽는 쪽이 못 집었다.
+    #    ① 창이 14일이었다. 리뷰 문서의 기준일은 '리뷰가 쓰인 날'이라
+    #       metric_date 가 과거로 횩어진다(예: 팬츠 × 무신사 최신 행 = 2026-07-09).
+    #       합산 기준일이 9/21 이면 14일 창 밖으로 전부 떨어졌다.
+    #    ② 용어의 대표 버전(version)으로 못을 박고 있었다. 커머스 행이 다른
+    #       버전(feedit-l2-v2 등)에 들어가 있으면 통째로 걸러졌다.
+    #    → 이력 버전만 빼고 소스별 '가장 최근 행'을 집는다. 단, 값이 오래됐다는
+    #      사실을 감추지 않는다 — date·days_ago·stale·metric_version 을 같이 보낸다.
+    #      화면은 stale 이 true 면 날짜를 병기해야 한다. "70도"만 띄우면 거짓말이 된다.
     plat_rows = (
-        TermMetricDaily.objects.filter(term=term, metric_version=version,
-                                       source__isnull=False,
-                                       metric_date__gte=last_date - timedelta(days=14))
+        TermMetricDaily.objects
+        .filter(term=term, source__isnull=False,
+                metric_date__gte=last_date - timedelta(days=_platform_window()))
+        .exclude(metric_version=HISTORY_VERSION)
         .order_by("source_id", "-metric_date")
         .values("source__code", "source__name", "metric_date", "trend_temperature",
-                "level", "mention_count")
+                "level", "mention_count", "metric_version")
     )
     platforms, seen = [], set()
     for p in plat_rows:
         if p["source__code"] in seen:
             continue
         seen.add(p["source__code"])
+        age = (last_date - p["metric_date"]).days
         platforms.append({"code": p["source__code"], "name": p["source__name"],
                           "date": p["metric_date"].isoformat(),
+                          "days_ago": age, "stale": age > STALE_AFTER_DAYS,
+                          "metric_version": p["metric_version"],
                           "temp": _num(p["trend_temperature"]), "level": _num(p["level"]),
                           "mention": p["mention_count"]})
     platforms.sort(key=lambda x: (x["temp"] is None, -(x["temp"] or 0)))

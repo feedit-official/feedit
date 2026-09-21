@@ -1001,6 +1001,28 @@ class TermSearchMetricMonthly(models.Model):
         default="monthly_absolute",
     )
 
+    # ★ 2026-09-21 — 네이버 검색광고(N1·N4)가 같은 응답으로 주는 값들.
+    #   PC/모바일 분리는 데이터랩 device 컷을 따로 받지 않아도 되게 해 준다.
+    pc_volume = models.BigIntegerField(
+        null=True,
+        blank=True,
+        verbose_name="PC 검색량",
+    )
+
+    mobile_volume = models.BigIntegerField(
+        null=True,
+        blank=True,
+        verbose_name="모바일 검색량",
+    )
+
+    competition = models.CharField(
+        max_length=20,
+        null=True,
+        blank=True,
+        verbose_name="광고 경쟁도",
+        help_text="네이버 검색광고 기준 높음/중간/낮음. '시장 포화도'가 아니라 광고 경쟁 강도다.",
+    )
+
     metric_version = models.CharField(
         max_length=50,
         default="feedit-search-v1",
@@ -1045,3 +1067,173 @@ class TermSearchMetricMonthly(models.Model):
                 name="idx_search_term_month",
             ),
         ]
+
+
+class TermSearchTrend(models.Model):
+    """검색 관심도 시계열 — 네이버 데이터랩(D1·D2·D3) · 구글 트렌즈(G1).
+
+    ★ 2026-09-21 신설.
+      term_metric_daily 는 '사람이 뭐라고 말했나'(댓글·리뷰 언급)를 센다.
+      이 표는 '사람이 뭘 찾아봤나'(검색)를 센다.
+      둘은 다른 현상이다 — 한 표에 섞으면 같은 이름의 '온도'가 두 가지 뜻을
+      갖게 되고, 화면에서 "무신사 70도 / 구글 56도"처럼 비교 불가능한 숫자가
+      나란히 서게 된다. 그래서 표를 나눈다.
+
+      ratio             플랫폼이 주는 상대 지수(0~100). 절대값이 아니다.
+      estimated_volume  월간 절대 검색량(TermSearchMetricMonthly)을 앵커로
+                        환산한 추정치. 환산식은 processors/normalizer.py.
+      segment           all | gender:m | gender:f | age:10s … (데이터랩 컷)
+                        세그먼트는 일간 변동값이 아니라 '캐릭터 규정'이라
+                        주 1회만 받는다. 자세한 셈은 collectors/naver_datalab.py.
+    """
+
+    class TimeUnit(models.TextChoices):
+        DAY = "DAY", "일간"
+        WEEK = "WEEK", "주간"
+        MONTH = "MONTH", "월간"
+
+    term = models.ForeignKey(
+        "core.DictionaryTerm",
+        on_delete=models.CASCADE,
+        related_name="search_trend",
+        verbose_name="용어",
+    )
+
+    source = models.ForeignKey(
+        "core.Source",
+        on_delete=models.CASCADE,
+        related_name="term_search_trend",
+        verbose_name="검색 플랫폼",
+    )
+
+    metric_date = models.DateField(
+        verbose_name="구간 시작일",
+        help_text="주간이면 그 주의 시작일, 월간이면 1일.",
+    )
+
+    time_unit = models.CharField(
+        max_length=10,
+        choices=TimeUnit.choices,
+        default=TimeUnit.WEEK,
+    )
+
+    segment = models.CharField(
+        max_length=20,
+        default="all",
+        verbose_name="세그먼트",
+    )
+
+    ratio = models.DecimalField(
+        max_digits=7,
+        decimal_places=3,
+        null=True,
+        blank=True,
+        verbose_name="상대 지수 (0~100)",
+    )
+
+    estimated_volume = models.BigIntegerField(
+        null=True,
+        blank=True,
+        verbose_name="추정 절대 검색량",
+    )
+
+    metric_version = models.CharField(
+        max_length=50,
+        default="feedit-search-v1",
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = '"analysis"."term_search_trend"'
+
+        constraints = [
+            models.UniqueConstraint(
+                fields=["term", "source", "metric_date", "time_unit",
+                        "segment", "metric_version"],
+                name="uq_term_search_trend",
+            ),
+        ]
+
+        indexes = [
+            models.Index(fields=["term", "-metric_date"], name="idx_strend_term_date"),
+            models.Index(fields=["source", "-metric_date"], name="idx_strend_src_date"),
+            models.Index(fields=["segment"], name="idx_strend_segment"),
+        ]
+
+    def __str__(self):
+        return f"{self.term_id} {self.metric_date} {self.segment}"
+
+
+class TermSearchRegion(models.Model):
+    """시·도별 검색 관심도 (G5 · 구글 트렌즈).
+
+    ★ 2026-09-21 신설. 적재 전에 반드시 알아야 할 것이 하나 있다 —
+      **값은 용어 하나짜리 요청으로 받은 것이어야 한다.**
+      여러 용어를 한 페이로드에 넣고 지역을 받으면 구글은 '그 지역 안에서
+      비교 용어들끼리의 점유율'을 준다(지역마다 합 100). 실제로 2026-09-21
+      테스트에서 고프코어가 강원도 100, 경상남도 100 으로 동시에 나왔다 —
+      용어별 정규화라면 불가능한 값이다.
+      그 값을 term × region 으로 넣으면 같은 배치에 누가 묶였느냐에 따라
+      숫자가 통째로 바뀌는 가짜 지표가 된다.
+      수집은 collectors/google_trends.py 의 collect_region() 만 쓸 것.
+
+      value 는 '그 시·도 전체 검색량 대비 비율'로 정규화된 0~100 이다.
+      인구 보정이 이미 들어가 있어 서울이 자동으로 1등이 되지 않는다.
+      KR 은 16개 시·도가 온다(세종 없음). 검색량이 적은 용어는 대부분 0 이다.
+    """
+
+    term = models.ForeignKey(
+        "core.DictionaryTerm",
+        on_delete=models.CASCADE,
+        related_name="search_region",
+        verbose_name="용어",
+    )
+
+    source = models.ForeignKey(
+        "core.Source",
+        on_delete=models.CASCADE,
+        related_name="term_search_region",
+        verbose_name="검색 플랫폼",
+    )
+
+    metric_date = models.DateField(
+        verbose_name="수집 기준일",
+    )
+
+    region = models.CharField(
+        max_length=40,
+        verbose_name="시·도",
+    )
+
+    value = models.IntegerField(
+        default=0,
+        verbose_name="지역 관심도 (0~100)",
+    )
+
+    metric_version = models.CharField(
+        max_length=50,
+        default="feedit-search-v1",
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = '"analysis"."term_search_region"'
+
+        constraints = [
+            models.UniqueConstraint(
+                fields=["term", "source", "metric_date", "region", "metric_version"],
+                name="uq_term_search_region",
+            ),
+        ]
+
+        indexes = [
+            models.Index(fields=["term", "-metric_date"], name="idx_sregion_term_date"),
+            models.Index(fields=["region", "-value"], name="idx_sregion_value"),
+        ]
+
+    def __str__(self):
+        return f"{self.term_id} {self.region} {self.value}"

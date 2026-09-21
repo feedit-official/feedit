@@ -1,0 +1,543 @@
+﻿id,term_type,canonical_name,english_name,description,status,first_seen_at,last_seen_at,created_at,updated_at,term_code,brand_id,embedding_updated_at,normalized_name,search_keyword,search_keyword_en,is_ambiguous,keyword_count
+157,ITEM,코트,Coat,기장 속성과 분리되는 기본 상품유형,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_COAT,,,코트,코트|여성코트|롱코트,coat fashion,True,3
+158,ITEM,파카,Parka,독립 상품유형,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_PARKA,,,파카,파카,parka,False,1
+159,ITEM,패딩,Puffer Jacket,경량/숏/롱은 LENGTH/구조 속성으로 분리,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_DOWN_JACKET,,,패딩,패딩,puffer jacket,False,1
+160,ITEM,후드집업,Zip-up Hoodie,독립 상품유형,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_HOODED_ZIP_UP,,,후드집업,후드집업,zip-up hoodie,False,1
+161,ITEM,라이더재킷,Biker Jacket,라이더/바이커 구조가 독립 상품유형,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_BIKER_JACKET,,,라이더재킷,라이더재킷,biker jacket,False,1
+162,ITEM,봄버재킷,Bomber Jacket,항공점퍼/봄버/MA-1 계열 canonical,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_BOMBER_JACKET,,,봄버재킷,봄버재킷,bomber jacket,False,1
+163,ITEM,블레이저,Blazer,독립 상품유형,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_BLAZER,,,블레이저,블레이저,blazer,False,1
+164,ITEM,블루종,Blouson,독립 상품유형,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_BLOUSON,,,블루종,블루종,blouson,False,1
+165,ITEM,스타디움재킷,Stadium Jacket,바시티/스타디움 계열 상품유형,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_STADIUM_JACKET,,,스타디움재킷,스타디움재킷,stadium jacket,False,1
+166,ITEM,야상,Field Jacket,필드/밀리터리 재킷 상품유형,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_FIELD_JACKET,,,야상,야상,field jacket,False,1
+167,ITEM,코치재킷,Coach Jacket,안정적인 상품유형,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_COACH_JACKET,,,코치재킷,코치재킷,coach jacket,False,1
+168,ITEM,트러커재킷,Trucker Jacket,소재와 무관한 구조적 재킷 subtype; 기존 데님재킷 카테고리 활용,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_TRUCKER_JACKET,,,트러커재킷,트러커재킷,trucker jacket,False,1
+169,ITEM,트레이닝재킷,Track Jacket,스포츠/트랙 재킷 상품유형,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_TRACK_JACKET,,,트레이닝재킷,트레이닝재킷,track jacket,False,1
+170,ITEM,플리스재킷,Fleece Jacket,커머스에서 독립 카테고리로 안정적,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_FLEECE_JACKET,,,플리스재킷,플리스재킷,fleece jacket,False,1
+171,ITEM,더플코트,Duffle Coat,독립 상품유형; 카테고리는 대표 운영 매핑,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_DUFFLE_COAT,,,더플코트,더플코트,duffle coat,False,1
+172,ITEM,트렌치코트,Trench Coat,독립 상품유형,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_TRENCH_COAT,,,트렌치코트,트렌치코트,trench coat,False,1
+173,ITEM,레깅스,Leggings,독립 상품유형,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_LEGGINGS,,,레깅스,레깅스|요가레깅스,leggings fashion,True,2
+174,ITEM,팬츠,Pants,바지류 기본 상품유형,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_PANTS,,,팬츠,팬츠|바지|여성팬츠,pants fashion,True,3
+175,ITEM,버뮤다팬츠,Bermuda Shorts,독립적으로 굳어진 길이 기반 subtype,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_BERMUDA_SHORTS,,,버뮤다팬츠,버뮤다팬츠,bermuda shorts,False,1
+176,ITEM,쇼츠,Shorts,숏팬츠/반바지를 alias로 흡수,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_SHORTS,,,쇼츠,쇼츠|반바지,shorts fashion,True,2
+177,ITEM,스웨트팬츠,Sweatpants,독립 상품유형,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_SWEATPANTS,,,스웨트팬츠,스웨트팬츠,sweatpants,False,1
+178,ITEM,스커트팬츠,Skort,스코트/치마바지 상품유형,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_SKORT,,,스커트팬츠,스커트팬츠,skort,False,1
+179,ITEM,슬랙스,Slacks,독립 상품유형,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_SLACKS,,,슬랙스,슬랙스,slacks,False,1
+180,ITEM,조거팬츠,Jogger Pants,독립 상품유형,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_JOGGER_PANTS,,,조거팬츠,조거팬츠,jogger pants,False,1
+181,ITEM,청바지,Jeans,데님+팬츠이지만 lexicalized product type,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_JEANS,,,청바지,청바지,jeans,False,1
+182,ITEM,치노팬츠,Chino Pants,독립 상품유형,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_CHINO_PANTS,,,치노팬츠,치노팬츠,chino pants,False,1
+183,ITEM,카고팬츠,Cargo Pants,독립 상품유형,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_CARGO_PANTS,,,카고팬츠,카고팬츠,cargo pants,False,1
+184,ITEM,카프리팬츠,Capri Pants,독립적으로 굳어진 상품유형,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_CAPRI_PANTS,,,카프리팬츠,카프리팬츠,capri pants,False,1
+185,ITEM,큐롯팬츠,Culottes,독립 상품유형,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_CULOTTES,,,큐롯팬츠,큐롯팬츠,culottes,False,1
+186,ITEM,트레이닝팬츠,Track Pants,독립 상품유형,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_TRACK_PANTS,,,트레이닝팬츠,트레이닝팬츠,track pants,False,1
+187,ITEM,세트업,Matching Set,투피스/세트를 대표하는 상품유형,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_SETUP,,,세트업,셋업정장|세트업|셋업수트,matching set fashion,True,3
+188,ITEM,스커트,Skirt,미니/미디/맥시는 LENGTH로 분리,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_SKIRT,,,스커트,스커트|치마,skirt fashion,True,2
+189,ITEM,오버올,Overall,독립 상품유형,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_OVERALL,,,오버올,오버올|멜빵바지|오버올점프수트,overall fashion,True,3
+190,ITEM,원피스,Dress,미니/미디/맥시는 LENGTH로 분리,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_DRESS,,,원피스,원피스|여성원피스,dress fashion,True,2
+191,ITEM,점프수트,Jumpsuit,독립 상품유형,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_JUMPSUIT,,,점프수트,점프수트,jumpsuit,False,1
+192,ITEM,드레스,Gown,드레스 표기가 독립 상품유형일 때 사용,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_DRESS_FORMAL,,,드레스,드레스|파티드레스|원피스드레스,gown fashion,True,3
+193,ITEM,신발,Shoes,신발류 umbrella concept,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_SHOES,,,신발,신발추천|신발코디|패션신발,shoes fashion,True,3
+194,ITEM,레인부츠,Rain Boots,독립 상품유형,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_RAIN_BOOTS,,,레인부츠,레인부츠,rain boots,False,1
+195,ITEM,워커,Combat Boots,독립 상품유형,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_COMBAT_BOOTS,,,워커,워커부츠|워커신발,combat boots fashion,True,2
+196,ITEM,워크부츠,Work Boots,독립 상품유형,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_WORK_BOOTS,,,워크부츠,워크부츠,work boots,False,1
+197,ITEM,첼시부츠,Chelsea Boots,독립 상품유형,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_CHELSEA_BOOTS,,,첼시부츠,첼시부츠,chelsea boots,False,1
+198,ITEM,스케이트화,Skate Shoes,스케이트 보드화 canonical,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_SKATE_SHOES,,,스케이트화,스케이트화,skate shoes,False,1
+199,ITEM,슬립온,Slip-ons,독립 상품유형,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_SLIP_ON,,,슬립온,슬립온슈즈|슬립온스니커즈,slip-ons fashion,True,2
+200,ITEM,슬라이드,Slides,독립 상품유형,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_SLIDES,,,슬라이드,슬라이드슬리퍼|슬라이드샌들,slides fashion,True,2
+201,ITEM,플립플랍,Flip-flops,쪼리/플립플랍 canonical,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_FLIP_FLOPS,,,플립플랍,플립플랍,flip-flops,False,1
+202,ITEM,더비슈즈,Derby Shoes,독립 상품유형,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_DERBY_SHOES,,,더비슈즈,더비슈즈,derby shoes,False,1
+203,ITEM,등산화,Hiking Shoes,독립 상품유형,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_HIKING_BOOTS,,,등산화,등산화,hiking shoes fashion,True,1
+204,ITEM,러닝화,Running Shoes,독립 상품유형,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_RUNNING_SHOES,,,러닝화,러닝화|런닝화,running shoes fashion,True,2
+205,ITEM,로퍼,Loafers,독립 상품유형,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_LOAFERS,,,로퍼,로퍼,loafers,False,1
+206,ITEM,메리제인슈즈,Mary Jane Shoes,독립 상품유형,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_MARY_JANE_SHOES,,,메리제인슈즈,메리제인슈즈,mary jane shoes,False,1
+214,ITEM,슬링백,Slingback Shoes,신발 의미의 슬링백,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_SLINGBACK,,,슬링백,슬링백|슬링백슈즈,slingback shoes fashion,True,2
+215,ITEM,옥스포드화,Oxford Shoes,독립 상품유형,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_OXFORD_SHOES,,,옥스포드화,옥스포드화,oxford shoes,False,1
+216,ITEM,인도어화,Indoor Court Shoes,스포츠화의 안정적 subtype,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_INDOOR_SHOES,,,인도어화,인도어슈즈|실내운동화,indoor court shoes fashion,True,2
+217,ITEM,클로그,Clogs,독립 상품유형,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_CLOG,,,클로그,클로그|클로그샌들,clogs fashion,True,2
+218,ITEM,트레킹화,Trekking Shoes,독립 상품유형,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_TREKKING_SHOES,,,트레킹화,트레킹화,trekking shoes,False,1
+219,ITEM,펌프스,Pumps,독립 상품유형,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_PUMPS,,,펌프스,펌프스|펌프스힐,pumps fashion,True,2
+220,ITEM,플랫슈즈,Flats,독립 상품유형,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_FLATS,,,플랫슈즈,플랫슈즈,flats,False,1
+221,ITEM,힐,Heels,기본 힐 상품유형; 스틸레토 등은 SHAPE,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_HEELS,,,힐,하이힐|힐|여성힐,heels fashion,True,3
+222,ITEM,발레플랫슈즈,Ballet Flats,독립적으로 굳어진 플랫 subtype,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_BALLET_FLATS,,,발레플랫슈즈,발레플랫슈즈,ballet flats,False,1
+223,ITEM,가방,Bag,가방류 umbrella concept,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_BAG,,,가방,가방추천|가방코디|패션가방,bag fashion,True,3
+224,ITEM,바스켓백,Basket Bag,독립 상품유형,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_BASKET_BAG,,,바스켓백,바스켓백,basket bag,False,1
+225,ITEM,백팩,Backpack,독립 상품유형,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_BACKPACK,,,백팩,백팩,backpack,False,1
+226,ITEM,브리프케이스,Briefcase,독립 상품유형,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_BRIEFCASE,,,브리프케이스,브리프케이스,briefcase,False,1
+227,ITEM,숄더백,Shoulder Bag,안정적인 상품유형,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_SHOULDER_BAG,,,숄더백,숄더백,shoulder bag,False,1
+228,ITEM,유틸리티백,Utility Bag,기능형 상품유형으로 유지,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_UTILITY_BAG,,,유틸리티백,유틸리티백,utility bag,False,1
+229,ITEM,크로스백,Crossbody Bag,독립 상품유형,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_CROSSBODY_BAG,,,크로스백,크로스백,crossbody bag,False,1
+230,ITEM,토트백,Tote Bag,독립 상품유형,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_TOTE_BAG,,,토트백,토트백,tote bag,False,1
+231,ITEM,넥타이,Necktie,독립 상품유형,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_NECKTIE,,,넥타이,넥타이|넥타이추천,necktie fashion,True,2
+232,ITEM,레그워머,Leg Warmers,독립 상품유형,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_LEG_WARMER,,,레그워머,레그워머,leg warmers,False,1
+233,ITEM,머플러,Winter Scarf,독립 상품유형,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_MUFFLER,,,머플러,머플러|목도리,winter scarf fashion,True,2
+234,ITEM,모자,Hat,모자류 umbrella concept,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_HAT,,,모자,모자추천|패션모자|모자코디,hat fashion,True,3
+235,ITEM,벨트,Belt,독립 상품유형,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_BELT,,,벨트,패션벨트|벨트추천,belt fashion,True,2
+236,ITEM,스카프,Scarf,독립 상품유형,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_SCARF,,,스카프,스카프|패션스카프|스카프코디,scarf fashion,True,3
+237,ITEM,시계,Watch,독립 상품유형,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_WATCH,,,시계,손목시계|패션시계,watch fashion,True,2
+238,ITEM,안경,Glasses,아이웨어 기본 상품유형,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_GLASSES,,,안경,안경테|패션안경,glasses fashion,True,2
+239,ITEM,양말,Socks,축구/스포츠 양말은 TPO/활동 속성으로 분리,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_SOCKS,,,양말,패션양말|양말추천,socks fashion,True,2
+240,ITEM,장갑,Gloves,독립 상품유형,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_GLOVES,,,장갑,패션장갑|가죽장갑|장갑추천,gloves fashion,True,3
+241,ITEM,주얼리,Jewelry,주얼리 umbrella concept,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_JEWELRY,,,주얼리,주얼리|패션주얼리|주얼리추천,jewelry fashion,True,3
+242,ITEM,지갑,Wallet,독립 상품유형,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_WALLET,,,지갑,지갑추천|가죽지갑,wallet fashion,True,2
+243,ITEM,카라비너,Carabiner,패션 액세서리로 사용되는 상품유형,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_CARABINER,,,카라비너,카라비너키링|패션카라비너,carabiner fashion,True,2
+244,ITEM,헤어밴드,Headband,독립 상품유형,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_HAIRBAND,,,헤어밴드,헤어밴드|헤어밴드머리띠,headband fashion,True,2
+245,ITEM,니트타이,Knit Tie,lexicalized subtype,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_KNIT_TIE,,,니트타이,니트타이,knit tie,False,1
+246,ITEM,볼캡,Baseball Cap,독립 상품유형,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_BALL_CAP,,,볼캡,볼캡|볼캡모자,baseball cap fashion,True,2
+247,ITEM,비니,Beanie,독립 상품유형,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_BEANIE,,,비니,비니|비니모자,beanie fashion,True,2
+248,ITEM,유틸리티벨트,Utility Belt,기능형 상품유형으로 유지,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_UTILITY_BELT,,,유틸리티벨트,유틸리티벨트,utility belt,False,1
+249,ITEM,선글라스,Sunglasses,독립 상품유형,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_SUNGLASSES,,,선글라스,선글라스,sunglasses,False,1
+250,ITEM,브라,Bra,기본 이너웨어 상품유형,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_BRA,,,브라,브라|브라렛|속옷브라,bra fashion,True,3
+251,ITEM,잠옷,Pajamas,독립 상품유형,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_PAJAMAS,,,잠옷,잠옷|파자마|잠옷세트,pajamas fashion,True,3
+252,ITEM,팬티,Briefs,기본 이너웨어 상품유형,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_UNDERWEAR_BOTTOM,,,팬티,팬티|여성팬티|남성팬티,briefs fashion,True,3
+253,ITEM,스포츠브라,Sports Bra,독립 상품유형,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_SPORTS_BRA,,,스포츠브라,스포츠브라,sports bra,False,1
+254,ITEM,수영복,Swimwear,수영/비치웨어 umbrella concept,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_SWIMWEAR,,,수영복,수영복|비키니,swimwear fashion,True,2
+374,STYLE,그런지,Grunge,,ACTIVE,,,2026-09-09 22:52:33.233 +0900,2026-09-09 22:52:33.233 +0900,STYLE_GRUNGE,,,그런지,그런지룩|그런지패션,grunge fashion|grunge aesthetic,True,2
+375,STYLE,클래식,Classic,,ACTIVE,,,2026-09-09 22:52:33.233 +0900,2026-09-09 22:52:33.233 +0900,STYLE_CLASSIC,,,클래식,클래식룩|클래식패션|클래식코디,classic fashion|classic aesthetic,True,3
+376,STYLE,페미닌,Feminine,,ACTIVE,,,2026-09-09 22:52:33.233 +0900,2026-09-09 22:52:33.233 +0900,STYLE_FEMININE,,,페미닌,페미닌룩|페미닌패션,feminine fashion|feminine aesthetic,True,2
+377,STYLE,아메카지,Amekaji,,ACTIVE,,,2026-09-09 22:52:33.233 +0900,2026-09-09 22:52:33.233 +0900,STYLE_AMEKAJI,,,아메카지,아메카지|아메카지룩,amekaji fashion|amekaji aesthetic,True,2
+378,STYLE,스트릿웨어,Streetwear,,ACTIVE,,,2026-09-09 22:52:33.233 +0900,2026-09-09 22:52:33.233 +0900,STYLE_STREETWEAR,,,스트릿웨어,스트릿룩|스트릿패션|스트릿웨어,streetwear fashion|streetwear aesthetic,True,3
+379,STYLE,시크,Chic,,ACTIVE,,,2026-09-09 22:52:33.233 +0900,2026-09-09 22:52:33.233 +0900,STYLE_CHIC,,,시크,시크룩|시크패션,chic fashion|chic aesthetic,True,2
+380,STYLE,걸리시,Girlish,,ACTIVE,,,2026-09-09 22:52:33.233 +0900,2026-09-09 22:52:33.233 +0900,STYLE_GIRLISH,,,걸리시,걸리시룩|걸리시패션,girlish fashion|girlish aesthetic,True,2
+381,STYLE,러블리,Lovely,,ACTIVE,,,2026-09-09 22:52:33.233 +0900,2026-09-09 22:52:33.233 +0900,STYLE_LOVELY,,,러블리,러블리룩|러블리코디,lovely fashion|lovely aesthetic,True,2
+382,STYLE,캐주얼,Casual,,ACTIVE,,,2026-09-09 22:52:33.233 +0900,2026-09-09 22:52:33.233 +0900,STYLE_CASUAL,,,캐주얼,캐주얼룩|캐주얼코디|캐주얼패션,casual fashion|casual aesthetic,True,3
+383,STYLE,프레피,Preppy,,ACTIVE,,,2026-09-09 22:52:33.233 +0900,2026-09-09 22:52:33.233 +0900,STYLE_PREPPY,,,프레피,프레피룩|프레피패션,preppy fashion|preppy aesthetic,True,2
+384,STYLE,시티보이,Cityboy,,ACTIVE,,,2026-09-09 22:52:33.233 +0900,2026-09-09 22:52:33.233 +0900,STYLE_CITYBOY,,,시티보이,시티보이룩|시티보이패션,cityboy fashion|cityboy aesthetic,True,2
+385,STYLE,워크웨어,Workwear,,ACTIVE,,,2026-09-09 22:52:33.233 +0900,2026-09-09 22:52:33.233 +0900,STYLE_WORKWEAR,,,워크웨어,워크웨어|워크웨어룩,workwear fashion|workwear aesthetic,True,2
+386,STYLE,젠더리스,Genderless,,ACTIVE,,,2026-09-09 22:52:33.233 +0900,2026-09-09 22:52:33.233 +0900,STYLE_GENDERLESS,,,젠더리스,젠더리스룩|젠더리스패션,genderless fashion|genderless aesthetic,True,2
+387,STYLE,고프코어,Gorpcore,,ACTIVE,,,2026-09-09 22:52:33.233 +0900,2026-09-09 22:52:33.233 +0900,STYLE_GORPCORE,,,고프코어,고프코어|고프코어룩,gorpcore fashion|gorpcore aesthetic,True,2
+388,STYLE,발레코어,Balletcore,,ACTIVE,,,2026-09-09 22:52:33.233 +0900,2026-09-09 22:52:33.233 +0900,STYLE_BALLETCORE,,,발레코어,발레코어|발레코어룩,balletcore fashion|balletcore aesthetic,True,2
+389,STYLE,블록코어,Blokecore,,ACTIVE,,,2026-09-09 22:52:33.233 +0900,2026-09-09 22:52:33.233 +0900,STYLE_BLOKECORE,,,블록코어,블록코어|블록코어룩,blokecore fashion|blokecore aesthetic,True,2
+136,ITEM,니트,Knitwear,니트웨어/스웨터 대표 상품유형,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_KNIT,,,니트,니트|니트웨어|니트티|여성니트,knitwear fashion,True,4
+137,ITEM,래시가드,Rash Guard,기능성 수상 스포츠 상의,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_RASH_GUARD,,,래시가드,래시가드|래쉬가드,rash guard fashion,True,2
+138,ITEM,맨투맨,Sweatshirt,한국 커머스에서 안정적인 상품유형,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_SWEATSHIRT,,,맨투맨,맨투맨,sweatshirt,False,1
+139,ITEM,블라우스,Blouse,독립 상품유형,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_BLOUSE,,,블라우스,블라우스,blouse,False,1
+140,ITEM,셔츠,Shirt,기본 셔츠 상품유형,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_SHIRT,,,셔츠,셔츠|남방셔츠|여성셔츠,shirt fashion,True,3
+141,ITEM,슬리브리스,Sleeveless Top,독립 상품유형으로 유지하되 SLEEVE 속성과 중첩 가능,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_SLEEVELESS,,,슬리브리스,슬리브리스,sleeveless top,False,1
+142,ITEM,유니폼,Uniform,유니폼 자체가 상품유형일 때 사용,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_UNIFORM,,,유니폼,유니폼룩|유니폼패션,uniform fashion,True,2
+143,ITEM,저지,Jersey,스포츠/패션 저지 상품유형,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_JERSEY,,,저지,저지상의|레트로저지|저지탑,jersey fashion,True,3
+144,ITEM,크롭탑,Crop Top,lexicalized product type로 유지; LENGTH=크롭과도 조합 가능,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_CROP_TOP,,,크롭탑,크롭탑,crop top,False,1
+145,ITEM,트랙탑,Track Top,스포츠 트랙 상의,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_TRACK_TOP,,,트랙탑,트랙탑,track top,False,1
+146,ITEM,티셔츠,T-shirt,기본 상의 상품유형,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_T_SHIRT,,,티셔츠,티셔츠,t-shirt,False,1
+147,ITEM,후드,Hoodie,후드티/후디를 alias로 흡수,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_HOODIE,,,후드,후드티|후드티셔츠,hoodie fashion,True,2
+148,ITEM,탱크탑,Tank Top,안정적인 슬리브리스 상의 subtype,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_TANK_TOP,,,탱크탑,탱크탑,tank top,False,1
+149,ITEM,폴로셔츠,Polo Shirt,피케/카라형 폴로 상품유형,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_POLO_SHIRT,,,폴로셔츠,폴로셔츠,polo shirt,False,1
+150,ITEM,가디건,Cardigan,독립 상품유형,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_CARDIGAN,,,가디건,가디건,cardigan,False,1
+151,ITEM,무스탕,Shearling Jacket,괄호 설명 제거; 상품유형 의미,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_MOUTON_JACKET,,,무스탕,무스탕|무스탕자켓|양털무스탕,shearling jacket fashion,True,3
+152,ITEM,바람막이,Windbreaker,독립 기능형 아우터,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_WINDBREAKER,,,바람막이,바람막이,windbreaker,False,1
+153,ITEM,베스트,Vest,조끼/베스트 상품유형,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_VEST,,,베스트,베스트조끼|패딩베스트|니트베스트,vest fashion,True,3
+154,ITEM,볼레로,Bolero,독립 상품유형,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_BOLERO,,,볼레로,볼레로,bolero,False,1
+155,ITEM,아노락,Anorak,독립 상품유형,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_ANORAK,,,아노락,아노락,anorak,False,1
+156,ITEM,재킷,Jacket,아우터의 기본 재킷 상품유형,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_JACKET,,,재킷,자켓|재킷|여성자켓,jacket fashion,True,3
+390,STYLE,바이크코어,Bikercore,,ACTIVE,,,2026-09-09 22:52:33.233 +0900,2026-09-09 22:52:33.233 +0900,STYLE_BIKERCORE,,,바이크코어,바이크코어|바이크코어룩,bikercore fashion|bikercore aesthetic,True,2
+391,STYLE,코티지코어,Cottagecore,,ACTIVE,,,2026-09-09 22:52:33.233 +0900,2026-09-09 22:52:33.233 +0900,STYLE_COTTAGECORE,,,코티지코어,코티지코어|코티지코어룩,cottagecore fashion|cottagecore aesthetic,True,2
+392,STYLE,Y2K,Y2K,,ACTIVE,,,2026-09-09 22:52:33.233 +0900,2026-09-09 22:52:33.233 +0900,STYLE_Y2K,,,Y2K,Y2K패션|Y2K룩|와이투케이패션,y2k fashion|y2k aesthetic,True,3
+393,STYLE,다크 아카데미아,Dark Academia,,ACTIVE,,,2026-09-09 22:52:33.233 +0900,2026-09-09 22:52:33.233 +0900,STYLE_DARK_ACADEMIA,,,다크 아카데미아,다크아카데미아|다크아카데미아룩,dark academia fashion|dark academia aesthetic,True,2
+394,STYLE,레트로,Retro,,ACTIVE,,,2026-09-09 22:52:33.233 +0900,2026-09-09 22:52:33.233 +0900,STYLE_RETRO,,,레트로,레트로룩|레트로패션|복고패션,retro fashion|retro aesthetic,True,3
+395,STYLE,놈코어,Normcore,,ACTIVE,,,2026-09-09 22:52:33.233 +0900,2026-09-09 22:52:33.233 +0900,STYLE_NORMCORE,,,놈코어,놈코어|놈코어룩,normcore fashion|normcore aesthetic,True,2
+396,STYLE,클린 걸,Clean Girl,,ACTIVE,,,2026-09-09 22:52:33.233 +0900,2026-09-09 22:52:33.233 +0900,STYLE_CLEAN_GIRL,,,클린 걸,클린걸룩|클린걸패션,clean girl fashion|clean girl aesthetic,True,2
+397,STYLE,미니멀,Minimal,,ACTIVE,,,2026-09-09 22:52:33.233 +0900,2026-09-09 22:52:33.233 +0900,STYLE_MINIMAL,,,미니멀,미니멀룩|미니멀패션|미니멀코디,minimal fashion|minimal aesthetic,True,3
+398,STYLE,긱시크,Geek Chic,,ACTIVE,,,2026-09-09 22:52:33.233 +0900,2026-09-09 22:52:33.233 +0900,STYLE_GEEK_SHEEK,,,긱시크,긱시크|긱시크룩,geek chic fashion|geek chic aesthetic,True,2
+399,STYLE,비즈니스코어,Businesscore,,ACTIVE,,,2026-09-09 22:52:33.233 +0900,2026-09-09 22:52:33.233 +0900,STYLE_BUSINESSCORE,,,비즈니스코어,비즈니스코어|비즈니스캐주얼룩,businesscore fashion|businesscore aesthetic,True,2
+400,STYLE,애슬레저,Athleisure,,ACTIVE,,,2026-09-09 22:52:33.233 +0900,2026-09-09 22:52:33.233 +0900,STYLE_ATHLEISURE,,,애슬레저,애슬레저|애슬레저룩,athleisure fashion|athleisure aesthetic,True,2
+482,COLOR,파우더블루,Powder Blue,분가루처럼 뽀얗고 은은한 하늘색,ACTIVE,,,2026-09-09 22:55:02.021 +0900,2026-09-09 22:55:02.021 +0900,COLOR_POWDER_BLUE,,,파우더블루,파우더블루|파우더블루코디,powder blue,False,2
+484,TPO,골프,Golf,골프 라운딩 시 착용하는 복장 상황,ACTIVE,,,2026-09-09 22:56:40.121 +0900,2026-09-09 22:56:40.121 +0900,TPO_GOLF,,,골프,골프웨어|골프룩|골프복|골프장패션,golf outfit|golf style,True,4
+485,TPO,면접,Job Interview,취업 면접 등 평가받는 자리,ACTIVE,,,2026-09-09 22:56:40.121 +0900,2026-09-09 22:56:40.121 +0900,TPO_JOB_INTERVIEW,,,면접,면접룩|면접복장|면접정장,job interview outfit|job interview style,True,3
+486,TPO,명절,Korean Holiday,설·추석 등 명절 가족 모임,ACTIVE,,,2026-09-09 22:56:40.121 +0900,2026-09-09 22:56:40.121 +0900,TPO_KOREAN_HOLIDAY,,,명절,명절룩|명절옷|명절코디,korean holiday outfit|korean holiday style,True,3
+487,TPO,운동,Workout,실내외 운동 활동,ACTIVE,,,2026-09-09 22:56:40.121 +0900,2026-09-09 22:56:40.121 +0900,TPO_WORKOUT,,,운동,운동복|운동복장|짐웨어,workout outfit|workout style,True,3
+488,TPO,출근,Commute,회사 출퇴근 시 착용하는 복장 상황,ACTIVE,,,2026-09-09 22:56:40.121 +0900,2026-09-09 22:56:40.121 +0900,TPO_COMMUTE,,,출근,출근룩|출근복|출근코디,commute outfit|commute style,True,3
+489,TPO,캠핑,Camping,야외 캠핑 활동,ACTIVE,,,2026-09-09 22:56:40.121 +0900,2026-09-09 22:56:40.121 +0900,TPO_CAMPING,,,캠핑,캠핑룩|캠핑복장|캠핑코디,camping outfit|camping style,True,3
+490,TPO,회식,Company Dinner,직장 동료들과의 저녁 모임 및 연말·연초 회사 모임,ACTIVE,,,2026-09-09 22:56:40.121 +0900,2026-09-09 22:56:40.121 +0900,TPO_COMPANY_DINNER,,,회식,회식룩|회식코디,company dinner outfit|company dinner style,True,2
+491,TPO,데이트,Date,연인·소개팅 등 이성과의 만남,ACTIVE,,,2026-09-09 22:56:40.121 +0900,2026-09-09 22:56:40.121 +0900,TPO_DATE,,,데이트,데이트룩|데이트코디|데이트옷,date outfit|date style,True,3
+492,TPO,돌잔치,First Birthday Party,아이의 첫돌을 기념하는 잔치,ACTIVE,,,2026-09-09 22:56:40.121 +0900,2026-09-09 22:56:40.121 +0900,TPO_FIRST_BIRTHDAY_PARTY,,,돌잔치,돌잔치룩|돌잔치하객룩|돌잔치복장,first birthday party outfit|first birthday party style,True,3
+493,TPO,브런치,Brunch,오전~낮 시간대의 여유로운 식사 모임,ACTIVE,,,2026-09-09 22:56:40.121 +0900,2026-09-09 22:56:40.121 +0900,TPO_BRUNCH,,,브런치,브런치룩|브런치코디,brunch outfit|brunch style,True,2
+494,TPO,상견례,Pre-wedding Family Meeting,결혼 전 양가 상견례 자리,ACTIVE,,,2026-09-09 22:56:40.121 +0900,2026-09-09 22:56:40.121 +0900,TPO_FAMILY_MEETING,,,상견례,상견례룩|상견례복장,pre-wedding family meeting outfit|pre-wedding family meeting style,True,2
+495,TPO,장례식,Funeral,조문·장례식장 방문,ACTIVE,,,2026-09-09 22:56:40.121 +0900,2026-09-09 22:56:40.121 +0900,TPO_FUNERAL,,,장례식,장례식복장|조문복장|장례식룩,funeral outfit|funeral style,True,3
+496,TPO,졸업식,Graduation,학교 졸업을 기념하는 행사,ACTIVE,,,2026-09-09 22:56:40.121 +0900,2026-09-09 22:56:40.121 +0900,TPO_GRADUATION,,,졸업식,졸업식룩|졸업식복장,graduation outfit|graduation style,True,2
+497,TPO,집들이,Housewarming,새 집을 방문하는 지인 모임,ACTIVE,,,2026-09-09 22:56:40.121 +0900,2026-09-09 22:56:40.121 +0900,TPO_HOUSEWARMING,,,집들이,집들이룩|집들이코디,housewarming outfit|housewarming style,True,2
+498,TPO,콘서트,Concert,콘서트·공연 관람,ACTIVE,,,2026-09-09 22:56:40.121 +0900,2026-09-09 22:56:40.121 +0900,TPO_CONCERT,,,콘서트,콘서트룩|콘서트코디,concert outfit|concert style,True,2
+499,TPO,피크닉,Picnic,야외 나들이·소풍,ACTIVE,,,2026-09-09 22:56:40.121 +0900,2026-09-09 22:56:40.121 +0900,TPO_PICNIC,,,피크닉,피크닉룩|피크닉코디,picnic outfit|picnic style,True,2
+500,TPO,홈웨어,Loungewear,집에서 휴식·수면 시 착용하는 복장,ACTIVE,,,2026-09-09 22:56:40.121 +0900,2026-09-09 22:56:40.121 +0900,TPO_LOUNGEWEAR,,,홈웨어,홈웨어|홈웨어세트|홈웨어추천,loungewear outfit|loungewear style,True,3
+501,TPO,생일 파티,Birthday Party,생일을 기념하는 모임,ACTIVE,,,2026-09-09 22:56:40.121 +0900,2026-09-09 22:56:40.121 +0900,TPO_BIRTHDAY_PARTY,,,생일 파티,생일파티룩|파티룩,birthday party outfit|birthday party style,True,2
+502,TPO,웨딩 촬영,Wedding Photoshoot,결혼식 전후 진행하는 웨딩 컨셉 촬영,ACTIVE,,,2026-09-09 22:56:40.121 +0900,2026-09-09 22:56:40.121 +0900,TPO_WEDDING_PHOTOSHOOT,,,웨딩 촬영,웨딩촬영의상|웨딩촬영룩|스냅촬영의상,wedding photoshoot outfit|wedding photoshoot style,True,3
+401,COLOR,와인,Wine,버건디보다 퍼플 기가 도는 짙은 레드,ACTIVE,,,2026-09-09 22:55:02.021 +0900,2026-09-09 22:55:02.021 +0900,COLOR_WINE,,,와인,와인코디|와인룩|와인패션,wine outfit|wine clothes,True,3
+402,COLOR,버건디,Burgundy,"와인색에 가까운 짙은 레드, 가을·겨울 시즌 대표 컬러",ACTIVE,,,2026-09-09 22:55:02.021 +0900,2026-09-09 22:55:02.021 +0900,COLOR_BURGUNDY,,,버건디,버건디코디|버건디룩|버건디패션,burgundy outfit|burgundy clothes,True,3
+403,COLOR,딥네이비,Deep Navy,네이비보다 더 짙고 블랙에 가까운 톤,ACTIVE,,,2026-09-09 22:55:02.021 +0900,2026-09-09 22:55:02.021 +0900,COLOR_DEEP_NAVY,,,딥네이비,딥네이비|딥네이비코디,deep navy,False,2
+404,COLOR,아메시스트,Amethyst,자수정처럼 짙고 신비로운 보라색,ACTIVE,,,2026-09-09 22:55:02.021 +0900,2026-09-09 22:55:02.021 +0900,COLOR_AMETHYST,,,아메시스트,아메시스트코디|아메시스트룩|아메시스트패션,amethyst outfit|amethyst clothes,True,3
+405,COLOR,인디고블루,Indigo Blue,"쪽염색처럼 짙고 푸른 남색, 데님 워싱에도 자주 사용되는 톤",ACTIVE,,,2026-09-09 22:55:02.021 +0900,2026-09-09 22:55:02.021 +0900,COLOR_INDIGO_BLUE,,,인디고블루,인디고블루코디|인디고블루룩|인디고블루패션,indigo blue outfit|indigo blue clothes,True,3
+406,COLOR,에메랄드그린,Emerald Green,보석 에메랄드처럼 짙고 채도 높은 초록,ACTIVE,,,2026-09-09 22:55:02.021 +0900,2026-09-09 22:55:02.021 +0900,COLOR_EMERALD_GREEN,,,에메랄드그린,에메랄드그린|에메랄드그린코디,emerald green,False,2
+407,COLOR,포레스트그린,Forest Green,숲을 연상시키는 짙고 차분한 초록색,ACTIVE,,,2026-09-09 22:55:02.021 +0900,2026-09-09 22:55:02.021 +0900,COLOR_FOREST_GREEN,,,포레스트그린,포레스트그린|포레스트그린코디,forest green,False,2
+408,COLOR,탠,Tan,카멜보다 밝고 옐로우 기가 도는 갈색,ACTIVE,,,2026-09-09 22:55:02.021 +0900,2026-09-09 22:55:02.021 +0900,COLOR_TAN,,,탠,탠코디|탠룩|탠패션,tan outfit|tan clothes,True,3
+409,COLOR,카멜,Camel,"낙타색에서 유래한 따뜻한 갈색, 코트·니트웨어에 자주 사용",ACTIVE,,,2026-09-09 22:55:02.021 +0900,2026-09-09 22:55:02.021 +0900,COLOR_CAMEL,,,카멜,카멜코디|카멜룩|카멜패션,camel outfit|camel clothes,True,3
+410,COLOR,카키,Khaki,밀리터리·워크웨어룩에 자주 사용되는 황갈색 계열,ACTIVE,,,2026-09-09 22:55:02.021 +0900,2026-09-09 22:55:02.021 +0900,COLOR_KHAKI,,,카키,카키코디|카키룩|카키패션,khaki outfit|khaki clothes,True,3
+411,COLOR,러스트,Rust,"녹슨 듯한 주황빛 도는 갈색, 가을 시즌 대표 컬러",ACTIVE,,,2026-09-09 22:55:02.021 +0900,2026-09-09 22:55:02.021 +0900,COLOR_RUST,,,러스트,러스트코디|러스트룩|러스트패션,rust outfit|rust clothes,True,3
+412,COLOR,브라운,Brown,웜톤을 대표하는 기본 색상,ACTIVE,,,2026-09-09 22:55:02.021 +0900,2026-09-09 22:55:02.021 +0900,COLOR_BROWN,,,브라운,브라운코디|브라운룩|브라운패션,brown outfit|brown clothes,True,3
+413,COLOR,올리브,Olive,카키보다 그린 기가 강한 국방색 계열,ACTIVE,,,2026-09-09 22:55:02.021 +0900,2026-09-09 22:55:02.021 +0900,COLOR_OLIVE,,,올리브,올리브코디|올리브룩|올리브패션,olive outfit|olive clothes,True,3
+414,COLOR,초콜릿,Chocolate,다크브라운보다 붉은 기가 도는 짙은 갈색,ACTIVE,,,2026-09-09 22:55:02.021 +0900,2026-09-09 22:55:02.021 +0900,COLOR_CHOCOLATE,,,초콜릿,초콜릿코디|초콜릿룩|초콜릿패션,chocolate outfit|chocolate clothes,True,3
+415,COLOR,머스타드,Mustard,"겨자색, 가을 시즌 니트웨어·아우터에 자주 사용",ACTIVE,,,2026-09-09 22:55:02.021 +0900,2026-09-09 22:55:02.021 +0900,COLOR_MUSTARD,,,머스타드,머스타드|머스타드코디,mustard,False,2
+416,COLOR,브릭레드,Brick Red,벽돌색처럼 탁하고 짙은 붉은 갈색,ACTIVE,,,2026-09-09 22:55:02.021 +0900,2026-09-09 22:55:02.021 +0900,COLOR_BRICK_RED,,,브릭레드,브릭레드|브릭레드코디,brick red,False,2
+417,COLOR,다크브라운,Dark Brown,브라운보다 짙고 무게감 있는 톤,ACTIVE,,,2026-09-09 22:55:02.021 +0900,2026-09-09 22:55:02.021 +0900,COLOR_DARK_BROWN,,,다크브라운,다크브라운|다크브라운코디,dark brown,False,2
+418,COLOR,모카브라운,Mocha Brown,"모카커피처럼 부드럽고 은은한 갈색, 최근 시즌 유행 컬러",ACTIVE,,,2026-09-09 22:55:02.021 +0900,2026-09-09 22:55:02.021 +0900,COLOR_MOCHA_BROWN,,,모카브라운,모카브라운|모카브라운코디,mocha brown,False,2
+419,COLOR,세이지그린,Sage Green,"세이지 허브처럼 뿌옇고 차분한 그레이시 그린, 최근 인테리어·패션 전반 유행 컬러",ACTIVE,,,2026-09-09 22:55:02.021 +0900,2026-09-09 22:55:02.021 +0900,COLOR_SAGE_GREEN,,,세이지그린,세이지그린|세이지그린코디,sage green,False,2
+420,COLOR,코코아브라운,Cocoa Brown,코코아처럼 진하고 따뜻한 갈색,ACTIVE,,,2026-09-09 22:55:02.021 +0900,2026-09-09 22:55:02.021 +0900,COLOR_COCOA_BROWN,,,코코아브라운,코코아브라운|코코아브라운코디,cocoa brown,False,2
+421,COLOR,토스트브라운,Toast Brown,토스트 빵처럼 은은하게 그을린 듯한 연갈색,ACTIVE,,,2026-09-09 22:55:02.021 +0900,2026-09-09 22:55:02.021 +0900,COLOR_TOAST_BROWN,,,토스트브라운,토스트브라운|토스트브라운코디,toast brown,False,2
+422,COLOR,틸,Teal,"블루와 그린 사이의 색, 애슬레저·아웃도어룩에 자주 사용",ACTIVE,,,2026-09-09 22:55:02.021 +0900,2026-09-09 22:55:02.021 +0900,COLOR_TEAL,,,틸,틸코디|틸룩|틸패션,teal outfit|teal clothes,True,3
+423,COLOR,그린,Green,쿨톤을 대표하는 기본 색상,ACTIVE,,,2026-09-09 22:55:02.021 +0900,2026-09-09 22:55:02.021 +0900,COLOR_GREEN,,,그린,그린코디|그린룩|그린패션,green outfit|green clothes,True,3
+424,COLOR,민트,Mint,"밝고 청량한 연녹색, 발레코어·파스텔톤 코디에 활용",ACTIVE,,,2026-09-09 22:55:02.021 +0900,2026-09-09 22:55:02.021 +0900,COLOR_MINT,,,민트,민트코디|민트룩|민트패션,mint outfit|mint clothes,True,3
+425,COLOR,블루,Blue,쿨톤을 대표하는 기본 색상,ACTIVE,,,2026-09-09 22:55:02.021 +0900,2026-09-09 22:55:02.021 +0900,COLOR_BLUE,,,블루,블루코디|블루룩|블루패션,blue outfit|blue clothes,True,3
+426,COLOR,네이비,Navy,블랙 대신 사용되는 클래식·비즈니스코어의 기본 컬러,ACTIVE,,,2026-09-09 22:55:02.021 +0900,2026-09-09 22:55:02.021 +0900,COLOR_NAVY,,,네이비,네이비코디|네이비룩|네이비패션,navy outfit|navy clothes,True,3
+427,COLOR,데님블루,Denim Blue,데님 원단에서 유래한 블루 톤,ACTIVE,,,2026-09-09 22:55:02.021 +0900,2026-09-09 22:55:02.021 +0900,COLOR_DENIM_BLUE,,,데님블루,데님블루|데님블루코디,denim blue,False,2
+428,COLOR,스틸블루,Steel Blue,강철처럼 차갑고 무게감 있는 청회색 블루,ACTIVE,,,2026-09-09 22:55:02.021 +0900,2026-09-09 22:55:02.021 +0900,COLOR_STEEL_BLUE,,,스틸블루,스틸블루|스틸블루코디,steel blue,False,2
+429,COLOR,오션블루,Ocean Blue,바다를 연상시키는 짙고 깊은 파란색,ACTIVE,,,2026-09-09 22:55:02.021 +0900,2026-09-09 22:55:02.021 +0900,COLOR_OCEAN_BLUE,,,오션블루,오션블루|오션블루코디,ocean blue,False,2
+430,COLOR,스카이블루,Sky Blue,밝고 청량한 블루 톤,ACTIVE,,,2026-09-09 22:55:02.021 +0900,2026-09-09 22:55:02.021 +0900,COLOR_SKY_BLUE,,,스카이블루,스카이블루|스카이블루코디,sky blue,False,2
+431,COLOR,코발트블루,Cobalt Blue,채도 높은 짙은 블루,ACTIVE,,,2026-09-09 22:55:02.021 +0900,2026-09-09 22:55:02.021 +0900,COLOR_COBALT_BLUE,,,코발트블루,코발트블루|코발트블루코디,cobalt blue,False,2
+432,COLOR,블랙,Black,"가장 기본적인 무채색, 모든 스타일에 활용되는 베이직 컬러",ACTIVE,,,2026-09-09 22:55:02.021 +0900,2026-09-09 22:55:02.021 +0900,COLOR_BLACK,,,블랙,블랙코디|블랙룩|블랙패션,black outfit|black clothes,True,3
+433,COLOR,차콜,Charcoal,"블랙에 가까운 짙은 회색, 오피스룩·아우터에 자주 사용",ACTIVE,,,2026-09-09 22:55:02.021 +0900,2026-09-09 22:55:02.021 +0900,COLOR_CHARCOAL,,,차콜,차콜코디|차콜룩|차콜패션,charcoal outfit|charcoal clothes,True,3
+434,COLOR,크림,Cream,아이보리보다 옐로우 기가 더 도는 부드러운 색,ACTIVE,,,2026-09-09 22:55:02.021 +0900,2026-09-09 22:55:02.021 +0900,COLOR_CREAM,,,크림,크림코디|크림룩|크림패션,cream outfit|cream clothes,True,3
+435,COLOR,그레이,Gray,뉴트럴을 대표하는 중간 명도의 무채색,ACTIVE,,,2026-09-09 22:55:02.021 +0900,2026-09-09 22:55:02.021 +0900,COLOR_GRAY,,,그레이,그레이코디|그레이룩|그레이패션,gray outfit|gray clothes,True,3
+436,COLOR,베이지,Beige,뉴트럴·미니멀룩에서 가장 활용도가 높은 중간 톤,ACTIVE,,,2026-09-09 22:55:02.021 +0900,2026-09-09 22:55:02.021 +0900,COLOR_BEIGE,,,베이지,베이지코디|베이지룩|베이지패션,beige outfit|beige clothes,True,3
+437,COLOR,화이트,White,"가장 기본적인 무채색, 미니멀·클린걸룩의 기본 컬러",ACTIVE,,,2026-09-09 22:55:02.021 +0900,2026-09-09 22:55:02.021 +0900,COLOR_WHITE,,,화이트,화이트코디|화이트룩|화이트패션,white outfit|white clothes,True,3
+438,COLOR,그레이지,Greige,"그레이와 베이지를 섞은 중간 톤, 미니멀룩에서 선호",ACTIVE,,,2026-09-09 22:55:02.021 +0900,2026-09-09 22:55:02.021 +0900,COLOR_GREIGE,,,그레이지,그레이지|그레이지코디,greige,False,2
+439,COLOR,아이보리,Ivory,부드럽고 따뜻한 인상의 크림빛 화이트,ACTIVE,,,2026-09-09 22:55:02.021 +0900,2026-09-09 22:55:02.021 +0900,COLOR_IVORY,,,아이보리,아이보리코디|아이보리룩|아이보리패션,ivory outfit|ivory clothes,True,3
+440,COLOR,샌드베이지,Sand Beige,모래사장처럼 밝고 따뜻한 베이지,ACTIVE,,,2026-09-09 22:55:02.021 +0900,2026-09-09 22:55:02.021 +0900,COLOR_SAND_BEIGE,,,샌드베이지,샌드베이지|샌드베이지코디,sand beige,False,2
+441,COLOR,애쉬그레이,Ash Gray,재처럼 푸르스름한 기가 살짝 도는 회색,ACTIVE,,,2026-09-09 22:55:02.021 +0900,2026-09-09 22:55:02.021 +0900,COLOR_ASH_GRAY,,,애쉬그레이,애쉬그레이|애쉬그레이코디,ash gray,False,2
+442,COLOR,오프화이트,Off-White,순백보다 은은하게 아이보리 기가 도는 화이트,ACTIVE,,,2026-09-09 22:55:02.021 +0900,2026-09-09 22:55:02.021 +0900,COLOR_OFF_WHITE,,,오프화이트,오프화이트|오프화이트코디,off-white,False,2
+443,COLOR,라이트그레이,Light Gray,"밝은 회색, 오피스룩·미니멀룩에 사용",ACTIVE,,,2026-09-09 22:55:02.021 +0900,2026-09-09 22:55:02.021 +0900,COLOR_LIGHT_GRAY,,,라이트그레이,라이트그레이|라이트그레이코디,light gray,False,2
+483,TPO,개강,New Semester,학기 시작을 기념하는 첫 등교,ACTIVE,,,2026-09-09 22:56:40.121 +0900,2026-09-09 22:56:40.121 +0900,TPO_NEW_SEMESTER,,,개강,개강룩|개강코디,new semester outfit|new semester style,True,2
+444,COLOR,스모키그레이,Smoky Gray,연기처럼 뿌옇게 가라앉은 짙은 회색,ACTIVE,,,2026-09-09 22:55:02.021 +0900,2026-09-09 22:55:02.021 +0900,COLOR_SMOKY_GRAY,,,스모키그레이,스모키그레이|스모키그레이코디,smoky gray,False,2
+445,COLOR,오트밀베이지,Oatmeal Beige,오트밀 죽처럼 뿌옇고 차분한 베이지,ACTIVE,,,2026-09-09 22:55:02.021 +0900,2026-09-09 22:55:02.021 +0900,COLOR_OATMEAL_BEIGE,,,오트밀베이지,오트밀베이지|오트밀베이지코디,oatmeal beige,False,2
+446,COLOR,슬레이트그레이,Slate Gray,점판암처럼 푸르스름한 톤이 도는 짙은 회색,ACTIVE,,,2026-09-09 22:55:02.021 +0900,2026-09-09 22:55:02.021 +0900,COLOR_SLATE_GRAY,,,슬레이트그레이,슬레이트그레이|슬레이트그레이코디,slate gray,False,2
+447,COLOR,펄,Pearl,은은한 광택이 도는 진주빛 컬러,ACTIVE,,,2026-09-09 22:55:02.021 +0900,2026-09-09 22:55:02.021 +0900,COLOR_PEARL,,,펄,펄코디|펄룩|펄패션,pearl outfit|pearl clothes,True,3
+448,COLOR,골드,Gold,"화려하고 고급스러운 인상의 메탈릭 컬러, Y2K룩에 자주 활용",ACTIVE,,,2026-09-09 22:55:02.021 +0900,2026-09-09 22:55:02.021 +0900,COLOR_GOLD,,,골드,골드코디|골드룩|골드패션,gold outfit|gold clothes,True,3
+449,COLOR,실버,Silver,시크하고 미래적인 인상의 메탈릭 컬러,ACTIVE,,,2026-09-09 22:55:02.021 +0900,2026-09-09 22:55:02.021 +0900,COLOR_SILVER,,,실버,실버코디|실버룩|실버패션,silver outfit|silver clothes,True,3
+450,COLOR,로즈골드,Rose Gold,골드와 핑크가 섞인 은은한 메탈릭 컬러,ACTIVE,,,2026-09-09 22:55:02.021 +0900,2026-09-09 22:55:02.021 +0900,COLOR_ROSE_GOLD,,,로즈골드,로즈골드|로즈골드코디,rose gold,False,2
+451,COLOR,레드,Red,"강렬한 포인트 컬러, 시크·클래식룩의 액센트",ACTIVE,,,2026-09-09 22:55:02.021 +0900,2026-09-09 22:55:02.021 +0900,COLOR_RED,,,레드,레드코디|레드룩|레드패션,red outfit|red clothes,True,3
+452,COLOR,코랄,Coral,"오렌지와 핑크 사이의 산호빛 색상, 여름 시즌에 자주 활용",ACTIVE,,,2026-09-09 22:55:02.021 +0900,2026-09-09 22:55:02.021 +0900,COLOR_CORAL,,,코랄,코랄코디|코랄룩|코랄패션,coral outfit|coral clothes,True,3
+453,COLOR,퍼플,Purple,그런지·Y2K룩에서 포인트로 활용,ACTIVE,,,2026-09-09 22:55:02.021 +0900,2026-09-09 22:55:02.021 +0900,COLOR_PURPLE,,,퍼플,퍼플코디|퍼플룩|퍼플패션,purple outfit|purple clothes,True,3
+454,COLOR,핑크,Pink,러블리·페미닌룩의 대표 컬러,ACTIVE,,,2026-09-09 22:55:02.021 +0900,2026-09-09 22:55:02.021 +0900,COLOR_PINK,,,핑크,핑크코디|핑크룩|핑크패션,pink outfit|pink clothes,True,3
+455,COLOR,옐로우,Yellow,밝고 생동감 있는 비비드 컬러,ACTIVE,,,2026-09-09 22:55:02.021 +0900,2026-09-09 22:55:02.021 +0900,COLOR_YELLOW,,,옐로우,옐로우코디|옐로우룩|옐로우패션,yellow outfit|yellow clothes,True,3
+456,COLOR,오렌지,Orange,활동적이고 캐주얼한 인상의 비비드 컬러,ACTIVE,,,2026-09-09 22:55:02.021 +0900,2026-09-09 22:55:02.021 +0900,COLOR_ORANGE,,,오렌지,오렌지코디|오렌지룩|오렌지패션,orange outfit|orange clothes,True,3
+457,COLOR,오키드,Orchid,난초꽃처럼 화사하고 채도 높은 연보라~핑크빛 퍼플,ACTIVE,,,2026-09-09 22:55:02.021 +0900,2026-09-09 22:55:02.021 +0900,COLOR_ORCHID,,,오키드,오키드코디|오키드룩|오키드패션,orchid outfit|orchid clothes,True,3
+458,COLOR,탠저린,Tangerine,귤처럼 선명하고 달콤한 인상의 주황색,ACTIVE,,,2026-09-09 22:55:02.021 +0900,2026-09-09 22:55:02.021 +0900,COLOR_TANGERINE,,,탠저린,탠저린코디|탠저린룩|탠저린패션,tangerine outfit|tangerine clothes,True,3
+459,COLOR,퓨시아,Fuchsia,핑크보다 채도 높은 진분홍,ACTIVE,,,2026-09-09 22:55:02.021 +0900,2026-09-09 22:55:02.021 +0900,COLOR_FUCHSIA,,,퓨시아,퓨시아코디|퓨시아룩|퓨시아패션,fuchsia outfit|fuchsia clothes,True,3
+460,COLOR,라임그린,Lime Green,라임처럼 상큼하고 채도 높은 연두빛 초록,ACTIVE,,,2026-09-09 22:55:02.021 +0900,2026-09-09 22:55:02.021 +0900,COLOR_LIME_GREEN,,,라임그린,라임그린|라임그린코디,lime green,False,2
+461,COLOR,라즈베리,Raspberry,산딸기처럼 진하고 새콤한 인상의 자주빛 핑크,ACTIVE,,,2026-09-09 22:55:02.021 +0900,2026-09-09 22:55:02.021 +0900,COLOR_RASPBERRY,,,라즈베리,라즈베리|라즈베리코디,raspberry,False,2
+462,COLOR,로즈핑크,Rose Pink,장미꽃처럼 진하고 화사한 핑크,ACTIVE,,,2026-09-09 22:55:02.021 +0900,2026-09-09 22:55:02.021 +0900,COLOR_ROSE_PINK,,,로즈핑크,로즈핑크|로즈핑크코디,rose pink,False,2
+463,COLOR,애플그린,Apple Green,사과 껍질처럼 선명한 연두색,ACTIVE,,,2026-09-09 22:55:02.021 +0900,2026-09-09 22:55:02.021 +0900,COLOR_APPLE_GREEN,,,애플그린,애플그린|애플그린코디,apple green,False,2
+464,COLOR,체리레드,Cherry Red,체리처럼 진하고 광택감 있는 붉은색,ACTIVE,,,2026-09-09 22:55:02.021 +0900,2026-09-09 22:55:02.021 +0900,COLOR_CHERRY_RED,,,체리레드,체리레드|체리레드코디,cherry red,False,2
+465,COLOR,체리핑크,Cherry Pink,체리처럼 채도 높고 살짝 붉은 기가 도는 핑크,ACTIVE,,,2026-09-09 22:55:02.021 +0900,2026-09-09 22:55:02.021 +0900,COLOR_CHERRY_PINK,,,체리핑크,체리핑크|체리핑크코디,cherry pink,False,2
+466,COLOR,레몬옐로우,Lemon Yellow,레몬처럼 산뜻하고 밝은 노란색,ACTIVE,,,2026-09-09 22:55:02.021 +0900,2026-09-09 22:55:02.021 +0900,COLOR_LEMON_YELLOW,,,레몬옐로우,레몬옐로우|레몬옐로우코디,lemon yellow,False,2
+467,COLOR,선셋오렌지,Sunset Orange,노을처럼 붉은 기가 도는 강렬한 주황,ACTIVE,,,2026-09-09 22:55:02.021 +0900,2026-09-09 22:55:02.021 +0900,COLOR_SUNSET_ORANGE,,,선셋오렌지,선셋오렌지|선셋오렌지코디,sunset orange,False,2
+468,COLOR,토마토레드,Tomato Red,토마토처럼 살짝 주황 기가 도는 선명한 레드,ACTIVE,,,2026-09-09 22:55:02.021 +0900,2026-09-09 22:55:02.021 +0900,COLOR_TOMATO_RED,,,토마토레드,토마토레드|토마토레드코디,tomato red,False,2
+469,COLOR,워터멜론핑크,Watermelon Pink,수박 속살처럼 선명하고 상큼한 핑크,ACTIVE,,,2026-09-09 22:55:02.021 +0900,2026-09-09 22:55:02.021 +0900,COLOR_WATERMELON_PINK,,,워터멜론핑크,워터멜론핑크|워터멜론핑크코디,watermelon pink,False,2
+470,COLOR,카나리아옐로우,Canary Yellow,카나리아 깃털처럼 쨍하고 선명한 노란색,ACTIVE,,,2026-09-09 22:55:02.021 +0900,2026-09-09 22:55:02.021 +0900,COLOR_CANARY_YELLOW,,,카나리아옐로우,카나리아옐로우|카나리아옐로우코디,canary yellow,False,2
+471,COLOR,살몬,Salmon,핑크와 오렌지 사이의 은은한 파스텔 톤,ACTIVE,,,2026-09-09 22:55:02.021 +0900,2026-09-09 22:55:02.021 +0900,COLOR_SALMON,,,살몬,살몬코디|살몬룩|살몬패션,salmon outfit|salmon clothes,True,3
+472,COLOR,피치,Peach,부드럽고 따뜻한 파스텔 오렌지 계열,ACTIVE,,,2026-09-09 22:55:02.021 +0900,2026-09-09 22:55:02.021 +0900,COLOR_PEACH,,,피치,피치코디|피치룩|피치패션,peach outfit|peach clothes,True,3
+473,COLOR,라벤더,Lavender,은은하고 몽환적인 파스텔 퍼플,ACTIVE,,,2026-09-09 22:55:02.021 +0900,2026-09-09 22:55:02.021 +0900,COLOR_LAVENDER,,,라벤더,라벤더코디|라벤더룩|라벤더패션,lavender outfit|lavender clothes,True,3
+474,COLOR,라일락,Lilac,라벤더보다 핑크 기가 도는 연보라,ACTIVE,,,2026-09-09 22:55:02.021 +0900,2026-09-09 22:55:02.021 +0900,COLOR_LILAC,,,라일락,라일락코디|라일락룩|라일락패션,lilac outfit|lilac clothes,True,3
+475,COLOR,애프리콧,Apricot,살구처럼 은은하고 부드러운 주황빛 파스텔,ACTIVE,,,2026-09-09 22:55:02.021 +0900,2026-09-09 22:55:02.021 +0900,COLOR_APRICOT,,,애프리콧,애프리콧|애프리콧코디,apricot,False,2
+476,COLOR,페리윙클,Periwinkle,"블루와 퍼플 사이의 몽환적인 색, 최근 트렌드 컬러로 자주 언급",ACTIVE,,,2026-09-09 22:55:02.021 +0900,2026-09-09 22:55:02.021 +0900,COLOR_PERIWINKLE,,,페리윙클,페리윙클|페리윙클코디,periwinkle,False,2
+477,COLOR,더스티핑크,Dusty Pink,뿌옇고 차분하게 가라앉은 저채도 핑크,ACTIVE,,,2026-09-09 22:55:02.021 +0900,2026-09-09 22:55:02.021 +0900,COLOR_DUSTY_PINK,,,더스티핑크,더스티핑크|더스티핑크코디,dusty pink,False,2
+478,COLOR,버터옐로우,Butter Yellow,"부드럽고 크리미한 저채도 노란색, 최근 시즌 유행 컬러",ACTIVE,,,2026-09-09 22:55:02.021 +0900,2026-09-09 22:55:02.021 +0900,COLOR_BUTTER_YELLOW,,,버터옐로우,버터옐로우|버터옐로우코디,butter yellow,False,2
+479,COLOR,베이비블루,Baby Blue,부드러운 파스텔 블루,ACTIVE,,,2026-09-09 22:55:02.021 +0900,2026-09-09 22:55:02.021 +0900,COLOR_BABY_BLUE,,,베이비블루,베이비블루|베이비블루코디,baby blue,False,2
+480,COLOR,베이비핑크,Baby Pink,"파스텔톤의 대표 컬러, 발레코어·러블리룩에 사용",ACTIVE,,,2026-09-09 22:55:02.021 +0900,2026-09-09 22:55:02.021 +0900,COLOR_BABY_PINK,,,베이비핑크,베이비핑크|베이비핑크코디,baby pink,False,2
+481,COLOR,아이스블루,Ice Blue,얼음처럼 차갑고 창백한 블루,ACTIVE,,,2026-09-09 22:55:02.021 +0900,2026-09-09 22:55:02.021 +0900,COLOR_ICE_BLUE,,,아이스블루,아이스블루|아이스블루코디,ice blue,False,2
+207,ITEM,모카신,Moccasins,독립 상품유형,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_MOCCASINS,,,모카신,모카신|모카신슈즈,moccasins fashion,True,2
+208,ITEM,뮬,Mules,독립 상품유형,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_MULES,,,뮬,뮬슈즈|뮬샌들,mules fashion,True,2
+209,ITEM,보트슈즈,Boat Shoes,독립 상품유형,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_BOAT_SHOES,,,보트슈즈,보트슈즈,boat shoes,False,1
+210,ITEM,부츠,Boots,부츠류 기본 상품유형,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_BOOTS,,,부츠,부츠|여성부츠|남성부츠,boots fashion,True,3
+211,ITEM,샌들,Sandals,독립 상품유형,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_SANDALS,,,샌들,샌들|여름샌들,sandals fashion,True,2
+212,ITEM,스니커즈,Sneakers,독립 상품유형,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_SNEAKERS,,,스니커즈,스니커즈,sneakers,False,1
+213,ITEM,슬리퍼,Slippers,독립 상품유형,ACTIVE,,,2026-09-09 17:41:29.703 +0900,2026-09-09 22:37:43.511 +0900,ITEM_SLIPPERS,,,슬리퍼,슬리퍼|패션슬리퍼,slippers fashion,True,2
+503,TPO,페스티벌,Festival,야외 음악 페스티벌 등 행사,ACTIVE,,,2026-09-09 22:56:40.121 +0900,2026-09-09 22:56:40.121 +0900,TPO_FESTIVAL,,,페스티벌,페스티벌룩|페스티벌패션,festival outfit|festival style,True,2
+505,TPO,크리스마스,Christmas,연말 크리스마스 시즌 파티·모임,ACTIVE,,,2026-09-09 22:56:40.121 +0900,2026-09-09 22:56:40.121 +0900,TPO_CHRISTMAS,,,크리스마스,크리스마스룩|크리스마스코디|크리스마스파티룩,christmas outfit|christmas style,True,3
+506,TPO,비즈니스 미팅,Business Meeting,업무상 공식 회의,ACTIVE,,,2026-09-09 22:56:40.121 +0900,2026-09-09 22:56:40.121 +0900,TPO_BUSINESS_MEETING,,,비즈니스 미팅,비즈니스룩|비즈니스캐주얼|미팅복장,business meeting outfit|business meeting style,True,3
+507,TPO,봄,Spring,"환절기 아우터, 가벼운 소재가 주로 활용되는 계절",ACTIVE,,,2026-09-09 22:56:40.121 +0900,2026-09-09 22:56:40.121 +0900,TPO_SPRING,,,봄,봄코디|봄옷|봄패션|봄아우터,spring outfit|spring style,True,4
+508,TPO,가을,Autumn,"레이어드, 중간 두께 아우터가 활용되는 계절",ACTIVE,,,2026-09-09 22:56:40.121 +0900,2026-09-09 22:56:40.121 +0900,TPO_AUTUMN,,,가을,가을코디|가을옷|가을패션|가을아우터,autumn outfit|autumn style,True,4
+509,TPO,겨울,Winter,방한 소재·아우터가 중심이 되는 계절,ACTIVE,,,2026-09-09 22:56:40.121 +0900,2026-09-09 22:56:40.121 +0900,TPO_WINTER,,,겨울,겨울코디|겨울옷|겨울패션|겨울아우터,winter outfit|winter style,True,4
+510,TPO,아침,Morning,등교·출근 등 하루를 시작하는 시간대,ACTIVE,,,2026-09-09 22:56:40.121 +0900,2026-09-09 22:56:40.121 +0900,TPO_MORNING,,,아침,모닝룩|아침코디,morning outfit|morning style,True,2
+511,TPO,여름,Summer,"통기성 좋은 소재, 짧은 기장이 선호되는 계절",ACTIVE,,,2026-09-09 22:56:40.121 +0900,2026-09-09 22:56:40.121 +0900,TPO_SUMMER,,,여름,여름코디|여름옷|여름패션,summer outfit|summer style,True,3
+512,TPO,저녁,Evening,"퇴근 후, 저녁 약속 등에 어울리는 시간대",ACTIVE,,,2026-09-09 22:56:40.121 +0900,2026-09-09 22:56:40.121 +0900,TPO_EVENING,,,저녁,이브닝룩|저녁룩|디너룩,evening outfit|evening style,True,3
+513,TPO,주말,Weekend,평일과 대비되는 여유로운 시간대,ACTIVE,,,2026-09-09 22:56:40.121 +0900,2026-09-09 22:56:40.121 +0900,TPO_WEEKEND,,,주말,주말룩|주말코디,weekend outfit|weekend style,True,2
+514,TPO,평일,Weekday,주말과 대비되는 일과 중심의 시간대,ACTIVE,,,2026-09-09 22:56:40.121 +0900,2026-09-09 22:56:40.121 +0900,TPO_WEEKDAY,,,평일,평일룩|평일코디,weekday outfit|weekday style,True,2
+515,TPO,나이트,Night,파티·클럽 등 늦은 시간대의 활동,ACTIVE,,,2026-09-09 22:56:40.121 +0900,2026-09-09 22:56:40.121 +0900,TPO_NIGHT,,,나이트,클럽룩|나이트룩|나이트클럽패션,night outfit|night style,True,3
+516,TPO,데일리,Daily,특별한 목적 없이 일상적으로 착용하는 상황을 통칭,ACTIVE,,,2026-09-09 22:56:40.121 +0900,2026-09-09 22:56:40.121 +0900,TPO_DAILY,,,데일리,데일리룩|데일리코디,daily outfit|daily style,True,2
+517,TPO,환절기,Seasonal Transition,계절이 바뀌는 시기의 애매한 기온대에 대응하는 코디,ACTIVE,,,2026-09-09 22:56:40.121 +0900,2026-09-09 22:56:40.121 +0900,TPO_SEASONAL_TRANSITION,,,환절기,환절기코디|환절기옷|환절기아우터,seasonal transition outfit|seasonal transition style,True,3
+518,TPO,연말연시,Year-end and New Year,"크리스마스~새해로 이어지는 겨울 시즌, 파티룩 수요가 높은 시기",ACTIVE,,,2026-09-09 22:56:40.121 +0900,2026-09-09 22:56:40.121 +0900,TPO_NEW_YEAR_SEASON,,,연말연시,연말룩|연말파티룩|송년회룩,year-end and new year outfit|year-end and new year style,True,3
+519,TPO,공항,Airport,"출입국 시 거치는 공간, 편안하면서 스타일리시한 '공항패션'이 하나의 트렌드로 자리잡음",ACTIVE,,,2026-09-09 22:56:40.121 +0900,2026-09-09 22:56:40.121 +0900,TPO_AIRPORT,,,공항,공항패션|공항룩,airport outfit|airport style,True,2
+520,TPO,도심,City,도시 중심가에서의 활동,ACTIVE,,,2026-09-09 22:56:40.121 +0900,2026-09-09 22:56:40.121 +0900,TPO_CITY,,,도심,시티룩|도심코디,city outfit|city style,True,2
+521,TPO,실내,Indoor,실내 공간 전반,ACTIVE,,,2026-09-09 22:56:40.121 +0900,2026-09-09 22:56:40.121 +0900,TPO_INDOOR,,,실내,실내복|인도어룩,indoor outfit|indoor style,True,2
+522,TPO,야외,Outdoor,실외 공간 전반,ACTIVE,,,2026-09-09 22:56:40.121 +0900,2026-09-09 22:56:40.121 +0900,TPO_OUTDOOR,,,야외,아웃도어룩|야외활동복,outdoor outfit|outdoor style,True,2
+523,TPO,카페,Cafe,카페·브런치 등 여유로운 공간,ACTIVE,,,2026-09-09 22:56:40.121 +0900,2026-09-09 22:56:40.121 +0900,TPO_CAFE,,,카페,카페룩|카페코디,cafe outfit|cafe style,True,2
+524,TPO,해변,Beach,여름 휴양지·물놀이 장소,ACTIVE,,,2026-09-09 22:56:40.121 +0900,2026-09-09 22:56:40.121 +0900,TPO_BEACH,,,해변,비치룩|비치웨어|해변룩,beach outfit|beach style,True,3
+525,TPO,골프장,Golf Course,"골프를 즐기는 야외 스포츠 공간, 골프웨어 트렌드와 직결",ACTIVE,,,2026-09-09 22:56:40.121 +0900,2026-09-09 22:56:40.121 +0900,TPO_GOLF_COURSE,,,골프장,골프장룩|골프장코디,golf course outfit|golf course style,True,2
+526,TPO,등산로,Trail,등산·트레킹 장소,ACTIVE,,,2026-09-09 22:56:40.121 +0900,2026-09-09 22:56:40.121 +0900,TPO_MOUNTAIN,,,등산로,등산복|등산룩|하이킹룩,trail outfit|trail style,True,3
+527,TPO,미술관,Museum,전시 관람 등 정적인 실내 문화공간,ACTIVE,,,2026-09-09 22:56:40.121 +0900,2026-09-09 22:56:40.121 +0900,TPO_GALLERY,,,미술관,미술관룩|전시회룩,museum outfit|museum style,True,2
+528,TPO,백화점,Department Store,쇼핑을 위한 실내 상업 공간,ACTIVE,,,2026-09-09 22:56:40.121 +0900,2026-09-09 22:56:40.121 +0900,TPO_DEPARTMENT_STORE,,,백화점,백화점룩|쇼핑룩,department store outfit|department store style,True,2
+529,TPO,스키장,Ski Resort,"겨울 스포츠 리조트, 방한·스포티 아이템 수요가 높은 장소",ACTIVE,,,2026-09-09 22:56:40.121 +0900,2026-09-09 22:56:40.121 +0900,TPO_SKI_RESORT,,,스키장,스키장룩|스키복|보드복,ski resort outfit|ski resort style,True,3
+530,TPO,여행지,Travel Destination,국내외 여행 목적지,ACTIVE,,,2026-09-09 22:56:40.121 +0900,2026-09-09 22:56:40.121 +0900,TPO_TRAVEL_DESTINATION,,,여행지,여행룩|여행코디|여행패션,travel destination outfit|travel destination style,True,3
+531,TPO,영화관,Movie Theater,영화 관람 공간,ACTIVE,,,2026-09-09 22:56:40.121 +0900,2026-09-09 22:56:40.121 +0900,TPO_MOVIE_THEATER,,,영화관,영화관룩|영화관데이트룩,movie theater outfit|movie theater style,True,2
+532,TPO,오피스,Office,회사·업무 공간,ACTIVE,,,2026-09-09 22:56:40.121 +0900,2026-09-09 22:56:40.121 +0900,TPO_OFFICE,,,오피스,오피스룩|오피스코디|사무실룩,office outfit|office style,True,3
+533,TPO,웨딩홀,Wedding Venue,결혼식이 열리는 공간,ACTIVE,,,2026-09-09 22:56:40.121 +0900,2026-09-09 22:56:40.121 +0900,TPO_WEDDING_VENUE,,,웨딩홀,웨딩홀하객룩|하객룩|결혼식하객룩,wedding venue outfit|wedding venue style,True,3
+534,TPO,캠퍼스,Campus,대학교·학교 등 교육기관,ACTIVE,,,2026-09-09 22:56:40.121 +0900,2026-09-09 22:56:40.121 +0900,TPO_CAMPUS,,,캠퍼스,캠퍼스룩|대학생코디,campus outfit|campus style,True,2
+535,TPO,헬스장,Gym,실내 운동 시설,ACTIVE,,,2026-09-09 22:56:40.121 +0900,2026-09-09 22:56:40.121 +0900,TPO_GYM,,,헬스장,헬스장룩|헬스복,gym outfit|gym style,True,2
+536,TPO,워터파크,Water Park,여름철 물놀이를 위한 수영장·워터파크 시설,ACTIVE,,,2026-09-09 22:56:40.121 +0900,2026-09-09 22:56:40.121 +0900,TPO_WATER_PARK,,,워터파크,워터파크룩|워터파크수영복,water park outfit|water park style,True,2
+537,TPO,워크숍,Workshop,회사·조직 단위 워크숍/세미나·단체 일정,ACTIVE,,,2026-09-09 22:56:40.121 +0900,2026-09-09 22:56:40.121 +0900,TPO_WORKSHOP,,,워크숍,워크숍룩|워크숍복장,workshop outfit|workshop style,True,2
+538,TPO,MT,Membership Training,대학·동아리 등 단체 친목 및 합숙 행사,ACTIVE,,,2026-09-09 22:56:40.121 +0900,2026-09-09 22:56:40.121 +0900,TPO_MT,,,MT,MT룩|엠티룩|엠티코디,membership training outfit|membership training style,True,3
+539,MATERIAL,트윌,Twill,"사선 무늬가 특징인 능직물, 데님·개버딘 등 다양한 원단의 기본 조직",ACTIVE,,,2026-09-09 23:04:14.185 +0900,2026-09-09 23:04:14.185 +0900,MATERIAL_TWILL,,,트윌,트윌소재|트윌원단,twill fabric|twill material,True,2
+540,MATERIAL,니트,Knit,"실을 고리 모양으로 엮은 편물의 총칭, 신축성이 좋고 보온성이 있음",ACTIVE,,,2026-09-09 23:04:14.185 +0900,2026-09-09 23:04:14.185 +0900,MATERIAL_KNIT,,,니트,니트소재|니트원단,knit fabric|knit material,True,2
+541,MATERIAL,플란넬,Flannel,"표면을 긁어 보풀을 낸 기모 원단, 겨울 이너웨어·잠옷에 사용",ACTIVE,,,2026-09-09 23:04:14.185 +0900,2026-09-09 23:04:14.185 +0900,MATERIAL_FLANNEL,,,플란넬,플란넬소재|플란넬원단,flannel fabric|flannel material,True,2
+542,MATERIAL,저지,Jersey,"부드럽고 신축성 있는 대표적 편직물, 티셔츠·이너웨어에 널리 사용",ACTIVE,,,2026-09-09 23:04:14.185 +0900,2026-09-09 23:04:14.185 +0900,MATERIAL_JERSEY,,,저지,저지원단|저지소재,jersey fabric|jersey material,True,2
+543,MATERIAL,벨루어,Velour,"벨벳과 유사하나 신축성 있는 편직물, 트레이닝 세트업에 사용",ACTIVE,,,2026-09-09 23:04:14.185 +0900,2026-09-09 23:04:14.185 +0900,MATERIAL_VELOUR,,,벨루어,벨루어소재|벨루어원단,velour fabric|velour material,True,2
+544,MATERIAL,프렌치테리,French Terry,"겉은 매끈하고 안쪽은 루프·기모 처리된 두꺼운 저지, 맨투맨·조거팬츠에 사용",ACTIVE,,,2026-09-09 23:04:14.185 +0900,2026-09-09 23:04:14.185 +0900,MATERIAL_FRENCH_TERRY,,,프렌치테리,프렌치테리소재|프렌치테리원단,french terry fabric|french terry material,True,2
+545,MATERIAL,개버딘,Gabardine,"촘촘하고 튼튼한 능직물, 트렌치코트·정장 팬츠에 사용",ACTIVE,,,2026-09-09 23:04:14.185 +0900,2026-09-09 23:04:14.185 +0900,MATERIAL_GABARDINE,,,개버딘,개버딘소재|개버딘원단,gabardine fabric|gabardine material,True,2
+546,MATERIAL,와플,Waffle,"사각 요철 조직, 통기성·보온성 우수, 늘어짐 주의",ACTIVE,,,2026-09-09 23:04:14.185 +0900,2026-09-09 23:04:14.185 +0900,MATERIAL_WAFFLE_WEAVE,,,와플,와플소재|와플원단,waffle fabric|waffle material,True,2
+547,MATERIAL,새틴,Satin,"표면에 광택이 도는 매끄러운 직물, 드레시한 룩이나 안감에 사용",ACTIVE,,,2026-09-09 23:04:14.185 +0900,2026-09-09 23:04:14.185 +0900,MATERIAL_SATIN,,,새틴,새틴소재|새틴원단,satin fabric|satin material,True,2
+548,MATERIAL,레이스,Lace,"실을 엮어 무늬를 낸 투명한 장식 원단, 페미닌룩·이너웨어에 사용",ACTIVE,,,2026-09-09 23:04:14.185 +0900,2026-09-09 23:04:14.185 +0900,MATERIAL_LACE,,,레이스,레이스소재|레이스원단,lace fabric|lace material,True,2
+549,MATERIAL,벨벳,Velvet,"짧은 파일이 촘촘한 고급스러운 광택 직물, 무게감 있고 신축성은 적음",ACTIVE,,,2026-09-09 23:04:14.185 +0900,2026-09-09 23:04:14.185 +0900,MATERIAL_VELVET,,,벨벳,벨벳소재|벨벳원단,velvet fabric|velvet material,True,2
+550,MATERIAL,코듀로이,Corduroy,"세로 골이 있는 두툼한 직물, 가을·겨울 팬츠·자켓에 사용",ACTIVE,,,2026-09-09 23:04:14.185 +0900,2026-09-09 23:04:14.185 +0900,MATERIAL_CORDUROY,,,코듀로이,코듀로이|코듀로이소재,corduroy,False,2
+551,MATERIAL,자카드,Jacquard,"짜임 자체로 무늬를 표현하는 문양직물, 니트·원단 모두에 적용 가능",ACTIVE,,,2026-09-09 23:04:14.185 +0900,2026-09-09 23:04:14.185 +0900,MATERIAL_JACQUARD,,,자카드,자카드소재|자카드원단,jacquard fabric|jacquard material,True,2
+552,MATERIAL,모달,Modal,"부드러운 촉감, 흡습성 우수, 홈웨어·속옷",ACTIVE,,,2026-09-09 23:04:14.185 +0900,2026-09-09 23:04:14.185 +0900,MATERIAL_MODAL,,,모달,모달소재|모달원단,modal fabric|modal material,True,2
+553,MATERIAL,텐셀,Tencel,"나무 펄프에서 추출한 친환경 셀룰로오스 섬유, 부드럽고 흡습성이 좋음",ACTIVE,,,2026-09-09 23:04:14.185 +0900,2026-09-09 23:04:14.185 +0900,MATERIAL_TENCEL,,,텐셀,텐셀소재|텐셀원단,tencel fabric|tencel material,True,2
+554,MATERIAL,레이온,Rayon,"부드러운 드레이프성, 수축·물에 취약",ACTIVE,,,2026-09-09 23:04:14.185 +0900,2026-09-09 23:04:14.185 +0900,MATERIAL_VISCOSE,,,레이온,레이온소재|레이온원단,rayon fabric|rayon material,True,2
+555,MATERIAL,큐프로,Cupro,"목화씨 린터 추출, 정전기 방지, 프리미엄 안감",ACTIVE,,,2026-09-09 23:04:14.185 +0900,2026-09-09 23:04:14.185 +0900,MATERIAL_CUPRO,,,큐프로,큐프로소재|큐프로원단,cupro fabric|cupro material,True,2
+556,MATERIAL,아세테이트,Acetate,"실크 대체 광택감, 정전기 적음, 고급 안감용",ACTIVE,,,2026-09-09 23:04:14.185 +0900,2026-09-09 23:04:14.185 +0900,MATERIAL_ACETATE,,,아세테이트,아세테이트소재|아세테이트원단,acetate fabric|acetate material,True,2
+557,MATERIAL,인조가죽,Faux Leather,"천연가죽 대체, 경량, 가수분해(갈라짐) 주의",ACTIVE,,,2026-09-09 23:04:14.185 +0900,2026-09-09 23:04:14.185 +0900,MATERIAL_PU,,,인조가죽,인조가죽|인조가죽소재,faux leather,False,2
+558,MATERIAL,폴리우레탄,Polyurethane,신축성 원료(스판덱스 기반) 및 방수 코팅,ACTIVE,,,2026-09-09 23:04:14.185 +0900,2026-09-09 23:04:14.185 +0900,MATERIAL_POLYURETHANE,,,폴리우레탄,폴리우레탄소재|폴리우레탄원단,polyurethane fabric|polyurethane material,True,2
+559,MATERIAL,PVC,Polyvinyl Chloride,"방수 비닐 코팅 소재, 레인코트·비닐백에 사용",ACTIVE,,,2026-09-09 23:04:14.185 +0900,2026-09-09 23:04:14.185 +0900,MATERIAL_VINYL,,,PVC,PVC소재|PVC원단,polyvinyl chloride fabric|polyvinyl chloride material,True,2
+560,MATERIAL,네오프렌,Neoprene,"탄력있고 두꺼운 합성고무 소재, 구조적인 실루엣의 자켓·베스트에 사용",ACTIVE,,,2026-09-09 23:04:14.185 +0900,2026-09-09 23:04:14.185 +0900,MATERIAL_NEOPRENE,,,네오프렌,네오프렌|네오프렌소재,neoprene,False,2
+561,MATERIAL,에코퍼,Faux Fur,"동물 모피를 모방한 인조 소재, 후드 트리밍·아우터에 사용",ACTIVE,,,2026-09-09 23:04:14.185 +0900,2026-09-09 23:04:14.185 +0900,MATERIAL_FAUX_FUR,,,에코퍼,에코퍼소재|에코퍼원단,faux fur fabric|faux fur material,True,2
+562,MATERIAL,나일론,Nylon,"가볍고 질기며 방수성이 있는 합성섬유, 바람막이·패딩 겉감에 사용",ACTIVE,,,2026-09-09 23:04:14.185 +0900,2026-09-09 23:04:14.185 +0900,MATERIAL_NYLON,,,나일론,나일론소재|나일론원단,nylon fabric|nylon material,True,2
+563,MATERIAL,아크릴,Acrylic,"울 대용 소재, 가볍고 보온성 우수, 정전기 발생",ACTIVE,,,2026-09-09 23:04:14.185 +0900,2026-09-09 23:04:14.185 +0900,MATERIAL_ACRYLIC,,,아크릴,아크릴소재|아크릴원단,acrylic fabric|acrylic material,True,2
+564,MATERIAL,스판덱스,Spandex,"신축성이 매우 뛰어난 합성섬유, 소량 혼방해 핏감과 활동성을 더함",ACTIVE,,,2026-09-09 23:04:14.185 +0900,2026-09-09 23:04:14.185 +0900,MATERIAL_SPANDEX,,,스판덱스,스판덱스소재|스판덱스원단,spandex fabric|spandex material,True,2
+565,MATERIAL,폴리에스터,Polyester,"구김이 적고 세탁이 편한 합성섬유, 단독 또는 혼방으로 가장 흔히 사용",ACTIVE,,,2026-09-09 23:04:14.185 +0900,2026-09-09 23:04:14.185 +0900,MATERIAL_POLYESTER,,,폴리에스터,폴리에스터소재|폴리에스터원단,polyester fabric|polyester material,True,2
+566,MATERIAL,고어텍스,GORE-TEX,"방수·투습 기능성 원단, 고프코어·아웃도어 자켓에 사용",ACTIVE,,,2026-09-09 23:04:14.185 +0900,2026-09-09 23:04:14.185 +0900,MATERIAL_GORE_TEX,,,고어텍스,고어텍스|고어텍스소재,gore-tex,False,2
+567,MATERIAL,튤,Tulle,[신규 후보] 얇고 성긴 망사 형태의 원단. 발레코어의 튤스커트·튤소재에 핵심적으로 활용됨,ACTIVE,,,2026-09-09 23:04:14.185 +0900,2026-09-09 23:04:14.185 +0900,MATERIAL_TULLE,,,튤,튤소재|튤원단,tulle fabric|tulle material,True,2
+568,MATERIAL,플리스,Fleece,"양면이 보풀 처리된 가볍고 따뜻한 원단, 아우터·이너웨어에 사용",ACTIVE,,,2026-09-09 23:04:14.185 +0900,2026-09-09 23:04:14.185 +0900,MATERIAL_FLEECE,,,플리스,플리스소재|플리스원단,fleece fabric|fleece material,True,2
+569,MATERIAL,극세사,Microfiber,"머리카락보다 얇은 초극세 합성섬유, 부드럽고 흡수성 우수",ACTIVE,,,2026-09-09 23:04:14.185 +0900,2026-09-09 23:04:14.185 +0900,MATERIAL_MICROFIBER,,,극세사,극세사소재|극세사원단,microfiber fabric|microfiber material,True,2
+570,MATERIAL,피그먼트 워싱,Pigment Wash,안료로 표면만 염색 후 워싱해 색이 자연스럽게 빠진 듯한 빈티지 효과를 냄,ACTIVE,,,2026-09-09 23:04:14.185 +0900,2026-09-09 23:04:14.185 +0900,MATERIAL_WASHING,,,피그먼트 워싱,피그먼트워싱|피그먼트워싱소재,pigment wash,False,2
+571,MATERIAL,워싱,Wash,생지에 인위적으로 낡고 부드러운 느낌을 주는 가공. 생지(로우 데님)와 대비되는 개념. 기존 스타일 축의 '빈티지'는 독립 미학이 아니라 워싱·마감 속성으로 판단해 이 항목의 동의어로 이관함.,ACTIVE,,,2026-09-09 23:04:14.185 +0900,2026-09-09 23:04:14.185 +0900,MATERIAL_WASHED,,,워싱,워싱소재|워싱원단,wash fabric|wash material,True,2
+572,MATERIAL,디스트레스드,Distressed,"물리적으로 마모·긁힘·찢어짐을 내어 낡은 느낌을 연출하는 가공. 화학적 탈색인 워싱(가공)과 달리 기계적 손상 방식이며, 두 기법이 함께 쓰이는 경우도 많음.",ACTIVE,,,2026-09-09 23:04:14.185 +0900,2026-09-09 23:04:14.185 +0900,MATERIAL_DISTRESSED,,,디스트레스드,디스트레스드|디스트레스드소재,distressed,False,2
+573,MATERIAL,시폰,Chiffon,"얇고 하늘하늘하며 비치는 가벼운 원단, 블라우스·원피스에 사용",ACTIVE,,,2026-09-09 23:04:14.185 +0900,2026-09-09 23:04:14.185 +0900,MATERIAL_CHIFFON,,,시폰,시폰소재|시폰원단,chiffon fabric|chiffon material,True,2
+574,MATERIAL,레더,Leather,"동물 가죽을 무두질한 소재, 통기성은 낮으나 내구성과 고급스러움이 특징",ACTIVE,,,2026-09-09 23:04:14.185 +0900,2026-09-09 23:04:14.185 +0900,MATERIAL_LEATHER,,,레더,레더소재|레더원단,leather fabric|leather material,True,2
+575,MATERIAL,리얼퍼,Real Fur,"여우·라쿤·밍크 등 동물의 실제 모피, 후드 트리밍이나 아우터 장식에 사용",ACTIVE,,,2026-09-09 23:04:14.185 +0900,2026-09-09 23:04:14.185 +0900,MATERIAL_REAL_FUR,,,리얼퍼,리얼퍼소재|리얼퍼원단,real fur fabric|real fur material,True,2
+576,MATERIAL,무스탕,Shearling,"양가죽에 털이 붙은 채로 가공한 소재, 보온성이 매우 뛰어나 겨울 아우터에 사용",ACTIVE,,,2026-09-09 23:04:14.185 +0900,2026-09-09 23:04:14.185 +0900,MATERIAL_SHEARLING,,,무스탕,무스탕소재|양털소재,shearling fabric|shearling material,True,2
+577,MATERIAL,스웨이드,Suede,가죽 안쪽면을 기모 가공해 벨벳처럼 부드러운 질감을 낸 가죽,ACTIVE,,,2026-09-09 23:04:14.185 +0900,2026-09-09 23:04:14.185 +0900,MATERIAL_SUEDE,,,스웨이드,스웨이드소재|스웨이드원단,suede fabric|suede material,True,2
+578,MATERIAL,메시,Mesh,"구멍이 뚫린 통기성 좋은 원단, 스포츠웨어·안감 통풍용으로 사용",ACTIVE,,,2026-09-09 23:04:14.185 +0900,2026-09-09 23:04:14.185 +0900,MATERIAL_MESH,,,메시,메시소재|메시원단,mesh fabric|mesh material,True,2
+579,MATERIAL,다운,Down,패딩류 보온 충전재. 구스다운이 덕다운보다 보온성·복원력 우수,ACTIVE,,,2026-09-09 23:04:14.185 +0900,2026-09-09 23:04:14.185 +0900,MATERIAL_DOWN,,,다운,다운소재|다운원단,down fabric|down material,True,2
+580,MATERIAL,헤링본,Herringbone,"청어뼈 모양의 사선 무늬가 반복되는 능직 변형, 클래식한 코트·팬츠에 사용",ACTIVE,,,2026-09-09 23:04:14.185 +0900,2026-09-09 23:04:14.185 +0900,MATERIAL_HERRINGBONE,,,헤링본,헤링본|헤링본소재,herringbone,False,2
+581,MATERIAL,트위드,Tweed,"거친 질감의 방모직물, 클래식·오피스룩 자켓에 자주 사용",ACTIVE,,,2026-09-09 23:04:14.185 +0900,2026-09-09 23:04:14.185 +0900,MATERIAL_TWEED,,,트위드,트위드|트위드소재,tweed,False,2
+582,MATERIAL,옥스포드,Oxford,"바스켓처럼 짜인 평직 변형 원단, 캐주얼 셔츠에 가장 많이 사용",ACTIVE,,,2026-09-09 23:04:14.185 +0900,2026-09-09 23:04:14.185 +0900,MATERIAL_OXFORD,,,옥스포드,옥스포드소재|옥스포드원단,oxford fabric|oxford material,True,2
+583,MATERIAL,테리,Terry Cloth,"고리 모양의 파일이 촘촘한 두툼한 원단. 후드티·수건에 사용, 흡수성 좋음",ACTIVE,,,2026-09-09 23:04:14.185 +0900,2026-09-09 23:04:14.185 +0900,MATERIAL_TERRY_CLOTH,,,테리,테리소재|테리원단,terry cloth fabric|terry cloth material,True,2
+584,MATERIAL,데님,Denim,"튼튼한 능직 면직물로 청바지·자켓의 기본 소재, 워싱 여부에 따라 질감이 달라짐",ACTIVE,,,2026-09-09 23:04:14.185 +0900,2026-09-09 23:04:14.185 +0900,MATERIAL_DENIM,,,데님,데님소재|데님원단,denim fabric|denim material,True,2
+585,MATERIAL,캔버스,Canvas,"두껍고 튼튼한 원단, 스니커즈·에코백·워크팬츠에 사용",ACTIVE,,,2026-09-09 23:04:14.185 +0900,2026-09-09 23:04:14.185 +0900,MATERIAL_CANVAS,,,캔버스,캔버스소재|캔버스원단,canvas fabric|canvas material,True,2
+586,MATERIAL,생지,Raw Denim,워싱·가공 전 뻣뻣하고 진한 원단. 착용하며 자연스럽게 색빠짐(에이징)이 생기는 것이 특징. 반대말은 워싱 데님,ACTIVE,,,2026-09-09 23:04:14.185 +0900,2026-09-09 23:04:14.185 +0900,MATERIAL_DRY_DENIM,,,생지,생지소재|생지원단,raw denim fabric|raw denim material,True,2
+587,MATERIAL,셀비지,Selvedge Denim,구형 셔틀 방직기로 짠 데님 가장자리의 마감선. 밑단·안단의 컬러 라인으로 확인되며 프리미엄 데님의 상징으로 여겨짐,ACTIVE,,,2026-09-09 23:04:14.185 +0900,2026-09-09 23:04:14.185 +0900,MATERIAL_SELVAGE,,,셀비지,셀비지|셀비지소재,selvedge denim,False,2
+588,MATERIAL,포플린,Poplin,매끈하고 광택 있는 셔츠·블라우스용 평직물,ACTIVE,,,2026-09-09 23:04:14.185 +0900,2026-09-09 23:04:14.185 +0900,MATERIAL_POPLIN,,,포플린,포플린소재|포플린원단,poplin fabric|poplin material,True,2
+589,MATERIAL,도비,Dobby,지그재그·격자 등 작은 기하학 무늬가 자카드보다 단순하게 짜인 셔츠용 원단,ACTIVE,,,2026-09-09 23:04:14.185 +0900,2026-09-09 23:04:14.185 +0900,MATERIAL_DOBBY,,,도비,도비소재|도비원단,dobby fabric|dobby material,True,2
+590,MATERIAL,시어서커,Seersucker,표면에 잔주름이 있어 다림질이 필요 없는 여름 원단,ACTIVE,,,2026-09-09 23:04:14.185 +0900,2026-09-09 23:04:14.185 +0900,MATERIAL_SEERSUCKER,,,시어서커,시어서커|시어서커소재,seersucker,False,2
+591,MATERIAL,스트레치 데님,Stretch Denim,"일반 데님에 스판덱스를 소량 혼방해 신축성을 더한 원단, 슬림·스키니 핏에 주로 사용",ACTIVE,,,2026-09-09 23:04:14.185 +0900,2026-09-09 23:04:14.185 +0900,MATERIAL_STRETCH_DENIM,,,스트레치 데님,스트레치데님|스트레치데님소재,stretch denim,False,2
+592,MATERIAL,리플스탑,Ripstop,"격자무늬 보강사로 찢어짐 방지, 밀리터리룩·카고팬츠에 사용",ACTIVE,,,2026-09-09 23:04:14.185 +0900,2026-09-09 23:04:14.185 +0900,MATERIAL_RIPSTOP,,,리플스탑,리플스탑|리플스탑소재,ripstop,False,2
+593,MATERIAL,울,Wool,"보온성과 탄력이 우수한 동물성 섬유, 겨울 니트·코트에 사용",ACTIVE,,,2026-09-09 23:04:14.185 +0900,2026-09-09 23:04:14.185 +0900,MATERIAL_WOOL,,,울,울소재|울원단,wool fabric|wool material,True,2
+594,MATERIAL,실크,Silk,"광택이 우아하고 촉감이 매끄러운 고급 섬유, 블라우스·안감에 사용",ACTIVE,,,2026-09-09 23:04:14.185 +0900,2026-09-09 23:04:14.185 +0900,MATERIAL_SILK,,,실크,실크소재|실크원단,silk fabric|silk material,True,2
+595,MATERIAL,모헤어,Mohair,"은은한 광택, 헤어리한 질감, 털 빠짐 주의",ACTIVE,,,2026-09-09 23:04:14.185 +0900,2026-09-09 23:04:14.185 +0900,MATERIAL_MOHAIR,,,모헤어,모헤어소재|모헤어원단,mohair fabric|mohair material,True,2
+596,MATERIAL,알파카,Alpaca,"울보다 가볍고 보온성 뛰어남, 코트·니트에 사용",ACTIVE,,,2026-09-09 23:04:14.185 +0900,2026-09-09 23:04:14.185 +0900,MATERIAL_ALPACA,,,알파카,알파카소재|알파카원단,alpaca fabric|alpaca material,True,2
+597,MATERIAL,앙고라,Angora,"극상의 부드러움과 보온성, 털 빠짐 주의",ACTIVE,,,2026-09-09 23:04:14.185 +0900,2026-09-09 23:04:14.185 +0900,MATERIAL_ANGORA,,,앙고라,앙고라소재|앙고라원단,angora fabric|angora material,True,2
+598,MATERIAL,메리노울,Merino Wool,"가늘고 부드러운 고급 울, 니트웨어·이너웨어에 사용. 일반 울보다 가려움이 적음",ACTIVE,,,2026-09-09 23:04:14.185 +0900,2026-09-09 23:04:14.185 +0900,MATERIAL_MERINO_WOOL,,,메리노울,메리노울|메리노울소재,merino wool,False,2
+599,MATERIAL,캐시미어,Cashmere,"가늘고 부드러우며 보온성이 뛰어난 고급 울 소재, 가격대가 높음",ACTIVE,,,2026-09-09 23:04:14.185 +0900,2026-09-09 23:04:14.185 +0900,MATERIAL_CASHMERE,,,캐시미어,캐시미어|캐시미어소재,cashmere,False,2
+600,MATERIAL,린넨,Linen,통기성이 뛰어나고 시원하나 구김이 잘 가는 여름 대표 소재,ACTIVE,,,2026-09-09 23:04:14.185 +0900,2026-09-09 23:04:14.185 +0900,MATERIAL_LINEN,,,린넨,린넨소재|린넨원단,linen fabric|linen material,True,2
+601,MATERIAL,저마,Ramie,"삼베보다 곱고 시원한 여름 소재, 모시적삼·여름 셔츠용",ACTIVE,,,2026-09-09 23:04:14.185 +0900,2026-09-09 23:04:14.185 +0900,MATERIAL_RAMIE,,,저마,저마소재|저마원단,ramie fabric|ramie material,True,2
+602,MATERIAL,코튼,Cotton,"통기성·흡수성이 좋고 촉감이 부드러운 대표적인 천연섬유, 활용도가 가장 높은 기본 소재",ACTIVE,,,2026-09-09 23:04:14.185 +0900,2026-09-09 23:04:14.185 +0900,MATERIAL_COTTON,,,코튼,코튼소재|코튼원단,cotton fabric|cotton material,True,2
+603,MATERIAL,헴프,Hemp,"통기성이 좋고 항균성이 있는 천연 섬유, 착용할수록 부드러워짐",ACTIVE,,,2026-09-09 23:04:14.185 +0900,2026-09-09 23:04:14.185 +0900,MATERIAL_HEMP,,,헴프,헴프소재|헴프원단,hemp fabric|hemp material,True,2
+657,DETAIL,미들기장,Mid-calf Shaft,종아리 중간 부근까지 올라오는 부츠 샤프트 기장,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:30:07.716 +0900,DETAIL_MID_CALF_SHAFT,,,미들기장,미들기장,mid-calf shaft,False,1
+659,DETAIL,니하이기장,Knee-high Shaft,무릎 부근까지 올라오는 긴 부츠 샤프트 기장,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:30:07.716 +0900,DETAIL_KNEE_HIGH_SHAFT,,,니하이기장,니하이기장,knee-high shaft,False,1
+709,DETAIL,오버니기장,Over-the-knee Length,무릎 위까지 올라오는 부츠 샤프트,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:30:07.716 +0900,DETAIL_OVER_KNEE_SHAFT,,,오버니기장,오버니기장,over-the-knee length,False,1
+708,DETAIL,앵클기장,Ankle Length,발목 부근까지 오는 기장,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:30:07.716 +0900,DETAIL_ANKLE_LENGTH,,,앵클기장,앵클기장,ankle length,False,1
+781,STYLE,빈티지,,,ACTIVE,,,2026-09-10 03:34:48.754 +0900,2026-09-10 03:34:48.754 +0900,,,,빈티지,빈티지룩|빈티지패션|빈티지의류,,True,3
+782,COLOR,멜란지,,,ACTIVE,,,2026-09-10 03:34:48.845 +0900,2026-09-10 03:34:48.845 +0900,,,,멜란지,멜란지|멜란지코디,,False,2
+783,DETAIL,크롭,,,ACTIVE,,,2026-09-10 03:34:48.927 +0900,2026-09-10 03:34:48.927 +0900,,,,크롭,크롭티,,True,1
+785,DETAIL,소매,,,ACTIVE,,,2026-09-10 03:35:00.033 +0900,2026-09-10 03:35:00.033 +0900,,,,소매,소매디자인|소매디테일,,True,2
+786,DETAIL,하이넥,,,ACTIVE,,,2026-09-10 03:39:36.164 +0900,2026-09-10 03:39:36.164 +0900,,,,하이넥,하이넥,,False,1
+788,DETAIL,래글런,,,ACTIVE,,,2026-09-10 03:39:36.963 +0900,2026-09-10 03:39:36.963 +0900,,,,래글런,래글런,,False,1
+789,DETAIL,포켓,,,ACTIVE,,,2026-09-10 03:39:37.428 +0900,2026-09-10 03:39:37.428 +0900,,,,포켓,포켓디테일|포켓디자인,,True,2
+790,DETAIL,핀턱,,,ACTIVE,,,2026-09-10 03:39:37.756 +0900,2026-09-10 03:39:37.756 +0900,,,,핀턱,핀턱디테일|핀턱팬츠,,True,2
+791,DETAIL,시스루,,,ACTIVE,,,2026-09-10 03:39:38.184 +0900,2026-09-10 03:39:38.184 +0900,,,,시스루,시스루|시스루룩|시스루블라우스,,True,3
+792,DETAIL,절개,,,ACTIVE,,,2026-09-10 03:39:38.431 +0900,2026-09-10 03:39:38.431 +0900,,,,절개,절개디테일|절개라인,,True,2
+793,DETAIL,투웨이,,,ACTIVE,,,2026-09-10 03:39:38.831 +0900,2026-09-10 03:39:38.831 +0900,,,,투웨이,투웨이지퍼|투웨이집업,,True,2
+794,DETAIL,워셔블,,,ACTIVE,,,2026-09-10 03:39:39.137 +0900,2026-09-10 03:39:39.137 +0900,,,,워셔블,워셔블|워셔블니트,,True,2
+795,MATERIAL,골지,,,ACTIVE,,,2026-09-10 03:40:34.082 +0900,2026-09-10 03:40:34.082 +0900,,,,골지,골지소재|골지원단,,True,2
+796,MATERIAL,피그먼트,,,ACTIVE,,,2026-09-10 03:40:34.195 +0900,2026-09-10 03:40:34.195 +0900,,,,피그먼트,피그먼트소재|피그먼트원단,,True,2
+797,MATERIAL,쉬폰,,,ACTIVE,,,2026-09-10 03:40:34.305 +0900,2026-09-10 03:40:34.305 +0900,,,,쉬폰,쉬폰소재|쉬폰원단,,True,2
+787,DETAIL,머슬핏,,,ACTIVE,,,2026-09-10 03:39:36.625 +0900,2026-09-10 03:39:36.625 +0900,,,,머슬핏,머슬핏,,False,1
+648,DETAIL,맥시기장,Maxi Length,발목 부근까지 길게 내려오는 스커트·원피스 기장,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_MAXI_LENGTH,,,맥시기장,맥시기장,maxi length,False,1
+649,DETAIL,미니기장,Mini Length,허벅지 위~중간 부근에 오는 짧은 스커트·원피스 기장,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_MINI_LENGTH,,,미니기장,미니기장,mini length,False,1
+651,DETAIL,10부기장,Full Length,발등에 살짝 닿는 가장 긴 기본 기장,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_10_BU_LENGTH,,,10부기장,10부기장,full length,False,1
+652,DETAIL,3부기장,Short Length,허벅지(골반과 무릎 중간)까지 오는 매우 짧은 기장. 숏팬츠가 이 기장대의 대표 아이템,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_3_BU_LENGTH,,,3부기장,3부기장,short length,False,1
+798,DETAIL,4부기장,Short Length,허벅지(골반과 무릎 중간)까지 오는 매우 짧은 기장. 숏팬츠가 이 기장대의 대표 아이템,ACTIVE,,,2026-09-11 12:20:37.906 +0900,2026-09-11 12:20:37.906 +0900,DETAIL_4_BU_LENGTH,,,4부기장,4부기장,short length,False,1
+653,DETAIL,5부기장,Knee Length,무릎 정도까지 오는 반바지 기장. 버뮤다팬츠가 이 기장대의 대표 아이템,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_5_BU_LENGTH,,,5부기장,5부기장,knee length,False,1
+654,DETAIL,6-7부기장,Cropped Calf Length,무릎 아래~종아리까지 오는 기장,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_6_7BU_LENGTH,,,6-7부기장,6-7부기장,cropped calf length,False,1
+655,DETAIL,8부기장,Ankle-cropped Length,"종아리 아래, 발목 바로 위까지 오는 기장. 카프리팬츠가 이 기장대의 대표 아이템",ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_8_BU_LENGTH,,,8부기장,8부기장,ankle-cropped length,False,1
+656,DETAIL,9부기장,Ankle Length,발목 정도까지 오는 기장.,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_9_BU_LENGTH,,,9부기장,9부기장,ankle length,False,1
+698,DETAIL,컴포트핏,Comfort Fit,활동성을 위해 여유를 둔 핏,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_COMFORT_FIT,,,컴포트핏,컴포트핏,comfort fit,False,1
+609,DETAIL,루즈핏,Loose Fit,몸에 붙지 않고 자연스럽게 떨어지는 여유 있는 핏,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_LOOSE_FIT,,,루즈핏,루즈핏,loose fit,False,1
+612,DETAIL,레귤러핏,Regular Fit,과하게 붙거나 크지 않은 표준 핏,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_REGULAR_FIT,,,레귤러핏,레귤러핏,regular fit,False,1
+618,DETAIL,세미오버핏,Semi-oversized Fit,오버사이즈보다는 덜 크지만 여유가 있는 절충형 핏,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_SEMI_OVERSIZED_FIT,,,세미오버핏,세미오버핏,semi-oversized fit,False,1
+619,DETAIL,오버사이즈,Oversized,"몸보다 넉넉하고 큰 실루엣, 캐주얼·스트릿룩의 기본 핏",ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_OVERSIZED,,,오버사이즈,오버사이즈,oversized,False,1
+610,DETAIL,슬림핏,Slim Fit,"몸에 맞닿게 재단된 핏, 비즈니스코어·클래식룩에 자주 사용",ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_SLIM_FIT,,,슬림핏,슬림핏,slim fit,False,1
+504,TPO,결혼식 하객,Wedding Guest,결혼식에 하객으로 참석하는 상황,ACTIVE,,,2026-09-09 22:56:40.121 +0900,2026-09-14 06:14:13.785 +0900,TPO_WEDDING_GUEST,,,결혼식 하객,하객원피스|하객패션,wedding guest outfit|wedding guest style,True,2
+710,DETAIL,아몬드토,Almond Toe,아몬드형 앞코,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_ALMOND_TOE,,,아몬드토,아몬드토,almond toe,False,1
+604,DETAIL,플랫힐,Flat Heel,굽이 없거나 매우 낮은 형태,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_FLAT_HEEL,,,플랫힐,플랫힐,flat heel,False,1
+605,DETAIL,블록힐,Block Heel,사각형에 가까운 굵은 굽,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_BLOCK_HEEL,,,블록힐,블록힐,block heel,False,1
+606,DETAIL,웨지힐,Wedge Heel,밑창과 굽이 하나로 이어진 형태,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_WEDGE_HEEL,,,웨지힐,웨지힐,wedge heel,False,1
+607,DETAIL,청키힐,Chunky Heel,두껍고 안정감 있는 굵은 굽,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_CHUNKY_HEEL,,,청키힐,청키힐,chunky heel,False,1
+608,DETAIL,스틸레토힐,Stiletto Heel,가늘고 뾰족한 초고굽,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_STILETTO_HEEL,,,스틸레토힐,스틸레토힐,stiletto heel,False,1
+611,DETAIL,크롭기장,Cropped Length,"기장을 짧게 재단한 핏, 하이웨이스트 하의와 매치하기 좋음",ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_CROPPED_LENGTH,,,크롭기장,크롭기장,cropped length,False,1
+613,DETAIL,부츠컷,Bootcut,무릎 아래부터 밑단이 완만하게 퍼지는 하의 핏,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_BOOTCUT,,,부츠컷,부츠컷,bootcut,False,1
+614,DETAIL,스키니,Skinny,다리 라인에 매우 밀착되는 하의 핏,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_SKINNY,,,스키니,스키니진|스키니팬츠,skinny fashion,True,2
+615,DETAIL,와이드,Wide,허벅지부터 밑단까지 폭이 넓게 떨어지는 실루엣,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_WIDE,,,와이드,와이드팬츠|와이드핏,wide fashion,True,2
+616,DETAIL,플레어,Flare,무릎 아래부터 밑단이 부츠컷보다 크게 퍼지는 나팔형 핏,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_FLARE,,,플레어,플레어스커트|플레어팬츠,flare fashion,True,2
+617,DETAIL,배럴레그,Barrel Leg,허벅지·무릎 부근이 볼록하고 발목으로 갈수록 좁아지는 배럴형 실루엣,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_BARREL_LEG,,,배럴레그,배럴레그팬츠|배럴핏,barrel leg fashion,True,2
+620,DETAIL,테이퍼드,Tapered,허벅지에는 여유가 있고 밑단으로 갈수록 점차 좁아지는 핏,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_TAPERED,,,테이퍼드,테이퍼드팬츠|테이퍼드핏,tapered fashion,True,2
+621,DETAIL,세미와이드,Semi-wide,레귤러/스트레이트와 와이드 사이의 중간 여유를 가진 핏,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_SEMI_WIDE,,,세미와이드,세미와이드팬츠|세미와이드핏,semi-wide fashion,True,2
+622,DETAIL,스트레이트,Straight,허벅지부터 밑단까지 비교적 일정한 폭으로 떨어지는 일자 핏,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_STRAIGHT,,,스트레이트,스트레이트핏|스트레이트진,straight fashion,True,2
+623,DETAIL,커브드레그,Curved Leg,다리 옆선이 곡선으로 휘며 볼륨을 만드는 실루엣,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_CURVED_LEG,,,커브드레그,커브드레그진|커브드레그팬츠,curved leg fashion,True,2
+624,DETAIL,슬림스트레이트,Slim Straight,슬림하지만 무릎 아래가 크게 좁아지지 않고 일자로 떨어지는 핏,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_SLIM_STRAIGHT,,,슬림스트레이트,슬림스트레이트핏|슬림스트레이트진,slim straight fashion,True,2
+625,DETAIL,플랫폼솔,Platform Sole,앞축부터 뒤꿈치까지 전체적으로 두껍게 높인 밑창 구조,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_PLATFORM_SOLE,,,플랫폼솔,플랫폼슈즈|플랫폼솔,platform sole fashion,True,2
+626,DETAIL,스플릿토,Split Toe,"엄지와 나머지 발가락 사이가 갈라진 독특한 앞코 형태, 메종 마르지엘라의 타비 디자인에서 유래",ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_SPLIT_TOE,,,스플릿토,스플릿토,split toe,False,1
+627,DETAIL,라운드토,Round Toe,둥근 형태의 앞코,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_ROUND_TOE,,,라운드토,라운드토,round toe,False,1
+628,DETAIL,스퀘어토,Square Toe,각진 사각 형태의 앞코,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_SQUARE_TOE,,,스퀘어토,스퀘어토,square toe,False,1
+629,DETAIL,포인티토,Pointed Toe,뾰족한 형태의 앞코,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_POINTY_TOE,,,포인티토,포인티토,pointed toe,False,1
+630,DETAIL,슬립온,Slip-on,끈 없이 신고 벗는 여밈 방식,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_SLIP_ON,,,슬립온,슬립온디자인|슬립온여밈,slip-on fashion,True,2
+631,DETAIL,스트랩,Strap,발등이나 뒤꿈치를 감싸는 끈 형태의 여밈,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_STRAP,,,스트랩,스트랩샌들|스트랩디테일,strap fashion,True,2
+632,DETAIL,레이스업,Lace-up,끈으로 조여 신는 여밈 방식,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_LACE_UP,,,레이스업,레이스업슈즈|레이스업부츠,lace-up fashion,True,2
+633,DETAIL,유넥,U-Neck,라운드넥보다 넓고 깊게 U자로 파인 목선,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_U_NECK,,,유넥,유넥|유넥티셔츠,u-neck fashion,True,2
+634,DETAIL,보트넥,Boat Neck,어깨선을 따라 넓고 수평으로 파인 목선,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_BOAT_NECK,,,보트넥,보트넥|보트넥티셔츠,boat neck fashion,True,2
+635,DETAIL,브이넥,V-Neck,"V자 형태로 깊게 파인 목선, 목선을 갸름하게 보이는 효과",ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_V_NECK,,,브이넥,브이넥,v-neck,False,1
+636,DETAIL,스쿱넥,Scoop Neck,둥글고 넓게 파인 목선으로 유넥과 유사하나 더 완만하고 넓은 곡선이 특징. 실제 상품명에서는 유넥과 혼용되기도 함,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_SCOOP_NECK,,,스쿱넥,스쿱넥|스쿱넥티셔츠,scoop neck fashion,True,2
+637,DETAIL,원숄더,One Shoulder,한쪽 어깨만 드러나는 비대칭 목선,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_ONE_SHOULDER,,,원숄더,원숄더,one shoulder,False,1
+638,DETAIL,카울넥,Cowl Neck,여유 있게 늘어지는 드레이프형 목선,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_COWL_NECK,,,카울넥,카울넥,cowl neck,False,1
+639,DETAIL,터틀넥,Turtleneck,목을 전체적으로 감싸는 높은 칼라형 목선,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_TURTLENECK,,,터틀넥,터틀넥,turtleneck,False,1
+640,DETAIL,헨리넥,Henley Neck,목 앞부분에 짧은 단추 플라켓이 달린 목선,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_HENLEY_NECK,,,헨리넥,헨리넥,henley neck,False,1
+641,DETAIL,홀터넥,Halter Neck,"목 뒤로 끈을 묶어 고정하는 형태의 목선, 어깨가 드러남",ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_HALTER_NECK,,,홀터넥,홀터넥,halter neck,False,1
+642,DETAIL,스퀘어넥,Square Neck,사각형으로 각지게 파인 목선,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_SQUARE_NECK,,,스퀘어넥,스퀘어넥,square neck,False,1
+643,DETAIL,오프숄더,Off Shoulder,양쪽 어깨가 드러나도록 소매나 목선이 내려간 디자인,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_OFF_SHOULDER,,,오프숄더,오프숄더,off shoulder,False,1
+644,DETAIL,라운드넥,Crew Neck,"가장 기본적인 둥근 목선, 목에 가깝게 붙는 형태",ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_CREW_NECK,,,라운드넥,라운드넥,crew neck,False,1
+645,DETAIL,스탠드칼라,Stand Collar,"목 주변을 세운 형태의 칼라, 이국적이고 클래식한 무드 연출",ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_MANDARIN_COLLAR,,,스탠드칼라,스탠드칼라,stand collar,False,1
+660,DETAIL,긴소매,Long Sleeve,"손목까지 오는 긴 소매, 사계절 기본 기장",ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_LONG_SLEEVE,,,긴소매,긴소매,long sleeve,False,1
+661,DETAIL,반소매,Short Sleeve,"팔꿈치 위로 오는 짧은 소매, 여름철 기본 기장",ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_SHORT_SLEEVE,,,반소매,반소매,short sleeve,False,1
+662,DETAIL,민소매,Sleeveless,소매가 없는 형태. 옷_아이템의 '슬리브리스'와 동일 개념의 소매기장 속성값,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_SLEEVELESS,,,민소매,민소매,sleeveless,False,1
+663,DETAIL,5부소매,Elbow-length Sleeve,"팔꿈치 부근까지 오는 소매, 반팔보다 살짝 길고 7부보다 짧음",ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_HALF_SLEEVE,,,5부소매,5부소매,elbow-length sleeve,False,1
+664,DETAIL,7부소매,Three-quarter Sleeve,"팔꿈치와 손목 사이, 손목 바로 위까지 오는 중간 길이 소매",ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_4_SLEEVE,,,7부소매,7부소매,three-quarter sleeve,False,1
+665,DETAIL,퍼프소매,Puff Sleeve,"어깨나 팔 부분이 부풀려진 볼륨감 있는 소매, 페미닌룩에 자주 사용",ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_PUFF_SLEEVE,,,퍼프소매,퍼프소매,puff sleeve,False,1
+666,DETAIL,레글런소매,Raglan Sleeve,"어깨 솔기 없이 목선에서 바로 이어지는 소매, 스포티한 무드 연출",ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_RAGLAN_SLEEVE,,,레글런소매,레글런소매,raglan sleeve,False,1
+667,DETAIL,로우라이즈,Low Rise,"골반에 걸쳐 입는 낮은 허리선, Y2K룩의 대표적인 라이즈",ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_LOW_RISE,,,로우라이즈,로우라이즈,low rise,False,1
+646,DETAIL,롱기장,Long Length,기본형보다 길게 떨어지는 전체 의복 기장,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_LONG_LENGTH,,,롱기장,롱기장,long length,False,1
+647,DETAIL,숏기장,Short Length,기본형보다 짧게 떨어지는 전체 의복 기장,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_SHORT_LENGTH,,,숏기장,숏기장,short length,False,1
+650,DETAIL,미디기장,Midi Length,무릎 아래에서 종아리 중간 부근에 오는 스커트·원피스 기장,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_MIDI_LENGTH,,,미디기장,미디기장,midi length,False,1
+668,DETAIL,미드라이즈,Mid Rise,"배꼽 아래, 골반보다는 위쪽에 허리선이 오는 중간 라이즈",ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_MID_RISE,,,미드라이즈,미드라이즈,mid rise,False,1
+669,DETAIL,하이웨스트,High Rise,"배꼽 위까지 허리선이 올라오는 라이즈, 다리가 길어 보이는 효과",ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_HIGH_RISE,,,하이웨스트,하이웨스트,high rise,False,1
+670,DETAIL,밴딩허리,Elastic Waist,허리 부분에 고무 밴딩이 적용된 여밈·착용 구조,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_ELASTIC_WAIST,,,밴딩허리,밴딩허리,elastic waist,False,1
+671,DETAIL,커브드,Curved,,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_CURVED,,,커브드,커브드팬츠|커브드핏,curved fashion,True,2
+672,DETAIL,스트라이프,Stripe,줄무늬 패턴,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_STRIPE,,,스트라이프,스트라이프,stripe,False,1
+673,DETAIL,핀스트라이프,Pinstripe,가느다란 세로 줄무늬,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_PINSTRIPE,,,핀스트라이프,핀스트라이프,pinstripe,False,1
+674,DETAIL,체크,Check,격자형 체크 패턴의 상위 개념,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_CHECK,,,체크,체크패턴|체크셔츠,check fashion,True,2
+675,DETAIL,깅엄체크,Gingham Check,작은 격자의 깅엄 체크,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_GINGHAM,,,깅엄체크,깅엄체크,gingham check,False,1
+676,DETAIL,타탄체크,Tartan Check,다색 교차선 타탄 체크,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_TARTAN,,,타탄체크,타탄체크,tartan check,False,1
+677,DETAIL,글렌체크,Glen Check,복합 격자형 클래식 체크,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_GLEN_CHECK,,,글렌체크,글렌체크,glen check,False,1
+678,DETAIL,하운드투스,Houndstooth,개 이빨 형태 체크,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_HOUNDSTOOTH,,,하운드투스,하운드투스,houndstooth,False,1
+679,DETAIL,아가일,Argyle,마름모 격자 패턴,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_ARGYLE,,,아가일,아가일패턴|아가일니트,argyle fashion,True,2
+680,DETAIL,레오파드,Leopard Print,표범 무늬,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_LEOPARD,,,레오파드,레오파드패턴|레오파드프린트,leopard print fashion,True,2
+681,DETAIL,지브라,Zebra Print,얼룩말 무늬,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_ZEBRA,,,지브라,지브라패턴|지브라프린트,zebra print fashion,True,2
+682,DETAIL,카우프린트,Cow Print,소 얼룩 무늬,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_COW_PRINT,,,카우프린트,카우프린트,cow print,False,1
+683,DETAIL,스네이크프린트,Snake Print,뱀가죽 모티프 패턴,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_SNAKE_PRINT,,,스네이크프린트,스네이크프린트,snake print,False,1
+684,DETAIL,카무플라주,Camouflage,위장무늬 패턴,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_CAMOUFLAGE,,,카무플라주,카모패턴|카무플라주,camouflage fashion,True,2
+685,DETAIL,플로럴,Floral,꽃 모티프 패턴,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_FLORAL,,,플로럴,플로럴패턴|플로럴원피스,floral fashion,True,2
+686,DETAIL,페이즐리,Paisley,곡선 물방울형 페이즐리,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_PAISLEY,,,페이즐리,페이즐리패턴|페이즐리프린트,paisley fashion,True,2
+687,DETAIL,도트,Polka Dot,원형 점무늬,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_POLKA_DOT,,,도트,도트패턴|도트원피스,polka dot fashion,True,2
+688,DETAIL,기하학패턴,Geometric Pattern,도형 기반 반복 패턴,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_GEOMETRIC,,,기하학패턴,기하학패턴,geometric pattern,False,1
+689,DETAIL,추상패턴,Abstract Pattern,비정형 추상 무늬,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_ABSTRACT,,,추상패턴,추상패턴,abstract pattern,False,1
+690,DETAIL,컬러블록,Color Block,서로 다른 색 면 분할,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_COLOR_BLOCK,,,컬러블록,컬러블록|컬러블록니트,color block fashion,True,2
+691,DETAIL,옴브레,Ombre,단계적 그라데이션,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_OMBRE,,,옴브레,옴브레패턴|옴브레염색,ombre fashion,True,2
+692,DETAIL,타이다이,Tie-dye,묶음 염색 패턴,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_TIE_DYE,,,타이다이,타이다이|타이다이티셔츠,tie-dye fashion,True,2
+693,DETAIL,로고패턴,Logo Pattern,로고 반복 패턴,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_LOGO_PATTERN,,,로고패턴,로고패턴,logo pattern,False,1
+694,DETAIL,레터링,Lettering,문자·타이포그래피 그래픽,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_LETTERING,,,레터링,레터링티셔츠|레터링프린트,lettering fashion,True,2
+695,DETAIL,그래픽,Graphic,일러스트·이미지 그래픽,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_GRAPHIC,,,그래픽,그래픽티셔츠|그래픽프린트,graphic fashion,True,2
+699,DETAIL,A라인,A-line,위에서 아래로 넓어지는 A자 실루엣,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_A_LINE,,,A라인,A라인스커트|A라인원피스,a-line fashion,True,2
+700,DETAIL,H라인,H-line,직선적으로 떨어지는 H자 실루엣,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_H_LINE,,,H라인,H라인스커트|H라인원피스,h-line fashion,True,2
+701,DETAIL,머메이드,Mermaid,무릎 아래부터 퍼지는 실루엣,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_MERMAID,,,머메이드,머메이드스커트|머메이드드레스,mermaid fashion,True,2
+702,DETAIL,코쿤,Cocoon,중앙이 볼륨 있고 위아래가 좁아지는 실루엣,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_COCOON,,,코쿤,코쿤코트|코쿤실루엣,cocoon fashion,True,2
+703,DETAIL,벌룬,Balloon,둥글게 부풀어 오르는 실루엣,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_BALLOON,,,벌룬,벌룬스커트|벌룬실루엣,balloon fashion,True,2
+704,DETAIL,박시,Boxy,직선적이고 상자형 실루엣,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_BOX,,,박시,박시핏|박시티,boxy fashion,True,2
+705,DETAIL,페플럼,Peplum,허리 아래가 짧게 퍼지는 실루엣,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_PEPLUM,,,페플럼,페플럼|페플럼블라우스,peplum fashion,True,2
+706,DETAIL,마이크로미니,Micro Mini,미니보다 더 짧은 초미니,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_MICRO_MINI,,,마이크로미니,마이크로미니,micro mini,False,1
+707,DETAIL,니렝스,Knee Length,무릎 부근까지 오는 기장,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_KNEE_LENGTH,,,니렝스,니렝스,knee length,False,1
+711,DETAIL,목토,Moc Toe,U자 스티치형 앞코,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_MOC_TOE,,,목토,목토부츠|목토워커,moc toe fashion,True,2
+712,DETAIL,캡토,Cap Toe,별도 캡 패널 앞코,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_CAP_TOE,,,캡토,캡토슈즈|캡토옥스포드,cap toe fashion,True,2
+713,DETAIL,키튼힐,Kitten Heel,낮고 가느다란 굽,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_KITTEN_HEEL,,,키튼힐,키튼힐,kitten heel,False,1
+714,DETAIL,콘힐,Cone Heel,원뿔형 굽,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_CONE_HEEL,,,콘힐,콘힐,cone heel,False,1
+715,DETAIL,스풀힐,Spool Heel,중앙이 잘록한 실패형 굽,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_SPOOL_HEEL,,,스풀힐,스풀힐,spool heel,False,1
+716,DETAIL,러그솔,Lug Sole,깊은 돌기 밑창,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_LUG_SOLE,,,러그솔,러그솔|러그솔부츠,lug sole fashion,True,2
+717,DETAIL,청키솔,Chunky Sole,두껍고 부피감 있는 밑창,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_CHUNKY_SOLE,,,청키솔,청키솔|청키솔스니커즈,chunky sole fashion,True,2
+718,DETAIL,검솔,Gum Sole,고무 특유의 밑창,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_GUM_SOLE,,,검솔,검솔스니커즈|검솔슈즈,gum sole fashion,True,2
+697,DETAIL,피티드핏,Fitted Fit,신체에 비교적 밀착되는 맞음새,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_FITTED,,,피티드핏,피티드핏,fitted fit,False,1
+696,DETAIL,릴랙스핏,Relaxed Fit,레귤러보다 여유 있는 핏,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_RELAXED_FIT,,,릴랙스핏,릴랙스핏,relaxed fit,False,1
+719,DETAIL,모크넥,Mock Neck,터틀넥보다 낮게 올라오는 목선,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_MOCK_NECK,,,모크넥,모크넥,mock neck,False,1
+720,DETAIL,스위트하트넥,Sweetheart Neck,하트형 굴곡 목선,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_SWEETHEART_NECK,,,스위트하트넥,스위트하트넥,sweetheart neck,False,1
+721,DETAIL,키홀넥,Keyhole Neck,작은 키홀 오픈 목선,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_KEYHOLE_NECK,,,키홀넥,키홀넥,keyhole neck,False,1
+722,DETAIL,언밸런스넥,Asymmetric Neckline,비대칭 목선,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_ASYMMETRIC_NECK,,,언밸런스넥,언밸런스넥,asymmetric neckline,False,1
+723,DETAIL,셔츠칼라,Shirt Collar,기본 셔츠형 칼라,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_SHIRT_COLLAR,,,셔츠칼라,셔츠칼라,shirt collar,False,1
+724,DETAIL,폴로칼라,Polo Collar,폴로셔츠형 칼라,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_POLO_COLLAR,,,폴로칼라,폴로칼라,polo collar,False,1
+725,DETAIL,피터팬칼라,Peter Pan Collar,둥근 납작 칼라,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_PETER_PAN_COLLAR,,,피터팬칼라,피터팬칼라,peter pan collar,False,1
+726,DETAIL,세일러칼라,Sailor Collar,뒤쪽이 넓은 세일러 칼라,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_SAILOR_COLLAR,,,세일러칼라,세일러칼라,sailor collar,False,1
+727,DETAIL,노치드라펠,Notched Lapel,V자 홈이 있는 라펠,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_NOTCHED_LAPEL,,,노치드라펠,노치드라펠,notched lapel,False,1
+728,DETAIL,피크드라펠,Peaked Lapel,끝이 위로 솟는 라펠,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_PEAKED_LAPEL,,,피크드라펠,피크드라펠,peaked lapel,False,1
+729,DETAIL,캡소매,Cap Sleeve,어깨만 살짝 덮는 짧은 소매,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_CAP_SLEEVE,,,캡소매,캡소매,cap sleeve,False,1
+730,DETAIL,벌룬소매,Balloon Sleeve,볼륨을 주고 끝단을 모은 소매,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_BALLOON_SLEEVE,,,벌룬소매,벌룬소매,balloon sleeve,False,1
+731,DETAIL,비숍소매,Bishop Sleeve,손목 쪽으로 풍성하게 모이는 소매,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_BISHOP_SLEEVE,,,비숍소매,비숍소매,bishop sleeve,False,1
+732,DETAIL,벨소매,Bell Sleeve,끝으로 갈수록 넓어지는 소매,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_BELL_SLEEVE,,,벨소매,벨소매,bell sleeve,False,1
+733,DETAIL,돌먼소매,Dolman Sleeve,몸판과 소매가 넓게 이어지는 구조,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_DOLMAN_SLEEVE,,,돌먼소매,돌먼소매,dolman sleeve,False,1
+734,DETAIL,배트윙소매,Batwing Sleeve,박쥐날개형 소매,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_BATWING_SLEEVE,,,배트윙소매,배트윙소매,batwing sleeve,False,1
+735,DETAIL,플러터소매,Flutter Sleeve,가볍게 퍼지는 러플형 소매,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_FLUTTER_SLEEVE,,,플러터소매,플러터소매,flutter sleeve,False,1
+736,DETAIL,드롭숄더,Drop Shoulder,어깨선이 아래로 내려온 구조,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_DROP_SHOULDER,,,드롭숄더,드롭숄더,drop shoulder,False,1
+737,DETAIL,패치포켓,Patch Pocket,겉면에 덧붙인 포켓,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_PATCH_POCKET,,,패치포켓,패치포켓,patch pocket,False,1
+738,DETAIL,카고포켓,Cargo Pocket,플랩과 볼륨이 있는 입체 포켓,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_CARGO_POCKET,,,카고포켓,카고포켓,cargo pocket,False,1
+739,DETAIL,플랩포켓,Flap Pocket,덮개가 달린 포켓,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_FLAP_POCKET,,,플랩포켓,플랩포켓,flap pocket,False,1
+740,DETAIL,웰트포켓,Welt Pocket,가느다란 테두리만 보이는 포켓,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_WELT_POCKET,,,웰트포켓,웰트포켓,welt pocket,False,1
+741,DETAIL,슬래시포켓,Slash Pocket,사선 입구 포켓,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_SLASH_POCKET,,,슬래시포켓,슬래시포켓,slash pocket,False,1
+742,DETAIL,캥거루포켓,Kangaroo Pocket,앞 중앙 연결형 큰 포켓,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_KANGAROO_POCKET,,,캥거루포켓,캥거루포켓,kangaroo pocket,False,1
+743,DETAIL,체스트포켓,Chest Pocket,가슴 위치 포켓,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_CHEST_POCKET,,,체스트포켓,체스트포켓|가슴포켓,chest pocket fashion,True,2
+744,DETAIL,지퍼포켓,Zip Pocket,지퍼로 여닫는 포켓,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_ZIP_POCKET,,,지퍼포켓,지퍼포켓,zip pocket,False,1
+745,DETAIL,지퍼여밈,Zip Closure,지퍼 여밈,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_ZIP_CLOSURE,,,지퍼여밈,지퍼여밈,zip closure,False,1
+746,DETAIL,버튼여밈,Button Closure,단추 여밈,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_BUTTON_CLOSURE,,,버튼여밈,버튼여밈,button closure,False,1
+747,DETAIL,스냅여밈,Snap Closure,스냅 버튼 여밈,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_SNAP_CLOSURE,,,스냅여밈,스냅여밈,snap closure,False,1
+748,DETAIL,후크앤아이,Hook-and-eye,후크와 고리 고정,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_HOOK_EYE,,,후크앤아이,후크앤아이,hook-and-eye,False,1
+749,DETAIL,버클여밈,Buckle Closure,버클 고정,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_BUCKLE_CLOSURE,,,버클여밈,버클여밈,buckle closure,False,1
+750,DETAIL,드로스트링,Drawstring,끈을 당겨 조이는 방식,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_DRAWSTRING,,,드로스트링,드로스트링|드로스트링팬츠,drawstring fashion,True,2
+751,DETAIL,토글여밈,Toggle Closure,토글을 고리에 거는 방식,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_TOGGLE,,,토글여밈,토글여밈,toggle closure,False,1
+752,DETAIL,벨크로,Velcro,후크앤루프 여밈,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_VELCRO,,,벨크로,벨크로|벨크로신발,velcro fashion,True,2
+753,DETAIL,타이여밈,Tie Closure,끈이나 리본을 묶는 방식,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_TIE_CLOSURE,,,타이여밈,타이여밈,tie closure,False,1
+754,DETAIL,리본,Ribbon,리본 장식,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_RIBBON,,,리본,리본디테일|리본블라우스,ribbon fashion,True,2
+755,DETAIL,보우,Bow,매듭 리본 장식,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_BOW,,,보우,보우디테일|보우블라우스,bow fashion,True,2
+756,DETAIL,러플,Ruffle,물결 주름 장식,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_RUFFLE,,,러플,러플디테일|러플블라우스,ruffle fashion,True,2
+757,DETAIL,프릴,Frill,가장자리 주름 장식,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_FRILL,,,프릴,프릴디테일|프릴블라우스,frill fashion,True,2
+758,DETAIL,플리츠,Pleats,규칙적으로 접은 주름,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_PLEATS,,,플리츠,플리츠스커트|플리츠,pleats fashion,True,2
+759,DETAIL,스팽글,Sequin,반짝이는 얇은 장식,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_SEQUIN,,,스팽글,스팽글|스팽글드레스,sequin fashion,True,2
+760,DETAIL,비즈,Beading,구슬형 장식,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_BEADING,,,비즈,비즈디테일|비즈장식,beading fashion,True,2
+761,DETAIL,자수,Embroidery,실로 놓은 장식,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_EMBROIDERY,,,자수,자수디테일|자수티셔츠,embroidery fashion,True,2
+762,DETAIL,아플리케,Applique,천·패치 덧붙임,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_APPLIQUE,,,아플리케,아플리케디테일|아플리케패치,applique fashion,True,2
+763,DETAIL,레이스트림,Lace Trim,레이스 가장자리 장식,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_LACE_TRIM,,,레이스트림,레이스트림,lace trim,False,1
+764,DETAIL,프린지,Fringe,늘어지는 실·끈 장식,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_FRINGE,,,프린지,프린지디테일|프린지백,fringe fashion,True,2
+765,DETAIL,태슬,Tassel,술 형태 장식,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_TASSEL,,,태슬,태슬디테일|태슬로퍼,tassel fashion,True,2
+766,DETAIL,스터드,Stud,금속 돌기 장식,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_STUD,,,스터드,스터드디테일|스터드장식,stud fashion,True,2
+767,DETAIL,라인스톤,Rhinestone,반짝이는 스톤 장식,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_RHINESTONE,,,라인스톤,라인스톤디테일|라인스톤장식,rhinestone fashion,True,2
+768,DETAIL,펄장식,Pearl Detail,진주 모티프 장식,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_PEARL,,,펄장식,펄장식|진주장식,pearl detail fashion,True,2
+769,DETAIL,체인장식,Chain Detail,체인형 금속 장식,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_CHAIN,,,체인장식,체인장식,chain detail,False,1
+770,DETAIL,메탈하드웨어,Metal Hardware,금속 부속 강조 장식,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_METAL_HARDWARE,,,메탈하드웨어,메탈하드웨어,metal hardware,False,1
+771,DETAIL,셔링,Shirring,촘촘히 잡은 수축 주름,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_SHIRRING,,,셔링,셔링디테일|셔링원피스,shirring fashion,True,2
+772,DETAIL,루칭,Ruching,원단을 모아 만든 잔주름,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_RUCHING,,,루칭,루칭디테일|루칭탑,ruching fashion,True,2
+773,DETAIL,드레이프,Drape,자연스럽게 흐르는 주름·처짐,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_DRAPE,,,드레이프,드레이프디테일|드레이프원피스,drape fashion,True,2
+774,DETAIL,컷아웃,Cut-out,일부 영역을 도려낸 디테일,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_CUTOUT,,,컷아웃,컷아웃디테일|컷아웃원피스,cut-out fashion,True,2
+775,DETAIL,랩,Wrap,패널이 겹쳐 감싸는 구조,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_WRAP,,,랩,랩원피스|랩스커트|랩디자인,wrap fashion,True,3
+776,DETAIL,레이어드,Layered,겹쳐 보이는 구조,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_LAYERED,,,레이어드,레이어드룩|레이어드코디,layered fashion,True,2
+777,DETAIL,언밸런스,Asymmetric,좌우 길이·형태가 다른 비대칭,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_ASYMMETRIC,,,언밸런스,언밸런스디자인|언밸런스기장,asymmetric fashion,True,2
+778,DETAIL,슬릿,Slit,트임 디테일,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_SLIT,,,슬릿,슬릿스커트|슬릿디테일,slit fashion,True,2
+779,DETAIL,개더,Gather,원단을 모아 만든 주름,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_GATHER,,,개더,개더디테일|개더스커트,gather fashion,True,2
+780,DETAIL,스모킹,Smocking,실로 촘촘히 고정한 주름 구조,ACTIVE,,,2026-09-09 23:17:22.792 +0900,2026-09-09 23:17:22.792 +0900,DETAIL_SMOCKING,,,스모킹,스모킹디테일|스모킹원피스,smocking fashion,True,2

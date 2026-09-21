@@ -15,6 +15,9 @@ class Source(models.Model):
     class SourceType(models.TextChoices):
         COMMERCE = "COMMERCE", "Commerce"
         CONTENT = "CONTENT", "Content"
+        # ★ 2026-09-21 — 검색 플랫폼(네이버·구글). 커머스도 콘텐츠도 아니다.
+        #   '언급'이 아니라 '검색'을 세는 축이라 화면에서도 따로 묶어야 한다.
+        SEARCH = "SEARCH", "Search"
 
     class CollectionMethod(models.TextChoices):
         API = "API", "API"
