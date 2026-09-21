@@ -67,9 +67,15 @@ export default async function handler(req, res) {
     res.setHeader('Cache-Control', 'no-store');
     return res.end(text || JSON.stringify({ status:'error', reason:'인증 서버 응답이 비었습니다.', data:null }));
   } catch (error) {
+    /* ★ 2026-09-21 보안 — fetch 실패 메시지에는 백엔드 주소가 섞여 나온다.
+       배포에서는 로그로만 남기고 화면에는 사유만 준다. */
+    console.error('[feedit] auth relay failed:', error);
+    const deployed =
+      process.env.NODE_ENV === 'production' || Boolean(process.env.VERCEL);
     return send(res, 502, {
       status:'error', reason:'로그인 서버에 연결하지 못했습니다.',
-      detail:String(error && error.message || error).slice(0, 140), data:null,
+      ...(deployed ? {} : { detail:String(error && error.message || error).slice(0, 140) }),
+      data:null,
     });
   }
 }

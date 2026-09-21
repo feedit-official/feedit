@@ -1,4 +1,4 @@
-/* GET /api/discount · /api/resale · /api/lifecycle · /api/price-history · /api/sentiment
+/* GET /api/discount · /api/resale · /api/lifecycle · /api/price-history · /api/sentiment · /api/search
  *
  * 트렌드 분석의 할인률 변화 · 리세일 시세 지수 · 수명주기 탭이 부르는 창구.
  * 세 주소를 **함수 하나**로 받는다 — 버셀 Hobby 요금제는 함수 개수가 12개로 묶여 있어
@@ -16,7 +16,11 @@
 import { viaBackend } from './_lib/db.js';
 import { failed } from './_lib/reply.js';
 
-const ALLOWED = new Set(['discount', 'resale', 'lifecycle', 'price-history', 'sentiment']);
+/* ★ 2026-09-22 — 'search'(검색 지표)를 여기 얹는다.
+     처음엔 api/search.js 로 따로 뒀는데, 그러면 함수가 12개(한도)에 딱 차서
+     다음에 주소를 하나만 더 만들어도 배포가 막힌다.
+     이 파일이 애초에 그 문제 때문에 생긴 창구이므로 같은 방식으로 받는다. */
+const ALLOWED = new Set(['discount', 'resale', 'lifecycle', 'price-history', 'sentiment', 'search']);
 
 export default async function handler(req, res) {
   const url = new URL(req.url, 'http://x');
@@ -56,6 +60,9 @@ export default async function handler(req, res) {
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
   res.setHeader('Cache-Control', discountFacets
     ? 's-maxage=120, stale-while-revalidate=600'
-    : 's-maxage=300, stale-while-revalidate=600');
+    /* 검색량은 하루 단위로만 바뀐다 — 더 길게 캐시해도 된다. */
+    : kind === 'search'
+      ? 's-maxage=1800, stale-while-revalidate=3600'
+      : 's-maxage=300, stale-while-revalidate=600');
   return res.end(JSON.stringify(relayed));
 }

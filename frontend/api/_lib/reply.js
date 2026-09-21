@@ -56,7 +56,17 @@ export function fromQuery(res, r, { emptyReason, map }) {
       r.code === 'not_configured'
         ? 'AWS RDS 접속 정보가 아직 설정되지 않았습니다.'
         : `AWS RDS 에 연결하지 못했습니다 (${r.code}).`;
-    return failed(res, 안내, { detail: r.error });
+    /* ★ 2026-09-21 보안 — Postgres 원문에는 스키마·표·컬럼·제약 이름이 섞인다.
+     *   그걸 브라우저까지 보내면 남의 DB 구조를 읽어 주는 꼴이다.
+     *   원문은 서버 로그(버셀 Functions 로그)에만 남기고, 화면에는
+     *   배포가 아닐 때만 붙인다 — 로컬에서 고칠 때는 그대로 보여야 한다.
+     *
+     *   화면(dispatch.js)은 detail 이 없으면 "연결이 되면 자동으로 실제 값이
+     *   뜹니다." 로 떨어지므로, 빠져도 문구가 비지 않는다. */
+    if (r.error) console.error('[feedit] query failed:', r.code, r.error);
+    const deployed =
+      process.env.NODE_ENV === 'production' || Boolean(process.env.VERCEL);
+    return failed(res, 안내, deployed ? {} : { detail: r.error });
   }
   if (!r.rows.length) return empty(res, emptyReason);
   return ok(res, map ? map(r.rows) : r.rows);

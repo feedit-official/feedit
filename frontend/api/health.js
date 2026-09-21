@@ -14,6 +14,7 @@
  *   analysis.term_metric_daily **0** · term_assoc_daily **0** · text_document **0**
  */
 
+import { timingSafeEqual } from 'node:crypto';
 import { q, isConfigured, backendBase, backendToken, viaBackend } from './_lib/db.js';
 
 // 화면이 쓰는 표만 본다. 47개를 다 세면 느리고, 볼 이유도 없다.
@@ -47,7 +48,7 @@ export default async function handler(req, res) {
   const base = backendBase();
   if (base) {
     const relayed = await viaBackend('/health');
-    return json(res, {
+    return respond(req, res, {
       checked_at: new Date().toISOString(),
       route: 'backend',
       backend_url: base,
@@ -79,7 +80,7 @@ export default async function handler(req, res) {
       'BACKEND_API_URL 도 DATABASE_URL 도 없습니다. 버셀 Settings → ' +
       'Environment Variables 에 둘 중 하나를 넣고 다시 배포하세요. ' +
       '(지금 쓰는 방식은 BACKEND_API_URL = http://feedit-official.duckdns.org/api 입니다.)';
-    return json(res, out);
+    return respond(req, res, out);
   }
 
   const ver = await q('SELECT version() AS v, current_database() AS db');
@@ -88,7 +89,7 @@ export default async function handler(req, res) {
       `RDS 에 못 붙었습니다 (${ver.code}). ` +
       'RDS 가 밖에서 보이는지(공개 접근 · 보안 그룹)를 DB 팀과 확인하세요.';
     out.detail = ver.error;
-    return json(res, out);
+    return respond(req, res, out);
   }
   out.connected = true;
   out.server = { version: String(ver.rows[0].v).split(',')[0], database: ver.rows[0].db };
@@ -124,7 +125,7 @@ export default async function handler(req, res) {
   }
 
   out.verdict = verdict(out);
-  return json(res, out);
+  return respond(req, res, out);
 }
 
 function verdict(o) {
@@ -150,6 +151,55 @@ function verdict(o) {
     );
   }
   return bits.join(' ');
+}
+
+/* ★ 2026-09-21 보안 — 이 진단은 내부 구조를 통째로 말한다.
+ *
+ *   backend_url(프로토콜까지) · 스키마와 표 이름 · 각 표의 정확한 행 수 ·
+ *   지표 버전까지 나간다. 누구나 열 수 있으면 공격자에게 "어디를 무엇으로
+ *   치면 되는지"를 그대로 건네주는 셈이다.
+ *
+ *   그렇다고 없애면 배포된 곳 상태를 볼 길이 사라진다. 그래서 **닫되
+ *   열쇠를 만든다**:
+ *
+ *     · 로컬 개발 · 테스트(NODE_ENV!=='production')  → 지금까지처럼 전문
+ *     · 배포                                        → 요약만
+ *       전문을 보려면 버셀 환경변수 HEALTH_DIAG_TOKEN 을 정하고
+ *         /api/health?key=<그 값>   (또는 머리글 X-FEEDiT-Diag)
+ *
+ *   요약도 거짓말은 하지 않는다 — 검사는 똑같이 하고, 결과만 접어서 준다.
+ */
+function diagAllowed(req) {
+  const deployed = process.env.NODE_ENV === 'production' || Boolean(process.env.VERCEL);
+  if (!deployed) return true;
+
+  const want = (process.env.HEALTH_DIAG_TOKEN || '').trim();
+  if (!want) return false;                       // 열쇠를 안 정했으면 안 연다
+
+  const url = new URL(req.url, 'http://x');
+  const got = String(
+    url.searchParams.get('key') || req.headers['x-feedit-diag'] || '',
+  ).trim();
+
+  // 길이가 다르면 timingSafeEqual 이 던진다. 먼저 걸러내고 상수 시간으로 견준다.
+  const a = Buffer.from(got, 'utf8');
+  const b = Buffer.from(want, 'utf8');
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
+/** 전문을 줄지 요약만 줄지 여기서 한 번에 가른다. */
+function respond(req, res, body) {
+  if (diagAllowed(req)) return json(res, body);
+
+  // 요약 — "붙었나" 하나만. 표 이름도 행 수도 주소도 나가지 않는다.
+  const ok =
+    body.route === 'backend'
+      ? Boolean(body.backend && body.backend.ok)
+      : Boolean(body.connected);
+  return json(res, {
+    status: ok ? 'ok' : 'error',
+    checked_at: body.checked_at,
+  });
 }
 
 function json(res, body) {

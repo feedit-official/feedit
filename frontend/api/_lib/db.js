@@ -44,9 +44,26 @@ export function getPool() {
         database: process.env.PGDATABASE || 'feedit',
       };
 
-  // RDS 는 SSL 을 요구한다. 인증서 검증까지 켜려면 CA 를 심어야 하는데
-  // 버셀 함수에 CA 를 넣는 건 별도 작업이라, 우선 암호화만 켠다.
-  cfg.ssl = { rejectUnauthorized: false };
+  /* RDS 는 SSL 을 요구한다.
+   *
+   * ★ 2026-09-21 — 기본값은 '암호화만'이다. 인증서 검증까지 켜려면 AWS RDS 의
+   *   CA 묶음이 필요한데, 그걸 넣지 않은 채 검증을 켜면 **지금 도는 연결이
+   *   그 자리에서 끊긴다.** 시연 중인 배포를 깨뜨리지 않으려고 스위치로 뒀다.
+   *
+   *   켜는 법 (CA 를 넣은 다음에):
+   *     1) https://truststore.pki.rds.amazonaws.com/ap-northeast-2/ap-northeast-2-bundle.pem
+   *        을 받아 버셀 환경변수 PGSSLROOTCERT 에 내용을 통째로 넣는다
+   *     2) DB_SSL_STRICT=1 을 넣는다
+   *   둘 다 있어야 검증이 켜진다. CA 없이 STRICT 만 켜면 안 켠다 — 끊기느니
+   *   지금 상태가 낫다.
+   *
+   *   지금 기본 경로는 Django 경유라 이 pg 직결은 예비용이다.
+   */
+  const ca = (process.env.PGSSLROOTCERT || '').trim();
+  const strict = process.env.DB_SSL_STRICT === '1' && Boolean(ca);
+  cfg.ssl = strict
+    ? { rejectUnauthorized: true, ca }
+    : { rejectUnauthorized: false };
 
   // 서버리스는 오래 매달리면 안 된다. 못 붙으면 빨리 실패하고 이유를 말한다.
   cfg.connectionTimeoutMillis = 6000;
