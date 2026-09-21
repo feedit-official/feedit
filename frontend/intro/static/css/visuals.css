@@ -414,6 +414,8 @@
 .anzStage .zdark p{color:rgba(255,255,255,.55)}
 .anzStage .zdark .zchips u{background:rgba(255,255,255,.09);color:rgba(255,255,255,.72)}
 .anzStage .zf4{grid-template-columns:repeat(4,1fr)}
+/* TOP 4 카드 — 창 아래 남는 공간만큼 사진을 키운다(작은 창에서는 기존 높이 유지) */
+.anzStage .zf4 .zc img{height:clamp(60px,calc(46vh - 305px),130px)}
 
 /* 찜한 키워드 — 오늘의 이슈 */
 .anzStage .zhero{display:grid;grid-template-columns:.58fr 1fr;gap:10px;align-items:center}
