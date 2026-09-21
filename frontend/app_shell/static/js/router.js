@@ -28,6 +28,17 @@ function navState(){
 /* ★ 새로고침해도 보던 화면 그대로 — 지금 화면을 세션에 적어 둔다.
    (탭을 닫으면 지워지므로 다음에 새로 들어오면 인트로부터 본다) */
 const NAV_KEY='feedit.nav.v1';
+/* ★ 2026-09-21 — 인트로(로딩 + 설명 페이지)는 **평생 한 번**이다.
+   세션 열쇠(NAV_KEY)는 탭을 닫으면 지워져 다음에 또 인트로부터 봤다.
+   한 번 본문까지 들어온 사람은 브라우저에 표시를 남겨, 다음에 들어와도
+   곧장 홈 화면으로 떨어진다. (intro/loader.js 의 boot 이 같은 열쇠를 본다) */
+export const SEEN_KEY='feedit.introSeen.v1';
+export function introSeen(){
+  try{ return localStorage.getItem(SEEN_KEY)==='1' }catch(e){ return false }
+}
+function markIntroSeen(){
+  try{ localStorage.setItem(SEEN_KEY,'1') }catch(e){}
+}
 function saveNav(){
   if(!mainMode)return;
   try{ sessionStorage.setItem(NAV_KEY,JSON.stringify(navState())) }catch(e){}
@@ -343,6 +354,7 @@ document.addEventListener('keydown',e=>{
 
 /* ── 모드 전환 — 버튼으로만 ─────────────────────────── */
 function enterMain(){
+  markIntroSeen();                      /* 여기까지 왔으면 인트로는 본 것이다 */
   if(mainMode)return; mainMode=true;
   document.body.classList.add('mainmode');
   scrollTo(0,0);
@@ -384,6 +396,8 @@ addEventListener('popstate', e=>{
 (function resumeNav(){
   let st=null;
   try{ st=JSON.parse(sessionStorage.getItem(NAV_KEY)||'null') }catch(e){}
+  /* 세션 기록이 없어도, 예전에 인트로를 본 적이 있으면 홈으로 바로 들어간다 */
+  if((!st||!st.view)&&introSeen())st={view:'home'};
   if(!st||!st.view)return;
   document.body.classList.add('loaded');
   const site=$('#site'); if(site)site.classList.add('on');

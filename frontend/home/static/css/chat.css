@@ -85,12 +85,18 @@
 }
 .hot.open .hotTop .lbl{color:var(--pink-1)}
 .hotTop .lbl u{color:var(--coral);text-decoration:none}
+/* ★ 2026-09-21 — 폭을 고정하고 넘치는 글자를 잘라 냈더니 살!말? 모드의
+   긴 상품명이 앞뒤로 잘려 나갔다. 이제 내용만큼 넓어지고, 그래도 모자라면
+   줄을 바꿔 **전부 보인다**. 세로 롤 애니메이션은 그대로(한 칸에 겹쳐 쌓는다). */
 .hotRoll{
-  width:clamp(190px,19vw,270px);height:1.5em;overflow:hidden;position:relative;
+  display:grid;width:max-content;
+  min-width:clamp(190px,19vw,270px);max-width:min(560px,86vw);
+  min-height:1.5em;overflow:hidden;position:relative;
 }
 .hotRoll i{
-  position:absolute;inset:0;display:flex;align-items:center;justify-content:flex-end;
-  gap:9px;font-style:normal;font-size:13.5px;letter-spacing:-.02em;white-space:nowrap;
+  grid-area:1/1;position:relative;display:flex;align-items:center;justify-content:flex-end;
+  flex-wrap:wrap;gap:4px 9px;font-style:normal;font-size:13.5px;letter-spacing:-.02em;
+  text-align:right;word-break:keep-all;overflow-wrap:anywhere;line-height:1.5;
   color:var(--pink-0);
 }
 .hotRoll i b{
@@ -104,7 +110,7 @@
 
 /* 펼침 — 글자만 위로 올라온다. 폭은 내용만큼만 잡아 좌측 문구를 가리지 않는다. */
 .hotList{
-  width:max-content;max-width:min(340px,60vw);
+  width:max-content;max-width:min(560px,86vw);
   height:0;overflow:hidden;text-align:right;
 }
 .hotList button{
@@ -119,7 +125,8 @@
   font-family:var(--num);font-size:10px;color:var(--pink-2);
   font-feature-settings:'zero' 0;order:-1;
 }
-.hotList .k{font-size:13px;letter-spacing:-.025em;color:var(--pink-0);transition:color .3s}
+.hotList .k{font-size:13px;letter-spacing:-.025em;color:var(--pink-0);transition:color .3s;
+  text-align:right;word-break:keep-all;overflow-wrap:anywhere}
 .hotList .ph{display:none}
 .hotList .d{
   font-family:var(--num);font-size:11px;min-width:52px;text-align:right;

@@ -43,10 +43,18 @@ _CONTENT = re.compile(r"""content\s*=\s*["']([^"']+)["']""", re.I)
 
 def _page_image(url: str, timeout: float = 6.0) -> str | None:
     """상품 페이지를 직접 열어 대표 이미지(og:image) 주소만 읽는다. 실패하면 None."""
+    if not str(url or "").startswith(("http://", "https://")):
+        return None
     try:
         import requests
         r = requests.get(url, timeout=timeout, allow_redirects=True,
-                         headers={"User-Agent": "Mozilla/5.0 (FEEDiT product link)"})
+                         headers={
+                             # 커스텀 UA 를 403 으로 막는 쇼핑몰이 많다 — 평범한 브라우저로 연다.
+                             "User-Agent": ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                                            "AppleWebKit/537.36 (KHTML, like Gecko) "
+                                            "Chrome/140.0.0.0 Safari/537.36"),
+                             "Accept-Language": "ko-KR,ko;q=0.9",
+                         })
         if r.status_code >= 400:
             return None
         head = r.text[:200_000]
@@ -86,7 +94,9 @@ def inspect(url: str, *, timeout: int = 18) -> dict:
     return {
         "found": bool(got.get("found")),
         "url": value,
-        "image_url": _page_image(value),
+        # 원본 주소에서 못 읽으면 모델이 확인한 실제 페이지 주소로 한 번 더 본다.
+        "image_url": (_page_image(value)
+                      or _page_image(str(got.get("source_url") or "").strip())),
         "item_name": (str(got.get("item_name") or "").strip()[:160] or None),
         "brand": (str(got.get("brand") or "").strip()[:80] or None),
         "price_krw": price,

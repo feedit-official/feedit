@@ -288,7 +288,10 @@ $('#again').addEventListener('click',()=>{
 (function boot(){
   /* ★ 새로고침 복원 — 이미 본문을 보던 세션이면 로딩 시퀀스를 건너뛴다 */
   try{
-    if(sessionStorage.getItem('feedit.nav.v1')){
+    /* 인트로를 이미 본 사람(localStorage)이거나 보던 세션이면 건너뛴다 */
+    let seen=false;
+    try{ seen=localStorage.getItem('feedit.introSeen.v1')==='1' }catch(e){}
+    if(seen||sessionStorage.getItem('feedit.nav.v1')){
       stage.style.opacity=0;
       const g=$('#gauge'); if(g)g.style.opacity=0;
       return;
