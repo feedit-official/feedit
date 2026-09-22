@@ -10,6 +10,7 @@
  */
 
 import { q, viaBackend } from './_lib/db.js';
+import { absoluteImageUrl } from './_lib/image.js';
 import { ok, empty, failed } from './_lib/reply.js';
 
 export default async function handler(req, res) {
@@ -135,7 +136,9 @@ export default async function handler(req, res) {
     source_label: x.source_name || null,
     market: x.market_type || null,
     url: x.product_url || null,
-    image: x.thumbnail_url || null,
+    /* 상대 경로로 저장된 사진에 베이스를 붙인다(_lib/image.js).
+       전체의 38%가 그 모양이라, 그대로 내보내면 카드 사진이 안 뜬다. */
+    image: absoluteImageUrl(x.thumbnail_url, x.source_code),
     category: x.source_category_name || null,
     price: {
       list: numOrNull(x.list_price),

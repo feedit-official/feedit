@@ -43,8 +43,10 @@ MAX_SLOTS = vton.MAX_ITEMS
 #   이것을 버리면 상의·하의가 통째로 빈다.
 #   ★ 기준은 수집기가 원본이다 — backend/collection/musinsa/constants.py
 #     IMAGE_BASE_URL = "https://image.msscdn.net". 여기서 새로 정하지 않는다.
-#   ⚠ 같은 보정이 화면 쪽에는 아직 없다(backend/apps/api/views.py products ·
-#     frontend/api/products.js 는 thumbnail_url 을 그대로 내보낸다).
+#   ★ 같은 규칙이 화면 쪽에도 있다. 고칠 때 셋을 같이 고친다:
+#       backend/apps/api/images.py       (Django)
+#       frontend/api/_lib/image.js       (Vercel 함수 — 배포된 화면이 쓰는 길)
+#     공통 계약은 backend/apps/api/test_images.py 의 표다.
 IMAGE_BASE = {"MUSINSA": "https://image.msscdn.net",
               "MUSINSA_USED": "https://image.msscdn.net"}
 # 상대 경로로 인정할 모양. 모르는 모양은 주소로 만들지 않고 버린다 —

@@ -15,6 +15,7 @@ from django.http import JsonResponse
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 
+from apps.api.images import absolute_image_url
 from apps.core.models import (
     AppUser,
     DictionaryTerm,
@@ -382,7 +383,10 @@ def _card_payload(card, profile, tastes_by_user, taste_names_by_user):
         "brand": brand,
         "category": category,
         "price": price,
-        "image_url": vote_image_url(card.image_url) or (source.thumbnail_url if source else None),
+        # 카드에 올린 사진이 없으면 상품 썸네일로 떨어진다 — 그 썸네일도
+        # 상대 경로일 수 있다(apps/api/images.py).
+        "image_url": (vote_image_url(card.image_url)
+                      or (absolute_image_url(source.thumbnail_url) if source else None)),
         "product_source_id": source.id if source else None,
         "product_url": source.product_url if source else None,
         "gender_target": card.gender_target,

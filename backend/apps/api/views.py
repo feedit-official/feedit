@@ -40,6 +40,7 @@ from django.utils.dateparse import parse_datetime
 from django.views.decorators.http import require_GET
 
 from .notifications import josa
+from apps.api.images import absolute_image_url
 from apps.core.models import (
     Brand,
     BrandSource,
@@ -1396,7 +1397,7 @@ def _item_with_thumb_rows(qs, expr, keep, limit):
             .values_list("product__canonical_name", "thumbnail_url")
         for k, v in prod_thumbs:
             if k not in thumb_map:
-                thumb_map[k] = v
+                thumb_map[k] = absolute_image_url(v)
 
         # 2. For remaining labels, check ProductSource by source_name (fast index)
         missing_labels = [L for L in labels if L not in thumb_map]
@@ -1406,7 +1407,7 @@ def _item_with_thumb_rows(qs, expr, keep, limit):
                 .values_list("source_name", "thumbnail_url")
             for k, v in ps_thumbs:
                 if k not in thumb_map:
-                    thumb_map[k] = v
+                    thumb_map[k] = absolute_image_url(v)
 
     for o in out:
         o["thumb"] = thumb_map.get(o["label"])
@@ -1425,7 +1426,7 @@ def _discount_product_rows(qs, query, limit, offset=0):
             .distinct().order_by("-id")[offset:offset + limit])
     return [{"id": row["id"], "label": row["_label"] or "상품명 없음",
              "brand": row["_brand"] or "", "source": row["source__name"],
-             "thumb": row["thumbnail_url"]} for row in rows]
+             "thumb": absolute_image_url(row["thumbnail_url"])} for row in rows]
 
 
 @require_GET
@@ -1705,7 +1706,8 @@ def discount(request):
         matched_platforms = sorted(by_platform.values(), key=lambda item: item["sale_price"])
         product = {
             "id": source.id, "name": label, "brand": brand,
-            "source": source.source.name, "image": source.thumbnail_url,
+            "source": source.source.name,
+            "image": absolute_image_url(source.thumbnail_url, source.source.code),
             "list_price": _num(current["list_price"]),
             "sale_price": _num(current["sale_price"]),
             "discount_rate": current["_d"],
@@ -2180,7 +2182,10 @@ def products(request):
         items.append({
             "id": r["product_id"] or r["id"], "product_source_id": r["id"],
             "name": r["_name"], "brand": r["_brand"], "source": r["source__code"],
-            "url": r["product_url"], "image": r["thumbnail_url"],
+            "url": r["product_url"],
+            # 상대 경로로 저장된 사진에 베이스를 붙인다(images.absolute_image_url).
+            # 전체의 38%가 그 모양이라, 그대로 내보내면 카드 사진이 안 뜬다.
+            "image": absolute_image_url(r["thumbnail_url"], r["source__code"]),
             "category": r["_category"], "market": r["market_type"],
             "price": {
                 "list": _num(s["list_price"]) if s else None,

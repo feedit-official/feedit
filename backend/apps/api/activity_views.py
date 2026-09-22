@@ -26,6 +26,7 @@ from django.http import JsonResponse
 from django.utils import timezone
 from django.views.decorators.http import require_GET, require_POST, require_http_methods
 
+from apps.api.images import absolute_image_url
 from apps.core.models import (
     AppUser,
     ChatSession,
@@ -427,7 +428,11 @@ def _saved_all(profile):
             row.update({
                 "name": src.source_name or row["name"],
                 "brand": brand or row["brand"],
-                "image": src.thumbnail_url,
+                # 상대 경로 사진에 베이스를 붙인다 (apps/api/images.py).
+                # ★ 소스 코드를 넘기지 않는다 — 이 쿼리는 source 를 select_related
+                #   하지 않아서, 줄마다 조회가 한 번 더 나간다. 경로 모양으로
+                #   가려도 결과가 같다(상대 경로는 전부 goods_img 다).
+                "image": absolute_image_url(src.thumbnail_url),
                 "url": src.product_url,
                 "category": src.source_category.source_category_name if src.source_category_id else "",
                 "list_price": float(snap["list_price"]) if snap.get("list_price") is not None else None,
@@ -495,7 +500,7 @@ def saved(request):
                 "name": source.source_name or (source.product.canonical_name if source.product_id else ""),
                 "brand": brand,
                 "source": source.source.name,
-                "image": source.thumbnail_url,
+                "image": absolute_image_url(source.thumbnail_url),
                 "list_price": float(snap["list_price"]) if snap["list_price"] is not None else None,
                 "sale_price": float(snap["sale_price"]) if snap["sale_price"] is not None else None,
                 "discount_rate": float(snap["discount_rate"]) if snap["discount_rate"] is not None else None,
