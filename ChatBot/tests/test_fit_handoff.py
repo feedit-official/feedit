@@ -1,0 +1,133 @@
+"""코디 인계 — 도구 목록 관문 · 연출 검수 · 상품 고르기 · 사진 주소.
+
+설계서 '코디 인계(Fit Handoff)' 장의 확정 사항을 코드로 묶어 둔다.
+"""
+import os
+import sys
+import unittest
+from unittest.mock import Mock, patch
+
+sys.modules.setdefault("requests", Mock())
+sys.modules.setdefault("psycopg", Mock())
+sys.modules.setdefault("psycopg.rows", Mock(dict_row=None))
+
+from app import fit, tools, vton
+
+
+class ToolGateTests(unittest.TestCase):
+    """VTON 은 살!말? 의 고유 기능이다 — 프롬프트가 아니라 도구 목록이 지킨다."""
+
+    def names(self, ctx):
+        return [s.get("name") for s in tools.specs_for(ctx)]
+
+    def test_general_mode_has_no_build_fit(self):
+        got = self.names({"mode": "general"})
+        self.assertIn("propose_fit", got)        # 제안까지는 한다
+        self.assertNotIn("build_fit", got)       # 입히지는 못한다
+
+    def test_salmal_needs_approved_proposal(self):
+        # 승인을 거치지 않은 살말 턴에는 확정할 코디가 없다.
+        self.assertNotIn("build_fit", self.names({"mode": "salmal"}))
+        self.assertIn("build_fit", self.names(
+            {"mode": "salmal", "fit_proposal": {"items": [{"slot": "상의"}]}}))
+
+
+class PruneOptionTests(unittest.TestCase):
+    """아이템과 맞지 않는 연출은 뗀다. 다만 조용히 버리지 않는다."""
+
+    def test_pullover_drops_top_open_with_reason(self):
+        items = [{"slot": "상의", "name": "빈티지 스웨트셔츠"}]
+        seen = [{"slot": "상의", "closure": "없음", "openable": "no", "layer": "보통"}]
+        on, dropped = fit.prune_options({"top_open": True}, items, seen)
+        self.assertFalse(on.get("top_open"))
+        self.assertTrue(any("여밈이 없어" in d for d in dropped))
+
+    def test_unknown_keeps_option_and_says_so(self):
+        # ★ 모르면 빼지도 넣지도 않는다. 확인하지 못한 것을 근거로 지시를 지우면
+        #   사용자가 켠 연출이 이유 없이 사라진다.
+        items = [{"slot": "상의", "name": "트랙탑"}]
+        seen = [{"slot": "상의", "closure": "모르겠음", "openable": "unknown",
+                 "layer": "모르겠음"}]
+        on, dropped = fit.prune_options({"top_open": True}, items, seen)
+        self.assertTrue(on.get("top_open"))
+        self.assertTrue(any("확인하지 못했" in d for d in dropped))
+
+    def test_layered_needs_two_outers(self):
+        items = [{"slot": "아우터", "name": "코치 재킷"}]
+        on, dropped = fit.prune_options({"outer_layered": True}, items, [])
+        self.assertFalse(on.get("outer_layered"))
+        self.assertTrue(any("아우터가 한 벌" in d for d in dropped))
+
+    def test_conflict_drops_both(self):
+        items = [{"slot": "아우터", "name": "트랙 재킷"}]
+        seen = [{"slot": "아우터", "closure": "지퍼", "openable": "yes", "layer": "얇음"}]
+        on, dropped = fit.prune_options({"outer_open": True, "outer_closed": True},
+                                        items, seen)
+        self.assertFalse(on.get("outer_open"))
+        self.assertFalse(on.get("outer_closed"))
+        self.assertTrue(any("둘 다" in d for d in dropped))
+
+    def test_layer_order_puts_thin_first(self):
+        items = [{"slot": "아우터", "name": "패딩"}, {"slot": "아우터", "name": "트랙 재킷"}]
+        seen = [{"slot": "아우터", "layer": "두꺼움"}, {"slot": "아우터", "layer": "얇음"}]
+        ordered = fit.layer_order(items, seen)
+        self.assertEqual(ordered[0]["name"], "트랙 재킷")
+
+
+class ProposeTests(unittest.TestCase):
+    """사진 없는 상품은 코디에 담지 않는다 — 입힐 수 없는 것을 승인 카드에 올리면
+    사용자는 눌러 보고 나서야 안다."""
+
+    class FakeMarket:
+        def __init__(self, rows):
+            self.rows, self.asked = rows, []
+
+        def products(self, sel, limit=3):
+            self.asked.append(sel)
+            return self.rows.get(sel.get("kind"), [])
+
+    def test_skips_items_without_photo(self):
+        market = self.FakeMarket({
+            "티셔츠": [{"name": "사진 없는 상의", "image": ""},
+                       {"name": "트랙탑", "image": "https://image.msscdn.net/a.jpg"}],
+            "팬츠": [{"name": "배럴레그 팬츠", "image": "https://image.msscdn.net/b.jpg"}],
+            "스니커즈": [],
+        })
+        got = fit.propose(market, ["블록코어"], ["상의", "하의", "신발"])
+        names = [i["name"] for i in got["items"]]
+        self.assertEqual(names, ["트랙탑", "배럴레그 팬츠"])
+        # 못 채운 칸은 숨기지 않는다
+        self.assertEqual(got["missing_slots"], ["신발"])
+        # 어느 태그로 골랐는지 남는다 — "왜 이걸 골랐나" 를 말할 수 있어야 한다
+        self.assertEqual(got["items"][0]["style"], "블록코어")
+
+    def test_no_style_is_not_guessed(self):
+        got = fit.propose(self.FakeMarket({}), [], None)
+        self.assertIn("unavailable", got)
+
+    def test_same_slot_twice_is_kept(self):
+        # '아우터' 둘이 레이어드의 조건이다 — 중복을 막으면 레이어드를 만들 수 없다.
+        self.assertEqual(fit._normalize_slots(["아우터", "아우터"]), ["아우터", "아우터"])
+        self.assertEqual(fit._normalize_slots(["없는칸"]), fit.DEFAULT_SLOTS)
+
+
+class ImageHostTests(unittest.TestCase):
+    """상품 사진은 서버가 받는다. 다만 아무 주소나 대신 받아 주지 않는다."""
+
+    def test_unknown_host_is_refused_with_host_in_message(self):
+        with self.assertRaises(ValueError) as caught:
+            vton.fetch_as_data_url("https://evil.example.com/a.jpg")
+        self.assertIn("evil.example.com", str(caught.exception))
+
+    def test_items_accept_image_url(self):
+        with patch("app.vton.fetch_as_data_url",
+                   return_value="data:image/png;base64,eA==") as fetch:
+            rows = vton._items([{"image_url": "https://image.msscdn.net/a.jpg",
+                                 "category": "상의"}], None, None)
+        fetch.assert_called_once()
+        self.assertEqual(rows[0]["category"], "상의")
+        self.assertTrue(rows[0]["image"].startswith("data:image/png"))
+
+
+if __name__ == "__main__":
+    unittest.main()

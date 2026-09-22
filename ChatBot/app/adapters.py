@@ -40,6 +40,8 @@ class SalmalHTTPAdapter:
 #    무신사 · 지그재그 · 에이블리(할인) / 무신사 유즈드 · 크림(리세일)이 모두 여기로 들어온다.
 # ══════════════════════════════════════════════════════════════
 _SEL_KEYS = ("brand", "kind", "style", "item")
+# 상품 조회 한 칸의 상한(초). 병렬로 불러도 가장 느린 칸이 한 바퀴를 정한다.
+PRODUCTS_TIMEOUT = 4.0
 
 
 def _sel(sel: dict | None) -> dict:
@@ -62,7 +64,15 @@ class MarketHTTPAdapter(SalmalHTTPAdapter):
         super().__init__(base=base, timeout=timeout)
 
     def _market(self, path: str, params: dict) -> dict:
-        data = self._get(path, params)
+        # ★ 상품 조회만 시계를 짧게 쓴다 (2026-09-22). 코디는 칸마다 한 번씩 부르므로
+        #   한 칸의 지연이 그대로 한 바퀴의 지연이 된다.
+        keep = self.timeout
+        if path == "products":
+            self.timeout = min(self.timeout, PRODUCTS_TIMEOUT)
+        try:
+            data = self._get(path, params)
+        finally:
+            self.timeout = keep
         if "unavailable" in data:
             data["unavailable"] = data["unavailable"].replace("살!말? 데이터", "시장 데이터")
         return data
@@ -102,6 +112,25 @@ class MarketHTTPAdapter(SalmalHTTPAdapter):
         if out.get("regular_price") is None:
             out["note"] = "정가를 찾지 못한 매물이라 유지율(정가 대비 %)은 계산하지 않았습니다. 거래가만 보세요."
         return out
+
+    # ── 상품 목록 (2026-09-22) ────────────────────────────────
+    #   ★ 화면이 쓰는 /api/products 를 그대로 읽는다. 스타일은 자동 태깅 결과
+    #     (commerce.product_term · term_type='STYLE')로 걸리고, 사진(thumbnail_url)과
+    #     최신 가격이 함께 온다 — 코디를 짤 재료가 이 한 곳에 다 있다.
+    #   ★ timeout 이 짧다. 코디는 칸마다 한 번씩 물어서(fit.propose 가 병렬로 부른다)
+    #     한 칸이 오래 끌면 답 쓸 시간을 먹는다. 못 받으면 그 칸은 비는 게 낫다.
+    def products(self, sel: dict, limit: int = 3, sort: str = "recommend") -> list[dict]:
+        data = self._market("products", {**_sel(sel), "sort": sort, "limit": limit})
+        if "unavailable" in data:
+            return []
+        rows = _slim_list(data.get("items"),
+                          ("name", "brand", "image", "url", "product_source_id", "category"),
+                          limit)
+        # 가격은 중첩 객체라 _slim_list 가 통째로 옮긴다 — 판매가 하나만 남긴다.
+        for row, src in zip(rows, (data.get("items") or [])):
+            price = (src or {}).get("price") or {}
+            row["price"] = price.get("sale") or price.get("list")
+        return rows
 
     def lifecycle(self, sel: dict, term: str | None = None) -> dict:
         params = _sel(sel)

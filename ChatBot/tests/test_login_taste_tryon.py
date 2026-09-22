@@ -57,8 +57,47 @@ def test_tryon_offered_for_link_even_after_index_rewrites_source():
     assert "입혀보기" in labels(rep, "salmal")
 
 
-def test_tryon_offered_when_asked_in_any_mode():
-    assert "입혀보기" in labels({"question": "이거 나한테 입혀 줘", "intent": "agent"}, "general")
+def test_tryon_intent_opens_the_door_from_general_mode():
+    """★ 2026-09-22 — 질문에 정규식을 걸지 않는다(설계서 '코디 인계' 확정 5).
+
+    예전에는 server._TRYON_ASK 가 문장을 다시 분류해 일반 모드에서도 빈 착장 위젯을
+    열었다. 같은 문장을 nlu.classify 가 이미 분류하고 있어(buy.tryon) 답변 경로에
+    분류표가 둘이었다. 이제 남은 신호는 의도뿐이고, VTON 은 살!말? 의 고유 기능이라
+    일반 모드에는 넘어가는 문만 둔다.
+    """
+    got = labels({"question": "이거 나한테 입혀 줘", "intent": "buy.tryon"}, "general")
+    assert got == ["살!말? 에서 입혀보기"]
+    assert "입혀보기" in labels({"question": "이거 나한테 입혀 줘",
+                                 "intent": "buy.tryon"}, "salmal")
+
+
+def test_no_button_from_wording_alone():
+    """의도가 아니면 뜨지 않는다 — 문장만 보고 버튼을 띄우던 자리가 사라졌다."""
+    assert labels({"question": "이거 나한테 입혀 줘", "intent": "agent"}, "general") == []
+
+
+def test_proposed_coordination_becomes_an_approval_card():
+    """코디를 짜 왔으면 승인 카드다. 일반 모드의 답은 여기서 멈춘다."""
+    rep = {"question": "그 스타일대로 입혀 줄 수 있어?", "intent": "agent",
+           "fit_proposal": {"items": [{"slot": "상의", "name": "트랙탑",
+                                       "image": "https://image.msscdn.net/a.jpg"}],
+                            "options": ["top_open"], "styles": ["블록코어"]}}
+    acts = server.actions_for(rep, mode="general")
+    assert [a["label"] for a in acts] == ["이 코디로 입혀보기"]
+    assert acts[0]["type"] == "fit_confirm"
+    # 버튼이 코디를 들고 간다 — 화면은 이것으로 살!말? 에 묻는다
+    assert acts[0]["fit"]["items"][0]["name"] == "트랙탑"
+
+
+def test_built_coordination_leaves_the_payload_to_the_report():
+    """확정된 코디는 report 의 fit 하나가 원본이다 — 버튼에 한 벌 더 싣지 않는다."""
+    rep = {"question": "이 코디로 입혀보기", "intent": "agent",
+           "fit": {"items": [{"slot": "상의", "name": "트랙탑",
+                              "image": "https://image.msscdn.net/a.jpg"}],
+                   "options": []}}
+    acts = server.actions_for(rep, mode="salmal")
+    assert [a["label"] for a in acts] == ["입혀보기"]
+    assert "fit" not in acts[0]
 
 
 def test_tryon_offered_for_photo_in_salmal():

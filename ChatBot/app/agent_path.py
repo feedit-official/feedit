@@ -79,6 +79,27 @@ def _terms_from(trace) -> list[dict]:
     return out[:5]
 
 
+def _fit(trace, tool: str) -> dict | None:
+    """코디 도구가 돌려준 것을 그대로 꺼낸다 (2026-09-22).
+
+    ★ 답변 문장에서 상품을 뽑지 않는다 — _item_draft 와 같은 원칙이다. 승인 카드와
+      착장 칸에 오르는 것은 도구가 적은 것뿐이다. 모델이 지어낸 상품명은 여기 없다.
+    """
+    got = None
+    for c in (trace.calls if trace else []):
+        if c.get("tool") != tool:
+            continue
+        res = c.get("result")
+        if isinstance(res, dict) and res.get("items") and not res.get("unavailable"):
+            got = res            # 여러 번 불렸으면 마지막 것이 지금의 코디다
+    if not got:
+        return None
+    return {"items": got.get("items") or [], "options": got.get("options") or [],
+            "styles": got.get("styles") or [], "why": got.get("why") or "",
+            "dropped": got.get("dropped") or [],
+            "missing_slots": got.get("missing_slots") or []}
+
+
 def _item_draft(trace) -> dict | None:
     """'물어보기' 카드가 그대로 받아 쓰는 상품 초안.
 
@@ -291,6 +312,9 @@ def ask(question: str, *, store, gate, mode: str = "general",
         "terms": terms,
         # 물어보기(커뮤니티 카드)가 그대로 받아 쓰는 상품 초안. 없으면 None.
         "item_draft": _item_draft(res.trace),
+        # 코디 — 제안(승인 카드가 받는다)과 확정(착장 칸이 받는다). 없으면 None.
+        "fit_proposal": _fit(res.trace, "propose_fit"),
+        "fit": _fit(res.trace, "build_fit"),
         # ★ 화면 계약: chat_api.reportHTML 은 as_of 를 **객체**로 읽는다
         #   (rep.as_of && rep.as_of.metric). 문자열을 주면 .metric 이 undefined 라
         #   카드 제목줄의 기준일이 조용히 사라진다. 예전 경로(engine.py:205)도

@@ -7,6 +7,7 @@ import os
 import random
 import re
 from pathlib import Path
+from urllib.parse import urlparse
 
 import requests
 
@@ -195,6 +196,60 @@ def decode_image(data_url: str, max_bytes: int = 5 * 1024 * 1024) -> tuple[bytes
     return raw, ext
 
 
+# ── DB 상품 사진을 주소로 받는다 (2026-09-22) ────────────────
+#   왜 서버가 받나 —
+#     상품 썸네일(commerce.product_source.thumbnail_url)은 플랫폼 CDN 주소다.
+#     화면에서 fetch 하면 CORS 로 막히고, 막히는 자리가 브라우저라 서버 로그에는
+#     아무것도 안 남는다. 받는 쪽을 서버로 옮긴다.
+#   부수 이득 — 요청 본문이 몇 백 바이트로 줄어 버셀 중계 함수의 4.5MB 상한
+#     (api/v1/virtual-fitting.js)에 걸리지 않는다.
+#   ★ 아무 주소나 대신 받아 주지 않는다. 허용한 호스트만 — 그러지 않으면 우리
+#     서버가 남의 요청을 대신 쏘는 통로(SSRF)가 된다.
+#   ★ 호스트 목록은 환경변수로 넓힌다. 실제 값은 DB 가 원본이다:
+#       SELECT DISTINCT split_part(thumbnail_url,'/',3) FROM commerce.product_source;
+ALLOWED_IMAGE_HOSTS = {
+    h.strip().lower() for h in (
+        os.getenv("FEEDIT_VTON_IMAGE_HOSTS")
+        or "image.msscdn.net,img.a-bly.com,"
+           "cf.image-farm.s3.ap-northeast-2.amazonaws.com,"
+           "cf.product-image.s3.ap-northeast-2.amazonaws.com"
+    ).split(",") if h.strip()
+}
+FETCH_TIMEOUT = 8
+FETCH_MAX_BYTES = 5 * 1024 * 1024
+
+
+def image_host_allowed(url: str) -> bool:
+    """이 주소를 우리가 받아도 되는가. 사진을 보내기 전에 먼저 묻는 자리다."""
+    return (urlparse(str(url or "")).hostname or "").lower() in ALLOWED_IMAGE_HOSTS
+
+
+def fetch_as_data_url(url: str, max_bytes: int = FETCH_MAX_BYTES) -> str:
+    """상품 사진 주소 하나를 data URL 로 바꾼다. 실패는 사유를 담아 올린다."""
+    host = (urlparse(str(url or "")).hostname or "").lower()
+    if not host:
+        raise ValueError("상품 사진 주소를 읽을 수 없습니다.")
+    if host not in ALLOWED_IMAGE_HOSTS:
+        # ★ 호스트를 문구에 적는다 — 목록에 한 줄 더하면 되는 일을, 화면만 보고는
+        #   무엇이 막혔는지 알 수 없던 자리다.
+        raise ValueError(f"허용되지 않은 상품 사진 주소입니다 ({host}) — "
+                         f"FEEDIT_VTON_IMAGE_HOSTS 를 확인하세요.")
+    try:
+        # 일부 CDN 은 User-Agent 없는 요청을 막는다.
+        res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"},
+                           timeout=FETCH_TIMEOUT)
+        res.raise_for_status()
+    except Exception as exc:  # noqa: BLE001
+        raise ValueError(f"상품 사진을 받지 못했습니다 ({type(exc).__name__}).") from exc
+    mime = (res.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+    if mime not in set(MIME.values()):
+        raise ValueError(f"지원하는 이미지 형식이 아닙니다 ({mime or '알 수 없음'}).")
+    raw = res.content
+    if not raw or len(raw) > max_bytes:
+        raise ValueError("상품 사진은 5MB 이하만 사용할 수 있습니다.")
+    return "data:" + mime + ";base64," + base64.b64encode(raw).decode("ascii")
+
+
 def prompt(categories: list[str], options: dict | None = None) -> str:
     """보내는 이미지 순서를 그대로 글로 옮긴다.
 
@@ -249,7 +304,13 @@ def _items(items: list[dict] | None, image_data_url: str | None,
         rows = [{"image": image_data_url, "category": category or "상의"}]
     clean = []
     for row in rows[:MAX_ITEMS]:
-        if not isinstance(row, dict) or not row.get("image"):
+        if not isinstance(row, dict):
+            continue
+        # ★ 사진은 data URL 이거나 상품 사진 주소다 (2026-09-22). 주소로 오면
+        #   여기서 받아 둔다 — 아래 decode_image 는 data URL 만 읽는다.
+        if not row.get("image") and row.get("image_url"):
+            row = {**row, "image": fetch_as_data_url(str(row["image_url"]))}
+        if not row.get("image"):
             continue
         cat = str(row.get("category") or AUTO)
         clean.append({"image": str(row["image"]),
@@ -333,9 +394,10 @@ def generate(*, model_id: str, items: list[dict] | None = None,
 #     그러면 생성 프롬프트가 예전처럼 스스로 판별한다(위 prompt()).
 SLOTS = list(SLOT_ORDER)
 
-_CLASSIFY_INSTRUCTIONS = (
-    "FEEDiT 착장 합성용 분류기입니다. 각 사진에 담긴 의류·잡화가 어느 칸에 들어가야 "
-    "하는지만 고르세요.\n"
+_INSPECT_INSTRUCTIONS = (
+    "FEEDiT 착장 합성용 검수기입니다. 각 사진에 담긴 의류·잡화를 보고 세 가지만 "
+    "고르세요 — 어느 칸에 들어가는지, 앞을 열 수 있는 옷인지, 겹쳐 입을 때 얇은 "
+    "쪽인지.\n"
     "- 상의: 티셔츠·셔츠·니트·블라우스·후디 등 상체에 입는 옷\n"
     "- 하의: 바지·스커트·반바지 등 하체에 입는 옷\n"
     "- 아우터: 코트·재킷·점퍼·가디건 등 겉에 걸치는 옷\n"
@@ -345,32 +407,79 @@ _CLASSIFY_INSTRUCTIONS = (
     "- 벨트: 허리에 채우는 벨트\n"
     "- 안경: 안경·선글라스\n"
     "- 어느 칸인지 확실하지 않거나 착용물이 아니면 '자동 분류'\n"
-    "사진에 보이는 것만 보고 고르세요. 브랜드·가격·트렌드는 판단하지 마세요.\n"
-    "categories 배열은 입력한 사진과 같은 순서, 같은 개수로 돌려주세요."
+    "closure 는 사진에 실제로 보이는 여밈입니다(지퍼·버튼·스냅). 머리로 입는 옷처럼 "
+    "여밈이 없으면 '없음', 사진에서 안 보이면 '모르겠음' 입니다.\n"
+    "openable 은 앞을 열어 입은 모습으로 그릴 수 있는 옷인지입니다. 여밈이 보이면 "
+    "yes, 머리로 입는 옷이면 no, 판단이 안 서면 unknown.\n"
+    "layer 는 겹쳐 입을 때의 두께감입니다. 안 보이면 '모르겠음'.\n"
+    "★ 지어내지 마세요. 사진에 보이는 것만 보고 고르고, 확실하지 않으면 "
+    "'모르겠음'·unknown·'자동 분류' 를 고르세요. 브랜드·가격·트렌드는 판단하지 "
+    "마세요.\n"
+    "items 배열은 입력한 사진과 같은 순서, 같은 개수로 돌려주세요."
 )
+# 예전 이름 — /v1/fit-classify 와 테스트가 아직 이 이름을 쓴다.
+_CLASSIFY_INSTRUCTIONS = _INSPECT_INSTRUCTIONS
+CLOSURES = ["지퍼", "버튼", "스냅", "없음", "모르겠음"]
+OPENABLE = ["yes", "no", "unknown"]
+LAYERS = ["얇음", "보통", "두꺼움", "모르겠음"]
+# 사진을 못 봤을 때의 값. ★ 빈칸이 아니라 "모른다" 다 — 아래 fit.prune_options 가
+#   "모르면 연출을 빼지도 넣지도 않는다" 를 이 값으로 판단한다.
+UNKNOWN = {"slot": AUTO, "closure": "모르겠음", "openable": "unknown", "layer": "모르겠음"}
 
 
-def classify(images: list[str]) -> list[str]:
-    """사진 순서대로 칸 이름을 돌려준다. 실패하면 전부 '자동 분류'."""
+def _inspect_schema():
+    """★ strict 모드는 중첩 객체에도 additionalProperties:false 와 required 전부
+    나열을 요구한다(llm.strict_schema 주석). 그래서 손으로 짠다."""
+    from . import llm
+    row = {"type": "object", "additionalProperties": False,
+           "properties": {"slot": {"type": "string", "enum": SLOTS + [AUTO]},
+                          "closure": {"type": "string", "enum": CLOSURES},
+                          "openable": {"type": "string", "enum": OPENABLE},
+                          "layer": {"type": "string", "enum": LAYERS}},
+           "required": ["slot", "closure", "openable", "layer"]}
+    return llm.strict_schema("feedit_vton_items",
+                             {"items": {"type": "array", "items": row}}, ["items"])
+
+
+def inspect(images: list[str]) -> list[dict]:
+    """사진 순서대로 {slot, closure, openable, layer} 를 돌려준다.
+
+    ★ 실패하면 전부 UNKNOWN 이다. 예전 classify() 가 못 판별한 사진을 '자동 분류' 로
+      남겨 생성 프롬프트가 스스로 판별하게 넘긴 것과 같은 태도 — 모르는 것을 아는
+      척하지 않는다.
+    """
     from . import llm
 
     rows = [u for u in (images or []) if isinstance(u, str) and u.strip()][:MAX_ITEMS]
-    fallback = [AUTO] * len(rows)
+    fallback = [dict(UNKNOWN) for _ in rows]
     if not rows or not llm.available():
         return fallback
     content: list[dict] = [{"type": "input_text",
-                            "text": "각 사진이 어느 칸인지 순서대로 골라 주세요."}]
+                            "text": "각 사진의 칸·여밈·두께를 순서대로 골라 주세요."}]
     for u in rows:
         content.append({"type": "input_image", "image_url": u})
-    schema = llm.strict_schema("feedit_vton_slots", {
-        "categories": {"type": "array",
-                       "items": {"type": "string", "enum": SLOTS + [AUTO]}},
-    }, ["categories"])
-    got = llm.respond(_CLASSIFY_INSTRUCTIONS, [{"role": "user", "content": content}],
-                      schema, timeout=20, **llm.role("vision"))
-    cats = (got or {}).get("categories")
-    if not isinstance(cats, list):
+    got = llm.respond(_INSPECT_INSTRUCTIONS, [{"role": "user", "content": content}],
+                      _inspect_schema(), timeout=20, **llm.role("vision"))
+    got_rows = (got or {}).get("items")
+    if not isinstance(got_rows, list):
         return fallback
-    out = [str(c) if str(c) in CATEGORIES else AUTO for c in cats[:len(rows)]]
-    out += [AUTO] * (len(rows) - len(out))
+    out: list[dict] = []
+    for i in range(len(rows)):
+        row = got_rows[i] if i < len(got_rows) and isinstance(got_rows[i], dict) else {}
+        slot = str(row.get("slot") or "")
+        out.append({
+            "slot": slot if slot in CATEGORIES else AUTO,
+            "closure": row.get("closure") if row.get("closure") in CLOSURES else "모르겠음",
+            "openable": row.get("openable") if row.get("openable") in OPENABLE else "unknown",
+            "layer": row.get("layer") if row.get("layer") in LAYERS else "모르겠음",
+        })
     return out
+
+
+def classify(images: list[str]) -> list[str]:
+    """사진 순서대로 칸 이름만 돌려준다 — 화면의 칸 배치가 쓰는 값.
+
+    ★ 판별은 inspect() 한 번으로 끝난다. 칸과 여밈을 따로 물으면 vision 호출이
+      두 번이 된다(AGENTS.md §3 — 한 번에 받게 만든다).
+    """
+    return [row["slot"] for row in inspect(images)]

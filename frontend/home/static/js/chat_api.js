@@ -517,7 +517,8 @@ export function actionsHTML(acts){
     const kind=String(a.type||(a.view?'view':'action')).replace(/[^a-z_-]/gi,'');
     /* 물어보기(살!말? 커뮤니티에 올리기)는 '!?' — 살까 말까 묻는 동작이 아이콘에
        그대로 드러난다. 예전 '◌' 는 무엇을 하는 버튼인지 읽히지 않았다. (2026-09-13) */
-    const icon=a.type==='community'?'!?':a.type==='virtual_fit'?'✦':a.type==='switch_mode'?'⇄':'↗';
+    const icon=a.type==='community'?'!?':(a.type==='virtual_fit'||a.type==='fit_confirm')?'✦'
+      :a.type==='switch_mode'?'⇄':'↗';
     const d = ['<button class="pill ghost actBtn act-'+esc(kind)+'"'];
     if(a.view) d.push('data-v="' + esc(a.view) + '"');
     /* 스타일은 **이름** 으로 보낸다. 라우터는 id 를 기대하므로
@@ -533,6 +534,12 @@ export function actionsHTML(acts){
       if(a.draft) d.push('data-draft="' + esc(JSON.stringify(a.draft)) + '"');
     }
     if(a.type === 'virtual_fit') d.push('data-virtual-fit="1"');
+    /* 승인 카드 — 누르면 살!말? 로 넘어가 이 코디를 입혀본다 (2026-09-22).
+       코디를 버튼이 들고 간다. 물어보기의 data-draft 와 같은 방식이고, 같은 이유로
+       서버가 적은 것만 들어 있다 — 모델이 지어낸 상품은 여기 없다. */
+    if(a.type === 'fit_confirm' && a.fit){
+      d.push('data-fit-confirm="' + esc(JSON.stringify(a.fit)) + '"');
+    }
     return d.join(' ') + '><i class="actIcon" aria-hidden="true">'+icon+'</i><span>'+
       esc(a.label)+'</span><i class="actArrow" aria-hidden="true">→</i></button>';
   }).join('') + '</div>';

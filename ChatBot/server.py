@@ -284,7 +284,6 @@ _STYLE_DETAIL_ASK = re.compile(r"뜻|유래|기원|정의|어떤\s*스타일|무
 _TREND_DETAIL_ASK = re.compile(
     r"지표|온도|트렌드|유행|인기|요즘|핫|유효|추이|상승|하락|꺾", re.I)
 _COMMUNITY_ASK = re.compile(r"투표|사람들|다들|의견|후기|커뮤니티|물어", re.I)
-_TRYON_ASK = re.compile(r"입혀|입어|착용|어울|핏(?:은|이|을|을까)?|코디", re.I)
 _PURCHASE_ASK = re.compile(r"살까|사도|말까|살지|구매|지를까|추천|고민|어때", re.I)
 
 
@@ -338,7 +337,11 @@ def actions_for(rep: dict, mode: str = "general") -> list[dict]:
     #     ② 이번 답이 사진 속 옷을 봤고, 구매·코디 얘기다
     #     ③ 살말 모드에서 링크로 실제 상품을 확인했다(상품명이 확인됨)
     has_visual = isinstance(rep.get("visual_context"), dict) and bool(rep["visual_context"])
-    wants_tryon = intent == "buy.tryon" or bool(_TRYON_ASK.search(question))
+    # ★ 질문에 정규식을 걸지 않는다 (2026-09-22). 같은 문장을 nlu.classify 가 이미
+    #   분류하고 있어(buy.tryon), 답변 경로에 **두 번째 분류표**가 숨어 있던 자리다.
+    #   남은 신호는 전부 일어난 사실이다: 의도 · 사진 첨부 · 링크로 확인된 상품 ·
+    #   모델이 코디 도구를 불렀다.
+    wants_tryon = intent == "buy.tryon"
     photo_item = has_visual and (intent == "vision.salmal" or mode == "salmal"
                                  or bool(_PURCHASE_ASK.search(question)))
     draft = rep.get("item_draft") if isinstance(rep.get("item_draft"), dict) else {}
@@ -347,8 +350,28 @@ def actions_for(rep: dict, mode: str = "general") -> list[dict]:
     #   상품명이 확인됐으면 충분하다.
     linked_item = (mode == "salmal" and bool(draft.get("title"))
                    and bool(re.search(r"https?://|www\.", question, re.I)))
-    if wants_tryon or photo_item or linked_item:
+    # ── 코디 (2026-09-22) ───────────────────────────────────────
+    #   ① 확정된 코디(build_fit)가 있으면 그것을 들고 간다 — 착장 칸이 채워져 열린다.
+    #   ② 제안(propose_fit)만 있으면 **승인 카드**다. 여기서 살!말? 로 넘어간다.
+    #      VTON 은 살!말? 의 고유 기능이라, 일반 모드의 답은 제안에서 멈춘다.
+    built = rep.get("fit") if isinstance(rep.get("fit"), dict) else None
+    proposal = rep.get("fit_proposal") if isinstance(rep.get("fit_proposal"), dict) else None
+    if built and built.get("items"):
+        # ★ 확정된 코디는 report 의 fit 하나가 원본이다 — 버튼에 한 벌 더 실으면
+        #   두 곳이 어긋난다. 화면은 답변과 함께 착장 칸을 펼치고, 이 버튼은
+        #   접고 펴는 자리로 쓴다(chat_popup 의 m.fit / m.fitSaved).
         acts.append({"label": "입혀보기", "type": "virtual_fit"})
+    elif proposal and proposal.get("items"):
+        acts.append({"label": "이 코디로 입혀보기", "type": "fit_confirm", "fit": proposal})
+    elif wants_tryon or photo_item or linked_item:
+        if mode == "salmal":
+            acts.append({"label": "입혀보기", "type": "virtual_fit"})
+        else:
+            # ★ 일반 모드에서는 빈 위젯을 열지 않는다 (2026-09-22). VTON 은 살!말? 의
+            #   고유 기능이라, 여기서 열면 경계가 흐려진다. 넘어가는 문만 준다 —
+            #   코디를 짜 온 경우(위 fit_confirm)와 달리 아직 입힐 것이 없다.
+            acts.append({"label": "살!말? 에서 입혀보기", "type": "switch_mode",
+                         "to": "salmal"})
     return acts
 
 
@@ -646,7 +669,10 @@ class Handler(BaseHTTPRequestHandler):
             # 화면 컨텍스트 — 새 경로가 "이거 어때?" 를 푸는 재료.
             #   없으면 없는 대로 돈다(도구 목록만 줄어든다).
             extra = {k: req.get(k) for k in
-                     ("screen_term", "salmal_card_id", "user_id", "region", "taste_context")
+                     ("screen_term", "salmal_card_id", "user_id", "region", "taste_context",
+                      # 승인된 코디 — 이것이 있는 턴에만 build_fit 이 도구 목록에 있다
+                      # (tools.specs_for). 승인을 거치지 않으면 확정할 코디가 없다.
+                      "fit_proposal")
                      if req.get(k)}
             if isinstance(extra.get("taste_context"), dict):
                 extra["taste_context"] = clean_taste_context(extra["taste_context"])

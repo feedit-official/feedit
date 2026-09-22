@@ -692,6 +692,43 @@ function cpNewFit(images,text){
        예전처럼 순서대로 놓아 둔다 — 기다리는 동안 빈 화면을 보여주지 않는다. */
     sorting:attached.length>0};
 }
+/* ★ 서버가 고른 코디로 착장 칸을 채운다 (2026-09-22).
+   sorting 을 켜지 않는다 — 칸은 이미 DB 태그로 정해졌고(propose_fit), 사진은
+   서버가 build_fit 에서 한 번 봤다. 여기서 또 분류하면 vision 을 두 번 쓰고,
+   '아우터' 로 넣은 트랙 재킷이 '상의' 로 바뀌어 레이어드 조건이 깨진다.
+   optsOpen 을 펴 둔다 — 모델이 정한 연출을 사용자가 보고 그 자리에서 끌 수 있어야
+   한다. 접혀 있으면 "내가 고르지 않은 연출이 들어갔다" 가 된다. */
+function cpFitFromServer(fit,text){
+  const f=cpNewFit([],text||'');
+  const rows=(fit&&Array.isArray(fit.items)?fit.items:[]).slice(0,VF_MAX)
+    .filter(it=>it&&(it.image||it.image_url))
+    .map(it=>({category:VF_CATEGORIES.includes(it.slot)?it.slot:VF_CATEGORIES[0],
+               /* 사진은 주소로 보낸다 — 서버가 받아 온다(vton.fetch_as_data_url).
+                  브라우저가 CDN 을 직접 fetch 하면 CORS 로 막힌다. */
+               image:'', imageUrl:String(it.image||it.image_url||''),
+               name:String(it.name||''), auto:false}));
+  if(rows.length)f.items=rows;
+  f.options=cpFitOptions((fit&&fit.options||[]).reduce((o,k)=>(o[k]=true,o),{}));
+  f.optsOpen=true;
+  f.sorting=false;
+  f.fromServer=true;
+  return f;
+}
+/* 승인 카드가 넘긴 코디를 한 줄로 적는다 — 새 대화에는 앞 대화의 근거가 없다.
+   왜 이 조합인지(why)와 무엇으로 골랐는지(styles)가 없으면, 사용자는 살!말? 로
+   넘어온 뒤 방금 받은 추천과 이 코디가 같은 것인지 알 수 없다. */
+function cpFitWhyHTML(fit){
+  const styles=(fit&&fit.styles||[]).filter(Boolean).join(' · ');
+  const why=String((fit&&fit.why)||'').trim();
+  const names=(fit&&fit.items||[]).map(it=>String(it&&it.name||'').trim()).filter(Boolean);
+  const out=[];
+  out.push('<p>'+cpEsc(styles?styles+' 코디로 골랐습니다.':'고른 코디입니다.')+
+           (why?' '+cpEsc(why):'')+'</p>');
+  if(names.length)out.push('<p>'+cpEsc(names.join(' + '))+'</p>');
+  const dropped=(fit&&fit.dropped||[]).filter(Boolean);
+  if(dropped.length)out.push('<p>'+cpEsc(dropped.join(' '))+'</p>');
+  return out.join('');
+}
 /* ★ 첨부 사진을 알맞은 칸으로 옮긴다 (2026-09-13).
    스커트를 올렸는데 '상의' 칸이 차 버려서, 상의를 넣으려면 사용자가 지우고 다시
    넣어야 했다. 어떤 옷인지는 사진을 볼 수 있는 서버만 안다 — 물어보고 옮긴다.
@@ -730,6 +767,9 @@ function cpFitItems(f){
     const row=(r&&typeof r==='object')?r:{};
     return {category:VF_CATEGORIES.includes(row.category)?row.category:VF_CATEGORIES[0],
             image:String(row.image||''),
+            /* 서버가 고른 상품 사진의 주소. 사용자가 올린 사진에는 없다. */
+            imageUrl:String(row.imageUrl||''),
+            name:String(row.name||''),
             /* 예전 자료에는 auto 가 없다 — 없으면 '자동 분류'로 본다 */
             auto:row.auto===undefined?!row.category:Boolean(row.auto)};
   });
@@ -843,8 +883,11 @@ function cpFitHTML(m){
     return '<div class="cpFitSlot">'+
       '<button type="button" class="cpFitRemove" data-vf-remove="'+index+'" aria-label="'+(index+1)+'번 칸 빼기">×</button>'+
       '<button type="button" class="cpFitItem" data-vf-pick="'+index+'">'+
-      (item.image?'<img class="cpFitItemImg" src="'+cpEsc(item.image)+'" alt="'+cpEsc(item.category)+'">':
-        '<span class="cpFitPlus">＋</span>')+'</button>'+select+
+      /* 상품 사진은 주소로 온다 — 그리는 데는 문제가 없다(막히는 건 fetch 쪽이다). */
+      ((item.image||item.imageUrl)
+        ?'<img class="cpFitItemImg" src="'+cpEsc(item.image||item.imageUrl)+
+          '" alt="'+cpEsc(item.name||item.category)+'">'
+        :'<span class="cpFitPlus">＋</span>')+'</button>'+select+
       '<input type="file" data-vf-file="'+index+'" accept="image/png,image/jpeg,image/webp" hidden></div>';
   }).join('');
   /* 칸 늘리기 — 마지막에 붙는 ＋ 한 장. 아홉 칸(서버 MAX_ITEMS)이 차면 사라진다. */
@@ -1126,6 +1169,8 @@ async function cpAskLive(c,aiMsg,text,images){
                        taste_context 로 가고, 챗봇은 이 id 로 다른 데이터를 조회하지 않는다. */
                     user_id:(AUTH.in&&ME.id!=null)?String(ME.id):undefined,
                     taste_context:cpTasteContext(c),
+                    /* 승인된 코디. 이것이 있는 턴에만 서버가 build_fit 을 부를 수 있다. */
+                    fit_proposal:aiMsg.fitProposal||undefined,
                     images:(images&&images.length)?images:undefined},{
     /* ★ 진행 상황 (server.py 의 push("status", {stage:"tool", message})).
        예전에는 이 핸들러가 아예 없어서 서버가 보낸 이벤트가 **조용히
@@ -1155,6 +1200,11 @@ async function cpAskLive(c,aiMsg,text,images){
       /* 사진 답변의 item·소재·색·실루엣은 다음 턴의 주어다. 예전에는 terms만
          저장해서 "소재는 뭐야?"가 무엇을 가리키는지 통째로 사라졌다. */
       if(rep.visual_context)aiMsg.turn.visual=rep.visual_context;
+      /* 확정된 코디 — 답변과 함께 착장 칸을 펼친다 (2026-09-22). 버튼을 한 번 더
+         누르게 하지 않는다. 원본은 이 하나다(server.actions_for 주석). */
+      if(rep.fit&&(rep.fit.items||[]).length&&!aiMsg.fit){
+        aiMsg.fit=cpFitFromServer(rep.fit,text);
+      }
       aiMsg.cardHtml=reportHTML(rep);
       const el=sayEl(); const host=el&&el.parentElement;
       if(host){
@@ -1212,16 +1262,18 @@ export function cpStop(){
    전부 정리된 리포트 카드)을, 아니면 데모용 캔 답을 "생각 중" 뒤에 채운다. */
 function cpAsk(text,key,opts){
   const images=(opts&&opts.images)||[];
+  /* 승인된 코디 — 이 턴에만 서버의 build_fit 이 목록에 있다(tools.specs_for) */
+  const fit=(opts&&opts.fit)||null;
   if(!text && !images.length)return;
   let c=(opts&&opts.forceNew)?cpNewConvo():cpActiveConvo(); if(!c)c=cpNewConvo();
   /* 서버에서 아직 본문을 안 받은 대화면 받고 나서 잇는다 — 앞 턴이 있어야 챗봇이 맥락을 잇는다 */
   if(c.loaded===false&&c.sid){
-    cpEnsureLoaded(c).finally(()=>cpAskInto(c,text,key,images));
+    cpEnsureLoaded(c).finally(()=>cpAskInto(c,text,key,images,fit));
     return;
   }
-  cpAskInto(c,text,key,images);
+  cpAskInto(c,text,key,images,fit);
 }
-function cpAskInto(c,text,key,images){
+function cpAskInto(c,text,key,images,fit){
   const meMsg={role:'me', text, images};
   c.messages.push(meMsg);
   c.at=Date.now(); c.time=cpNowLabel();
@@ -1230,6 +1282,7 @@ function cpAskInto(c,text,key,images){
   if(AUTH.in)logChat(cpConvId(c), c.title);
   const directFit=wantsVirtualFit(text,images);
   const aiMsg={role:'ai', html:'', key, pending:!directFit};
+  if(fit)aiMsg.fitProposal=fit;      /* 서버로 같이 보낸다(cpAskLive) */
   aiMsg.t0=Date.now();   /* 응답 시간 — 금주의 리포트 '챗봇 사용 시간'에 쓴다 (저장은 안 함) */
   if(directFit)aiMsg.fit=cpNewFit(images,text);
   c.messages.push(aiMsg);
@@ -1246,7 +1299,13 @@ function cpAskInto(c,text,key,images){
       let live=false;
       try{ live=await isUp() }catch(e){ live=false }
       if(run.controller.signal.aborted)throw new DOMException('Aborted','AbortError');
-      if(!live){cpAskMock(c,aiMsg,key);return}
+      if(!live){
+        /* 서버가 없어도 승인된 코디는 열어 준다 — 목업 답으로 떨어지면 방금 승인한
+           코디가 사라진다. 사진 검수(build_fit)만 없는 상태로 그대로 펼친다. */
+        if(fit){ aiMsg.pending=false; aiMsg.html=cpFitWhyHTML(fit);
+                 aiMsg.fit=cpFitFromServer(fit,text); cpRenderThread(); return }
+        cpAskMock(c,aiMsg,key);return
+      }
       await cpAskLive(c,aiMsg,text,images);
     }
     catch(e){
@@ -1356,6 +1415,22 @@ export function openVirtualTryOn(){
   },300);
 }
 
+/* 승인된 코디를 살!말? 로 넘긴다 (2026-09-22).
+   openVirtualTryOn 과 같은 이동 경로(smSwitch → 새 대화)를 쓰되, 빈 위젯이 아니라
+   질문 한 턴을 보낸다 — 서버가 상품 사진을 실제로 보고(build_fit) 연출을 확정한 뒤
+   착장 칸이 채워진다. 떠나온 일반 대화에는 이어진 자리를 남긴다(from). */
+export function cpConfirmFit(fit){
+  if(!AUTH.in){ requireAuth(()=>cpConfirmFit(fit)); return; }
+  const from=cpActiveConvo();
+  if(!SM_ON)smSwitch(true,null,true);
+  openChatPopup();
+  const c=cpNewConvo();                       /* mode:'salmal' 로 스탬프된다 */
+  const styles=(fit&&fit.styles||[]).filter(Boolean).join('·');
+  c.title='코디 입혀보기'+(styles?' · '+styles:'');
+  if(from)c.from=cpConvId(from);
+  cpAsk('이 코디로 입혀보기',null,{fit});
+}
+
 /* 팝업 상단 좌측 마크 — 눌리면 동전이 뒤집히듯 한 바퀴 돌며 일반/살말 모드를 바꾼다.
    실제 모드 값은 SM_ON 하나뿐이라 홈 챗바의 토글과 같은 smSwitch() 를 그대로 쓰고,
    팝업 쪽 화면(프로필·목록·대화)만 이 자리에서 다시 그려 준다. */
@@ -1462,6 +1537,15 @@ document.addEventListener('click', e=>{
   /* 착장 생성 재시도 — 실패하면 문구만 남아 다시 만들 방법이 없었다 */
   const retry=e.target.closest('#cpThread [data-vf-retry]');
   if(retry){ const m=cpAIMessageFor(retry); if(m)cpGenerateFitMessage(m); return; }
+  /* 승인 카드 (2026-09-22) — VTON 은 살!말? 의 고유 기능이라 여기서 모드를 넘긴다.
+     대화는 cpNewConvo 가 mode 를 스탬프하므로, 코디 대화는 살!말? 목록에만 남는다. */
+  const confirm=e.target.closest('#cpThread [data-fit-confirm]');
+  if(confirm){
+    let payload=null;
+    try{ payload=JSON.parse(confirm.dataset.fitConfirm||'null') }catch(_e){ payload=null }
+    if(payload)cpConfirmFit(payload);
+    return;
+  }
   const fit=e.target.closest('#cpThread [data-virtual-fit]');
   if(fit){
     const c=cpActiveConvo();
@@ -1518,7 +1602,8 @@ document.addEventListener('click', e=>{
       const rows=cpFitItems(m.fit);
       if(rows[index]){
         if(rows.length>1)rows.splice(index,1);
-        else{ rows[0].image=''; rows[0].category=VF_CATEGORIES[0]; rows[0].auto=true }
+        else{ rows[0].image=''; rows[0].imageUrl=''; rows[0].name='';
+              rows[0].category=VF_CATEGORIES[0]; rows[0].auto=true }
         m.fit.result=''; m.fit.status=''; m.fit.stateKind=''; cpRenderThread({keepScroll:true});
       }
     }
@@ -1575,7 +1660,7 @@ document.addEventListener('change',async e=>{
   if(file){
     const m=cpAIMessageFor(file), picked=file.files&&file.files[0]; if(!m||!m.fit||!picked)return;
     const index=Number(file.dataset.vfFile);
-    try{ const item=cpFitItems(m.fit)[index]; item.image=await imageFileToDataURL(picked); item.auto=false; m.fit.result=''; m.fit.status=''; m.fit.stateKind=''; }
+    try{ const item=cpFitItems(m.fit)[index]; item.image=await imageFileToDataURL(picked); item.imageUrl=''; item.name=''; item.auto=false; m.fit.result=''; m.fit.status=''; m.fit.stateKind=''; }
     catch(_err){ m.fit.status='이미지를 읽지 못했습니다.'; m.fit.stateKind='error'; }
     cpRenderThread({keepScroll:true});
   }
@@ -1590,8 +1675,11 @@ async function cpGenerateFitMessage(m){
      프롬프트에 "2번째 이미지는 하의" 처럼 제대로 실린다. (2026-09-13) */
   if(m.fit._sort){ try{ await m.fit._sort }catch(e){ /* 분류 실패는 넘어간다 */ } }
   if(!m.fit||m.fit.loading)return;
-  const items=cpFitItems(m.fit).filter(item=>item.image)
-    .map(item=>({image:item.image,category:item.auto?VF_AUTO:item.category}));
+  const items=cpFitItems(m.fit).filter(item=>item.image||item.imageUrl)
+    .map(item=>(item.image
+      ?{image:item.image,category:item.auto?VF_AUTO:item.category}
+      /* 서버가 고른 상품 사진 — 주소만 보낸다. 받는 쪽은 vton._items 다. */
+      :{image_url:item.imageUrl,category:item.auto?VF_AUTO:item.category}));
   if(!items.length){ m.fit.status='아이템 사진이 하나 이상 필요합니다.'; m.fit.stateKind='error'; cpRenderThread({keepScroll:true}); return; }
   m.fit.loading=true; m.fit.status=''; m.fit.stateKind='loading'; cpRenderThread({keepScroll:true});
   try{

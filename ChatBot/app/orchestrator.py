@@ -47,7 +47,7 @@ from . import llm
 from .tools import Toolbox, progress_say, specs_for
 
 # ── 안전장치 값 ────────────────────────────────────────────
-MAX_ROUNDS = 5          # 한 질문에 도구를 부를 수 있는 바퀴 수
+MAX_ROUNDS = 6          # 한 질문에 도구를 부를 수 있는 바퀴 수
 # ★ 2026-09-18 — 4 → 5. 살말 질문은 검색 → 지표 → 지수 → 결측 기록 → 리포트로
 #   바퀴를 딱 맞게 쓰는 일이 흔해서, 도구 하나만 더 부르면 **시간은 남았는데**
 #   답을 못 쓰고 끝났다(실측: 예산 33초 중 21초 사용, 링크 질문 5바퀴 전부 사용).
@@ -59,7 +59,10 @@ MAX_ROUNDS = 5          # 한 질문에 도구를 부를 수 있는 바퀴 수
 #   ① 링크 확인 ② 지표·지수 ③ 결측 기록 ④ compose_report — 네 바퀴를 다 쓰고
 #   **답을 쓰는 다섯 번째 바퀴가 없었다.** 예산은 남았는데 바퀴가 모자란 것이다.
 LINK_EXTRA_ROUNDS = 1
-MAX_CALLS = 14          # 바퀴를 합쳐 도구 호출 총량 (2026-09-18: 바퀴 5·6 에 맞춰 10 → 14)
+# ★ 2026-09-22 — 5 → 6. 코디 인계가 바퀴를 둘 쓴다(propose_fit → 승인 → build_fit).
+#   propose_fit 이 도는 턴은 취향·트렌드 조회 → 코디 → compose_report → 답 쓰기다.
+#   바퀴를 먼저 늘리지 않으면 "시간은 남았는데 답을 못 쓴다" 로 끝난다.
+MAX_CALLS = 18          # 바퀴를 합쳐 도구 호출 총량 (2026-09-22: 바퀴 6·7 에 맞춰 14 → 18)
 # ★ 2026-09-09 추가 — 같은 도구를 인자만 바꿔 계속 부르는 것을 막는다.
 #   _sig() 는 **동일 인자**만 걸러서, search_terms("살로몬 XT-6") →
 #   ("XT-6") → ("살로몬") 처럼 조금씩 바꾸면 그대로 통과했다.
@@ -149,6 +152,15 @@ WRITE_MIN = 6.5
 #   질문마다 다른 일을 시키면서 같은 시계를 주면, 링크 질문은 구조적으로
 #   답을 못 쓴다. 그 한 바퀴만큼을 더 준다.
 LINK_EXTRA = float(os.getenv("FEEDIT_CHAT_LINK_EXTRA") or 15.0)
+# ── 코디 예산 (2026-09-22) ─────────────────────────────────
+#   ★ 링크와 같은 이유로 시간을 더 주지만, **판단하는 자리가 다르다.**
+#     링크는 질문에 주소가 있으니 시작 전에 안다(budget_for). 코디는 모델이
+#     propose_fit 을 부르기로 정하는 순간에 비로소 정해진다 — 그래서 질문이 아니라
+#     **도구가 불린 사실**로 한 번만 늘린다("조회가 끝났으면 뒷몫에서 빌린다" 와
+#     같은 자리). 먼저 재고 늘린다(AGENTS.md §4): 조회를 병렬로 부르면
+#     (fit.propose) 한 바퀴가 4~5초이므로, 한 바퀴 값만 더한다.
+FIT_EXTRA = float(os.getenv("FEEDIT_CHAT_FIT_EXTRA") or 10.0)
+FIT_TOOLS = ("propose_fit", "build_fit")
 _URL = re.compile(r"https?://|\bwww\.[^\s]+", re.I)
 CALL_TIMEOUT = 30       # 한 번의 모델 호출 상한 (2026-09-18: 20 → 30, Terra·웹검색 여유)
 MIN_CALL = 2.5          # 이보다 적게 남으면 부르지 않는다 — 못 끝낼 호출은 기다림만 늘린다
@@ -642,6 +654,9 @@ def run(question: str, *, store, gate, ctx: dict | None = None,
     # 루프는 예산을 다 쓰지 않는다. 뒷단계 몫을 먼저 떼고 시작한다.
     loop_end = deadline - reserve(deadline - started, TAIL_RESERVE)
 
+    # 코디 도구가 불려 마감시각을 늘렸는가. 한 답변에 한 번만 늘린다.
+    fit_extended = False
+
     max_rounds = rounds_for(question)
     for rnd in range(max_rounds):
         if cancel_check and cancel_check():
@@ -806,6 +821,14 @@ def run(question: str, *, store, gate, ctx: dict | None = None,
                         pass
             result = box.run(c["name"], c["args"])
             items.append(llm.tool_result_item(c["call_id"], result))
+            # ★ 코디 도구는 상품 조회(또는 사진 검수)를 한 바퀴 더 쓴다. 그 사실이
+            #   확인된 지금 마감시각을 한 번만 늘린다 — 늘리지 않으면 코디를 짜 놓고
+            #   답을 못 쓴다. 두 번 늘리지 않는다(fit_extended).
+            if c["name"] in FIT_TOOLS and not fit_extended:
+                fit_extended = True
+                deadline += FIT_EXTRA
+                loop_end += FIT_EXTRA
+                out.deadline = deadline
 
         # 도구 사이에서 들어온 중단은 아래의 보류 답 복구보다 우선한다.
         # 그렇지 않으면 compose_report 와 함께 써 둔 문장이 cancelled 를 done 으로

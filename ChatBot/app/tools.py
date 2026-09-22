@@ -36,6 +36,7 @@ from typing import Any, Callable
 
 from . import season as season_ref     # 인자 이름(season)과 겹치지 않게
 from . import product_link, salmal_index
+from . import vton
 from .config import MIN_OBS_7, MIN_OBS_14, MIN_OBS_28, THIN_SAMPLE, temp_band
 
 # ══════════════════════════════════════════════════════════
@@ -381,6 +382,45 @@ SPECS: list[dict] = [
          "days": {"type": ["integer", "null"], "description": "기간(일). 기본 30"}},
         ["axis", "brand", "kind", "style", "item", "days"],
     ),
+    _fn(
+        "propose_fit",
+        "추천한 스타일로 코디를 짜서 **제안한다**. 입히지는 않는다 — 사용자가 승인하면 "
+        "살!말? 로 넘어가 거기서 입혀본다. 사용자가 '이 스타일대로 입혀 줄 수 있어?' "
+        "'코디 보여 줘' 처럼 물을 때 부른다. "
+        "slots 은 채울 칸이다. 비우면 상의·하의·신발 한 벌로 고른다. 같은 칸을 두 번 "
+        "적으면 두 점을 고른다 — 아우터를 겹쳐 입히려면 '아우터' 를 두 번 적어라. "
+        "options 는 켤 연출만 적는다(적지 않은 것은 모델이 알아서 그린다). "
+        "outer_layered 는 아우터가 둘일 때만, top_open·top_closed 는 여밈이 있는 상의에만 "
+        "성립한다 — 어긋나면 서버가 떼어내고 사유를 돌려준다. "
+        "결과의 items 에 있는 상품만 말해라. 사진 없는 상품은 담기지 않는다.",
+        {"styles": {"type": "array", "items": {"type": "string"},
+                    "description": "고를 기준이 되는 스타일 이름 (예: 블록코어)"},
+         "slots": {"type": "array",
+                   "items": {"type": "string",
+                             "enum": ["상의", "하의", "아우터", "원피스(셋업)", "신발"]},
+                   "description": "채울 칸. 비우면 상의·하의·신발"},
+         "options": {"type": "array",
+                     "items": {"type": "string",
+                               "enum": ["outer_layered", "outer_open", "outer_closed",
+                                        "top_open", "top_closed"]},
+                     "description": "켤 연출만. 없으면 빈 배열"},
+         "why": {"type": "string", "description": "이 조합을 고른 이유 한 문장"}},
+        ["styles", "slots", "options", "why"],
+    ),
+    _fn(
+        "build_fit",
+        "승인된 코디를 입혀볼 수 있게 확정한다. 상품 사진을 실제로 보고(칸·여밈·두께) "
+        "연출을 검수한 뒤 화면의 착장 칸을 채운다. 생성은 사용자가 위젯에서 누를 때 "
+        "일어난다 — 이 도구는 이미지를 만들지 않는다. "
+        "결과의 dropped 에 사유가 있으면 답변에 그대로 밝혀라(없는 연출을 말하면 안 된다). "
+        "options 를 비우면 승인된 연출을 그대로 쓴다.",
+        {"options": {"type": "array",
+                     "items": {"type": "string",
+                               "enum": ["outer_layered", "outer_open", "outer_closed",
+                                        "top_open", "top_closed"]},
+                     "description": "바꿀 연출. 비우면 승인된 그대로"}},
+        ["options"],
+    ),
 ]
 
 NAMES = [s["name"] for s in SPECS]
@@ -471,6 +511,11 @@ def progress_say(name: str, args: dict) -> str | None:
         axis = {"discount": "할인·최저가", "resale": "리셀·중고 시세",
                 "lifecycle": "수명주기"}.get(args.get("axis"), "시장 기록")
         return f"{what} {axis} 보는 중"
+    if name == "propose_fit":
+        st = [str(t).strip() for t in (args.get("styles") or []) if str(t).strip()]
+        return f"{st[0]} 코디 짜는 중" if st else "코디 짜는 중"
+    if name == "build_fit":
+        return "고른 옷을 살펴보는 중"
     if name == "get_salmal":
         return "살!말? 투표 보는 중"
     if name == "search_salmal":
@@ -901,6 +946,66 @@ class Toolbox:
             out.setdefault("axis", axis)
             out.setdefault("query", {k: v for k, v in sel.items() if v})
         return out
+
+    # ── 코디 인계 (2026-09-22) ─────────────────────────────
+    #   propose_fit 은 고르기만 하고, build_fit 은 사진을 보고 확정한다.
+    #   둘을 한 도구에 합치면 제안과 확정이 같은 호출 안에서 갈려 궤적에 구분이
+    #   남지 않는다 — 승인 전후를 대조할 원본이 없어진다(원칙 2).
+    def _market_api(self):
+        if self.market is None:
+            from .adapters import MarketHTTPAdapter
+            self.market = MarketHTTPAdapter()
+        return self.market
+
+    def t_propose_fit(self, styles: Any = None, slots: Any = None,
+                      options: Any = None, why: str = "") -> dict:
+        from . import fit
+
+        found = fit.propose(self._market_api(), styles, slots)
+        if "unavailable" in found:
+            return found
+        on = {str(k): True for k in (options or []) if str(k) in vton.OPTION_LINES}
+        # ★ 아직 사진을 보지 않았다. 구조로 걸러지는 것만 먼저 뗀다(seen=[]) —
+        #   여밈 판단은 사진을 볼 수 있는 build_fit 이 한다.
+        on, dropped = fit.prune_options(on, found["items"], [])
+        out = {"proposed": True, **found, "options": sorted(k for k, v in on.items() if v),
+               "why": str(why or "").strip()[:200],
+               "note": "아직 입히지 않았다. 사용자가 승인하면 살!말? 에서 입혀본다."}
+        if dropped:
+            out["dropped"] = dropped
+        return out
+
+    def t_build_fit(self, options: Any = None) -> dict:
+        from . import fit
+
+        proposal = self.ctx.get("fit_proposal")
+        proposal = proposal if isinstance(proposal, dict) else {}
+        # ★ 코디는 화면을 거쳐 돌아온다 — 우리가 고른 그것이라는 보장이 없다.
+        #   허용한 상품 CDN 의 사진만 본다(vton.ALLOWED_IMAGE_HOSTS). 생성 단계에서
+        #   어차피 막히는 주소를, 사진 검수에 먼저 보내지 않는다.
+        items = [r for r in (proposal.get("items") or [])
+                 if isinstance(r, dict) and r.get("slot")
+                 and vton.image_host_allowed(r.get("image"))][:vton.MAX_ITEMS]
+        if not items:
+            return {"unavailable": "확정할 코디가 없습니다 — 먼저 propose_fit 으로 제안하세요."}
+        # 사진을 실제로 본다. 실패하면 전부 '모르겠음' 이 돌아온다(vton.UNKNOWN).
+        seen = vton.inspect([str(r["image"]) for r in items])
+        picked = [str(k) for k in (options or []) if str(k) in vton.OPTION_LINES]
+        on = ({k: True for k in picked} if picked
+              else {str(k): True for k in (proposal.get("options") or [])
+                    if str(k) in vton.OPTION_LINES})
+        on, dropped = fit.prune_options(on, items, seen)
+        # ★ 사진이 다른 칸이라고 하면 칸을 조용히 바꾸지 않는다 — 어느 칸으로 넣을지는
+        #   무엇을 찾아서 고른 것인가(DB 태그)가 정한다. 다만 말은 해 준다.
+        for row, look in zip(items, seen):
+            if look.get("slot") not in (vton.AUTO, row.get("slot")):
+                dropped.append(f"{str(row.get('name') or '')[:20]} 는 "
+                               f"사진상 {look['slot']} 로 보입니다.")
+        return {"ready": True,
+                "items": fit.layer_order(items, seen),
+                "options": sorted(k for k, v in on.items() if v),
+                "dropped": dropped,
+                "note": "화면의 착장 칸을 채웠다. 생성은 사용자가 누를 때 일어난다."}
 
     def t_get_salmal(self, card_id: int) -> dict:
         if self.salmal is None:
@@ -1377,6 +1482,14 @@ def specs_for(ctx: dict | None = None) -> list[dict]:
         drop.add("get_salmal")
     if ctx.get("mode") != "salmal":
         drop.add("get_salmal_index")
+        # ★ VTON 은 살!말? 의 고유 기능이다 (2026-09-22). 일반 모드가 할 수 있는
+        #   일은 propose_fit — 제안까지다. 프롬프트로 "입히지 마라" 라고 적는 것과
+        #   다르다: 목록에 없으면 모델이 어떻게 우겨도 부를 수 없다.
+        drop.add("build_fit")
+    if not ctx.get("fit_proposal"):
+        # 승인을 거치지 않은 턴에는 확정할 코디가 없다. get_salmal 이 카드에서
+        # 넘어왔을 때만 목록에 있는 것과 같은 방식이다.
+        drop.add("build_fit")
     if not ctx.get("user_id"):
         drop.add("get_user_taste")
     if ctx.get("no_ask"):
