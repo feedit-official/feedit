@@ -1,152 +1,30 @@
-# 패션 트렌드 키워드 검색량 수집 파이프라인
+# 검색량 수집 도구
 
-네이버/구글에서 패션 관련 키워드의 검색량을 API로 수집하여 S3에 적재 → 정규화 전처리 → RDS(PostgreSQL)에 적재하는 Python 데이터 파이프라인입니다.
+기준일: 2026-09-22. `main.py`의 실제 CLI와 현재 모노레포 경로 기준입니다.
 
-## 아키텍처
+이 도구는 사전 CSV에서 키워드를 읽고 공급자별 데이터를 수집해 로컬 raw/processed 파일을 생성합니다. RDS 적재는 Django 관리 명령의 후속 단계입니다. S3/RDS까지 자동 완료되는 단일 명령으로 취급하지 않습니다.
 
-```
-키워드 파일 (fashion_keywords.txt)
-        │
-        ▼
-┌─────────────────────────────────┐
-│    STEP 1: Collect (수집)        │
-│  ┌───────────────┐  ┌──────────┐│
-│  │ 네이버 검색광고 │  │ 네이버    ││
-│  │ (월간 절대값)   │  │ 데이터랩  ││
-│  └───────┬───────┘  └────┬─────┘│
-│  ┌───────────────┐  ┌──────────┐│
-│  │ Google Trends  │  │ Google   ││
-│  │ (pytrends)     │  │ Keyword  ││
-│  └───────┬───────┘  └────┬─────┘│
-└──────────┼───────────────┼──────┘
-           ▼               ▼
-┌─────────────────────────────────┐
-│  STEP 2: Store Raw (S3 적재)     │
-│  s3://bucket/raw/{source}/{date} │
-└──────────────┬──────────────────┘
-               ▼
-┌─────────────────────────────────┐
-│  STEP 3: Process (정규화)        │
-│  상대값 → 절대값 치환 공식:       │
-│  B = (B_ratio / A_ratio) × A_vol │
-└──────────────┬──────────────────┘
-               ▼
-┌─────────────────────────────────┐
-│  STEP 4: Load (RDS 적재)         │
-│  PostgreSQL Tables:              │
-│  - keyword_monthly_volume        │
-│  - keyword_trend                 │
-│  - collection_log                │
-└─────────────────────────────────┘
-```
+## 설정과 실행
 
-## 빠른 시작
-
-### 1. 의존성 설치
+저장소 루트 `.env`를 우선 읽고 패키지 내부 `.env`, `sv_config/.env`를 호환 경로로 읽습니다. 필요한 네이버/Google 설정은 `sv_config/settings.py`와 루트 환경 예시를 참고합니다.
 
 ```bash
-pip install -r requirements.txt
+# backend/에서, 전체 분석 환경 또는 이 패키지 requirements 준비 후
+python collection/search_volume/main.py --dry-run
+python collection/search_volume/main.py --source naver
+python collection/search_volume/main.py --source google --csv /path/to/dictionary.csv
+python collection/search_volume/main.py --source all --verbose
+
+# 생성 파일을 확인한 뒤 별도 적재
+python manage.py load_search_metrics --dir /path/to/output/processed/TIMESTAMP
 ```
 
-### 2. 환경변수 설정
+`--skip-s3`, `--skip-rds`는 현재 CLI 옵션이 아닙니다. `--dry-run`은 공급자 수집 호출 없이 구조·설정을 점검하며 키워드 입력은 필요합니다. API 키·고객 식별 정보를 실행 결과와 함께 공유하지 마세요.
 
-```bash
-# .env.example을 복사하여 .env 파일 생성
-cp config/.env.example config/.env
+## 동작 범위
 
-# .env 파일을 열어서 API 키와 AWS 정보 입력
-```
+네이버 검색광고, Google Trends, Google Keyword 관련 수집 코드가 있습니다. 메인 파이프라인의 네이버 데이터랩 호출은 현재 주석 처리되어 있습니다. 상대 추이를 앵커 기반으로 정규화한 값은 관측 절대값과 구분해야 합니다.
 
-### 3. 키워드 설정
+정기 태스크 `collect_search_daily`/`collect_search_weekly`는 별도 경로입니다. 저장 모델은 현재 Django의 검색 지표 모델과 관리 명령을 기준으로 확인합니다. 이전 문서의 `keyword_monthly_volume` 같은 독립 프로젝트 테이블 명칭을 현재 RDS 스키마로 사용하지 않습니다.
 
-`keywords/fashion_keywords.txt` 파일에 검색할 키워드를 한 줄에 하나씩 입력합니다.
-
-### 4. 실행
-
-```bash
-# 전체 파이프라인 실행
-python main.py
-
-# Dry Run (API 호출 없이 구조 검증)
-python main.py --dry-run
-
-# 네이버만 수집
-python main.py --source naver
-
-# 구글만 수집
-python main.py --source google
-
-# S3/RDS 건너뛰기 (로컬 파일만 저장)
-python main.py --skip-s3 --skip-rds
-
-# 상세 로그
-python main.py --verbose
-```
-
-## API 키 발급 가이드
-
-### 네이버 검색광고 API
-1. [searchad.naver.com](https://searchad.naver.com) 접속 → 회원가입/로그인
-2. 좌측 메뉴 → 도구 → API 사용 관리
-3. API 키 발급 (API_KEY, SECRET_KEY, CUSTOMER_ID)
-
-### 네이버 데이터랩 API
-1. [developers.naver.com](https://developers.naver.com) 접속 → 로그인
-2. Application → 애플리케이션 등록
-3. 사용 API에서 "데이터랩 (검색어트렌드)" 선택
-4. CLIENT_ID, CLIENT_SECRET 발급
-
-### Google Trends
-- API 키 불필요 (pytrends 라이브러리 사용)
-
-### Google Keyword Planner (선택)
-1. [Google Ads](https://ads.google.com) 계정 생성
-2. API 개발자 토큰 발급 (승인까지 며칠 소요)
-3. OAuth2 인증 설정
-
-## 프로젝트 구조
-
-```
-navergoogle/
-├── config/
-│   ├── .env.example          # 환경변수 템플릿
-│   └── settings.py           # 설정 관리
-├── collectors/
-│   ├── naver_searchad.py     # 네이버 검색광고 API
-│   ├── naver_datalab.py      # 네이버 데이터랩 API
-│   ├── google_trends.py      # Google Trends
-│   └── google_keyword.py     # Google Keyword Planner
-├── processors/
-│   ├── normalizer.py         # 정규화 전처리 (상대값→절대값)
-│   └── transformer.py        # 데이터 변환/통합
-├── storage/
-│   ├── s3_uploader.py        # S3 적재
-│   └── rds_loader.py         # PostgreSQL RDS 적재
-├── keywords/
-│   └── fashion_keywords.txt  # 패션 키워드 목록
-├── requirements.txt          # 의존성
-├── main.py                   # 파이프라인 메인
-└── README.md                 # 이 파일
-```
-
-## DB 스키마
-
-### keyword_monthly_volume
-| 컬럼 | 타입 | 설명 |
-|------|------|------|
-| keyword | VARCHAR(200) | 키워드 |
-| platform | VARCHAR(20) | 'naver' / 'google' |
-| year_month | VARCHAR(7) | '2026-09' |
-| pc_search_volume | BIGINT | PC 월간 검색량 |
-| mobile_search_volume | BIGINT | 모바일 월간 검색량 |
-| total_search_volume | BIGINT | 총 월간 검색량 |
-| competition_level | VARCHAR(20) | 경쟁정도 |
-
-### keyword_trend
-| 컬럼 | 타입 | 설명 |
-|------|------|------|
-| keyword | VARCHAR(200) | 키워드 |
-| platform | VARCHAR(20) | 'naver' / 'google' |
-| period | DATE | 날짜 |
-| ratio | FLOAT | 상대값 (0~100) |
-| estimated_volume | BIGINT | 추정 절대 검색량 |
+[전체 데이터 흐름](../../../docs/DATA_PIPELINE.md) · [기술 명세](../../../docs/TECHNOLOGY.md)

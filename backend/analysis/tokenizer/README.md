@@ -1,4 +1,6 @@
-# FEEDIT Tokenizer
+# FEEDiT Tokenizer
+
+기준일: 2026-09-22. 아래 예시는 `backend/`를 작업 경로로 하며 Django 환경과 사전 DB 접근이 필요합니다. [개발 안내](../../../docs/DEVELOPMENT.md)를 먼저 확인하세요.
 
 토크나이저 관련 코드/학습 자산은 모두 이 폴더 안에서 관리합니다.
 

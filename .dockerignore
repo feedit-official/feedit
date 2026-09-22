@@ -1,0 +1,15 @@
+# Secrets and local state never belong to an image build context.
+.git
+**/.env
+**/.env.*
+!**/.env.example
+**/.venv
+**/venv
+**/__pycache__
+**/*.pyc
+**/.DS_Store
+**/node_modules
+**/dist
+outputs
+docs
+# Runtime models, fixtures, source images and vendored licenses remain available.

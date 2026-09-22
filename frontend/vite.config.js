@@ -24,7 +24,7 @@ export default defineConfig(({ mode }) => {
          화면은 조용히 목업 답변으로 떨어진다 — 서버가 떠 있어도 그렇다.
 
          ★ 챗봇 서버를 따로 켜야 한다:
-             cd ../Final/feedit-chat && python3 server.py
+             cd ../ChatBot && python3 server.py
          안 켜져 있으면 여기 프록시가 ECONNREFUSED 를 내고, 역시 목업으로 떨어진다. */
       /* ★ 배포하지 않아도 로컬에서 실데이터를 볼 수 있게 길을 둘로 나눈다.
        *
@@ -40,7 +40,7 @@ export default defineConfig(({ mode }) => {
        *   켜는 법:
        *     Django  cd backend && python manage.py runserver $API_PORT
        *             (또는 docker compose -f docker/compose.yml up)
-       *     챗봇     cd ../feedit-chat && python3 server.py
+       *     챗봇     cd ../ChatBot && python3 server.py
        */
       proxy: {
         '/api/v1': {
@@ -64,7 +64,7 @@ export default defineConfig(({ mode }) => {
       assetsDir: '_build',
       rollupOptions: {
         input: {
-          main: page('index.html'),   // 메인 목업 (덱 + 앱)
+          main: page('index.html'),   // 플랫폼 메인 (덱 + 앱)
         },
       },
     },

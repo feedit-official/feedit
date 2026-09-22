@@ -1,4 +1,4 @@
-# 읽기 전용 API 만 올린다 — SSM 굴 없이, RDS 직결.
+# Django API + Redis + Celery worker/beat — SSM 없이 RDS 직결.
 #
 # ══════════════════════════════════════════════════════════════
 #  왜 굴이 필요 없나
@@ -23,7 +23,7 @@
 #  compose.prod.yml 과 무엇이 다른가
 # ══════════════════════════════════════════════════════════════
 #   ssm-tunnel   없앴다  — 위 이유
-#   redis        없앴다  — 워커를 안 돌린다 (celery 는 import 만 된다)
+#   redis        포함 — Celery worker/beat의 큐를 담당한다
 #   caddy        없앴다  — 챗봇이 쓰는 앞단(nginx)이 이미 80·443 을 쥐고 있다.
 #                          여기서 또 띄우면 "address already in use" 로 죽는다.
 #                          대신 docker/nginx-feedit-api.conf 를 그 nginx 에 넣는다.
@@ -90,7 +90,7 @@ services:
       - "127.0.0.1:${API_PORT:-8000}:8000"
 
     # ★ migrate 를 여기서 돌리지 않는다.
-    #   이 API 는 **읽기 전용**이고, 표를 만드는 것은 크롤러·수집 쪽 일이다.
+    #   API는 사용자 데이터 읽기/쓰기를 한다. 스키마 변경은 별도로 검토한다.
     #   여기서 migrate 를 걸면 배포할 때마다 운영 DB 스키마를 건드리게 된다.
     #   (compose.prod.yml 은 그 하나가 전부인 서버라 migrate 를 했다.)
     #   collectstatic 은 /admin/ 화면 때문에 필요하다 — whitenoise 가 준다.
@@ -131,7 +131,7 @@ services:
   #  ★ 2026-09-20 텍스트 신호 자동화 — redis + celery-worker + celery-beat
   # ══════════════════════════════════════════════════════════════
   #  매일 04:10  유튜브 댓글 수집 → 커머스 리뷰 동기화 → LLM(OpenAI API) 분석 → 지표 적재
-  #  매일 10:00  알림(가격 하락 · 용어 등재),  월 09:00 주간 리포트 알림
+  #  매일 10:00  알림(가격 하락 · 용어 등재),  일 18:00 주간 리포트 알림
   #  · 모두 API 이미지(feedit-api:latest) 그대로 쓴다. GPU · CUDA · OCR · Playwright 없음.
   #  · 크롤 대상 실행(1분마다)은 크롤러 서버 몫이라 여기서는 끈다(CELERY_CRAWL_DISPATCH=0).
   #  · migrate 는 여기서도 돌리지 않는다 — 표는 사람이 확인하고 한 번만 migrate 한다.

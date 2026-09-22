@@ -240,3 +240,9 @@ _sv_env_values.tmp
 # Claude 작업 산출물 — 보안 점검 보고서/조치 가이드가 들어간다.
 # 취약점 내용이 그대로 적힌 문서라 절대 공개 저장소로 나가면 안 된다.
 Claude outputs/
+
+# Monorepo generated dependencies / reports (2026-09-22)
+**/node_modules/
+**/dist/
+/outputs/*
+!/outputs/README.md

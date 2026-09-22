@@ -1,10 +1,10 @@
-# AGENTS.md — feedit-web 작업 지침
+# AGENTS.md — FEEDiT frontend 작업 지침
 
-이 파일은 `feedit-web` 저장소에서 일하는 모든 사람과 LLM(Claude, GPT/Codex 등)이
+이 파일은 `feedit/frontend` 폴더에서 일하는 모든 사람과 LLM(Claude, GPT/Codex 등)이
 **작업을 시작하기 전에 먼저 읽는** 문서다.
 
-`feedit-crawler/DEVELOPLOG.md` 가 수집기 쪽의 기준 문서이듯, 여기는 프론트엔드와
-챗봇의 기준 문서다. 두 저장소는 서로 독립돼 있지만 규칙의 뿌리는 같다.
+현재 구조와 실행 방법은 루트 `docs/`가 기준이며, 이 폴더의 변경 이력은
+`docs/DEVELOPLOG.md`에 추가합니다.
 
 ---
 
@@ -20,22 +20,20 @@
 
 ## 1. 이 저장소가 무엇인가
 
-```
-feedit-web/          Vite 기반 FEEDiT 사용자용 프론트엔드
-  index.html         메인 화면 + 챗봇 팝업(#cpOverlay)
-  src/styles.css     스타일
-  docs/WORKFLOW.md   브랜치·커밋 규칙 (그대로 따른다)
-  docs/DEPLOY.md     배포
+```text
+feedit/
+  frontend/       Vite + Vanilla JavaScript 사용자 화면 및 Vercel 함수
+    index.html    화면 마크업
+    main.js       기능별 JavaScript 진입점
+    main.css      기능별 CSS 진입점
+    docs/         협업 규칙과 개발 로그
+  backend/        Django API·수집·분석
+  ChatBot/        Python 대화 서버
+  docs/           현재 시스템·개발·배포·데이터 문서
 ```
 
-옆에 있는 것들:
-
-- `feedit-crawler/` — FastAPI 관리자·수집기. 데이터는 전부 여기서 나온다.
-  로컬 `8765`. **이 저장소에서 crawler 파일을 고치지 않는다.**
-- `Final/FEEDiT_지표계산_설계서.md` — 온도·연관어·구매의향·구매 점수·리세일
-  지수의 **정의가 사는 곳**. 화면과 챗봇은 여기를 따른다.
-- `Final/FEEDiT_스키마_문서/` — 플랫폼 DB 구조.
-- `Back_DB/SKN31-FINAL-4Team/` — Django 백엔드. 살말 카드·투표 모델이 여기 있다.
+지표 구현은 `backend/`의 현재 코드와 모델, 설명은 `../docs/DATA_PIPELINE.md`를 확인합니다.
+외부 개인 작업 폴더를 현재 저장소의 필수 경로로 가정하지 않습니다.
 
 ---
 
@@ -139,7 +137,7 @@ feedit-web/          Vite 기반 FEEDiT 사용자용 프론트엔드
 - **모르면 모른다고 한다.** 그럴듯한 답보다 모른다는 답이 낫다.
 - 지표의 정의를 챗봇이 새로 만들지 않는다.
   온도·연관어·구매의향·구매 점수·리세일 지수는 전부
-  `FEEDiT_지표계산_설계서.md` 가 원본이다. 챗봇은 그 값을 **읽어서 설명**한다.
+  현재 백엔드 계산 코드와 데이터 정의가 기준이다. 챗봇은 그 값을 **읽어서 설명**한다.
 
 ### 6.2 살말 모드 — 살지 말지 추천한다
 

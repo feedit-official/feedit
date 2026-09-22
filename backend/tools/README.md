@@ -1,18 +1,13 @@
-# tools
+# 수동 진단 도구
 
-`manage.py shell` 로 실행하는 진단용 스크립트 모음입니다.
-장고 앱이 아니라 필요할 때만 돌리는 일회성 도구라 `INSTALLED_APPS` 에 넣지 않습니다.
+기준일: 2026-09-22. Django 환경과 DB 접근이 준비된 상태에서 사용합니다. 앱 등록 대상이 아닙니다.
 
-## perf_check.py
+`perf_check.py`는 관리자 페이지 응답 시간과 쿼리 수를 확인합니다. 저장소 루트에서:
 
-대시보드 페이지별 응답 시간과 쿼리 수를 측정합니다.
-
-```
-docker exec feedit-web python manage.py shell -c "exec(open('/app/tools/perf_check.py').read())"
+```bash
+docker compose -f docker/compose.api.yml exec api python manage.py shell -c "exec(open('tools/perf_check.py').read())"
 ```
 
-읽는 법
+쿼리가 많으면 반복 조회를, 소수의 쿼리가 느리면 실행 계획과 대용량 컬럼을, 쿼리 외 시간이 길면 외부 호출을 확인합니다. 운영 DB에 부하를 줄 수 있으므로 반복 실행 빈도를 조절합니다.
 
-- 쿼리 개수가 많다 → 반복 조회(N+1) 의심
-- 쿼리 하나가 유독 느리다 → 무거운 컬럼을 같이 가져오는지 확인
-- 쿼리는 적은데 느리다 → 외부 호출(S3 / Celery 등) 의심
+`check_salmal_segment.py`는 살말 관련 세그먼트 점검 도구입니다. 실행 전 현재 코드를 읽고 필요한 데이터 범위를 확인하세요.

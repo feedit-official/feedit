@@ -1,6 +1,6 @@
 # feedit-chat 전용 — 저장소 루트 requirements.txt(Django·크롤러용)와 별개다.
 #
-# ★ 챗봇은 표준 라이브러리로 짰다. 실제로 필요한 건 두 개뿐이다.
+# ★ 챗봇은 표준 라이브러리로 짰다. 직접 선언한 패키지는 아래 세 개다.
 #   설치할 게 적을수록 팀원이 켜는 데 실패할 자리가 적다.
 
 requests==2.34.2     # llm.py — OpenAI Responses API 호출
