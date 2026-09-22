@@ -418,9 +418,17 @@ class Handler(BaseHTTPRequestHandler):
         if u.path == "/v1/health":
             try:
                 e = engine()
+                # ★ 어떤 코드가 돌고 있나 (2026-09-22). 화면만 보고 "배포가 된 건가"
+                #   를 알 길이 없어, 컨테이너를 받아 놓고도 옛 동작을 한참 들여다봤다.
+                #   도구 목록은 코드가 바뀌면 같이 바뀐다 — 한 번의 조회로 갈린다.
+                #   계측이 없으면 처방도 없다(AGENTS.md §4).
+                from app.tools import NAMES
                 return self._json(200, {"ok": True, "as_of": e.store.latest_day(),
                                         "metric_version": e.store.version,
-                                        "terms": len(e.gate.prefer)})
+                                        "terms": len(e.gate.prefer),
+                                        "tools": len(NAMES),
+                                        "fit": sorted(n for n in NAMES
+                                                      if n.endswith("_fit"))})
             except Exception as ex:                       # noqa: BLE001
                 # 비밀값이 섞일 수 있어 메시지는 싣지 않는다 — 자세한 건 docker logs
                 return self._json(503, {"ok": False, "error": type(ex).__name__,
