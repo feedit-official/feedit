@@ -111,6 +111,43 @@ class ProposeTests(unittest.TestCase):
         self.assertEqual(fit._normalize_slots(["없는칸"]), fit.DEFAULT_SLOTS)
 
 
+class RelativeImageTests(unittest.TestCase):
+    """DB 실측 — thumbnail_url 27,424건이 호스트 없는 무신사 상대 경로다."""
+
+    def test_musinsa_relative_path_becomes_absolute(self):
+        got = fit.absolute_image("thumbnails/images/goods_img/20260806/7011611/x_big.jpg",
+                                 "MUSINSA")
+        self.assertEqual(got, "https://image.msscdn.net/thumbnails/images/"
+                              "goods_img/20260806/7011611/x_big.jpg")
+
+    def test_source_is_inferred_from_the_path_shape(self):
+        # 소스 코드가 비어 와도 goods_img 는 무신사 경로다.
+        self.assertTrue(fit.absolute_image("images/goods_img/a/b.jpg", "")
+                        .startswith("https://image.msscdn.net/"))
+
+    def test_unknown_shape_is_not_guessed(self):
+        # ★ 모르는 모양에 아무 호스트나 붙이지 않는다 — 엉뚱한 사진을 입히게 된다.
+        self.assertEqual(fit.absolute_image("uploads/2026/unknown.jpg", ""), "")
+        self.assertEqual(fit.absolute_image("", "MUSINSA"), "")
+
+    def test_absolute_urls_pass_through(self):
+        for url in ("https://cf.product-image.s3.zigzag.kr/a.jpg",
+                    "https://kream-phinf.pstatic.net/b.jpg",
+                    "https://d3ha2047wt6x28.cloudfront.net/c.jpg"):
+            self.assertEqual(fit.absolute_image(url, ""), url)
+            # 실측 호스트 넷은 그대로 받을 수 있어야 한다
+            self.assertTrue(vton.image_host_allowed(url), url)
+
+    def test_relative_path_products_are_offered(self):
+        market = ProposeTests.FakeMarket({
+            "티셔츠": [{"name": "트랙탑", "source": "MUSINSA",
+                        "image": "thumbnails/images/goods_img/20260806/1/x.jpg"}],
+            "팬츠": [], "스니커즈": [],
+        })
+        got = fit.propose(market, ["블록코어"], ["상의", "하의", "신발"])
+        self.assertTrue(got["items"][0]["image"].startswith("https://image.msscdn.net/"))
+
+
 class ImageHostTests(unittest.TestCase):
     """상품 사진은 서버가 받는다. 다만 아무 주소나 대신 받아 주지 않는다."""
 

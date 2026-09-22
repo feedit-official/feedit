@@ -207,12 +207,16 @@ def decode_image(data_url: str, max_bytes: int = 5 * 1024 * 1024) -> tuple[bytes
 #     서버가 남의 요청을 대신 쏘는 통로(SSRF)가 된다.
 #   ★ 호스트 목록은 환경변수로 넓힌다. 실제 값은 DB 가 원본이다:
 #       SELECT DISTINCT split_part(thumbnail_url,'/',3) FROM commerce.product_source;
+#   ★ 아래 넷은 2026-09-22 DB 실측이다(commerce.product_source 72,352건):
+#       image.msscdn.net 24,251 · cf.product-image.s3.zigzag.kr 18,268 ·
+#       d3ha2047wt6x28.cloudfront.net 1,353 · kream-phinf.pstatic.net 655.
+#     같은 조회에서 호스트가 아예 없는 상대 경로가 27,424건 나왔다 — 그것은
+#     fit.absolute_image() 가 주소로 만든다.
 ALLOWED_IMAGE_HOSTS = {
     h.strip().lower() for h in (
         os.getenv("FEEDIT_VTON_IMAGE_HOSTS")
-        or "image.msscdn.net,img.a-bly.com,"
-           "cf.image-farm.s3.ap-northeast-2.amazonaws.com,"
-           "cf.product-image.s3.ap-northeast-2.amazonaws.com"
+        or "image.msscdn.net,cf.product-image.s3.zigzag.kr,"
+           "d3ha2047wt6x28.cloudfront.net,kream-phinf.pstatic.net"
     ).split(",") if h.strip()
 }
 FETCH_TIMEOUT = 8

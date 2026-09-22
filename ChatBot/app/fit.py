@@ -37,6 +37,40 @@ DEFAULT_SLOTS = ["상의", "하의", "신발"]
 MAX_SLOTS = vton.MAX_ITEMS
 
 
+# ── 상대 경로 사진 (2026-09-22) ─────────────────────────────
+#   DB 실측: commerce.product_source.thumbnail_url 중 27,424건이 호스트 없는
+#   무신사 상대 경로다(`thumbnails/images/goods_img/...`). 가장 큰 덩어리라
+#   이것을 버리면 상의·하의가 통째로 빈다.
+#   ★ 기준은 수집기가 원본이다 — backend/collection/musinsa/constants.py
+#     IMAGE_BASE_URL = "https://image.msscdn.net". 여기서 새로 정하지 않는다.
+#   ⚠ 같은 보정이 화면 쪽에는 아직 없다(backend/apps/api/views.py products ·
+#     frontend/api/products.js 는 thumbnail_url 을 그대로 내보낸다).
+IMAGE_BASE = {"MUSINSA": "https://image.msscdn.net",
+              "MUSINSA_USED": "https://image.msscdn.net"}
+# 상대 경로로 인정할 모양. 모르는 모양은 주소로 만들지 않고 버린다 —
+# 앞에 아무 호스트나 붙이면 엉뚱한 사진을 입히게 된다.
+RELATIVE_HINTS = ("thumbnails/images/", "images/goods_img/", "goods_img/")
+
+
+def absolute_image(url: str, source: str = "") -> str:
+    """상품 사진 주소를 받아 온전한 주소로 돌려준다. 못 만들면 빈 문자열."""
+    text = str(url or "").strip()
+    if not text:
+        return ""
+    if text.startswith(("http://", "https://")):
+        return text
+    if text.startswith("//"):
+        return "https:" + text
+    path = text.lstrip("/")
+    if not path.startswith(RELATIVE_HINTS):
+        return ""
+    base = IMAGE_BASE.get(str(source or "").upper())
+    if not base:
+        # 소스를 모르면 모양으로 가른다 — goods_img 는 무신사 경로다.
+        base = IMAGE_BASE["MUSINSA"] if "goods_img/" in path else ""
+    return f"{base}/{path}" if base else ""
+
+
 def _normalize_slots(slots) -> list[str]:
     """모르는 칸 이름은 버리고, 같은 칸이 두 번 와도 그대로 둔다.
 
@@ -66,7 +100,13 @@ def propose(market, styles, slots=None, limit: int = 3) -> dict:
         # 알 수 없어 "왜 이걸 골랐나" 를 말할 수 없다.
         for style in names:
             rows = market.products({"style": style, "kind": SLOT_KINDS[slot][0]}, limit=limit)
-            got = [r for r in (rows or []) if r.get("image")]
+            got = []
+            for row in (rows or []):
+                # 사진을 온전한 주소로 만든다. 못 만들면 담지 않는다 —
+                # 입힐 수 없는 것을 승인 카드에 올리면 눌러 보고 나서야 안다.
+                image = absolute_image(row.get("image"), row.get("source"))
+                if image and vton.image_host_allowed(image):
+                    got.append({**row, "image": image})
             if got:
                 return [{**got[0], "slot": slot, "style": style}]
         return []

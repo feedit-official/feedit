@@ -124,7 +124,10 @@ class MarketHTTPAdapter(SalmalHTTPAdapter):
         if "unavailable" in data:
             return []
         rows = _slim_list(data.get("items"),
-                          ("name", "brand", "image", "url", "product_source_id", "category"),
+                          ("name", "brand", "image", "url", "product_source_id",
+                           # source 는 사진 주소를 온전하게 만드는 데 쓴다
+                           # (fit.absolute_image — 상대 경로가 27,424건 있다)
+                           "category", "source"),
                           limit)
         # 가격은 중첩 객체라 _slim_list 가 통째로 옮긴다 — 판매가 하나만 남긴다.
         for row, src in zip(rows, (data.get("items") or [])):
