@@ -84,7 +84,7 @@ def _normalize_slots(slots) -> list[str]:
     return (rows or list(DEFAULT_SLOTS))[:MAX_SLOTS]
 
 
-def propose(market, styles, slots=None, limit: int = 3) -> dict:
+def propose(market, styles, slots=None, kinds=None, limit: int = 3) -> dict:
     """스타일 태그로 슬롯별 상품을 한 점씩 고른다. 생성하지 않는다.
 
     ★ 슬롯 조회는 서로 독립이다 — 차례로 물으면 한 바퀴가 어댑터 timeout×칸 수가
@@ -96,12 +96,19 @@ def propose(market, styles, slots=None, limit: int = 3) -> dict:
     if not names:
         return {"unavailable": "어떤 스타일로 고를지 정해지지 않았습니다."}
     picks = _normalize_slots(slots)
+    # ★ 방금 추천한 아이템 말을 그대로 쓴다 (2026-09-22). "블록코어의 트랙 재킷" 을
+    #   추천했으면 '재킷' 이 아니라 **트랙 재킷** 으로 찾는 편이 맞다. 칸 순서와
+    #   짝을 맞춰 오고, 빈 자리는 기준표(SLOT_KINDS)로 떨어진다.
+    asked = [str(k or "").strip() for k in (kinds or [])]
+    asked += [""] * max(0, len(picks) - len(asked))
 
-    def one(slot: str) -> list[dict]:
-        # 스타일은 하나씩 건다 — 여러 개를 한 번에 걸면 어느 태그로 걸린 상품인지
-        # 알 수 없어 "왜 이걸 골랐나" 를 말할 수 없다.
-        for style in names:
-            rows = market.products({"style": style, "kind": SLOT_KINDS[slot][0]}, limit=limit)
+    def one(index: int, slot: str) -> list[dict]:
+        # 찾을 말: 모델이 준 아이템 → 기준표. 스타일도 하나씩 건다 — 여러 개를 한
+        # 번에 걸면 어느 태그로 걸린 상품인지 알 수 없어 "왜 골랐나" 를 못 말한다.
+        words = [w for w in [asked[index]] if w] + SLOT_KINDS[slot][:2]
+        for style in names[:2]:
+          for word in words[:2]:
+            rows = market.products({"style": style, "kind": word}, limit=limit)
             got = []
             for row in (rows or []):
                 # 사진을 온전한 주소로 만든다. 못 만들면 담지 않는다 —
@@ -110,11 +117,11 @@ def propose(market, styles, slots=None, limit: int = 3) -> dict:
                 if image and vton.image_host_allowed(image):
                     got.append({**row, "image": image})
             if got:
-                return [{**got[0], "slot": slot, "style": style}]
+                return [{**got[0], "slot": slot, "style": style, "kind": word}]
         return []
 
     with ThreadPoolExecutor(max_workers=min(4, len(picks))) as pool:
-        found = list(pool.map(one, picks))
+        found = list(pool.map(one, range(len(picks)), picks))
 
     items = [row for rows in found for row in rows]
     if not items:

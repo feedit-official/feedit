@@ -623,6 +623,35 @@ def _has_report_design(trace) -> bool:
                for c in (trace.calls if trace else []))
 
 
+def _recent_styles(history, ctx: dict) -> list[str]:
+    """이 대화에서 **이미 다룬 스타일**을 새 것부터 모은다 (2026-09-22).
+
+    왜 필요한가 —
+      "위 스타일대로 입혀 줘" 에 챗봇이 "어떤 스타일로요?" 를 되물었다. 방금
+      자기가 추천한 것을 되묻는 꼴이다. 원인은 코드에 있었다: 코디 도구가 스타일을
+      **인자로만** 받아서, 모델이 앞 턴을 옮겨 적지 않으면 아무 데도 없었다.
+      기억하는 자리를 도구가 닿는 곳(ctx)에 만든다 — 프롬프트로 "기억해라" 하고
+      부탁하는 것과 다르다.
+    ★ 답변 문장에서 뽑지 않는다. history 의 terms 는 도구가 조회한 것만 남고
+      (history.make_turn), 모델이 지어낸 이름은 거기 없다.
+    ★ 조회한 스타일이 없으면 취향(즐겨입는 스타일)으로 떨어진다. 그것도 없으면
+      빈 목록이고, 도구는 되묻지 않고 "고를 수 없다" 고 말한다.
+    """
+    out: list[str] = []
+    for turn in reversed(list(history or [])):
+        for t in (turn.get("terms") or []):
+            name = str((t or {}).get("canonical") or "").strip()
+            facet = str((t or {}).get("facet") or "").lower()
+            if name and facet == "style" and name not in out:
+                out.append(name)
+    taste = ctx.get("taste_context") if isinstance(ctx.get("taste_context"), dict) else {}
+    for name in (taste.get("favorite_styles") or []):
+        text = str(name).strip()
+        if text and text not in out:
+            out.append(text)
+    return out[:6]
+
+
 def run(question: str, *, store, gate, ctx: dict | None = None,
         history: list[dict] | None = None, salmal=None, taste=None,
         websearch=None, on_progress=None, deadline: float | None = None,
@@ -635,6 +664,12 @@ def run(question: str, *, store, gate, ctx: dict | None = None,
     # ★ 되묻기 예산 (15번). 다 썼으면 ask_user 를 목록에서 뺀다.
     #   engine 이 세어 준 값(서버 기억 기준)과 여기서 본 history 중 큰 쪽을 쓴다 —
     #   orchestrator 를 직접 부르는 자리(스모크·테스트)에서도 상한이 걸리게.
+    # ★ 방금 다룬 스타일을 도구가 볼 수 있게 둔다. propose_fit 이 인자 없이도
+    #   코디를 짤 수 있으면 모델은 되물을 이유가 없다.
+    recent = _recent_styles(history, ctx)
+    if recent:
+        ctx = {**ctx, "recent_styles": recent}
+
     asked = max(int(ctx.get("asked_before") or 0), _history_asks(history))
     if asked >= ASK_BUDGET:
         ctx = dict(ctx)

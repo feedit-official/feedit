@@ -111,6 +111,51 @@ class ProposeTests(unittest.TestCase):
         self.assertEqual(fit._normalize_slots(["없는칸"]), fit.DEFAULT_SLOTS)
 
 
+class RememberedStyleTests(unittest.TestCase):
+    """"위 스타일대로 입혀 줘" 에 되묻지 않는다 — 대화가 기억한다."""
+
+    def styles(self, history, ctx=None):
+        from app import orchestrator
+        return orchestrator._recent_styles(history, ctx or {})
+
+    def test_looked_up_styles_come_first_newest_first(self):
+        history = [
+            {"q": "발레코어 어때?", "terms": [{"canonical": "발레코어", "facet": "style"}]},
+            {"q": "가을 스타일 추천해줘",
+             "terms": [{"canonical": "빈티지", "facet": "style"},
+                       {"canonical": "카디건", "facet": "item"}]},   # 스타일만 본다
+        ]
+        self.assertEqual(self.styles(history), ["빈티지", "발레코어"])
+
+    def test_falls_back_to_taste_and_never_empties_on_purpose(self):
+        ctx = {"taste_context": {"favorite_styles": ["고프코어", "블록코어"]}}
+        # 조회한 스타일이 없으면 즐겨입는 스타일로 떨어진다
+        self.assertEqual(self.styles([], ctx), ["고프코어", "블록코어"])
+        # 둘 다 없으면 빈 목록 — 도구는 되묻지 않고 못 고른다고 말한다
+        self.assertEqual(self.styles([], {}), [])
+
+    def test_propose_fit_uses_remembered_styles_without_args(self):
+        market = ProposeTests.FakeMarket({
+            "티셔츠": [{"name": "트랙탑", "image": "https://image.msscdn.net/a.jpg"}],
+            "팬츠": [], "스니커즈": [],
+        })
+        box = tools.Toolbox(Mock(), Mock(), ctx={"recent_styles": ["블록코어"]},
+                            market=market)
+        got = box.t_propose_fit(styles=[], slots=["상의"], kinds=[], options=[], why="")
+        self.assertEqual(got["items"][0]["style"], "블록코어")
+        self.assertEqual(got["styles_from"], "대화")     # 무엇을 기준으로 골랐나
+
+    def test_asked_item_words_are_used_before_the_default_table(self):
+        market = ProposeTests.FakeMarket({
+            "트랙 재킷": [{"name": "아디다스 트랙 재킷",
+                           "image": "https://image.msscdn.net/t.jpg"}],
+            "재킷": [{"name": "아무 재킷", "image": "https://image.msscdn.net/x.jpg"}],
+        })
+        got = fit.propose(market, ["블록코어"], ["아우터"], ["트랙 재킷"])
+        self.assertEqual(got["items"][0]["name"], "아디다스 트랙 재킷")
+        self.assertEqual(got["items"][0]["kind"], "트랙 재킷")
+
+
 class RelativeImageTests(unittest.TestCase):
     """DB 실측 — thumbnail_url 27,424건이 호스트 없는 무신사 상대 경로다."""
 

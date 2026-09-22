@@ -341,6 +341,8 @@ SPECS: list[dict] = [
         "무엇을 볼지 되묻는다. 실패가 아니라 정상 행동이다. "
         "'이거 어때?' 처럼 정보가 질문에 없어 어떤 모델도 풀 수 없을 때 쓴다. "
         "★ 우리가 할 수 없는 일(주문·결제·장바구니·개인정보 입력)에는 부르지 마라. "
+        "★ 코디·입혀보기 요청에도 부르지 마라 — propose_fit 이 이미 다룬 스타일로 "
+        "짠다. 방금 추천한 스타일을 되물으면 기억하지 못하는 챗봇이 된다. "
         "어떤 상품을 주문할지 되물으면 사용자는 고르기만 하면 해 준다는 뜻으로 읽는다. "
         "그때는 도구 없이 못 한다고 답한다. "
         "추측해서 엉뚱한 용어로 답하지 말고 이것을 부른다.",
@@ -387,6 +389,11 @@ SPECS: list[dict] = [
         "추천한 스타일로 코디를 짜서 **제안한다**. 입히지는 않는다 — 사용자가 승인하면 "
         "살!말? 로 넘어가 거기서 입혀본다. 사용자가 '이 스타일대로 입혀 줄 수 있어?' "
         "'코디 보여 줘' 처럼 물을 때 부른다. "
+        "★ 어떤 스타일인지 되묻지 마라. styles 를 비우면 이 대화에서 이미 다룬 "
+        "스타일(앞 턴에서 조회한 것 · 즐겨입는 스타일)로 서버가 짠다. 앞서 네가 "
+        "추천한 스타일이 있으면 그것을 styles 에 그대로 적어라. "
+        "kinds 에는 그때 함께 말한 아이템을 칸 순서대로 적는다(예: 트랙 재킷, 카고 팬츠) "
+        "— 적으면 그 말로 찾고, 비우면 칸의 기본 아이템으로 찾는다. "
         "slots 은 채울 칸이다. 비우면 상의·하의·신발 한 벌로 고른다. 같은 칸을 두 번 "
         "적으면 두 점을 고른다 — 아우터를 겹쳐 입히려면 '아우터' 를 두 번 적어라. "
         "options 는 켤 연출만 적는다(적지 않은 것은 모델이 알아서 그린다). "
@@ -399,13 +406,15 @@ SPECS: list[dict] = [
                    "items": {"type": "string",
                              "enum": ["상의", "하의", "아우터", "원피스(셋업)", "신발"]},
                    "description": "채울 칸. 비우면 상의·하의·신발"},
+         "kinds": {"type": "array", "items": {"type": "string"},
+                   "description": "칸 순서대로 찾을 아이템 말. 없으면 빈 배열"},
          "options": {"type": "array",
                      "items": {"type": "string",
                                "enum": ["outer_layered", "outer_open", "outer_closed",
                                         "top_open", "top_closed"]},
                      "description": "켤 연출만. 없으면 빈 배열"},
          "why": {"type": "string", "description": "이 조합을 고른 이유 한 문장"}},
-        ["styles", "slots", "options", "why"],
+        ["styles", "slots", "kinds", "options", "why"],
     ),
     _fn(
         "build_fit",
@@ -957,18 +966,28 @@ class Toolbox:
             self.market = MarketHTTPAdapter()
         return self.market
 
-    def t_propose_fit(self, styles: Any = None, slots: Any = None,
+    def t_propose_fit(self, styles: Any = None, slots: Any = None, kinds: Any = None,
                       options: Any = None, why: str = "") -> dict:
         from . import fit
 
-        found = fit.propose(self._market_api(), styles, slots)
+        picked = [str(s).strip() for s in (styles or []) if str(s or "").strip()]
+        # ★ 되묻지 않는다 (2026-09-22). 모델이 앞 턴의 스타일을 옮겨 적지 않아도,
+        #   이 대화에서 이미 다룬 스타일이 ctx 에 있다(orchestrator._recent_styles).
+        #   "위 스타일대로 입혀 줘" 에 "어떤 스타일로요?" 를 되묻던 자리다.
+        if not picked:
+            picked = [str(s) for s in (self.ctx.get("recent_styles") or [])]
+        found = fit.propose(self._market_api(), picked, slots, kinds)
         if "unavailable" in found:
             return found
         on = {str(k): True for k in (options or []) if str(k) in vton.OPTION_LINES}
         # ★ 아직 사진을 보지 않았다. 구조로 걸러지는 것만 먼저 뗀다(seen=[]) —
         #   여밈 판단은 사진을 볼 수 있는 build_fit 이 한다.
         on, dropped = fit.prune_options(on, found["items"], [])
-        out = {"proposed": True, **found, "options": sorted(k for k, v in on.items() if v),
+        out = {"proposed": True, **found,
+               # 인자가 비어 대화 기억으로 골랐으면 그 사실을 남긴다. 답변이
+               # "앞서 말한 고프코어로 짰습니다" 라고 말할 근거다.
+               "styles_from": "대화" if not (styles or []) else "요청",
+               "options": sorted(k for k, v in on.items() if v),
                "why": str(why or "").strip()[:200],
                "note": "아직 입히지 않았다. 사용자가 승인하면 살!말? 에서 입혀본다."}
         if dropped:
