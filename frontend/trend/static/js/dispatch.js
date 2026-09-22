@@ -809,8 +809,11 @@ const EDIT_API = { stock: '/api/discount', resale: '/api/resale', life: '/api/li
 function editUrl(id) {
   const p = new URLSearchParams();
   if(id==='stock'&&FS.stockItem){
+    /* ★ 2026-09-22 — 할인률은 **고른 상품 하나**로만 조회한다.
+       세부 검색의 스타일·브랜드·카테고리는 후보를 좁히는 체일 뿐이라
+       대표 용어(term)로 넘기지 않는다 — 넘기면 고르지도 않은 브랜드가
+       이 상품의 지표인 것처럼 섞인다. */
     p.set('source_id',String(FS.stockItem.id));
-    const t=fsTerm(); if(t)p.set('term',t);
     return EDIT_API[id]+'?'+p.toString();
   }
   getFsCols().forEach(c => (FS.pick[c.ax] || []).forEach(v => p.append(c.param, v)));
@@ -902,9 +905,7 @@ function searchCardHTML(term){
 
 export function trRender(id){
   TR_CUR=id;
-  if(FS.id==='stock'&&id!=='stock'){
-    fsStockClear(); delete FS.pick['카테고리'];
-  }
+  if(FS.id==='stock'&&id!=='stock')fsStockClear();
   sFootPaint();   /* 가입·정보수정·인증 승인 뒤에 들어와도 이름·직위가 최신이게 */
   if(typeof assocClosePop==='function')assocClosePop();
 
@@ -981,8 +982,20 @@ export function trRender(id){
       const cb = $('#fsChips'); if (cb) { cb.hidden = true; cb.innerHTML = '' }
     }
     if (FS.id !== (useSearch ? id : null)) {
+      const from = FS.id, to = useSearch ? id : null;
+      /* ★ 2026-09-22 — 할인률 변화는 다른 두 탭과 축 이름이 다르다
+         (카테고리·상품명 ↔ 종류·아이템명). 그대로 들고 넘어가면 그 탭 칸에는
+         없는 축이 칩으로만 남아, **고른 적 없는 조건**이 결과에 섞였다.
+         할인률을 드나들 때는 걸린 조건을 비우고 새로 시작한다.
+         (리세일 ↔ 수명주기는 축이 같으므로 조건을 들고 옮겨 다닐 수 있다.) */
+      if (from === 'stock' || to === 'stock') {
+        fsReset(); fsHideSug();
+        const cb2 = $('#fsChips'); if (cb2) { cb2.hidden = true; cb2.innerHTML = '' }
+        const fi2 = $('#fsInput'); if (fi2) fi2.value = '';
+        const fc2 = $('#fsClear'); if (fc2) fc2.hidden = true;
+      }
       FS.opts = {};
-      FS.id = useSearch ? id : null;
+      FS.id = to;
       if (FS.id) fsPaintPop(); /* 미리 칸 모양을 바꿔 둔다 */
     }
     /* 탭마다 허용 축이 달라질 경우 보이지 않는 조건을 제거한다. */

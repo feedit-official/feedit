@@ -274,6 +274,20 @@
   display:grid;place-items:center}
 .fsChip button:hover{background:var(--coral)}
 
+/* ★ 2026-09-22 — 할인률 변화는 조건 칩을 쓰지 않는다.
+   세부 검색으로 좁히되, 화면에는 고른 상품 이름만 한 줄 남긴다. */
+.fsChips.isName{gap:0}
+.fsPickName{display:inline-flex;align-items:center;gap:9px;
+  padding:7px 9px 7px 14px;max-width:100%;
+  border-radius:999px;border:1px solid var(--line);background:transparent;
+  color:var(--pink-0);font-size:12.5px;letter-spacing:-.02em}
+.fsPickName small{flex:0 0 auto;font-family:var(--num);font-size:8.5px;
+  letter-spacing:.08em;opacity:.55}
+.fsPickName button{flex:0 0 auto;width:16px;height:16px;border-radius:50%;
+  background:rgba(10,10,10,.08);color:var(--pink-2);font-size:11px;line-height:1;
+  display:grid;place-items:center}
+.fsPickName button:hover{background:var(--coral);color:var(--paper)}
+
 /* ── 세부 검색 팝업 ── */
 .fsPopBg{
   position:fixed;inset:0;z-index:120;display:grid;place-items:center;padding:24px;

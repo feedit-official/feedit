@@ -260,17 +260,25 @@ export function fsStockClear(){
   FS.stockItem=null;
   delete FS.pick['상품명'];
 }
-/* 있으면 빼고 없으면 넣는다 — 칩을 뺐다 꼈다 하는 그 동작 그대로 */
+/* ★ 2026-09-22 — 한 축에는 하나만 건다. 칸 하나가 곧 칩 하나다.
+   예전엔 스타일만 갈아 끼우고 브랜드·종류·아이템명은 **쌓였다**(push).
+   그래서 브랜드를 두 번 고르면 칩이 두 개가 됐고, 세부 검색에서 네 칸을
+   골랐는데 칩은 다섯·여섯 개가 되는 일이 생겼다.
+   같은 값을 다시 누르면 그 축이 풀리고, 다른 값을 누르면 갈아 끼운다. */
 export function fsToggle(ax,v){
   if(FS.id==='stock'&&ax==='상품명'){ fsStockClear(); return false; }
   if(FS.id==='stock')fsStockClear();
-  const a=FS.pick[ax]||(FS.pick[ax]=[]);
-  const i=a.indexOf(v);
-  if(i>=0)a.splice(i,1);
-  else if(ax==='스타일'){ FS.pick[ax]=[v]; return true }
-  else a.push(v);
+  if(fsHas(ax,v)){ delete FS.pick[ax]; return false }
+  FS.pick[ax]=[v];
+  return true;
+}
+/* 칩의 × — 그 조건만 뗀다.
+   토글로 지우면 '없으면 도로 넣는' 쪽으로 새기 때문에 지우기는 따로 둔다. */
+export function fsRemove(ax,v){
+  if(FS.id==='stock'&&ax==='상품명'){ fsStockClear(); return }
+  const a=FS.pick[ax]; if(!a)return;
+  const i=a.indexOf(v); if(i>=0)a.splice(i,1);
   if(!a.length)delete FS.pick[ax];
-  return i<0;
 }
 export function fsCount(){ let n=0; for(const k in FS.pick)n+=FS.pick[k].length; return n }
 
@@ -334,9 +342,12 @@ function fsPaintSug(){
       if(s>=0&&e>=s)lb=fsEsc(o.label.slice(0,s))+'<em>'+fsEsc(o.label.slice(s,e+1))+'</em>'+fsEsc(o.label.slice(e+1));
     }
     const on=fsHas(o.f,o.label);
+    /* 검색창은 조건 하나를 새로 건다 — 이미 걸린 말이면 '빼기',
+       다른 조건이 함께 걸려 있으면 '이것만 남기기' 가 된다. */
+    const pt=on?(fsCount()===1?'걸려 있음 · 누르면 빠짐':'이 조건 하나만 남깁니다'):'';
     return '<button class="sg'+(k===0?' on':'')+(on?' picked':'')+'" data-k="'+k+'" type="button">'+
       '<span class="fc">'+fsEsc(o.f)+'</span><span class="lb">'+lb+'</span>'+
-      (on?'<span class="pt">걸려 있음 · 누르면 빠짐</span>':'')+'</button>';
+      (pt?'<span class="pt">'+pt+'</span>':'')+'</button>';
   }).join('');
   box.hidden=false;
 }
@@ -349,10 +360,21 @@ function fsMoveSug(d){
 export function fsHideSug(){ const b=$('#fsSug'); if(b){b.hidden=true;b.innerHTML=''} FS.sug=[]; FS.cur=-1 }
 
 /* 어휘 하나를 확정. 단계가 없으므로 팝업으로 넘길 일도 없다 —
-   칩으로 걸고 바로 분석한다. 더 좁히고 싶으면 세부 검색을 열면 된다. */
+   칩으로 걸고 바로 분석한다. 더 좁히고 싶으면 세부 검색을 열면 된다.
+
+   ★ 2026-09-22 — 검색창으로 치는 것은 **새 조건 하나**다.
+     예전엔 앞서 걸린 조건 위에 얹기만 했다. 그래서 '가디건' 을 쳤는데
+     지난 검색(또는 옆 탭)에서 남은 브랜드 칩이 같이 붙어,
+     고르지도 않은 브랜드가 결과와 제목에 섞였다.
+     이제 치는 순간 앞 조건은 모두 풀고 그 말 하나만 건다 —
+     여러 축을 겹쳐 보려면 세부 검색을 쓴다. */
 function fsPick(o){
   if(!o)return;
-  fsToggle(o.f,o.label);
+  /* 지금 걸린 것이 그 말 하나뿐이면, 다시 치는 것은 '빼기'로 본다
+     (연관 검색어의 '걸려 있음 · 누르면 빠짐' 과 같은 동작) */
+  const onlyThis=fsCount()===1&&fsHas(o.f,o.label);
+  fsReset();
+  if(!onlyThis)fsToggle(o.f,o.label);
   $('#fsInput').value=''; $('#fsBar').classList.remove('typing');
   $('#fsClear').hidden=true; fsHideSug();
   fsApply();
@@ -689,11 +711,21 @@ export function fsPaintPop(){
     host.innerHTML=fsColHTML(c);
     host.classList.toggle('isLoading',!!FS.loading);
   });
-  const chips=fsChipList();
   const picked=$('#fsPicked');
-  if(picked)picked.innerHTML=chips.length
-    ? chips.map(fsChipHTML).join('')
-    : '<span class="ph2">아직 고른 조건이 없습니다. 아무 칸이나 눌러 보세요.</span>';
+  if(picked){
+    if(FS.id==='stock'){
+      /* 할인률은 상품 하나만 본다 — 위 세 칸은 그 상품을 찾기 위한 체다.
+         고른 상품 이름만 적고, 조건 칩은 세우지 않는다. */
+      picked.innerHTML=FS.stockItem
+        ? fsStockNameHTML()
+        : '<span class="ph2">상품명 칸에서 볼 상품을 고르세요. 위 세 칸은 후보를 좁히는 데만 쓰입니다.</span>';
+    }else{
+      const chips=fsChipList();
+      picked.innerHTML=chips.length
+        ? chips.map(fsChipHTML).join('')
+        : '<span class="ph2">아직 고른 조건이 없습니다. 아무 칸이나 눌러 보세요.</span>';
+    }
+  }
   fsPaintState();
 }
 
@@ -737,10 +769,29 @@ function fsChipHTML(c){
 /* 열쇠는 '축|값' 이다. 값에 | 가 들어와도 첫 칸만 축으로 읽는다. */
 function fsDrop(key){
   const i=String(key).indexOf('|'); if(i<0)return;
-  fsToggle(String(key).slice(0,i),String(key).slice(i+1));
+  fsRemove(String(key).slice(0,i),String(key).slice(i+1));
+}
+/* 할인률 변화가 실제로 보는 것 — 고른 상품 하나.
+   세부 검색의 스타일·브랜드·카테고리는 그 상품을 찾기 위한 **체** 일 뿐이라
+   조건 칩으로 세우지 않는다(분석은 이 상품의 가격 기록이다). */
+function fsStockNameHTML(){
+  const it=FS.stockItem; if(!it)return '';
+  const sub=[it.brand,it.source].filter(Boolean).join(' · ');
+  return '<span class="fsPickName">'+(sub?'<small>'+fsEsc(sub)+'</small>':'')+
+    fsEsc(it.label)+
+    '<button type="button" data-stock-drop aria-label="고른 상품 빼기">\u00d7</button></span>';
 }
 export function fsChipsPaint(){
   const box=$('#fsChips'); if(!box)return;
+  /* ★ 2026-09-22 — 할인률 변화 탭은 칩을 쓰지 않는다. 아이템 이름만 적는다. */
+  if(FS.id==='stock'){
+    box.classList.add('isName');
+    const html=fsStockNameHTML();
+    box.innerHTML=html;
+    box.hidden=!html;
+    return;
+  }
+  box.classList.remove('isName');
   const chips=fsChipList();
   if(!chips.length){ box.hidden=true; box.innerHTML=''; return }
   box.innerHTML=chips.map(fsChipHTML).join('');
@@ -749,10 +800,13 @@ export function fsChipsPaint(){
 
 /* 조건을 화면에 반영 — 목업이므로 헤더 문구와 칩으로 결과를 보여준다 */
 function fsApply(){
+  const wasStock=FS.id==='stock';
   fsClosePop(); fsChipsPaint();
   const chips=fsChipList();
   trRender(FS.id||'life');
   fsChipsPaint();                    /* trRender 가 본문을 갈아치운 뒤 다시 */
+  /* 할인률은 조건으로 좁히는 화면이 아니다 — 탭 설명을 조건 나열로 덮지 않는다 */
+  if(wasStock)return;
   const d=$('#trDesc');
   if(!d||!chips.length)return;
   d.textContent=chips.map(c=>c[1]).join(' · ')+' 조건으로 좁혀 분석했습니다. '+
@@ -797,6 +851,7 @@ export function fsBuild(){
   });
   $('#fsMore').addEventListener('click',()=>{ FS.open?fsClosePop():fsOpenPop() });
   $('#fsChips').addEventListener('click',e=>{
+    if(e.target.closest('[data-stock-drop]')){ fsStockClear(); fsApply(); return }
     const b=e.target.closest('[data-drop]'); if(!b)return;
     fsDrop(b.dataset.drop); fsApply();
   });
@@ -841,6 +896,7 @@ export function fsBuild(){
     });
   }
   $('#fsPicked').addEventListener('click',e=>{
+    if(e.target.closest('[data-stock-drop]')){ fsStockClear(); fsPaintPop(); return }
     const b=e.target.closest('[data-drop]'); if(!b)return;
     fsDrop(b.dataset.drop); fsPaintPop(); fsLoadFacetsSoon();
   });
