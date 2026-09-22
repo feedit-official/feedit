@@ -58,11 +58,21 @@ export default async function handler(req, res) {
   }
   res.statusCode = 200;
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
-  res.setHeader('Cache-Control', discountFacets
-    ? 's-maxage=120, stale-while-revalidate=600'
-    /* 검색량은 하루 단위로만 바뀐다 — 더 길게 캐시해도 된다. */
-    : kind === 'search'
-      ? 's-maxage=1800, stale-while-revalidate=3600'
-      : 's-maxage=300, stale-while-revalidate=600');
+
+  /* ★ 2026-09-22 — 성공한 응답만 캐시한다.
+       viaBackend 는 실패해도 {status:'error'} 객체를 돌려주는데, 그것도 truthy 라
+       예전에는 이 줄을 그대로 타서 **에러가 엣지에 박혔다.**
+       실제로 백엔드 배포 전에 받은 404 가 30분간 남아, 배포를 끝내고도
+       화면이 계속 404 를 봤다. 고쳐 놓지 않으면 배포할 때마다 같은 일이 난다.
+       (empty 도 캐시하지 않는다 — 적재가 막 끝난 직후일 수 있다.) */
+  const cacheable = relayed && relayed.status === 'ok';
+  res.setHeader('Cache-Control', !cacheable
+    ? 'no-store'
+    : discountFacets
+      ? 's-maxage=120, stale-while-revalidate=600'
+      /* 검색량은 하루 단위로만 바뀐다 — 더 길게 캐시해도 된다. */
+      : kind === 'search'
+        ? 's-maxage=1800, stale-while-revalidate=3600'
+        : 's-maxage=300, stale-while-revalidate=600');
   return res.end(JSON.stringify(relayed));
 }

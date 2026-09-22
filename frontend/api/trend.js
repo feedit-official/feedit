@@ -30,7 +30,12 @@ export default async function handler(req, res) {
   if (relayed) {
     res.statusCode = 200;
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
-    res.setHeader('Cache-Control', 's-maxage=300, stale-while-revalidate=600');
+    /* ★ 2026-09-22 — 성공한 응답만 캐시한다. viaBackend 는 실패해도
+       {status:'error'} 를 돌려주는데 그것도 truthy 라, 예전에는 백엔드가
+       잠깐 죽은 사이의 에러가 엣지에 5분간 박혔다. 배포 직후가 특히 위험하다. */
+    res.setHeader('Cache-Control', relayed.status === 'ok'
+      ? 's-maxage=300, stale-while-revalidate=600'
+      : 'no-store');
     return res.end(JSON.stringify(relayed));
   }
 
