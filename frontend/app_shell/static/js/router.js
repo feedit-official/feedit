@@ -186,7 +186,11 @@ export function goView(v,fromTopNav=false){
       setTimeout(()=>{ if(seq===viewSeq&&curView==='salmal')try{ window.smReplay() }catch(e){} },90);
   }
   if(v==='mypage'){
-    if(!AUTH.in){ setTimeout(()=>goView('login'),0); return }
+    /* ★ 2026-09-22 — 로그인 복구가 끝나기 전에는 튕기지 않는다.
+       새로고침하면 이 화면이 복구보다 먼저 서기 때문에, 그 찰나의
+       AUTH.in=false 로 로그인 화면으로 넘기면 로그인한 사람이 튕겼다.
+       복구가 끝나면 아래 feedit:auth 에서 다시 판정한다. */
+    if(AUTH.ready&&!AUTH.in){ setTimeout(()=>goView('login'),0); return }
     myRender();
   }
   /* 트렌드 분석 — 들어올 때마다 내 피드에서 다시 시작하고,
@@ -194,8 +198,7 @@ export function goView(v,fromTopNav=false){
      로그인 전에는 곧장 로그인 화면으로 튕기지 않는다 — 내 피드 화면은 뒤에
      그대로 두고 흐릿하게 가린 뒤 그 위에 로그인 안내 팝업만 띄운다. */
   if(v==='trend'){
-    const trGate=$('#trendGateModal');
-    if(trGate)trGate.classList.toggle('on',!AUTH.in);
+    trendGateSync();
     window.__trOn=1;
     window.__trEnterAt=Date.now();     /* 사이드바 전환과 겹치지 않게 재는 기준점 */
     const startTr=window.__trWant||'myfeed'; window.__trWant=null;
@@ -213,8 +216,29 @@ export function goView(v,fromTopNav=false){
       setTimeout(()=>{ if(seq===viewSeq&&curView==='trend')trSideOpen(true) },240);
     }
   }
+  trendGateSync();   /* 트렌드를 벗어나면 관문도 같이 내린다 */
   pushNav();
 }
+/* ── 트렌드 분석 관문 ──────────────────────────────────
+   ★ 2026-09-22 — 로그인한 채 새로고침하면 '로그인이 필요합니다' 팝업이 떴다.
+     resumeNav 가 보던 화면을 그 자리에서 바로 세우는데, 로그인 복구
+     (/api/me)는 그보다 늦게 끝난다. 그 사이의 AUTH.in=false 를 '로그아웃'
+     으로 읽은 것이다. 게다가 복구가 끝나도 다시 판정하는 곳이 없어서,
+     한번 뜬 팝업은 화면을 옮겼다 오기 전까지 그대로 남았다.
+     ① 복구가 끝나기 전(AUTH.ready=false)에는 세우지 않는다.
+     ② 복구가 끝나면(feedit:auth) 여기서 한 번 더 판정한다. */
+function trendGateSync(){
+  const g=$('#trendGateModal'); if(!g)return;
+  g.classList.toggle('on', curView==='trend'&&AUTH.ready&&!AUTH.in);
+}
+/* feedit:auth = 계정이 바뀌었다 · feedit:auth-ready = 복구가 끝났다(상태는 그대로).
+   관문은 둘 다에서 다시 판정한다. */
+['feedit:auth','feedit:auth-ready'].forEach(ev=>document.addEventListener(ev,()=>{
+  trendGateSync();
+  /* 복구해 보니 정말 로그아웃이었다면 그때 로그인 화면으로 보낸다 */
+  if(curView==='mypage'&&AUTH.ready&&!AUTH.in)goView('login');
+}));
+
 function goStyle(id){
   curView='style'; curStyleId=id;
   document.body.classList.remove('athome');

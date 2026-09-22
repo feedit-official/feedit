@@ -11,6 +11,8 @@ const dom = new JSDOM(html, { url:'http://localhost:5173/' });
 Object.defineProperty(dom.window.document, 'hidden', { configurable:true, get:() => false });
 for(const key of ['window','document','Element','SVGElement','getComputedStyle','Node','HTMLElement','KeyboardEvent','MouseEvent','CustomEvent','Event'])
   globalThis[key] = key === 'window' ? dom.window : dom.window[key];
+/* notify.js 가 본문을 기다릴 때 쓴다 — jsdom 전역에 없어서 이 시험들이 통째로 죽어 있었다 */
+globalThis.MutationObserver=dom.window.MutationObserver||class{observe(){} disconnect(){} takeRecords(){return []}};
 globalThis.requestAnimationFrame = fn => setTimeout(fn, 0);
 globalThis.cancelAnimationFrame = id => clearTimeout(id);
 globalThis.addEventListener = dom.window.addEventListener.bind(dom.window);
@@ -84,8 +86,9 @@ assert.ok(document.getElementById('mNav').compareDocumentPosition(bell) & 4 ||
 /* ② 안 읽은 알림이 있으면 점이 뜬다 */
 assert.equal(document.getElementById('notiDot').hidden, false, '안 읽은 알림이 있으면 점이 뜬다');
 
-/* ②-b 로그인하면 안 읽은 알림이 오른쪽 위 토스트로 뜬다 (2026-09-19) */
-await new Promise(r => setTimeout(r, 80));
+/* ②-b 로그인하면 안 읽은 알림이 오른쪽 위 토스트로 뜬다 (2026-09-19)
+   본문(mainmode)에 들어온 뒤 600ms 있다가 뜬다 — 그만큼 기다려 준다 (notify.js waitForMain) */
+await new Promise(r => setTimeout(r, 760));
 const toasts = document.querySelectorAll('#notiToasts .notiToast');
 assert.equal(toasts.length, 1, '안 읽은 알림 1건이 토스트로 뜬다');
 assert.ok(toasts[0].textContent.includes('찜한 상품 2개가 내려갔어요.'), '토스트에 제목이 보인다');

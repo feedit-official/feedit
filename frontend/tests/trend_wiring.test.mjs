@@ -15,6 +15,8 @@ const W = new URL('..', import.meta.url).href.replace(/\/$/, '');  // 이 파일
 const dom = new JSDOM('<!doctype html><div id="c"></div>', { url: 'http://localhost:5173/' });
 for (const k of ['window','document','Element','SVGElement','getComputedStyle','Node'])
   globalThis[k] = k === 'window' ? dom.window : dom.window[k];
+/* notify.js 가 본문 진입을 기다릴 때 쓴다 — 전역에 없으면 import 단계에서 통째로 죽는다 */
+globalThis.MutationObserver=dom.window.MutationObserver||class{observe(){} disconnect(){} takeRecords(){return []}};
 
 let reply = null, calls = [];
 globalThis.fetch = async (u) => { calls.push(u);

@@ -133,7 +133,24 @@ bioBind();
    실제 값은 전부 ME(사용자)와 기존 데이터(SV 찜 · VOTES 투표 · STYLES 스타일)에
    연결해 둔다. API 가 붙으면 authLogin / authSignup / acctSave 안쪽만 갈아 끼우면 된다.
    ══════════════════════════════════════════════════════════════ */
-export var AUTH = { in: false };
+/* in    : 지금 로그인돼 있는가
+   ready : **판정해도 되는가**.
+   ★ 2026-09-22 — 새로고침하면 router 의 resumeNav 가 보던 화면을 그 자리에서
+     바로 세우는데, 로그인 복구(session())는 그보다 늦게 끝난다. 그 사이의
+     in=false 를 '로그아웃'으로 읽어서, 로그인한 사람에게도 트렌드 분석의
+     '로그인이 필요합니다' 팝업이 떴고 마이페이지는 로그인 화면으로 튕겼다.
+     복구가 끝나기 전에는 아무 판정도 하지 않는다 — 그게 ready 다. */
+export var AUTH = { in: false, ready: false };
+/* 로그인 상태가 확정됐음을 알린다. 화면들(router)이 이걸 받고 관문을 다시 판정한다.
+   ★ 둘로 나눈 이유 — feedit:auth 는 '계정이 바뀌었다' 는 뜻이라서, 받는 쪽이
+     앞 계정의 화면을 버린다(trend 의 trAccountChanged). 복구해 보니 로그아웃
+     이더라 는 '바뀐' 것이 아니므로 그걸로 남의 화면을 지우면 안 된다.
+     상태가 실제로 바뀌었을 때만 feedit:auth, 아니면 feedit:auth-ready. */
+function authNotify(changed){
+  AUTH.ready = true;
+  document.dispatchEvent(new CustomEvent(changed?'feedit:auth':'feedit:auth-ready'));
+}
+function authSettled(){ if(!AUTH.ready)authNotify(false) }
 /* 로그인 없이 쓸 수 없는 기능(챗봇 사용 · 트렌드 분석 · 살!말? 투표/등록)의
    공통 관문. 로그인 전이면 로그인 화면으로 보내고 false 를 돌려준다. */
 /* 로그인 관문에 걸려 중단된 동작 하나. 로그인/가입이 끝나면 그대로 이어 한다.
@@ -208,7 +225,7 @@ function likedAfterAuth(){
 }
 function authLogin(user){
   applyAccount(user);
-  AUTH.in = true;
+  AUTH.in = true; AUTH.ready = true;
   likedAfterAuth();
   document.dispatchEvent(new CustomEvent('feedit:auth'));
   authPaint();
@@ -218,7 +235,7 @@ function authLogin(user){
 async function authLogout(){
   try{
     await logoutAccount();
-    AUTH.in = false;
+    AUTH.in = false; AUTH.ready = true;
     likedClear();
     badgesApply(null);
     resetAccount();
@@ -232,7 +249,7 @@ async function authLogout(){
 /* 회원가입 완료(구글 · 아이디 공통) — 홈 화면으로 보낸 뒤 그 위에
    '즐겨입는 스타일' 선택 팝업을 띄운다. 팝업을 닫아도 화면은 홈에 그대로 남는다. */
 function signupComplete(){
-  AUTH.in = true;
+  AUTH.in = true; AUTH.ready = true;
   likedAfterAuth();
   document.dispatchEvent(new CustomEvent('feedit:auth'));
   authPaint();
@@ -931,7 +948,12 @@ if(suW) suW.addEventListener('input', bodyHint);
     likedAfterAuth();
     acctChips($('#styleWrap'),ME.styles);
     if(document.body.dataset.view==='mypage')myRender();
-  }).catch(e=>console.warn('[account]',e.message||e));
+    /* 복구로 로그인 상태가 됐다 — 보고 있던 화면이 새 계정 기준으로 다시 그려진다 */
+    authNotify(true);
+  }).catch(e=>console.warn('[account]',e.message||e))
+    /* 복구됐든 아니든 '이제 판정해도 된다' 는 반드시 알린다 —
+       실패했을 때 알리지 않으면 로그아웃 상태에서 관문이 영영 안 선다. */
+    .finally(authSettled);
 }
 
 /* 알파 테스트 모드 — 시연 15일 한정 (app_shell/static/js/alpha.js 와 한 쌍).
@@ -945,5 +967,7 @@ document.addEventListener('feedit:alpha-issued', () => {
     likedAfterAuth();
     acctChips($('#styleWrap'),ME.styles);
     if(document.body.dataset.view==='mypage')myRender();
-  }).catch(()=>{});
+    /* 알파 계정이 발급되면 그것도 로그인이다 — 관문·화면이 다시 판정하게 알린다 */
+    authNotify(true);
+  }).catch(()=>{}).finally(authSettled);
 });

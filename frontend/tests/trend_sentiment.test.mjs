@@ -25,6 +25,8 @@ for (let o = dom.window; o && o !== Object.prototype; o = Object.getPrototypeOf(
 for (const k of winKeys) {
   if (k in globalThis) continue;
   try { const v = dom.window[k]; globalThis[k] = typeof v === 'function' && !/^[A-Z]/.test(k) ? v.bind(dom.window) : v; } catch (e) {}
+/* notify.js 가 본문 진입을 기다릴 때 쓴다 — 전역에 없으면 import 단계에서 통째로 죽는다 */
+globalThis.MutationObserver=dom.window.MutationObserver||class{observe(){} disconnect(){} takeRecords(){return []}};
 }
 for (const k of ['navigator','localStorage','sessionStorage','location','history','Event','CustomEvent','EventTarget'])
   try { Object.defineProperty(globalThis, k, { value: dom.window[k], configurable: true, writable: true }); } catch (e) {}

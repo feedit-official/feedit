@@ -8,6 +8,8 @@ const html=fs.readFileSync(new URL('../index.html',import.meta.url),'utf8');
 const dom=new JSDOM(html,{url:'http://localhost:5173/'});
 for(const k of ['window','document','Element','SVGElement','getComputedStyle','Node','HTMLElement','CustomEvent'])
   globalThis[k]=k==='window'?dom.window:dom.window[k];
+/* notify.js 가 본문 진입을 기다릴 때 쓴다 — 전역에 없으면 import 단계에서 통째로 죽는다 */
+globalThis.MutationObserver=dom.window.MutationObserver||class{observe(){} disconnect(){} takeRecords(){return []}};
 globalThis.requestAnimationFrame=f=>setTimeout(f,0);
 globalThis.cancelAnimationFrame=h=>clearTimeout(h);
 globalThis.addEventListener=dom.window.addEventListener.bind(dom.window);

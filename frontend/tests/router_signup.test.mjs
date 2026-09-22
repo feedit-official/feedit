@@ -13,6 +13,8 @@ for(const key of [
   'KeyboardEvent','MouseEvent','CustomEvent'
 ]) globalThis[key] = key === 'window' ? dom.window : dom.window[key];
 
+/* notify.js 가 본문을 기다릴 때 쓴다 — jsdom 전역에 없어서 이 시험들이 통째로 죽어 있었다 */
+globalThis.MutationObserver=dom.window.MutationObserver||class{observe(){} disconnect(){} takeRecords(){return []}};
 globalThis.requestAnimationFrame = fn => setTimeout(fn, 0);
 globalThis.cancelAnimationFrame = id => clearTimeout(id);
 globalThis.addEventListener = dom.window.addEventListener.bind(dom.window);

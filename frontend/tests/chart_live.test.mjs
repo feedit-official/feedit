@@ -8,6 +8,8 @@ import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 
 const dom = new JSDOM('<!doctype html><div id="c"></div>', { url: 'http://localhost/' });
+/* notify.js 가 본문 진입을 기다릴 때 쓴다 — 전역에 없으면 import 단계에서 통째로 죽는다 */
+globalThis.MutationObserver=dom.window.MutationObserver||class{observe(){} disconnect(){} takeRecords(){return []}};
 globalThis.window = dom.window;
 globalThis.document = dom.window.document;
 globalThis.Element = dom.window.Element;
