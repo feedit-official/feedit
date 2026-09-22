@@ -107,6 +107,6 @@ docs/        현재 기준 문서 · 디자인 자산 · 과거 기록
 | :--- | :--- | :--- | :--- | :--- |
 | [유진영](https://github.com/ujneg18-source) | 고현아 | [김봉남](https://github.com/bongrybong) | [안혁진](https://github.com/Jinxxxok) | [전서연](https://github.com/sxoxyn) |
 
-<sub>SK네트웍스 Family AI 31기 4팀 · 문서 기준 2026.09.22 · 버전은 저장소 선언/잠금 파일 기준입니다.</sub>
+<sub>FEEDiT · 문서 기준 2026.09.22 · 버전은 저장소 선언/잠금 파일 기준입니다.</sub>
 
 <sub>README는 자체 SVG, GitHub Mermaid, 오픈소스 [Shields](https://github.com/badges/shields)를 사용합니다. 프로젝트와 데이터의 사용 권한은 별도 확인이 필요하며, 오픈소스 의존성의 라이선스가 이 저장소 전체에 자동 적용되지는 않습니다.</sub>
