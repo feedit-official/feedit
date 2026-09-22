@@ -173,6 +173,21 @@ CELERY_BEAT_SCHEDULE = {
         "task": "core.refresh_text_signals_daily",
         "schedule": crontab(hour=4, minute=10),
     },
+    # ── 검색 신호 (2026-09-22) ──
+    #   ★ config/celery.py 에도 같은 항목이 있다. 일부러 양쪽에 둔다.
+    #     celery.py 가 app.conf.beat_schedule 을 통째로 대입하는데,
+    #     config_from_object("django.conf:settings") 와의 적용 순서가
+    #     환경에 따라 달라 한쪽만 넣으면 조용히 등록되지 않는다.
+    #     (2026-09-22 실측: EC2 에서 celery.py 쪽만 넣었더니 beat 에 안 잡혔다.)
+    #     둘 다 같은 내용이면 어느 쪽이 이기든 결과가 같다.
+    "collect-search-daily": {
+        "task": "core.collect_search_daily",
+        "schedule": crontab(hour=5, minute=30),
+    },
+    "collect-search-weekly": {
+        "task": "core.collect_search_weekly",
+        "schedule": crontab(hour=6, minute=10, day_of_week="1-5"),
+    },
 }
 
 # ★ 2026-09-20 — config/celery.py 와 같은 스위치 (크롤하지 않는 서버에서는 끈다)

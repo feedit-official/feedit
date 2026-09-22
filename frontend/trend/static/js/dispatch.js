@@ -876,14 +876,27 @@ function searchCardHTML(term){
   if(S.length>=3){
     const mx=Math.max.apply(null,S.map(x=>x.volume||0))||1;
     const top=S.reduce((a,b)=>(b.volume||0)>(a.volume||0)?b:a,S[0]);
+    /* ★ 2026-09-22 — 여기서 연관어 탭의 .axRow/.axBar/.axNum 을 빌려 썼다가
+       글자와 막대가 겹쳐 나왔다. 그 클래스들은 .axList 안의 <button> 을
+       전제로 짜인 스타일이라(순위 숫자가 겹쳐 앉는다) 다른 자리에 그대로 못 쓴다.
+       남의 CSS 를 빌리지 않고 이 줄에서 쓰는 모양만 직접 적는다. */
     season='<div class="note" style="margin-top:8px"><i>◆</i>12개월 중 <b>'+
       trEsc(top.month)+'</b> 이 가장 높습니다 ('+num(top.volume)+').</div>'+
-      '<div class="axList" style="margin-top:6px">'+S.map(x=>
-        '<div class="axRow" style="pointer-events:none">'+
-        '<span class="axName" style="min-width:64px">'+trEsc(x.month)+'</span>'+
-        '<span class="axBar"><i style="width:'+Math.round((x.volume||0)/mx*100)+'%"></i></span>'+
-        '<span class="axNum" style="min-width:68px;text-align:right">'+num(x.volume)+'</span>'+
-        '</div>').join('')+'</div>';
+      '<div style="margin-top:6px;display:flex;flex-direction:column;gap:3px">'+S.map(x=>{
+        const w=Math.round((x.volume||0)/mx*100), peak=x.month===top.month;
+        return '<div style="display:flex;align-items:center;gap:10px;font-size:12px;line-height:1.6">'+
+          '<span style="flex:0 0 56px;opacity:'+(peak?'.95':'.6')+';'+(peak?'font-weight:600;':'')+
+            'font-variant-numeric:tabular-nums">'+trEsc(x.month)+'</span>'+
+          /* 바깥은 트랙, 안쪽 i 가 실제 값이다. 트랙을 흐리게 깔아야 0 에 가까운 달도 자리가 보인다. */
+          '<span style="flex:1;height:8px;border-radius:4px;overflow:hidden;'+
+            'background:color-mix(in srgb, currentColor 12%, transparent)">'+
+            '<i style="display:block;height:100%;width:'+w+'%;border-radius:4px;'+
+              'background:currentColor;opacity:'+(peak?'.75':'.4')+'"></i>'+
+          '</span>'+
+          '<span style="flex:0 0 66px;text-align:right;opacity:'+(peak?'.95':'.7')+';'+
+            (peak?'font-weight:600;':'')+'font-variant-numeric:tabular-nums">'+num(x.volume)+'</span>'+
+          '</div>';
+      }).join('')+'</div>';
   }
 
   /* 지역 — 값은 '그 시·도 검색량 대비 비율'이라 인구 보정이 이미 들어가 있다 */
