@@ -7,6 +7,7 @@ import { G_CFG, KW, fsItem, fsItemFull, fsSelectionLabel, gMount, josa, trEmpty,
 import { ME, bioPaint } from '../../../account/static/js/profile.js';
 import { S_EDIT, S_FEED, TR_META } from './nav_meta.js';
 import { assocClosePop, assocOpenPop } from './assoc_popover.js';
+import { paintRegionHeat } from './region_heatmap.js';
 import { entryOf, prime, primeUrl, sentimentUrl, stateOf, stateOfUrl, summaryOf, unavailableHTML } from './live_data.js';
 import { gChart, gDraw } from './chart_engine.js';
 import { paintStockPriceChart } from './stock_price_chart.js';
@@ -861,51 +862,84 @@ function searchCardHTML(term){
   const n=by.naver, g=by.google, sh=V.share;
   const num=v=>v==null?'–':Number(v).toLocaleString('ko-KR');
 
-  /* 절대 검색량 — 두 플랫폼은 집계 방식이 달라 합계보다 '비중'이 정직하다 */
+  /* 절대 검색량 — 두 플랫폼은 집계 방식이 달라 **합계가 의미 없다**.
+     ★ 2026-09-23 — 표를 걷어냈다. 값이 두 개뿐이라 표는 과하고, 정작 중요한
+       '어느 쪽에서 더 찾는가'가 숫자 사이에 묻혔다.
+       절대값은 숫자 그대로 세우고(스탯 타일), 비교는 100% 비중 막대 한 줄로 끝낸다.
+       색만으로 읽히지 않게 이름과 %를 반드시 함께 단다. */
   let rows='';
   if(n||g){
-    rows='<table class="mTable"><tr><th>플랫폼</th><th>월간 검색량</th><th>비중</th></tr>'+
-      [['네이버',n,sh&&sh.naver],['구글',g,sh&&sh.google]].map(([label,d,pct])=>
-        '<tr><td>'+label+'</td><td class="n">'+num(d&&d.total)+'</td>'+
-        '<td class="n">'+(pct==null?'–':pct+'%')+'</td></tr>').join('')+'</table>';
+    const tile=(label,d,pct)=>'<div class="svcKpi"><span>'+label+'</span>'+
+      '<b>'+num(d&&d.total)+'</b>'+(pct==null?'':'<em>'+pct+'%</em>')+'</div>';
+    rows='<div class="svcColsHead"><h4>플랫폼별</h4></div>'+
+      '<div class="svcKpis">'+
+      tile('네이버',n,sh&&sh.naver)+tile('구글',g,sh&&sh.google)+'</div>';
+    /* (아래에서 svcPlat 으로 한 번 더 감싼다) */
+    /* 비중을 모를 때는 막대를 그리지 않는다 — 반반으로 그리면 거짓말이 된다 */
+    if(sh&&sh.naver!=null&&sh.google!=null){
+      rows+='<div class="svcShare">'+
+        '<i class="nv" style="width:'+sh.naver+'%"></i>'+
+        '<i class="gg" style="width:'+sh.google+'%"></i></div>'+
+        '<div class="svcShareLb">'+
+          '<span><u class="nv"></u>네이버 <b>'+sh.naver+'%</b></span>'+
+          '<span><u class="gg"></u>구글 <b>'+sh.google+'%</b></span>'+
+        '</div>';
+    }
+    rows='<div class="svcPlat">'+rows+'</div>';
   }
 
-  /* 시즌성 — 12개월 절대값이라 "작년 이맘때" 비교가 된다 */
+  /* 시즌성 — 12개월 절대값이라 "작년 이맘때" 비교가 된다.
+     ★ 2026-09-23 — 가로 막대를 위아래로 쌓던 것을 세로 컬럼으로 바꿨다.
+       시간이 위에서 아래로 흐르면 12개월이 계절 리듬이 아니라 '순위표'로 읽힌다.
+       시간은 왼쪽에서 오른쪽이어야 한다.
+       색은 열두 개를 쓰지 않는다 — 가장 높은 달만 코랄, 나머지는 회색.
+       이 카드가 하는 말은 '어느 달이 튀었나' 하나뿐이기 때문이다(강조형).
+       숫자도 피크에만 단다 — 모든 막대에 숫자를 달면 아무도 읽지 않는다. */
   let season='';
   const S=D.seasonality||[];
   if(S.length>=3){
     const mx=Math.max.apply(null,S.map(x=>x.volume||0))||1;
     const top=S.reduce((a,b)=>(b.volume||0)>(a.volume||0)?b:a,S[0]);
-    /* ★ 2026-09-22 — 여기서 연관어 탭의 .axRow/.axBar/.axNum 을 빌려 썼다가
-       글자와 막대가 겹쳐 나왔다. 그 클래스들은 .axList 안의 <button> 을
-       전제로 짜인 스타일이라(순위 숫자가 겹쳐 앉는다) 다른 자리에 그대로 못 쓴다.
-       남의 CSS 를 빌리지 않고 이 줄에서 쓰는 모양만 직접 적는다. */
-    season='<div class="note" style="margin-top:8px"><i>◆</i>12개월 중 <b>'+
-      trEsc(top.month)+'</b> 이 가장 높습니다 ('+num(top.volume)+').</div>'+
-      '<div style="margin-top:6px;display:flex;flex-direction:column;gap:3px">'+S.map(x=>{
-        const w=Math.round((x.volume||0)/mx*100), peak=x.month===top.month;
-        return '<div style="display:flex;align-items:center;gap:10px;font-size:12px;line-height:1.6">'+
-          '<span style="flex:0 0 56px;opacity:'+(peak?'.95':'.6')+';'+(peak?'font-weight:600;':'')+
-            'font-variant-numeric:tabular-nums">'+trEsc(x.month)+'</span>'+
-          /* 바깥은 트랙, 안쪽 i 가 실제 값이다. 트랙을 흐리게 깔아야 0 에 가까운 달도 자리가 보인다. */
-          '<span style="flex:1;height:8px;border-radius:4px;overflow:hidden;'+
-            'background:color-mix(in srgb, currentColor 12%, transparent)">'+
-            '<i style="display:block;height:100%;width:'+w+'%;border-radius:4px;'+
-              'background:currentColor;opacity:'+(peak?'.75':'.4')+'"></i>'+
-          '</span>'+
-          '<span style="flex:0 0 66px;text-align:right;opacity:'+(peak?'.95':'.7')+';'+
-            (peak?'font-weight:600;':'')+'font-variant-numeric:tabular-nums">'+num(x.volume)+'</span>'+
-          '</div>';
-      }).join('')+'</div>';
+    /* 축 이름은 'YYYY-MM' 중 월만 쓴다 — 열두 칸에 연도까지 넣으면 글자가 겹친다.
+       해가 바뀌는 1월만 연도를 같이 적어 어느 해인지 잃지 않게 한다. */
+    const tick=m=>{
+      const t=String(m||''), mm=t.slice(-2);
+      return mm==='01'? t.slice(2,4)+'.01' : mm;
+    };
+    season='<div class="svcSeason">'+
+      '<div class="svcColsHead"><h4>월별</h4>'+
+        '<span>최고 '+trEsc(top.month)+' · '+num(top.volume)+'</span></div>'+
+      '<div class="svcCols">'+S.map(x=>{
+        const peak=x.month===top.month, h=Math.max(2,Math.round((x.volume||0)/mx*100));
+        /* 값은 data-* 로 실어 둔다 — 브라우저 기본 title 은 1초쯤 기다려야 뜨고
+           모양도 제각각이라, 아래에서 직접 그리는 말풍선이 읽는다. */
+        return '<div class="svcCol'+(peak?' on':'')+'"'+
+          ' data-m="'+trEsc(x.month)+'" data-v="'+num(x.volume)+'">'+
+          (peak?'<u>'+num(x.volume)+'</u>':'')+
+          '<i style="height:'+(peak?h*0.86:h*0.92)+'%"></i></div>';
+      }).join('')+'</div>'+
+      '<div class="svcTip" hidden></div>'+
+      '<div class="svcXax">'+S.map(x=>
+        '<span'+(x.month===top.month?' class="on"':'')+'>'+trEsc(tick(x.month))+'</span>').join('')+
+      '</div>'+
+      '<div class="note"><i>◆</i>12개월 중 <b>'+trEsc(top.month)+'</b> 이 가장 높습니다. '+
+      '나머지 달의 값은 막대에 마우스를 올리면 나옵니다.</div>'+
+    '</div>';
   }
 
-  /* 지역 — 값은 '그 시·도 검색량 대비 비율'이라 인구 보정이 이미 들어가 있다 */
+  /* 지역 — 값은 '그 시·도 검색량 대비 비율'이라 인구 보정이 이미 들어가 있다.
+     ★ 2026-09-23 — 상위 3곳을 줄글로 적던 것을 지도 히트맵으로 바꿨다.
+       값이 곧 '온도'라, 어디가 뜨거운지는 숫자보다 지도가 한눈에 읽힌다.
+       여기서는 자리만 만들고, 실제 그리기는 본문이 붙은 뒤 paintRegionHeat 가 한다. */
   let region='';
   const R=D.regions||[];
   if(R.length){
-    region='<div class="note" style="margin-top:8px"><i>◆</i>시·도별 관심도 — '+
-      R.slice(0,3).map(r=>trEsc(r.region)+' '+r.value).join(' · ')+
-      ' <small style="opacity:.6">(그 지역 검색량 대비 비율이라 인구가 많은 곳이 자동으로 높지 않습니다)</small></div>';
+    const top=R.slice(0,3).map(r=>trEsc(r.region)+' '+r.value).join(' · ');
+    region='<div class="rgWrap"><div class="rgHead"><h4>지역별</h4>'+
+      '<span>'+top+'</span></div>'+
+      '<div data-region-heat></div>'+
+      '<div class="note" style="margin-top:8px"><i>◆</i>가장 높은 시·도를 기준으로 '+
+      '상대 온도를 칠합니다.</div></div>';
   }
 
   const miss=(st.extra&&st.extra.unavailable&&st.extra.unavailable.fields)||[];
@@ -913,7 +947,13 @@ function searchCardHTML(term){
     ? '<div class="note"><i>◆</i>아직 없는 항목: '+miss.map(trEsc).join(' · ')+'</div>'
     : '';
 
-  return head+(rows||unavailableHTML('절대 검색량이 아직 없습니다.',''))+season+region+note+'</div>';
+  /* ★ 배치 — 셋을 세로로 쌓으면 카드가 한없이 길어지고, 지도는 폭 400px 이면 충분한데
+       가로를 통째로 비워 둔다. 그래서
+         1층: 플랫폼 비중 (가로 한 줄이면 끝나는 정보)
+         2층: [ 월별 컬럼 차트 | 시·도 지도 ]  — 넓은 쪽을 차트가 갖는다
+       좁은 화면에서는 svcGrid 가 한 줄로 풀린다(CSS). */
+  const left=(rows||unavailableHTML('절대 검색량이 아직 없습니다.',''))+season;
+  return head+'<div class="svcGrid"><div class="svcLeft">'+left+'</div>'+region+'</div>'+note+'</div>';
 }
 
 export function trRender(id){
@@ -1251,7 +1291,6 @@ export function trRender(id){
        → 빼 두고, 뺐다는 사실을 아래 각주에 밝힌다. 틀린 숫자를 띄우느니 빈칸이 낫다. */
     const platsAll=(ED.platforms||[]).filter(p=>p.temp!=null);
     const plats=platsAll.filter(p=>!(p.legacy && !p.mention));
-    const platsHeld=platsAll.filter(p=>p.legacy && !p.mention);
     const band=temp>=85?0:temp>=65?1:temp>=40?2:3;
     /* 색은 가장 낮은 구간에서 시작해 최종 구간까지 걸어 올라간다 */
     const RAMP=['#3d7fd6','#c98a1b','#1f9e6e','#b23b3b'].slice(0,4-band);
@@ -1303,10 +1342,11 @@ export function trRender(id){
                 return '<tr><td>'+(v>=85?'<b>'+trEsc(t.name)+'</b>':trEsc(t.name))+age+'</td>'+
                 '<td><span class="bar" style="display:block"><i class="'+(v>=85?'c':'')+'" style="width:'+v+'%"></i></span></td>'+
                 '<td class="n '+(v>=65?'up':'dn')+'">'+v+'°</td></tr>'}).join('')+
+              /* ★ 2026-09-23 — '옛 지표 버전이라 온도를 빼 뒀습니다' 안내는 뺐다.
+                 온도를 빼 둔 플랫폼은 애초에 표에 서지 않으므로, 화면에 없는 것을
+                 설명하는 줄이었다. */
               '</table><div class="note"><i>◆</i>'+(
-                  platsHeld.length
-                    ? platsHeld.map(p=>trEsc(p.name)).join('·')+' 는 옛 지표 버전이라 온도를 빼 뒀습니다 (언급 수가 없어 다른 플랫폼과 같은 잣대가 아닙니다).'
-                  : plats.some(p=>p.stale)
+                  plats.some(p=>p.stale)
                     ? '기준일이 적힌 플랫폼은 그날의 값입니다 — 리뷰는 쓰인 날로 쌓여 유튜브보다 달력이 느립니다.'
                     : '플랫폼마다 온도차가 있다면 아직 확산 초반 구간입니다.')+'</div>'
             : unavailableHTML('플랫폼별 지표 행이 아직 없습니다.','전체 합산 행만 적재돼 있습니다.'))+
@@ -1318,6 +1358,35 @@ export function trRender(id){
          한 막대그래프에 세우면 "무신사 82도 / 구글 56도"처럼
          비교 불가능한 숫자가 나란히 서게 된다. 그래서 칸을 나눈다. */
       searchCardHTML(KW.q);
+    /* 월별 컬럼 — 막대에 올리면 그 달의 값을 말풍선으로 띄운다.
+       (피크 말고는 숫자를 달지 않으므로, 나머지 값을 읽는 길은 이것과 표 보기다) */
+    (function(){
+      const wrap=$('#trBody .svcSeason'); if(!wrap)return;
+      const cols=wrap.querySelector('.svcCols'), tip=wrap.querySelector('.svcTip');
+      if(!cols||!tip)return;
+      const hide=()=>{ tip.hidden=true };
+      cols.addEventListener('mousemove',e=>{
+        const col=e.target.closest('.svcCol');
+        if(!col){ hide(); return }
+        tip.innerHTML='<b>'+col.dataset.m+'</b><span>'+col.dataset.v+'</span>';
+        tip.hidden=false;
+        /* 말풍선은 마우스가 아니라 **막대 위**에 붙인다 — 값이 어느 막대의 것인지 분명하게 */
+        const bar=col.querySelector('i')||col;
+        const wr=wrap.getBoundingClientRect(), br=bar.getBoundingClientRect();
+        let x=br.left-wr.left+br.width/2-tip.offsetWidth/2;
+        x=Math.max(0,Math.min(wr.width-tip.offsetWidth,x));
+        tip.style.left=x+'px';
+        tip.style.top=Math.max(0,br.top-wr.top-tip.offsetHeight-8)+'px';
+      });
+      cols.addEventListener('mouseleave',hide);
+    })();
+    /* 검색량 카드 안의 시·도별 관심도를 지도로 칠한다 (본문이 붙은 뒤에) */
+    (function(){
+      const host=$('#trBody [data-region-heat]');
+      if(!host)return;
+      const rg=(stateOfUrl(searchUrl(KW.q)).data||{}).regions||[];
+      paintRegionHeat(host, rg);
+    })();
     /* ★ term 을 넘겨야 실데이터를 본다. field 는 API 가 돌려주는 열 이름이다 — mention(언급량) · temp(온도). */
     G_CFG.tempMain={key:kw+'temp',term:kw,min:0,max:100,
       sets:[{id:'m',name:'언급량 지수',field:'mention',index:true,unit:''},
