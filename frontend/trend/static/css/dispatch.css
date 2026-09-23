@@ -125,6 +125,29 @@
    다른 건 세부 검색 버튼이 없다는 것과, 안에서 굴러가는 예시 질문 내용뿐이다. */
 .trTabs.kwmode{display:block;margin-bottom:0}
 .kwWrap .fsSug{top:56px}
+/* ── 최근 검색어 (검색바를 누르면 그 자리에 선다) ──
+   연관어 줄(.sg)과 같은 높이·같은 글자 크기로 맞춘다 — 두 패널이 번갈아 뜨는데
+   모양이 다르면 같은 자리에서 화면이 튄다. */
+.kwHist{padding:2px}
+.kwHistHead{padding:9px 12px 7px;font-family:var(--num);font-size:8.5px;
+  letter-spacing:.16em;color:var(--pink-2)}
+.kwHistRow{display:flex;align-items:center;gap:4px;border-radius:9px;transition:background .16s}
+.kwHistRow:hover{background:rgba(10,10,10,.035)}
+.kwHistGo{flex:1;min-width:0;display:flex;align-items:center;gap:11px;
+  padding:10px 4px 10px 12px;text-align:left}
+.kwHistGo .fc{flex:0 0 auto;font-family:var(--num);font-size:8.5px;letter-spacing:.1em;
+  padding:4px 7px;border-radius:5px;background:rgba(10,10,10,.06);color:var(--pink-2)}
+.kwHistGo .lb{flex:1;min-width:0;font-size:13.5px;letter-spacing:-.02em;color:var(--pink-0);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.kwHistDel{flex:0 0 auto;width:26px;height:26px;margin-right:8px;border-radius:50%;
+  display:grid;place-items:center;font-size:14px;line-height:1;
+  color:var(--pink-2);transition:.22s var(--ease)}
+.kwHistDel:hover{background:rgba(10,10,10,.07);color:var(--pink-0)}
+.kwHistFoot{display:flex;align-items:center;justify-content:space-between;gap:10px;
+  margin-top:4px;padding:10px 12px 8px;border-top:1px solid var(--pink-3)}
+.kwHistFoot button{font-size:11.5px;color:var(--pink-2);transition:color .22s}
+.kwHistFoot button:hover{color:var(--coral)}
+.kwHistNote{font-size:11.5px;color:var(--pink-2)}
 /* 사전에 없는 말 — 실패로 끝내지 않고 등록을 받는다 */
 .kwReq{padding:16px 14px 14px;text-align:left}
 .kwReq p{font-size:13px;line-height:1.75;color:var(--pink-1)}

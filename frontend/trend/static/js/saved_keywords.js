@@ -37,11 +37,89 @@ function kwQTick(){
     if(i&&!i.value&&$('#trTabs').classList.contains('kwmode'))kwQStep(); }catch(e){}
   setTimeout(kwQTick,3200);
 }
+/* ══════════════ 최근 검색어 ══════════════
+   검색바를 눌렀을 때(아직 아무것도 치지 않았을 때) 최근에 찾아본 말을 보여 준다.
+   · 최대 7개. 같은 말을 다시 찾으면 맨 위로 올라온다.
+   · 각 줄 오른쪽 × 로 그 한 줄만 지운다.
+   · 아래 줄에서 전체 삭제 · 자동저장 끄기/켜기.
+   브라우저에만 남는다(localStorage) — 서버로 보내지 않는다. 끄면 그 즉시 지운다. */
+const KWH_KEY='feedit.kwHistory.v1';
+const KWH_ON_KEY='feedit.kwHistory.on.v1';
+const KWH_MAX=7;
+
+function kwHistOn(){
+  try{ return localStorage.getItem(KWH_ON_KEY)!=='0' }catch(e){ return false }
+}
+function kwHistSetOn(on){
+  try{
+    localStorage.setItem(KWH_ON_KEY, on?'1':'0');
+    if(!on)localStorage.removeItem(KWH_KEY);   /* 끄면 남은 기록도 함께 지운다 */
+  }catch(e){}
+}
+function kwHistList(){
+  if(!kwHistOn())return [];
+  try{
+    const raw=JSON.parse(localStorage.getItem(KWH_KEY)||'[]');
+    return Array.isArray(raw)
+      ? raw.filter(x=>x&&x.q).slice(0,KWH_MAX)
+      : [];
+  }catch(e){ return [] }
+}
+function kwHistSave(list){
+  try{ localStorage.setItem(KWH_KEY, JSON.stringify(list.slice(0,KWH_MAX))) }catch(e){}
+}
+/* 검색이 실제로 이뤄졌을 때만 남긴다 — 사전에 없어 되돌아간 말은 기록이 아니다 */
+function kwHistAdd(q,f){
+  if(!kwHistOn()||!q)return;
+  const list=kwHistList().filter(x=>x.q!==q);
+  list.unshift({q,f:f||'',at:Date.now()});
+  kwHistSave(list);
+}
+function kwHistRemove(q){
+  kwHistSave(kwHistList().filter(x=>x.q!==q));
+}
+function kwHistClear(){ kwHistSave([]) }
+
+const kwEsc=s=>String(s==null?'':s).replace(/[&<>"']/g,
+  c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+/* 검색바가 비어 있을 때 뜨는 패널. 보여 줄 것이 없으면 false 를 돌려준다. */
+function kwPaintHist(){
+  const box=$('#kwSug'); if(!box)return false;
+  const on=kwHistOn(), list=on?kwHistList():[];
+  /* 기록이 꺼져 있고 보여 줄 것도 없으면 패널을 띄우지 않는다 —
+     빈 상자가 검색바 아래를 덮고 있으면 방해만 된다.
+     다만 '다시 켜기'로 돌아올 길은 있어야 하므로, 꺼 둔 직후에는 안내를 남긴다. */
+  if(!on){
+    box.innerHTML='<div class="kwHist"><div class="kwHistFoot">'+
+      '<span class="kwHistNote">검색 기록을 저장하지 않는 중입니다.</span>'+
+      '<button type="button" data-hist-toggle="on">자동저장 켜기</button></div></div>';
+    box.hidden=false; return true;
+  }
+  if(!list.length)return false;
+  box.innerHTML='<div class="kwHist">'+
+    '<div class="kwHistHead">최근 검색어</div>'+
+    list.map(x=>'<div class="kwHistRow">'+
+      '<button type="button" class="kwHistGo" data-hist="'+kwEsc(x.q)+'">'+
+        (x.f?'<span class="fc">'+kwEsc(x.f)+'</span>':'<span class="fc">검색</span>')+
+        '<span class="lb">'+kwEsc(x.q)+'</span>'+
+      '</button>'+
+      '<button type="button" class="kwHistDel" data-hist-del="'+kwEsc(x.q)+'" '+
+        'aria-label="'+kwEsc(x.q)+' 기록 삭제" title="이 기록 삭제">\u00d7</button>'+
+    '</div>').join('')+
+    '<div class="kwHistFoot">'+
+      '<button type="button" data-hist-clear>전체 삭제</button>'+
+      '<button type="button" data-hist-toggle="off">자동저장 끄기</button>'+
+    '</div></div>';
+  box.hidden=false; return true;
+}
+
 export function kwHideSug(){ const b=$('#kwSug'); if(b){b.hidden=true;b.innerHTML=''} KW.sug=[]; KW.cur=-1 }
 function kwPaintSug(){
   const box=$('#kwSug'), inp=$('#kwInput'); if(!box||!inp)return;
   const q=inp.value.trim();
-  if(!q){ kwHideSug(); return }
+  /* 아직 아무것도 치지 않았으면 최근 검색어를 보여 준다 */
+  if(!q){ KW.sug=[]; KW.cur=-1; if(!kwPaintHist())kwHideSug(); return }
   /* ★ 2026-09-23 — 첫 줄을 미리 골라 두지 않는다. 미리 골라 두면 Enter 가
      친 말이 아니라 그 줄을 집어, '청바지' 를 치고 Enter 하면 연관어 '데님' 이 검색됐다.
      연관어는 드롭다운으로 보여 주되, 잡으려면 ↑↓ 나 클릭으로 직접 골라야 한다. */
@@ -105,6 +183,8 @@ function kwGo(v){
   inp.value=q;
   /* 금주의 리포트용 검색 기록 — 스타일 축이면 취향 지분 계산에도 쓴다 */
   logSearch(q, match.f||'', match.f==='스타일'?q:'');
+  /* 이 브라우저의 최근 검색어 (검색바를 누르면 뜬다) */
+  kwHistAdd(q, match.f||'');
 
   /* ★ 지표를 받아 오는 동안 돋보기를 돌린다.
      서버에 다녀오는 시간이 있는데 화면이 그대로면 눌린 줄을 모르고 또 누른다.
@@ -148,8 +228,18 @@ export function kwWire(part){
       if(KW.cur>=0&&KW.sug[KW.cur])kwGo(KW.sug[KW.cur]); else kwGo();
     }
   });
-  inp.addEventListener('focus',()=>{ if(inp.value)kwPaintSug() });
+  /* 검색바를 누르면 — 친 글자가 있으면 연관어, 비어 있으면 최근 검색어 */
+  inp.addEventListener('focus',()=>{ kwPaintSug() });
   $('#kwSug').addEventListener('click',e=>{
+    /* ── 최근 검색어 ── */
+    const del=e.target.closest('[data-hist-del]');
+    if(del){ kwHistRemove(del.dataset.histDel); if(!kwPaintHist())kwHideSug(); return }
+    const clr=e.target.closest('[data-hist-clear]');
+    if(clr){ kwHistClear(); if(!kwPaintHist())kwHideSug(); return }
+    const tg=e.target.closest('[data-hist-toggle]');
+    if(tg){ kwHistSetOn(tg.dataset.histToggle==='on'); if(!kwPaintHist())kwHideSug(); return }
+    const hg=e.target.closest('[data-hist]');
+    if(hg){ kwGo(hg.dataset.hist); return }
     const sg=e.target.closest('.sg');
     if(sg){ kwGo(KW.sug[+sg.dataset.k]); return }
     const near=e.target.closest('[data-kw]');
@@ -165,7 +255,8 @@ export function kwWire(part){
   if(go)go.addEventListener('click',()=>{ if(!go.disabled)kwGo() });
   clear.addEventListener('click',()=>{
     inp.value=''; bar.classList.remove('typing');
-    clear.hidden=true; kwHideSug(); inp.focus();
+    /* 비우면 연관어 대신 최근 검색어가 그 자리에 선다 */
+    clear.hidden=true; kwPaintSug(); inp.focus();
   });
   /* ★ 탭을 바꾸면 trTabsRender 가 챗바를 통째로 새로 그린다.
      그러면 #kwQ 도 새 요소라 비어 있는데, 예전엔 kwQBooked 가 이미 true 라
