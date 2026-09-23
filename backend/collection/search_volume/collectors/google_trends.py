@@ -48,6 +48,8 @@ from sv_config.settings import GoogleTrendsConfig
 logger = logging.getLogger(__name__)
 
 MAX_RETRY = 3
+# 429 를 이만큼 연속으로 맞으면 그날 수집을 접는다 (계속 두드리면 차단이 길어진다)
+RATE_LIMIT_GIVEUP = 3
 
 
 class GoogleTrendsCollector:
@@ -57,6 +59,11 @@ class GoogleTrendsCollector:
         self.config = GoogleTrendsConfig
         self._pytrends = None
         self._payload_key = None      # 지금 세워져 있는 페이로드의 (키워드, 기간, 지역)
+        # ★ 2026-09-23 — 429 를 연속 몇 번 맞았는지 센다.
+        #   구글은 같은 IP 가 두드릴수록 차단을 길게 잡는다. 끝까지 재시도하면
+        #   그날 수집을 통째로 날리므로, 연속으로 맞으면 조기에 손을 뗀다.
+        self.rate_limited = 0
+        self.aborted = False
 
     # ──────────────────────────────────────────────────────────
     #  연결 · 페이로드
@@ -115,24 +122,53 @@ class GoogleTrendsCollector:
     #  개별 조회 — 모두 '이미 세워진 페이로드' 위에서 돈다
     # ──────────────────────────────────────────────────────────
 
+    def _retry(self, call, label, empty):
+        """429 를 맞으면 기다렸다 다시 묻는다.
+
+        ★ 2026-09-23 — 백오프가 build() 에만 있었다. 그래서 페이로드는 서고
+          정작 데이터 조회에서 429 가 나면 그냥 빈손으로 넘어갔다.
+          (실측: "관심도 조회 실패: ... code 429" 바로 뒤 "관심도 데이터 없음")
+          조회 쪽에도 같은 백오프를 건다.
+        """
+        delay = self.config.REQUEST_DELAY
+        for attempt in range(1, MAX_RETRY + 1):
+            try:
+                out = call()
+                self.rate_limited = 0          # 한 번 성공하면 연속 카운터를 푼다
+                return out
+            except Exception as e:
+                if "429" not in str(e):
+                    logger.error(f"❌ {label} 실패: {e}")
+                    return empty
+                if attempt == MAX_RETRY:
+                    self.rate_limited += 1
+                    logger.error(f"❌ {label} — 429 가 {MAX_RETRY}회 이어졌습니다 "
+                                 f"(연속 {self.rate_limited}번째)")
+                    if self.rate_limited >= RATE_LIMIT_GIVEUP:
+                        self.aborted = True
+                        logger.error(
+                            "⛔ 구글이 계속 429 를 돌려줍니다 — 이 실행을 멈춥니다. "
+                            "더 두드리면 차단만 길어집니다. "
+                            "FEEDIT_TRENDS_DELAY 를 올리거나 몇 시간 뒤에 다시 도세요.")
+                    return empty
+                logger.warning(f"  ⏳ {label} 429 — {delay}초 쉬고 재시도 ({attempt}/{MAX_RETRY})")
+                time.sleep(delay)
+                delay *= 2
+        return empty
+
     def interest_over_time(self) -> pd.DataFrame:
         """관심도 시계열 (0~100). build() 가 먼저 성공해 있어야 한다."""
-        try:
+        def _call():
             df = self._get_pytrends().interest_over_time()
             if not df.empty and "isPartial" in df.columns:
                 df = df.drop(columns=["isPartial"])
             return df
-        except Exception as e:
-            logger.error(f"❌ 관심도 조회 실패: {e}")
-            return pd.DataFrame()
+        return self._retry(_call, "관심도 조회", pd.DataFrame())
 
     def related_queries(self) -> Dict:
         """관련 검색어 {키워드: {top: DF, rising: DF}}"""
-        try:
-            return self._get_pytrends().related_queries() or {}
-        except Exception as e:
-            logger.error(f"❌ 관련 검색어 조회 실패: {e}")
-            return {}
+        return self._retry(lambda: self._get_pytrends().related_queries() or {},
+                           "관련 검색어 조회", {})
 
     def interest_by_region(self) -> pd.DataFrame:
         """시·도별 관심도 (G5).
@@ -140,16 +176,14 @@ class GoogleTrendsCollector:
         resolution='REGION' + geo='KR' → 17개 시·도.
         값은 '그 지역 검색량 대비 비율'이라 인구 보정이 이미 들어가 있다.
         """
-        try:
+        def _call():
             df = self._get_pytrends().interest_by_region(
                 resolution=self.config.REGION_RESOLUTION,
                 inc_low_vol=True,
                 inc_geo_code=False,
             )
             return df if df is not None else pd.DataFrame()
-        except Exception as e:
-            logger.error(f"❌ 지역별 관심도 조회 실패: {e}")
-            return pd.DataFrame()
+        return self._retry(_call, "지역별 관심도 조회", pd.DataFrame())
 
     # ── 하위 호환 — 예전 이름으로 부르던 코드가 있어 남겨 둔다 ──
     def get_interest_over_time(self, keywords: List[str],
@@ -177,6 +211,9 @@ class GoogleTrendsCollector:
 
         rows: List[Dict] = []
         for n, kw in enumerate(targets, start=1):
+            if self.aborted:
+                logger.error(f"⛔ 429 로 중단 — 남은 용어 {len(targets) - n + 1}개를 건너뜁니다.")
+                break
             if not self.build([kw], timeframe=timeframe):
                 logger.warning(f"  ⚠️ [{n}/{len(targets)}] {kw} — 페이로드 실패, 건너뜀")
                 continue
@@ -262,6 +299,9 @@ class GoogleTrendsCollector:
         for i in range(0, len(keywords), batch_size):
             batch = keywords[i:i + batch_size]
             n = i // batch_size + 1
+            if self.aborted:
+                logger.error(f"⛔ 429 로 중단 — 남은 배치 {total_batches - n + 1}개를 건너뜁니다.")
+                break
             logger.info(f"📡 [{n}/{total_batches}] Google Trends 조회: {batch}")
 
             # ★ 페이로드는 여기서 딱 한 번
@@ -323,6 +363,9 @@ class GoogleTrendsCollector:
             "interest_by_region": all_region,      # ★ 신규 (G5)
             "trending": trending,                  # ★ 신규 (G6) 원본
             "trending_hits": trending_hits,        # ★ 신규 (G6) 사전 적중 — 알림용
+            # ★ 429 로 중간에 접었는지. 크론이 "0건 수집" 으로 조용히 끝나면
+            #   화면에 아무 티도 안 나므로, 부른 쪽이 알 수 있게 실어 보낸다.
+            "rate_limited": self.aborted,
         }
 
 
