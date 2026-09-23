@@ -8,7 +8,7 @@ import { goView } from '../../../app_shell/static/js/router.js';
 import { rkLevelOf, rkPaintAll, rkPaintAv, xpPaint } from './rank.js';
 import { trRender } from '../../../trend/static/js/dispatch.js';
 import { jobFieldApply, jobFieldBind, jobFieldCheck, jobFieldReset, jobReviewBind, jobReviewRender } from './job.js';
-import { googleLogin, googleSignupAccount, loginAccount, logoutAccount, prepareGoogle, saveAccount, saveLiked, session, signupAccount } from './account_api.js';
+import { googleLogin, googleSignupAccount, loginAccount, logoutAccount, prepareGoogle, saveAccount, saveLiked, session, signupAccount, withdrawAccount } from './account_api.js';
 
 /* 내 계정 — 운영자라 최고 등급 고정 */
 /* ★ 2026-09-19 — 예전 기본값(혁진 · xp 9400 · 적중 94 · 찜 128 · ADMIN)은 시연용 목업이었다.
@@ -881,13 +881,38 @@ if(suW) suW.addEventListener('input', bodyHint);
     if(b) bgDetail(b);
   });
 
-  /* 회원 탈퇴 — 목업이라 진짜로 지우지는 않는다. 확인만 받고 로그아웃한다 */
+  /* ★ 2026-09-23 — 회원 탈퇴를 실제로 지운다.
+     예전에는 확인만 받고 로그아웃해서, 같은 아이디로 다시 로그인하면 계정이 그대로 있었다.
+     지금은 서버(/api/auth/withdraw)가 계정과 딸린 기록(찜 · 투표 · 알림 · 인증)을 지운다.
+     서버가 실패하면 로그아웃하지 않는다 — 지워지지 않았는데 지워진 것처럼 보이면 안 된다. */
   const lv = $('#leaveBtn');
   if(lv) lv.addEventListener('click', () => acctModal('leaveModal', true));
   const lvGo = $('#leaveConfirm');
-  if(lvGo) lvGo.addEventListener('click', () => {
-    acctModal('leaveModal', false);
-    authLogout();
+  if(lvGo) lvGo.addEventListener('click', async () => {
+    if(lvGo.disabled) return;
+    lvGo.disabled = true;
+    const label = lvGo.textContent;
+    lvGo.textContent = '탈퇴 처리 중…';
+    try{
+      await withdrawAccount();
+      acctModal('leaveModal', false);
+      /* 세션은 서버에서 이미 끊겼다 — 화면 쪽 흔적만 정리한다 */
+      AUTH.in = false;
+      likedClear();
+      badgesApply(null);
+      resetAccount();
+      fbReset();
+      document.dispatchEvent(new CustomEvent('feedit:auth'));
+      pendingAfterAuth = null;
+      authPaint();
+      goView('home');
+      acctToast('탈퇴가 완료됐습니다. 그동안 이용해 주셔서 감사합니다.');
+    }catch(e){
+      acctToast(e.message || '탈퇴를 처리하지 못했습니다.');
+    }finally{
+      lvGo.disabled = false;
+      lvGo.textContent = label;
+    }
   });
   $$('[data-close-modal]').forEach(b =>
     b.addEventListener('click', () => $$('.acctModal').forEach(m => m.classList.remove('on'))));

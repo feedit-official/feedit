@@ -2,7 +2,7 @@
  * 세션·CSRF 쿠키를 브라우저와 백엔드 사이에 그대로 전달한다. */
 import { backendBase, backendToken } from '../_lib/db.js';
 
-const ALLOWED = new Set(['me', 'signup', 'login', 'logout', 'profile', 'weekly-videos', 'google', 'google-signup',
+const ALLOWED = new Set(['me', 'signup', 'login', 'logout', 'withdraw', 'profile', 'weekly-videos', 'google', 'google-signup',
   // 활동 기록 · 금주의 리포트 (backend/apps/api/activity_views.py)
   'event', 'vote', 'vote-comment', 'vote-report', 'saved', 'weekly-report',
   // 직업 인증 신청 · 관리자 심사 (backend/apps/api/job_views.py)

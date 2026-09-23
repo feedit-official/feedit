@@ -62,6 +62,11 @@ export const signupAccount = data =>
 export const logoutAccount = () =>
   request('logout', { method:'POST', body:{} }).finally(() => { sessionPromise = null; });
 
+/* 회원 탈퇴 — 서버에서 계정과 딸린 기록(찜 · 투표 · 알림 · 인증)을 실제로 지운다.
+   지우면 세션도 함께 끊기므로 캐시해 둔 세션을 반드시 버린다. */
+export const withdrawAccount = () =>
+  request('withdraw', { method:'POST', body:{} }).finally(() => { sessionPromise = null; });
+
 /* 직업 인증 — 신청 · 취소 · (관리자) 목록 · 승인/반려 */
 export const jobRequestSubmit = ({ job, major = '', docDataUrl = '', docName = '' }) =>
   request('job-request', { method:'POST', body:{ job, major, doc_data_url:docDataUrl, doc_name:docName } });

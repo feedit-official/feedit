@@ -643,7 +643,10 @@ function fsColHTML(col){
   const {list,from}=fsOptsFor(ax);
   const q=fsNorm(FS.colq[ax]||'');
   const hit=q?list.filter(o=>fsNorm(o.label).indexOf(q)>=0):[...list];
-  if(FS.id === 'stock') hit.sort((a,b) => a.label.localeCompare(b.label, 'ko-KR'));
+  /* ★ 2026-09-23 — 세부 검색 팝업의 모든 칸을 ㄱㄴㄷ(가나다) 순으로 세운다.
+     할인률 · 리세일 · 수명주기 세 파트가 같은 칸을 쓰는데 정렬 기준이 파트마다
+     달라, 같은 브랜드를 찾는 위치가 바뀌었다. 찾는 순서는 늘 같아야 한다. */
+  hit.sort((a,b) => String(a.label||'').localeCompare(String(b.label||''), 'ko-KR'));
   const picked=fsPickedOf(ax);
 
   if(!hit.length){

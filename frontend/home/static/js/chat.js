@@ -180,6 +180,8 @@ export function itemCard(o){
   const liked = !!(o.id && LIKED.has(o.id));
   const img=cardImage(o.img), url=cardLink(o.url);
   return '<div class="itemCard"' + (o.style ? ' data-style="' + cardEsc(o.style) + '"' : '') +
+    /* 스타일 상세의 카테고리 필터가 읽는 값 (2026-09-23) */
+    (o.catKey ? ' data-cat-key="' + cardEsc(o.catKey) + '"' : '') +
     (url ? ' data-product-url="' + cardEsc(url) + '" role="link" tabindex="0"' : '') + '>' +
     '<div class="itemFig">' +
       /* ★ 쇼핑몰 CDN 일부(무신사 등)는 Referer 가 붙으면 핫링크를 막아 사진이 깨진다 —

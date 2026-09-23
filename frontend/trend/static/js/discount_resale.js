@@ -142,6 +142,11 @@ var SV=[];
 const SV_TABS=[['all','전체'],['surge','급등'],['low','최저가'],
                ['drop','급락'],['calm','잠잠'],['none','측정 전']];
 var SV_F='all';
+/* ★ 2026-09-23 — '찜한 것 전체' 는 한 번에 10개까지만 보여 주고,
+   넘어가는 것은 아래 번호 페이징으로 넘긴다. 찜이 수십 개가 되면
+   한 화면에 다 깔려서 지표를 훑기 어려웠다. */
+const SV_PER=10;
+var SV_PG=1;
 
 export const svWon=v=>Number(v||0).toLocaleString('ko-KR')+'원';
 const svAge=n=>n<=0?'오늘':n+'일 전';
@@ -253,17 +258,42 @@ export function svRender(body){
   const fl=$('#trBody .svFilter');
   if(fl)fl.addEventListener('click',e=>{
     const b=e.target.closest('button[data-sv]'); if(!b)return;
-    SV_F=b.dataset.sv;
+    SV_F=b.dataset.sv; SV_PG=1;          /* 상태를 바꾸면 첫 페이지부터 */
     $$('#trBody .svChip').forEach(x=>x.classList.toggle('on',x.dataset.sv===SV_F));
     const host=$('#svRows'); if(!host)return;
     host.innerHTML=svRows(); svRowsIn();
   });
+
+  /* 번호 페이징 — 목록만 갈아 끼운다(화면 전체를 다시 그리지 않는다) */
+  const rowsHost=$('#svRows');
+  if(rowsHost)rowsHost.addEventListener('click',e=>{
+    const b=e.target.closest('button[data-pg]'); if(!b||b.disabled)return;
+    const pg=+b.dataset.pg;
+    if(!pg||pg===SV_PG)return;
+    SV_PG=pg;
+    rowsHost.innerHTML=svRows(); svRowsIn();
+  });
   svAnimate();
 }
 
+/* 번호 페이징 — 지금 페이지만 진하게, 한 장뿐이면 아예 그리지 않는다 */
+function svPager(total){
+  const pages=Math.ceil(total/SV_PER);
+  if(pages<=1)return '';
+  let out='<div class="svPager">';
+  out+='<button type="button" class="svPg nav" data-pg="'+(SV_PG-1)+'"'+(SV_PG<=1?' disabled':'')+'>‹</button>';
+  for(let i=1;i<=pages;i++)
+    out+='<button type="button" class="svPg'+(i===SV_PG?' on':'')+'" data-pg="'+i+'">'+i+'</button>';
+  out+='<button type="button" class="svPg nav" data-pg="'+(SV_PG+1)+'"'+(SV_PG>=pages?' disabled':'')+'>›</button>';
+  return out+'</div>';
+}
 function svRows(){
-  const list=SV_F==='all'?SV:SV.filter(s=>s.k===SV_F);
-  if(!list.length)return '<div class="svEmpty">이 상태인 것이 없습니다.</div>';
+  const all=SV_F==='all'?SV:SV.filter(s=>s.k===SV_F);
+  if(!all.length)return '<div class="svEmpty">이 상태인 것이 없습니다.</div>';
+  const pages=Math.max(1,Math.ceil(all.length/SV_PER));
+  if(SV_PG>pages)SV_PG=pages;
+  if(SV_PG<1)SV_PG=1;
+  const list=all.slice((SV_PG-1)*SV_PER,SV_PG*SV_PER);
   return list.map(s=>{
     const k=SV_KIND[s.k], d=s.dl;
     return '<div class="svRow" style="--k:'+k[2]+(s.url?';cursor:pointer" data-product-url="'+svEsc(s.url)+'" role="link" tabindex="0':'')+'">'+
@@ -276,7 +306,7 @@ function svRows(){
         (d==null?'—':(d>0?'+':'')+(d||'±0'))+'</em></div>'+
       '<div class="svPrice"><b>'+(s.p?svWon(s.p):'가격 정보 없음')+'</b>'+
         '<span>'+(s.atLow?'기록 최저가':s.lo!=null?'최저 '+svWon(s.lo):'가격 기록 없음')+'</span></div>'+
-      '<span class="svBadge">'+k[0]+'</span></div>'}).join('');
+      '<span class="svBadge">'+k[0]+'</span></div>'}).join('')+svPager(all.length);
 }
 
 /* 목록 행이 아래에서 한 장씩 올라오고, 미니바가 뒤따라 찬다 */

@@ -1,10 +1,51 @@
 import { $, $$, HAS_A, aAnimate, aStagger } from '../../../core/static/js/dom.js';
 import { IMG, itemCard, STYLES } from '../../../home/static/js/chat.js';
-import { ST_ITEM_PAGE_SIZE, ST_PICK_COUNT, ST_RECOMMEND_NOTE, ST_SORTS, styleProductCard, styleProductsURL } from './products.js';
+import { ST_ITEM_CATS, ST_ITEM_PAGE_SIZE, ST_PICK_COUNT, ST_RECOMMEND_NOTE, ST_SORTS, itemCatKey, styleProductCard, styleProductsURL } from './products.js';
 
 /* ── Style ──────────────────────────────────────────── */
 export var stShowI=0, stItemPage=0, stCur=null;
 let stSort='recommend';   /* 아이템 정렬 — 스타일에 들어갈 때마다 FEEDiT 추천순으로 돌아간다 */
+/* ★ 2026-09-23 — 아이템 카테고리. 이미 받아 둔 카드를 감추고 보이는 방식이라
+   '더 보기' 로 뒤에 붙는 카드에도 같은 조건이 그대로 걸린다. */
+let stCat='all';
+function stCatsPaint(){
+  const box=$('#stItemCats'); if(!box)return;
+  box.innerHTML=ST_ITEM_CATS.map(([k,l])=>
+    '<button type="button" class="itCat'+(k===stCat?' on':'')+'" data-item-cat="'+k+'">'+l+'</button>').join('');
+}
+/* 고른 카테고리만 남긴다. 카테고리를 못 가린 카드는 '전체' 에서만 보인다. */
+function stCatsApply(){
+  const host=$('#stItems'); if(!host)return;
+  let shown=0;
+  host.querySelectorAll('.itemCard').forEach(card=>{
+    const ok=stCat==='all'||card.dataset.catKey===stCat;
+    card.hidden=!ok;
+    if(ok)shown++;
+  });
+  const none=host.querySelector('.itCatEmpty');
+  if(!shown&&host.querySelector('.itemCard')){
+    if(!none){
+      const el=document.createElement('div');
+      el.className='itState itCatEmpty';
+      el.textContent='이 카테고리에 해당하는 상품이 아직 없습니다. ‘더 보기’ 로 더 불러올 수 있습니다.';
+      host.appendChild(el);
+    }
+  }else if(none)none.remove();
+  const cnt=$('#stItemCount');
+  if(cnt&&stCat!=='all')cnt.textContent=shown+' ITEMS';
+}
+function stCatsWire(){
+  const box=$('#stItemCats'); if(!box)return;
+  box.addEventListener('click',e=>{
+    const b=e.target.closest('button[data-item-cat]'); if(!b)return;
+    stCat=b.dataset.itemCat;
+    stCatsPaint(); stCatsApply();
+    if(stCat==='all'){
+      const loaded=$$('#stItems .itemCard').length;
+      const cnt=$('#stItemCount'); if(cnt)cnt.textContent=(stTotal||loaded)+' ITEMS';
+    }
+  });
+}
 /* 'FEEDiT Pick!' — 그 스타일의 추천순 최상단 6개. 스타일마다 한 번 받아 두고,
    다른 정렬로 바꿔도 같은 상품이면 라벨을 그대로 붙인다. */
 let stPicks=Promise.resolve(new Set());
@@ -40,6 +81,7 @@ export function stBuild(){
     if(e.target.id==='styleFitModal')stCloseFit();
   });
   stSortBuild();
+  stCatsPaint(); stCatsWire();
   /* '더 보기' — 무한 스크롤 대신 누를 때만 다음 24개를 붙인다 */
   $('#stMore')&&$('#stMore').addEventListener('click',()=>{
     if(stItemsError){ stItemsError=false; stItemsDone=false }
@@ -92,7 +134,7 @@ export function infCards(s){
 }
 export function stOpen(id){
   const s=STYLES.find(x=>x.id===id)||STYLES[0];
-  stCur=s; stSort='recommend'; stPicks=stLoadPicks(s.n); stTotal=null; stItemPage=0; stItemsLoading=false; stItemsDone=false; stItemsError=false;
+  stCur=s; stSort='recommend'; stCat='all'; stCatsPaint(); stPicks=stLoadPicks(s.n); stTotal=null; stItemPage=0; stItemsLoading=false; stItemsDone=false; stItemsError=false;
   const requestSeq=++stRequestSeq;
   $('#styleHome').style.display='none'; $('#styleDetail').style.display='';
   $$('#stCats .stCat').forEach(b=>b.classList.toggle('on',b.dataset.style===s.id));
@@ -228,7 +270,7 @@ export async function stMoreItems(requestSeq=stRequestSeq){
     const frag=document.createElement('div');
     frag.innerHTML=items.map(item=>{
       const card=styleProductCard(item,styleName);
-      return itemCard({...card,pick:picks.has(card.id)});
+      return itemCard({...card,pick:picks.has(card.id),catKey:itemCatKey(card)});
     }).join('');
     const els=[...frag.children]; els.forEach(el=>host.appendChild(el));
     stItemPage++;
@@ -236,6 +278,7 @@ export async function stMoreItems(requestSeq=stRequestSeq){
     stItemsDone=json.data.has_more===false||items.length<ST_ITEM_PAGE_SIZE;
     const loaded=host.querySelectorAll('.itemCard').length;
     $('#stItemCount').textContent=(stTotal||loaded)+' ITEMS';
+    stCatsApply();                 /* 새로 붙은 카드에도 지금 걸린 카테고리를 적용한다 */
     stMorePaint(loaded);
     if(HAS_A)aAnimate(els,{opacity:[0,1],translateY:[18,0],duration:760,delay:aStagger(50),ease:'out(3)'});
   }catch(e){

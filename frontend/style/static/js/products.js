@@ -45,3 +45,28 @@ export function styleProductCard(item,styleName){
     listPrice:numOr(item.price&&item.price.list)
   };
 }
+
+/* ══════════════════════════════════════════════════════
+   아이템 카테고리 (2026-09-23)
+   '이 스타일의 아이템' 아래에 두는 여섯 칸. 쇼핑몰이 준 카테고리 문자열은
+   몰마다 제각각이라('아웃터', '자켓/코트', 'OUTER'…) 여기서 한 갈래로 묶는다.
+   카테고리가 비어 있으면 상품명으로 한 번 더 본다 — 그래도 모르면 '전체' 에만 남는다.
+   ══════════════════════════════════════════════════════ */
+export const ST_ITEM_CATS=[
+  ['all','전체'],['outer','아우터'],['top','상의'],
+  ['bottom','하의'],['dress','원피스'],['shoes','신발']
+];
+const ST_CAT_RULES=[
+  ['shoes', /신발|슈즈|스니커|운동화|부츠|로퍼|샌들|힐|플랫|슬리퍼|더비|첼시|shoes|sneaker|boots|loafer|sandal/i],
+  ['dress', /원피스|드레스|점프수트|셋업|jumpsuit|dress|onepiece/i],
+  ['outer', /아우터|아웃터|자켓|재킷|코트|점퍼|블루종|패딩|다운|플리스|무스탕|가디건|베스트|조끼|바람막이|파카|트렌치|블레이저|jacket|coat|outer|parka|blouson|fleece|vest|cardigan/i],
+  ['bottom',/하의|바지|팬츠|슬랙스|데님|진|청바지|스커트|치마|반바지|쇼츠|조거|레깅스|pants|denim|jeans|skirt|shorts|slacks|jogger|legging/i],
+  ['top',   /상의|티셔츠|티|반팔|긴팔|맨투맨|스웨트|후디|후드|셔츠|블라우스|니트|스웨터|폴로|탑|나시|피케|tee|t-shirt|shirt|blouse|knit|sweater|hood|sweat|polo|top/i]
+];
+/* 카드 하나가 속하는 카테고리 열쇠 — 못 가리면 '' (전체에서만 보인다) */
+export function itemCatKey(card){
+  const text=[card&&card.cat, card&&card.nm].filter(Boolean).join(' ');
+  if(!text)return '';
+  for(const [key,re] of ST_CAT_RULES){ if(re.test(text))return key }
+  return '';
+}

@@ -1398,6 +1398,46 @@ export function trRender(id){
     const badgeHtml = ch => ch === 'new' ? '<span class="axChg up">NEW</span>' :
       ch == null ? '' : ch > 0 ? '<span class="axChg up">▲' + ch + '</span>' : ch < 0 ? '<span class="axChg">▼' + Math.abs(ch) + '</span>' :
         '<span class="axChg">–</span>';
+    /* ★ 2026-09-23 — 축마다 상위 5개만 펼쳐 두고, 나머지는 '+ 더 보기' 로 연다.
+       축당 최대 10개가 한 번에 쌓이면 어느 말이 위인지 읽히지 않았다.
+       숨기는 것은 표시뿐이고(axHide), 데이터는 그대로 둔다 — 정렬을 바꿔도 같은 규칙이 적용된다. */
+    const AX_SHOW = 5;
+    const axRowsHTML = (arr, ci, badge) => {
+      const max = Math.max.apply(null, arr.map(axWeight)) || 1;
+      const rows = arr.map((a, ai) => {
+        const pct = Math.round(axWeight(a) / max * 100);
+        return '<button class="axRow' + (ai === 0 ? ' top' : '') + (ai >= AX_SHOW ? ' axHide' : '') + '"' +
+          ' data-ci="' + ci + '" data-ai="' + ai + '">' +
+          '<span class="axNum">' + (ai + 1) + '</span>' +
+          '<span class="axName">' + trEsc(a.term) + basisChip(a) + '</span>' +
+          '<span class="axBar"><i class="' + (ai === 0 ? 'c' : '') + '" style="width:' + pct + '%"></i></span>' +
+          (badge ? badge(a.change) : '') +
+          '</button>';
+      }).join('');
+      const rest = arr.length - AX_SHOW;
+      return rows + (rest > 0
+        ? '<button type="button" class="axMoreBtn" data-ax-more="' + rest + '">+ 더 보기 (' + rest + ')</button>'
+        : '');
+    };
+    /* '더 보기' 배선 — 목록을 다시 그릴 때마다 한 번씩 부른다 */
+    const axWireMore = root => {
+      if (!root) return;
+      root.querySelectorAll('.axMoreBtn').forEach(btn => {
+        btn.addEventListener('click', ev => {
+          ev.stopPropagation();
+          const list = btn.closest('.axList'); if (!list) return;
+          const rest = btn.dataset.axMore;
+          const hidden = list.querySelectorAll('.axRow.axHide');
+          if (hidden.length) {
+            hidden.forEach(r => r.classList.remove('axHide'));
+            btn.textContent = '− 접기';
+          } else {
+            list.querySelectorAll('.axRow').forEach((r, i) => { if (i >= AX_SHOW) r.classList.add('axHide') });
+            btn.textContent = '+ 더 보기 (' + rest + ')';
+          }
+        });
+      });
+    };
     body.innerHTML =
       '<div class="verdict" style="--sc:' + BAND[0] + '">' +
       '<div class="dial"><svg viewBox="0 0 120 120">' +
@@ -1448,17 +1488,10 @@ export function trRender(id){
           '<button class="axSortBtn" data-sort="cooc" data-ci="' + ci + '">언급량순</button>' +
           '</div>' +
           '</div>' +
-          '<div class="axList" data-ci="' + ci + '">' + arr.map((a, ai) => {
-            const pct = Math.round(axWeight(a) / max * 100);
-            return '<button class="axRow' + (ai === 0 ? ' top' : '') + '" data-ci="' + ci + '" data-ai="' + ai + '">' +
-              '<span class="axNum">' + (ai + 1) + '</span>' +
-              '<span class="axName">' + trEsc(a.term) + basisChip(a) + '</span>' +
-              '<span class="axBar"><i class="' + (ai === 0 ? 'c' : '') + '" style="width:' + pct + '%"></i></span>' +
-              badgeHtml(a.change) +
-              '</button>'
-          }).join('') +
+          '<div class="axList" data-ci="' + ci + '">' + axRowsHTML(arr, ci, badgeHtml) +
           '</div></div>'
       }).join('') + '</div>';
+    axWireMore(body);
     /* ── 클라이언트 사이드 정렬용 데이터 저장 ── */
     window._assocGroups = groups;
     window._assocCats = cats;
@@ -1502,16 +1535,8 @@ export function trRender(id){
         /* 해당 카테고리의 axList만 다시 그리기 (페이지 초기화 없음) */
         const list = panel.querySelector('.axList');
 
-        const max = Math.max.apply(null, arr.map(axWeight)) || 1;
-        list.innerHTML = arr.map((a, ai) => {
-          const pct = Math.round(axWeight(a) / max * 100);
-          return '<button class="axRow' + (ai === 0 ? ' top' : '') + '" data-ci="' + ci + '" data-ai="' + ai + '">' +
-            '<span class="axNum">' + (ai + 1) + '</span>' +
-            '<span class="axName">' + trEsc(a.term) + basisChip(a) + '</span>' +
-            '<span class="axBar"><i class="' + (ai === 0 ? 'c' : '') + '" style="width:' + pct + '%"></i></span>' +
-            (badge ? badge(a.change) : '') +
-            '</button>';
-        }).join('');
+        list.innerHTML = axRowsHTML(arr, ci, badge);
+        axWireMore(panel);
 
         /* 정렬된 데이터 기준으로 groups 업데이트 (팝업에서도 맞게) */
         grps[cat] = arr;
