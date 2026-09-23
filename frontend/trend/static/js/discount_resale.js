@@ -238,10 +238,9 @@ export function svRender(body){
         return '<button type="button" class="svChip'+(t[0]===SV_F?' on':'')+'" data-sv="'+t[0]+'">'+
           t[1]+'<i>'+c+'</i></button>'}).join('')+'</div>'+
       '<div class="svRows" id="svRows">'+svRows()+'</div>'+
-      '<div class="wkNote"><i>◆</i><span>'+
-        (loading?'실데이터를 불러오는 중입니다. ':'')+
-        '온도는 상품이 속한 <b>스타일의 트렌드 온도</b>(지난 7일 비교), 최저가는 <b>수집된 가격 기록</b> 기준입니다. '+
-        '같은 걸 찜한 사람 수는 FEEDiT 에서 <b>지금 찜해 둔 사용자</b>(나 포함)입니다.</span></div>'+
+      /* ★ 2026-09-23 — 지표 설명 문구는 뺐다. 표 안의 값만으로 읽힌다.
+         불러오는 중일 때만 그 사실을 한 줄로 남긴다. */
+      (loading?'<div class="wkNote"><i>◆</i><span>실데이터를 불러오는 중입니다.</span></div>':'')+
     '</section>'+
     '</div>';
 

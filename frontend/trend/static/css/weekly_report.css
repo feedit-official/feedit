@@ -499,10 +499,10 @@
 .axRow.on{box-shadow:inset 0 0 0 1.5px var(--coral)}
 /* 연관어 — 축당 상위 5개만 펼치고 나머지는 '+ 더 보기' 로 연다 (2026-09-23) */
 .axRow.axHide{display:none}
-.axMoreBtn{margin-top:2px;padding:9px 12px;border-radius:8px;border:1px dashed rgba(10,10,10,.16);
-  background:transparent;color:var(--pink-1);font-size:11.5px;font-weight:600;letter-spacing:-.01em;
-  text-align:center;width:100%;cursor:pointer;transition:background .15s ease,color .15s ease}
-.axMoreBtn:hover{background:rgba(255,107,74,.06);color:var(--coral);border-color:rgba(255,107,74,.3)}
+.axMoreBtn{margin-top:2px;padding:8px 12px;border:0;background:none;color:var(--pink-2);
+  font-size:11.5px;font-weight:600;letter-spacing:-.01em;text-align:center;width:100%;
+  cursor:pointer;transition:color .15s ease}
+.axMoreBtn:hover{color:var(--coral)}
 .tag:hover{transform:translateY(-1px)}
 .tag .tbadge{font-family:var(--num);font-size:9.5px;font-feature-settings:'tnum' 1,'zero' 0}
 .tag .tbadge.up{color:var(--coral)}
