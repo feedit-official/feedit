@@ -499,6 +499,28 @@ def logout(request):
 
 
 @require_POST
+def withdraw(request):
+    """POST /api/auth/withdraw — 회원 탈퇴. 계정과 딸린 기록을 실제로 지운다.
+
+    지금까지는 프론트에서 확인만 받고 로그아웃했다(목업). 실제로 지운다.
+    auth.User 를 지우면 AppUser(OneToOne · CASCADE)와 그 아래 찜 · 투표 ·
+    알림 · 직업 인증 · 취향 기록이 모두 함께 지워진다(FK on_delete=CASCADE).
+    신고자(reporter)만 SET_NULL 이라 게시물은 남고 신고자만 익명이 된다.
+    """
+    if not request.user.is_authenticated:
+        return _error("로그인이 필요합니다.", status=401)
+    user = request.user
+    with transaction.atomic():
+        django_logout(request)      # 세션을 먼저 끊는다 — 지운 뒤 세션이 남으면 안 된다
+        User.objects.filter(pk=user.pk).delete()
+    return JsonResponse({
+        "status": "ok",
+        "data": {"authenticated": False, "csrf_token": get_token(request), "user": None,
+                 "withdrawn": True},
+    })
+
+
+@require_POST
 def profile(request):
     if not request.user.is_authenticated:
         return _error("로그인이 필요합니다.", status=401)

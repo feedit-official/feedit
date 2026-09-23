@@ -30,6 +30,7 @@ urlpatterns = [
     path("auth/google", auth_views.google_login, name="auth-google"),
     path("auth/google-signup", auth_views.google_signup, name="auth-google-signup"),
     path("auth/logout", auth_views.logout, name="auth-logout"),
+    path("auth/withdraw", auth_views.withdraw, name="auth-withdraw"),   # 회원 탈퇴 (계정·기록 삭제)
     path("auth/profile", auth_views.profile, name="auth-profile"),
     path("auth/job-request", job_views.job_request, name="auth-job-request"),        # 직업 인증 신청
     path("auth/job-requests", job_views.job_requests, name="auth-job-requests"),     # (관리자) 목록
