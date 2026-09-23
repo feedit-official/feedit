@@ -151,8 +151,16 @@ class Command(BaseCommand):
             self.stdout.write(f"  🔔 사전 용어가 전국 급상승에 진입: "
                               + ", ".join(h["term"] for h in hits[:5]))
 
-        return {**plan, "trend": trend_rows, "region": region_rows,
-                "assoc": assoc, "trending_hits": len(hits)}
+        out = {**plan, "trend": trend_rows, "region": region_rows,
+               "assoc": assoc, "trending_hits": len(hits)}
+        if data.get("rate_limited"):
+            # 조용히 끝내지 않는다. 0건 수집은 '없었다' 가 아니라 '못 받았다' 이다.
+            out["rate_limited"] = True
+            self.stderr.write(self.style.ERROR(
+                "  ⛔ 구글 429 로 중간에 접었습니다 — 받은 만큼만 저장했습니다.\n"
+                "     .env 의 FEEDIT_TRENDS_DELAY 를 올리거나(기본 5초) "
+                "몇 시간 뒤에 다시 도세요."))
+        return out
 
     # ── 네이버 데이터랩 (D1) ──────────────────────────────────
 
