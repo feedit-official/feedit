@@ -267,6 +267,13 @@ function acctToast(msg){
   acctToastT = setTimeout(() => t.classList.remove('on'), 2200);
 }
 
+/* 회원정보 수정 — 비밀번호 칸 바로 아래 안내 (빈 문자열이면 감춘다) */
+function editPwMsg(msg){
+  const el = $('#editPwMsg'); if(!el) return;
+  el.textContent = msg || '';
+  el.style.display = msg ? 'block' : 'none';
+}
+
 /* 스타일 칩 — 가입·마이페이지가 스타일 페이지와 같은 10종(STYLES)을 쓴다 */
 const STYLE_MAX = 3;
 function acctChips(host, sel){
@@ -339,7 +346,7 @@ function styleSelectBind(){
         acctModal('styleSelectModal', false);
         acctChips($('#styleWrap'), ME.styles);   /* 마이페이지 칩과 동기화 */
         myRender();
-        acctToast('즐겨입는 스타일이 DB에 저장됐어요.');
+        acctToast('즐겨입는 스타일이 저장되었어요.');
       }catch(e){ acctToast(e.message||'스타일을 저장하지 못했습니다.') }
       finally{ save.disabled=false }
       /* 취향이 바뀐 것을 화면들에 알린다 — 챗봇 팝업의 '스타일 고르기' 안내는
@@ -697,6 +704,11 @@ export function acctBoot(){
         if(r&&r.pending) jobMsg='직업 인증을 신청했어요. 관리자 승인 후 배지가 달립니다.';
       }catch(jx){ jobMsg='가입은 됐지만 직업 인증 신청은 실패했어요 — '+(jx.message||'')+' 회원정보 수정에서 다시 올려 주세요.'; }
       signupComplete();
+      /* ★ 2026-09-23 — 가입이 끝났다는 말을 한 번은 해 준다.
+         예전에는 곧바로 '즐겨입는 스타일 고르기' 팝업만 떠서, 가입이 된 것인지
+         아직 한 단계가 남은 것인지 알 수 없었다.
+         (직업 인증을 신청했으면 그 안내가 600ms 뒤 이어서 뜬다) */
+      acctToast('회원 가입이 완료되었어요.');
       if(jobMsg) setTimeout(()=>acctToast(jobMsg), 600);
       sf.reset();
     }catch(ex){ err.textContent=ex.message||'회원가입하지 못했습니다.'; err.style.display='block' }
@@ -756,7 +768,7 @@ if(suW) suW.addEventListener('input', bodyHint);
     try{
       const data=await saveAccount({styles:styleNames()});
       applyAccount(data.user); myRender();
-      acctToast('즐겨입는 스타일이 DB에 저장됐어요.');
+      acctToast('즐겨입는 스타일이 저장되었어요.');
     }catch(e){ acctToast(e.message||'스타일을 저장하지 못했습니다.') }
     finally{ ssb.disabled=false }
   });
@@ -789,6 +801,13 @@ if(suW) suW.addEventListener('input', bodyHint);
     $('#editBirth').value = ME.birth || '';
     $('#editHeight').value = ME.height || '';
     $('#editWeight').value = ME.weight || '';
+    /* ★ 2026-09-23 — 비밀번호 칸은 열 때마다 반드시 비운다.
+       예전에는 그대로 남아 있었다. 저장이 한 번 실패해 닫았다가 다시 열면
+       아까 친 비밀번호가 칸에 그대로 있고, 다음 저장 때 같이 올라가
+       **바꿀 생각이 없던 비밀번호가 바뀐다.** */
+    $('#editPw').value = '';
+    $('#editPw2').value = '';
+    editPwMsg('');
     $('#editModalErr').style.display = 'none';
     jobFieldReset('edit', ME);
     /* 운영자 계정은 직업을 바꾸지 않는다 — 칸은 보이되 잠가 둔다 */
@@ -801,18 +820,26 @@ if(suW) suW.addEventListener('input', bodyHint);
     acctModal('editModal', true);
   });
   const ef = $('#editProfileForm');
+  /* 비밀번호 칸을 다시 건드리면 안내를 지운다 — 고친 뒤에도 빨간 줄이 남아 있지 않게 */
+  [$('#editPw'), $('#editPw2')].forEach(i => i && i.addEventListener('input', () => editPwMsg('')));
   if(ef) ef.addEventListener('submit', async e => {
     e.preventDefault();
     const nick = $('#editNickname').value.trim();
     const pw = $('#editPw').value, pw2 = $('#editPw2').value;
     const err = $('#editModalErr');
+    /* ★ 2026-09-23 — 비밀번호 안내는 맨 아래 공용 자리가 아니라 그 칸 바로 아래에 띄운다.
+       예전에는 직업 안내 밑에 붙어서, 어느 칸을 고치라는 말인지 이어지지 않았다. */
+    let pwErr = '';
+    if(pw && pw.length < 8) pwErr = '새 비밀번호는 8자 이상이어야 합니다.';
+    else if(pw !== pw2) pwErr = '새 비밀번호가 서로 다릅니다.';
+    editPwMsg(pwErr);
     let msg = '';
     if(nick.length < 2 || nick.length > 12) msg = '닉네임은 2~12자로 입력해 주세요.';
-    else if(pw && pw.length < 8) msg = '새 비밀번호는 8자 이상이어야 합니다.';
-    else if(pw !== pw2) msg = '새 비밀번호가 서로 다릅니다.';
-    else msg = bodyCheck($('#editHeight').value, $('#editWeight').value) || '';
-    if(!msg && ME.role !== 'admin') msg = jobFieldCheck('edit', ME);
+    else if(!pwErr) msg = bodyCheck($('#editHeight').value, $('#editWeight').value) || '';
+    if(!msg && !pwErr && ME.role !== 'admin') msg = jobFieldCheck('edit', ME);
     if(msg){ err.textContent = msg; err.style.display = 'block'; return; }
+    err.style.display = 'none';
+    if(pwErr){ $('#editPw').focus(); return; }
     const submit=ef.querySelector('[type="submit"]'); if(submit)submit.disabled=true;
     try{
       const data=await saveAccount({
@@ -821,7 +848,14 @@ if(suW) suW.addEventListener('input', bodyHint);
         password:pw||'',
       });
       applyAccount(data.user);
-      let saved='회원정보가 DB에 저장됐어요.';
+      /* ★ 2026-09-23 — 'DB에 저장됐어요'는 우리가 쓰는 말이지 사용자의 말이 아니다.
+         사용자가 알고 싶은 것은 저장소가 아니라 '수정이 끝났는가' 하나다.
+         비밀번호를 함께 바꿨을 때만 그 사실을 따로 알려 준다
+         (지금 창은 update_session_auth_hash 덕분에 로그인 상태가 그대로 유지된다 —
+          그래서 '다음 로그인부터'라고 적는다). */
+      let saved=pw
+        ? '비밀번호가 변경되었어요. 다음 로그인부터 새 비밀번호를 사용하세요.'
+        : '회원 정보가 수정되었어요.';
       if(ME.role !== 'admin'){
         try{
           const r=await jobFieldApply('edit', ME);
@@ -829,6 +863,7 @@ if(suW) suW.addEventListener('input', bodyHint);
         }catch(jx){ saved='회원정보는 저장했지만 직업 인증 신청은 실패했어요 — '+(jx.message||''); }
       }
       acctModal('editModal', false);
+      editPwMsg('');
       ef.reset(); myRender(); authPaint();
       acctToast(saved);
       /* ★ 2026-09-19 — 닉네임을 바꾸면 이미 올린 살!말? 카드의 작성자 이름도 함께 바뀌어야 한다.

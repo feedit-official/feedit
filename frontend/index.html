@@ -324,6 +324,20 @@
             </div>
           </div>
           <span style="font-family:var(--num);font-size:10px;letter-spacing:.24em;color:var(--pink-2)">2026.08 · W2</span>
+          <!-- 금주의 리포트에서만 뜬다 — 엑셀로 저장 · 링크로 공유 (trend/static/js/report_export.js) -->
+          <div class="trHeadActs" id="trHeadActs" hidden>
+            <button type="button" class="trAct" id="trDownloadBtn" title="엑셀로 저장" aria-label="엑셀로 저장">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M12 3v12"/><path d="M7.5 11l4.5 4.5 4.5-4.5"/><path d="M4.5 20h15"/>
+              </svg><span>다운로드</span>
+            </button>
+            <button type="button" class="trAct" id="trShareBtn" title="링크 공유" aria-label="링크 공유">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="18" cy="5.5" r="2.6"/><circle cx="6" cy="12" r="2.6"/><circle cx="18" cy="18.5" r="2.6"/>
+                <path d="M8.3 10.7l7.4-3.9M8.3 13.3l7.4 3.9"/>
+              </svg><span>공유</span>
+            </button>
+          </div>
         </div>
         <div class="trTabs" id="trTabs"></div>
 
@@ -927,6 +941,9 @@
           <input class="cInput" id="editPw2" type="password" placeholder="다시 입력" autocomplete="new-password">
         </div>
       </div>
+      <!-- 비밀번호 안내는 그 칸 바로 아래에 둔다 — 맨 아래 공용 자리에 뜨면
+           어느 칸 이야기인지 한눈에 이어지지 않는다 -->
+      <p class="fieldMsg err" id="editPwMsg" style="display:none;margin-top:8px"></p>
       <div class="cField" style="margin:16px 0 0">
         <label class="cLabel" for="editBirth">생년월일</label>
         <input class="cInput" id="editBirth" type="date">

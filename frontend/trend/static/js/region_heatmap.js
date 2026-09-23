@@ -121,14 +121,24 @@ export function paintRegionHeat(host, regions){
     .filter(r => r.value > 0);
   const known = rows.filter(r => r.key);
   const unknown = rows.filter(r => !r.key).map(r => r.name);
-  if (!known.length){
-    host.innerHTML = '<div class="rgNote">지도에 올릴 시·도를 찾지 못했습니다' +
-      (unknown.length ? ' (받은 이름: ' + unknown.slice(0, 5).join(' · ') + ')' : '') + '.</div>';
-    return;
-  }
-  host.innerHTML = '<div class="rgMapBox"><div class="rgMap"></div>' +
-    '<div class="rgScale"><span>낮음</span><i></i><span>높음</span></div></div>' +
-    (unknown.length ? '<div class="rgNote">지도에 올리지 못한 이름: ' + unknown.join(' · ') + '</div>' : '');
+  /* ★ 2026-09-23 — 칠할 값이 없다고 해서 지도를 지우지 않는다.
+     예전에는 여기서 글자 한 줄만 남기고 끝냈는데, 그러면 자료가 적은 키워드에서
+     카드가 통째로 비어 화면이 고장난 것처럼 보였다.
+     이제 남한 지도는 늘 서고, 열(熱)만 없는 상태로 둔 뒤 사유를 아래 적는다. */
+  const empty = !known.length;
+  /* 값이 아예 없을 때의 안내는 카드 각주(trend/static/js/dispatch.js)가 이미 한다 —
+     여기서 또 적으면 같은 말이 두 줄로 겹친다. 이름을 못 알아본 경우만 적는다. */
+  const why = empty
+    ? (unknown.length
+        ? '받은 지역 이름을 지도에서 찾지 못했습니다 (' + unknown.slice(0, 5).join(' · ') + ').'
+        : '')
+    : (known.length < 3
+        ? '잡힌 시·도가 ' + known.length + '곳뿐입니다 — 나머지는 자료가 없어 비워 둡니다.'
+        : '');
+  host.innerHTML = '<div class="rgMapBox' + (empty ? ' isEmpty' : '') + '"><div class="rgMap"></div>' +
+    (empty ? '' : '<div class="rgScale"><span>낮음</span><i></i><span>높음</span></div>') + '</div>' +
+    (why ? '<div class="rgNote">' + why + '</div>' : '') +
+    (!empty && unknown.length ? '<div class="rgNote">지도에 올리지 못한 이름: ' + unknown.join(' · ') + '</div>' : '');
   const el = host.querySelector('.rgMap');
 
   loadOnce().then(() => {
@@ -157,16 +167,18 @@ export function paintRegionHeat(host, regions){
 
     /* 값(0~100)을 그대로 세기로 쓰면 1위만 붉고 나머지가 전부 파래진다.
        제일 높은 시·도를 1.0 으로 두고 나머지를 그 비율로 맞춘다 — '상대 온도'다. */
-    const max = Math.max.apply(null, known.map(r => r.value)) || 1;
-    const pts = [];
-    known.forEach(r => {
-      const [lat, lng, rad] = SIDO[r.key];
-      pts.push.apply(pts, spread(lat, lng, rad, Math.max(0.12, r.value / max)));
-    });
-    L.heatLayer(pts, {
-      radius: 34, blur: 28, max: 1.0, minOpacity: 0.32,
-      gradient: { 0.0: '#2b4bff', 0.3: '#22d3ee', 0.5: '#4ade80', 0.7: '#facc15', 0.85: '#fb923c', 1.0: '#ef4444' },
-    }).addTo(map);
+    if (known.length){
+      const max = Math.max.apply(null, known.map(r => r.value)) || 1;
+      const pts = [];
+      known.forEach(r => {
+        const [lat, lng, rad] = SIDO[r.key];
+        pts.push.apply(pts, spread(lat, lng, rad, Math.max(0.12, r.value / max)));
+      });
+      L.heatLayer(pts, {
+        radius: 34, blur: 28, max: 1.0, minOpacity: 0.32,
+        gradient: { 0.0: '#2b4bff', 0.3: '#22d3ee', 0.5: '#4ade80', 0.7: '#facc15', 0.85: '#fb923c', 1.0: '#ef4444' },
+      }).addTo(map);
+    }
 
     /* 고른 시·도만으로 맞추면 한 곳만 있을 때 과하게 당겨진다 — 남한 전체를 기준으로 잡는다.
        범위는 우리 땅 끝까지 담는다:

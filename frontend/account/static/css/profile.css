@@ -413,6 +413,11 @@
 @media(max-width:640px){ .bgTiles{grid-template-columns:repeat(4,1fr)} }
 
 .acctModal .fieldMsg{font-size:11.5px;color:var(--pink-2)}
+/* ★ 2026-09-23 — 모달은 .acct 바깥(body 바로 아래)에 있어서 위쪽의
+   `.acct .fieldMsg.err` 규칙이 닿지 않았다. 그래서 오류 문구가 회색으로 떴다.
+   모달 안에서도 오류는 빨갛게, 확인은 초록으로 보이게 여기서 다시 건다. */
+.acctModal .fieldMsg.err{color:#c73a24}
+.acctModal .fieldMsg.ok{color:#1f9d64}
 /* ★ 2026-09-19 — 빈 목록 안내는 줄을 넘기지 않는다 */
 .acctModal .fieldMsg.oneLine{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .acct .panelHead{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:20px}

@@ -236,6 +236,32 @@ export function fsMatch(q,limit){
   return out;
 }
 
+/* 친 글자와 **똑같은** 어휘를 찾는다.
+   ★ 2026-09-23 — fsMatch 는 '포함'으로 걸러 짧은 말을 위로 올린다. 그래서
+     '청바지' 를 치고 Enter 하면 사전 순위가 더 높은 소재 '데님' 이 잡혀,
+     화면에는 치지도 않은 말이 검색됐다. 연관어는 드롭다운으로 보여 주되,
+     Enter 는 **친 말 그대로** 간다. 그 말이 사전에 있으면 여기서 잡힌다.
+   같은 글자가 여러 축에 있으면(데님 = 소재 · 종류) fsMatch 가 세운 순서를 따른다. */
+export function fsExact(q){
+  const n=fsNorm(q); if(!n)return null;
+  /* ① 친 글자와 **글자 그대로** 같은 어휘 — 언제나 이것이 먼저다.
+     ★ 별칭을 여기 섞으면 안 된다. 사전에는 '청바지' → '데님' 별칭이 있어서,
+       별칭이 가리키는 말까지 '일치'로 받아 주면 둘 중 순위가 높은 데님이 잡힌다.
+       사전에 '청바지' 라는 말이 따로 있는데도 데님으로 검색되던 것이 이 때문이었다. */
+  const literal=FIDX.filter(o=>fsAxOk(o.f)&&fsNorm(o.label)===n);
+  if(literal.length===1)return literal[0];
+  if(literal.length>1){
+    /* 같은 글자가 여러 축에 있다(데님 = 소재 · 종류). fsMatch 가 세운 순서를 따른다 */
+    const ranked=fsMatch(q,20).find(o=>fsNorm(o.label)===n);
+    return ranked||literal[0];
+  }
+  /* ② 친 말이 사전에 없을 때만 별칭이 가리키는 대표 이름으로 옮겨 간다 ('진' → 데님) */
+  const al=FALIAS[String(q||'').trim()]||FALIAS[n];
+  const an=al?fsNorm(al):null;
+  if(!an)return null;
+  return FIDX.find(o=>fsAxOk(o.f)&&fsNorm(o.label)===an)||null;
+}
+
 /* ══════════════════════════════════════════════════════
    ── 상태 ──
    pick  : 축 → 고른 값들. 축끼리는 AND, 한 축 안에서는 OR.
@@ -318,7 +344,9 @@ function fsPaintSug(){
   const box=$('#fsSug'), q=$('#fsInput').value.trim();
   if(!box)return;
   if(!q){ box.hidden=true; box.innerHTML=''; FS.sug=[]; FS.cur=-1; return }
-  FS.sug=fsMatch(q,8); FS.cur=FS.sug.length?0:-1;
+  /* ★ 첫 줄을 미리 골라 두지 않는다(예전엔 cur=0). 미리 골라 두면 Enter 가
+     친 말이 아니라 그 줄을 집는다 — 연관어는 ↑↓ 로 직접 고를 때만 잡힌다. */
+  FS.sug=fsMatch(q,8); FS.cur=-1;
   if(!FS.sug.length){
     const near=FIDX.filter(o=>fsAxOk(o.f)&&o.key[0]===fsNorm(q)[0]).slice(0,3);
     const axes=fsAxesFor(FS.id);
@@ -345,7 +373,7 @@ function fsPaintSug(){
     /* 검색창은 조건 하나를 새로 건다 — 이미 걸린 말이면 '빼기',
        다른 조건이 함께 걸려 있으면 '이것만 남기기' 가 된다. */
     const pt=on?(fsCount()===1?'걸려 있음 · 누르면 빠짐':'이 조건 하나만 남깁니다'):'';
-    return '<button class="sg'+(k===0?' on':'')+(on?' picked':'')+'" data-k="'+k+'" type="button">'+
+    return '<button class="sg'+(on?' picked':'')+'" data-k="'+k+'" type="button">'+
       '<span class="fc">'+fsEsc(o.f)+'</span><span class="lb">'+lb+'</span>'+
       (pt?'<span class="pt">'+pt+'</span>':'')+'</button>';
   }).join('');
@@ -840,9 +868,15 @@ export function fsBuild(){
     else if(e.key==='Enter'){
       e.preventDefault();
       if(FS.id==='stock'){ fsOpenPop(); return; }
+      /* ↑↓ 로 직접 고른 줄이 있으면 그것이 우선이다 */
       if(FS.cur>=0&&FS.sug[FS.cur]){ fsPick(FS.sug[FS.cur]); return }
-      const m=fsMatch(inp.value,1)[0];
-      if(m)fsPick(m); else fsPaintSug();
+      /* 그 다음은 **친 말 그대로**. 연관어로 바꿔치기하지 않는다. */
+      const exact=fsExact(inp.value);
+      if(exact){ fsPick(exact); return }
+      /* 친 말이 사전에 없다 — 후보가 하나뿐이면 그것으로, 아니면 고르게 둔다 */
+      const list=fsMatch(inp.value,2);
+      if(list.length===1){ fsPick(list[0]); return }
+      fsPaintSug();
     }
   });
   $('#fsSug').addEventListener('click',e=>{

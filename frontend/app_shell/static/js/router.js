@@ -420,6 +420,18 @@ addEventListener('popstate', e=>{
 (function resumeNav(){
   let st=null;
   try{ st=JSON.parse(sessionStorage.getItem(NAV_KEY)||'null') }catch(e){}
+  /* ★ 2026-09-23 — 공유 링크(?view=trend&tr=report)로 들어오면 그 화면을 바로 연다.
+     금주의 리포트 '공유' 버튼이 이 주소를 만든다(trend/static/js/report_export.js).
+     주소에 적힌 화면이 세션 기록보다 우선이다 — 링크를 받은 사람이 기대하는 것은
+     자기가 마지막에 보던 화면이 아니라 링크가 가리키는 화면이다. */
+  try{
+    const qs=new URLSearchParams(location.search);
+    const want=qs.get('view');
+    if(want&&document.getElementById('v-'+want)){
+      st={view:want};
+      if(want==='trend')st.tr=qs.get('tr')||'report';
+    }
+  }catch(e){}
   /* 세션 기록이 없어도, 예전에 인트로를 본 적이 있으면 홈으로 바로 들어간다 */
   if((!st||!st.view)&&introSeen())st={view:'home'};
   if(!st||!st.view)return;

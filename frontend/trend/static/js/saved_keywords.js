@@ -1,6 +1,6 @@
 import { $, $$, HAS_A, aAnimate, aSpring, aTimeline } from '../../../core/static/js/dom.js';
 import { prime, primeUrl, sentimentUrl } from './live_data.js';
-import { FIDX, fsMatch, fsNorm } from '../../../style/static/js/search.js';
+import { FIDX, fsExact, fsMatch, fsNorm } from '../../../style/static/js/search.js';
 import { KW, trToast } from './render_helpers.js';
 import { markTried, trRender } from './dispatch.js';
 import { logSearch } from '../../../account/static/js/account_api.js';
@@ -42,7 +42,10 @@ function kwPaintSug(){
   const box=$('#kwSug'), inp=$('#kwInput'); if(!box||!inp)return;
   const q=inp.value.trim();
   if(!q){ kwHideSug(); return }
-  KW.sug=fsMatch(q,8); KW.cur=KW.sug.length?0:-1;
+  /* ★ 2026-09-23 — 첫 줄을 미리 골라 두지 않는다. 미리 골라 두면 Enter 가
+     친 말이 아니라 그 줄을 집어, '청바지' 를 치고 Enter 하면 연관어 '데님' 이 검색됐다.
+     연관어는 드롭다운으로 보여 주되, 잡으려면 ↑↓ 나 클릭으로 직접 골라야 한다. */
+  KW.sug=fsMatch(q,8); KW.cur=-1;
   if(!KW.sug.length){
     /* 실패로 끝내지 않는다 — 가까운 말을 보여주고, 없으면 등록을 받는다 */
     const n=fsNorm(q);
@@ -71,7 +74,7 @@ function kwPaintSug(){
        세부 검색이 단계식에서 축별 필터로 바뀌면서 FIDX 에서 path 를 뺐다 —
        계층이 없는 사전 항목에는 어차피 없던 값이고, 여기서 읽으면 터진다.
        축 이름(o.f)만으로도 무엇인지는 충분히 읽힌다. */
-    return '<button class="sg'+(k===0?' on':'')+'" data-k="'+k+'" type="button">'+
+    return '<button class="sg" data-k="'+k+'" type="button">'+
       '<span class="fc">'+esc(o.f)+'</span><span class="lb">'+lb+'</span></button>';
   }).join('');
   box.hidden=false;
@@ -89,10 +92,17 @@ function kwGo(v){
   const selected=v&&typeof v==='object'?v:null;
   if(selected)inp.value=selected.label;
   else if(v)inp.value=v;
-  const q=inp.value.trim();
-  if(!q){ kwPaintSug(); return }
-  const match=selected||fsMatch(q,1)[0];
+  const typed=inp.value.trim();
+  if(!typed){ kwPaintSug(); return }
+  /* ★ 2026-09-23 — 친 말 그대로 간다. 연관어로 바꿔치기하지 않는다.
+     예전에는 fsMatch 의 첫 줄을 집어서, '청바지' 를 치면 소재 '데님' 이 검색됐다.
+     사전에 그 말이 없을 때만, 후보가 딱 하나면 그것으로 대신한다(별칭·오타 한 글자). */
+  const near=selected?null:fsMatch(typed,2);
+  const match=selected||fsExact(typed)||(near&&near.length===1?near[0]:null);
   if(!match){ kwPaintSug(); return }   /* 사전에 없으면 검색되지 않는다 */
+  /* 실제로 조회하는 말은 사전의 대표 이름이다 — 화면·기록·API 가 서로 어긋나지 않게 한다 */
+  const q=match.label||typed;
+  inp.value=q;
   /* 금주의 리포트용 검색 기록 — 스타일 축이면 취향 지분 계산에도 쓴다 */
   logSearch(q, match.f||'', match.f==='스타일'?q:'');
 

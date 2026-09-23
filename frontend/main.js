@@ -15,6 +15,7 @@ import './trend/static/js/data.js';
 import './trend/static/js/chart_engine.js';
 import './trend/static/js/count_up.js';
 import './trend/static/js/weekly_report.js';
+import './trend/static/js/report_export.js';   /* 리포트 엑셀 저장 · 링크 공유 */
 import './trend/static/js/render_helpers.js';
 import './trend/static/js/saved_keywords.js';
 import './trend/static/js/dispatch.js';

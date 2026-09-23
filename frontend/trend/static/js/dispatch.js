@@ -3,7 +3,7 @@ import { WK, feedSmPicks, feedSmLoad } from './my_feed.js';
 import { STYLES } from '../../../home/static/js/chat.js';
 import { SIMG } from '../../../style/static/js/style_page.js';
 import { FS, getFsCols, fsBuild, fsChipsPaint, fsDropDisallowed, fsHideSug, fsLoadDictionary, fsReset, fsPaintPop, fsStockSelect, fsStockClear } from '../../../style/static/js/search.js';
-import { G_CFG, KW, fsItem, fsItemFull, fsSelectionLabel, gMount, josa, trEmpty, trFillBars } from './render_helpers.js';
+import { G_CFG, KW, fsItem, fsItemFull, fsSelectionLabel, gMount, josa, trEmpty, trFillBars, trToast } from './render_helpers.js';
 import { ME, bioPaint } from '../../../account/static/js/profile.js';
 import { S_EDIT, S_FEED, TR_META } from './nav_meta.js';
 import { assocClosePop, assocOpenPop } from './assoc_popover.js';
@@ -17,6 +17,7 @@ import { jobBadgeHTML, jobPlanText, jobShown } from '../../../account/static/js/
 import { smBarFill, svRender } from './discount_resale.js';
 import { trCountUp } from './count_up.js';
 import { trDial, wkAnimate } from './weekly_report.js';
+import { buildXlsx, reportShareUrl, saveBlob, shareLink } from './report_export.js';
 import { trSideOpen } from '../../../app_shell/static/js/router.js';
 import { weeklyReport, weeklyVideos, savedProducts, setSavedProduct } from '../../../account/static/js/account_api.js';
 
@@ -931,16 +932,21 @@ function searchCardHTML(term){
      ★ 2026-09-23 — 상위 3곳을 줄글로 적던 것을 지도 히트맵으로 바꿨다.
        값이 곧 '온도'라, 어디가 뜨거운지는 숫자보다 지도가 한눈에 읽힌다.
        여기서는 자리만 만들고, 실제 그리기는 본문이 붙은 뒤 paintRegionHeat 가 한다. */
-  let region='';
+  /* ★ 2026-09-23 — 예전에는 R 이 비면 이 블록을 통째로 빼서 **지도 칸 자체가 사라졌다.**
+     자료가 적은 키워드일수록 카드 폭이 들쭉날쭉해 화면이 무너지고, 사용자는
+     '지도가 없는 화면'인지 '자료가 없는 것'인지 구분할 수 없었다.
+     이제 칸은 늘 서고, 안에서 빈 지도(칠하지 않은 남한)와 사유를 보여 준다. */
   const R=D.regions||[];
-  if(R.length){
-    const top=R.slice(0,3).map(r=>trEsc(r.region)+' '+r.value).join(' · ');
-    region='<div class="rgWrap"><div class="rgHead"><h4>지역별</h4>'+
-      '<span>'+top+'</span></div>'+
-      '<div data-region-heat></div>'+
-      '<div class="note" style="margin-top:8px"><i>◆</i>가장 높은 시·도를 기준으로 '+
-      '상대 온도를 칠합니다.</div></div>';
-  }
+  const rgTop=R.length
+    ? R.slice(0,3).map(r=>trEsc(r.region)+' '+r.value).join(' · ')
+    : '아직 없음';
+  const rgNote=R.length
+    ? '가장 높은 시·도를 기준으로 상대 온도를 칠합니다.'
+    : '이 키워드는 시·도별 검색 비중이 아직 잡히지 않았습니다. 관측이 쌓이면 이 지도에 칠해집니다.';
+  const region='<div class="rgWrap"><div class="rgHead"><h4>지역별</h4>'+
+    '<span>'+rgTop+'</span></div>'+
+    '<div data-region-heat></div>'+
+    '<div class="note" style="margin-top:8px"><i>◆</i>'+rgNote+'</div></div>';
 
   const miss=(st.extra&&st.extra.unavailable&&st.extra.unavailable.fields)||[];
   const note=miss.length
@@ -1018,6 +1024,8 @@ export function trRender(id){
   const kk=$('#trKicker'); if(kk)kk.hidden=(id!=='report');
   /* ★ 2026-09-19 — 헤더의 주차 표시가 '2026.08 · W2' 로 박혀 있었다.
      금주의 리포트와 같은 계산(wkRange)으로 오늘이 속한 주를 적는다. */
+  /* 저장 · 공유 버튼은 금주의 리포트에서만 선다 */
+  const acts=$('#trHeadActs'); if(acts)acts.hidden=(id!=='report');
   const wkSpan=$('.trHead>span');
   if(wkSpan){
     wkSpan.hidden=(id==='report');
@@ -2212,3 +2220,81 @@ export function trBuild(){
      아무도 안 볼 때 다 끝나버려서, 탭을 열었을 땐 이미 정지 화면이 된다.
      실제로 여는 순간(goView) 에 처음 한 번 그린다. */
 }
+
+
+/* ══════════════ 금주의 리포트 — 저장 · 공유 ══════════════
+   요구사항 정의서의 '파일 저장 · 링크 공유'를 실제 동작으로 붙였다(2026-09-23).
+   엑셀에는 화면에 실제로 떠 있는 값만 넣는다 — 아직 못 받은 값은 빈칸으로 둔다. */
+function wkSheets(){
+  const rp=wkRange();
+  const K=WKEY, d=WR.state==='ok'?WR.data:null;
+  /* ★ 2026-09-23 — 표를 시트 다섯 장으로 나눴더니, 파일을 열면 첫 장만 보이고
+     지표 · 요일별 활동 · 취향 지분은 아래 탭에 숨어 '내용이 없는 파일'로 보였다.
+     한 장에 위에서 아래로 전부 쌓는다 — 화면에서 읽는 순서 그대로다. */
+  const rows=[];
+  const put=r=>rows.push(r||[]);
+  const section=t=>{ put([]); put(['── '+t+' ──']) };
+
+  put(['FEEDiT 금주의 리포트']);
+  put(['기간', rp[0]+' '+rp[1]]);
+  put(['내려받은 시각', new Date().toLocaleString('ko-KR')]);
+  put(['사용자', ME.name||'']);
+
+  section('이번 주 키워드');
+  put(['키워드', K?K.label:'']);
+  put(['축', K?(K.facet||''):'']);
+  put(['선정 근거', K?(K.from==='search'?'이번 주 가장 많이 검색한 키워드':'검색 기록이 없어 관심 스타일로 대신함'):'']);
+
+  section('지표');
+  put(['항목','값','단위','비고']);
+  if(d){
+    put(['검색한 키워드', d.search.keywords, '개', wkSign(d.search.delta)+' · 지난주 대비']);
+    put(['새로 찜한 것', d.saved.new, '개', '총 '+d.saved.total+'개 추적 중']);
+    put(['살!말? 투표', d.vote.count, '표', wkSign(d.vote.delta)+' · 지난주 대비']);
+    put(['트렌드 분석', d.chat.minutes, '분', d.chat.sessions?('평균 사용 시간 '+d.chat.avg_minutes+'분'):'이번 주 챗봇 사용 기록 없음']);
+  }else{
+    put(['(활동 기록 없음)','','', WR.reason||'활동 기록을 불러오지 못했습니다.']);
+  }
+
+  section('요일별 활동');
+  put(['요일','활동 수']);
+  if(d)WK_DAY.forEach((day,i)=>put([day, d.activity.days[i]]));
+  else put(['(기록 없음)','']);
+
+  section('취향 지분');
+  put(['스타일','비중(%)','지난주 대비(%p)']);
+  if(d&&d.taste&&d.taste.items.length)d.taste.items.forEach(t=>put([t.label, t.share, t.delta==null?'':t.delta]));
+  else put(['(이번 주 검색한 스타일 없음)','','']);
+
+  section('추천 웹매거진');
+  put(['매체','기사 제목','주소']);
+  if(WM.state==='ok'&&WM.items.length)WM.items.forEach(a=>put([a.magazine||'', a.title||'', a.url||'']));
+  else put(['(추천 기사 없음)','','']);
+
+  /* 말머리 칸이 좁으면 '내려받은 시각' 같은 글자가 잘린다 */
+  return [{name:'금주의 리포트', rows, widths:[22, 42, 12, 34]}];
+}
+
+document.addEventListener('click', async e=>{
+  const dl=e.target.closest&&e.target.closest('#trDownloadBtn');
+  if(dl){
+    /* 아직 데이터를 기다리는 중이면 빈 파일을 주지 않는다 */
+    if(WR.state==='loading'){ trToast('리포트를 아직 불러오는 중입니다. 잠시 뒤 다시 눌러 주세요.'); return }
+    const rp=wkRange();
+    const name='FEEDiT_금주의리포트_'+rp[0].replace('.','-')+'_'+rp[1].split(' · ')[0]+'.xlsx';
+    try{
+      saveBlob(buildXlsx(wkSheets()), name);
+      trToast('엑셀 파일로 저장했습니다.');
+    }catch(err){
+      trToast('엑셀 파일을 만들지 못했습니다 ('+(err&&err.message||err)+').');
+    }
+    return;
+  }
+  const sh=e.target.closest&&e.target.closest('#trShareBtn');
+  if(sh){
+    const rp=wkRange();
+    const url=reportShareUrl({keyword:WKEY&&WKEY.label||'', week:rp[0]+' '+rp[1].split(' · ')[0]});
+    const msg=await shareLink(url, 'FEEDiT 금주의 리포트');
+    if(msg)trToast(msg);
+  }
+});
