@@ -25,9 +25,12 @@ target_term 은 DictionaryTerm FK 라 사전에 없는 검색어는 넣을 수 �
 
 from __future__ import annotations
 
+import logging
 import re
 from collections import defaultdict
 from datetime import date
+
+logger = logging.getLogger(__name__)
 
 SEARCH_METRIC_VERSION = "feedit-search-assoc-v1"
 
@@ -199,7 +202,14 @@ def rebuild_search_associations(*, related_queries, metric_date=None, platform="
         ).delete()
         TermAssocDaily.objects.bulk_create(objects, batch_size=2000)
 
-    candidates = _record_candidates(misses, platform) if record_candidates else 0
+    candidates = 0
+    if record_candidates:
+        try:
+            candidates = _record_candidates(misses, platform)
+        except Exception as exc:               # noqa: BLE001
+            # 후보 적재는 부수 작업이다. 여기서 터져도 위에서 저장한
+            # 연관어·지표는 이미 커밋돼 있으니 수집 자체를 실패로 만들지 않는다.
+            logger.error("후보 용어 단계 실패 — 연관어는 저장됨: %s", exc)
 
     return {
         "metric_date": str(metric_date),
@@ -214,23 +224,42 @@ def _record_candidates(misses: dict, platform: str) -> int:
     """사전에 없던 검색어를 후보 용어로 넘긴다.
 
     여기서 거르지 않는다 — 패션 관련성 판정은 candidate_refinement 의 일이다.
+    (구글 연관검색어는 "니트 옷걸이 거는 법" 같은 방법 질의도 섞여 온다.)
+
+    ★ 2026-09-22 — first_seen_at · last_seen_at 은 **필수 칸**이다.
+      auto_now_add 도 기본값도 없어서 안 채우면 NOT NULL 위반으로 터진다.
+      (실측: "null value in column first_seen_at ... violates not-null constraint")
+      그리고 이 단계는 부수 작업이다 — 한 줄이 실패해도 이미 저장한
+      지표·연관어까지 날리면 안 되므로 줄 단위로 감싼다.
     """
+    from django.utils import timezone
+
     from apps.core.models import TermCandidate
 
+    now = timezone.now()
     touched = 0
     for key, info in misses.items():
-        raw = info["raw"][:200]
+        raw = (info.get("raw") or "")[:200]
         if not raw:
             continue
-        row = TermCandidate.objects.filter(normalized_term=key).first()
-        if row is None:
-            row = TermCandidate(normalized_term=key, raw_term=raw)
-            row.detected_count = 0
-            row.source_breakdown = {}
-        row.detected_count = (row.detected_count or 0) + info["count"]
-        breakdown = dict(row.source_breakdown or {})
-        breakdown[f"search:{platform}"] = breakdown.get(f"search:{platform}", 0) + info["count"]
-        row.source_breakdown = breakdown
-        row.save()
-        touched += 1
+        try:
+            row = TermCandidate.objects.filter(normalized_term=key).first()
+            if row is None:
+                row = TermCandidate(
+                    normalized_term=key, raw_term=raw,
+                    first_seen_at=now, last_seen_at=now,
+                    detected_count=0, source_breakdown={},
+                )
+            row.last_seen_at = now
+            if row.first_seen_at is None:      # 예전에 빈 채로 들어간 행 보정
+                row.first_seen_at = now
+            row.detected_count = (row.detected_count or 0) + info["count"]
+            breakdown = dict(row.source_breakdown or {})
+            tag = f"search:{platform}"
+            breakdown[tag] = breakdown.get(tag, 0) + info["count"]
+            row.source_breakdown = breakdown
+            row.save()
+            touched += 1
+        except Exception as exc:               # noqa: BLE001
+            logger.warning("후보 용어 저장 실패(건너뜀): %s — %s", key, exc)
     return touched
