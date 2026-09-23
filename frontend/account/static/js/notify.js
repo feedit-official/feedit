@@ -187,9 +187,14 @@ function stop(){
    · 새 알림이 1개면 그 알림을, 여러 개면 **가장 최근 것 + '외 N개 새 알림'** 을 한 장으로.
      (여러 장을 쌓지 않는다 — 화면이 알림으로 덮였다)
    · 로그인 직후: 안 읽은 알림 기준. 로그인해 있는 동안: 30초마다 받아 올 때 처음 보는 안 읽은 알림.
-   · 같은 알림은 두 번 띄우지 않는다(sessionStorage). 가려진 탭에서는 모았다가 돌아오면 띄운다.
+   · 같은 알림은 두 번 띄우지 않는다. 가려진 탭에서는 모았다가 돌아오면 띄운다.
+     ★ 2026-09-23 — 예전에는 이 기록을 sessionStorage 에 뒀다. 그래서 탭을 닫거나
+       로그아웃했다가 다시 들어오면 **이미 떴던 알림이 또 떴다** — 읽지 않았다는 이유로.
+       한 번 띄운 알림을 다시 들이밀 이유는 없다(안 읽은 것은 종 아이콘과 목록에 그대로 남는다).
+       이제 localStorage 에 두고, 로그아웃해도 지우지 않는다.
+       알림 id 는 행마다 하나뿐이라 계정이 바뀌어도 서로 겹치지 않는다.
    · 누르면 그 알림이 가리키는 곳으로 간다(openTarget). '외 N개'를 누르면 알림 목록을 연다. */
-const TOAST_MS = 6000, TOAST_KEY = 'feedit.noti.toasted';
+const TOAST_MS = 6000, TOAST_KEY = 'feedit.noti.toasted.v2';
 /* ★ 토스트는 본문(홈)에 들어온 뒤부터 — 로딩 · 설명 페이지 위에는 띄우지 않는다 */
 const inMain = () => document.body.classList.contains('mainmode');
 /* 인트로를 지나 본문으로 들어오면 모아 둔 토스트를 그때 띄운다 */
@@ -207,11 +212,12 @@ const inMain = () => document.body.classList.contains('mainmode');
 })();
 let TOAST_PRIMED = false, TOAST_WAIT = null;
 const toastSeen = new Set();
-function toastLoad(){ try{ JSON.parse(sessionStorage.getItem(TOAST_KEY) || '[]').forEach(id => toastSeen.add(id)) }catch(e){} }
-function toastSave(){ try{ sessionStorage.setItem(TOAST_KEY, JSON.stringify([...toastSeen].slice(-200))) }catch(e){} }
+function toastLoad(){ try{ JSON.parse(localStorage.getItem(TOAST_KEY) || '[]').forEach(id => toastSeen.add(id)) }catch(e){} }
+function toastSave(){ try{ localStorage.setItem(TOAST_KEY, JSON.stringify([...toastSeen].slice(-200))) }catch(e){} }
 function toastReset(){
+  /* 화면에 떠 있는 것만 걷고, '이미 띄웠다'는 기록은 남긴다 —
+     지우면 다시 로그인할 때 같은 알림이 처음부터 다시 뜬다. */
   TOAST_PRIMED = false; TOAST_WAIT = null; toastSeen.clear();
-  try{ sessionStorage.removeItem(TOAST_KEY) }catch(e){}
   const box = $('#notiToasts'); if(box) box.innerHTML = '';
 }
 function toastBox(){

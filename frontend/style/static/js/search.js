@@ -372,7 +372,7 @@ function fsPaintSug(){
     const on=fsHas(o.f,o.label);
     /* 검색창은 조건 하나를 새로 건다 — 이미 걸린 말이면 '빼기',
        다른 조건이 함께 걸려 있으면 '이것만 남기기' 가 된다. */
-    const pt=on?(fsCount()===1?'걸려 있음 · 누르면 빠짐':'이 조건 하나만 남깁니다'):'';
+    const pt=on?(fsCount()===1?'지금 보는 조건 · 누르면 해제':'이것만 남기고 나머지 해제'):'';
     return '<button class="sg'+(on?' picked':'')+'" data-k="'+k+'" type="button">'+
       '<span class="fc">'+fsEsc(o.f)+'</span><span class="lb">'+lb+'</span>'+
       (pt?'<span class="pt">'+pt+'</span>':'')+'</button>';
@@ -399,7 +399,7 @@ export function fsHideSug(){ const b=$('#fsSug'); if(b){b.hidden=true;b.innerHTM
 function fsPick(o){
   if(!o)return;
   /* 지금 걸린 것이 그 말 하나뿐이면, 다시 치는 것은 '빼기'로 본다
-     (연관 검색어의 '걸려 있음 · 누르면 빠짐' 과 같은 동작) */
+     (연관 검색어의 '지금 보는 조건 · 누르면 해제' 와 같은 동작) */
   const onlyThis=fsCount()===1&&fsHas(o.f,o.label);
   fsReset();
   if(!onlyThis)fsToggle(o.f,o.label);
@@ -861,22 +861,40 @@ export function fsBuild(){
     if(FS.id==='stock'){ fsHideSug(); return; }
     fsPaintSug();
   });
+  /* Enter 로 할 일을 한 곳에 모아 둔다 — 키를 눌렀을 때와,
+     한글 조합이 끝난 뒤에 이어서 할 때가 똑같아야 한다. */
+  function fsEnterGo(){
+    if(FS.id==='stock'){ fsOpenPop(); return }
+    /* ↑↓ 로 직접 고른 줄이 있으면 그것이 우선이다 */
+    if(FS.cur>=0&&FS.sug[FS.cur]){ fsPick(FS.sug[FS.cur]); return }
+    /* 그 다음은 **친 말 그대로**. 연관어로 바꿔치기하지 않는다. */
+    const exact=fsExact(inp.value);
+    if(exact){ fsPick(exact); return }
+    /* ★ 2026-09-23 — 친 말이 사전에 없을 때 '후보가 하나뿐이면 그것으로' 하던 규칙을 뺐다.
+       '클래식' 을 치면 그 말을 품은 브랜드 '식스핏 클래식' 이 하나뿐이라 그리로 끌려갔다.
+       치지도 않은 브랜드가 검색되는 것은 후보가 하나든 열이든 똑같이 틀린 결과다.
+       사전에 없으면 고르게 둔다 — 목록에서 누르거나 ↑↓ 로 잡으면 된다. */
+    fsPaintSug();
+  }
+  /* ★ 2026-09-23 — 한글을 치는 중의 Enter.
+     '가을' 의 마지막 글자는 Enter 를 누르는 그 순간까지 **조합 중**이다. 그 상태에서
+     검색하고 입력칸을 비우면, 브라우저가 조합을 끝내면서 그 글자를 빈 칸에 다시 써 넣는다 —
+     검색은 됐는데 칸에는 '을' 만 남는다('나이키' → '키'). 영문은 조합이 없어 멀쩡했다.
+     조합 중에 들어온 Enter 는 여기서 멈추고, compositionend 가 이어서 처리한다. */
+  let fsEnterPending=false;
+  inp.addEventListener('compositionend',()=>{
+    if(!fsEnterPending)return;
+    fsEnterPending=false;
+    fsEnterGo();
+  });
   inp.addEventListener('keydown',e=>{
     if(e.key==='ArrowDown'){ e.preventDefault(); fsMoveSug(1) }
     else if(e.key==='ArrowUp'){ e.preventDefault(); fsMoveSug(-1) }
     else if(e.key==='Escape'){ fsHideSug() }
     else if(e.key==='Enter'){
       e.preventDefault();
-      if(FS.id==='stock'){ fsOpenPop(); return; }
-      /* ↑↓ 로 직접 고른 줄이 있으면 그것이 우선이다 */
-      if(FS.cur>=0&&FS.sug[FS.cur]){ fsPick(FS.sug[FS.cur]); return }
-      /* 그 다음은 **친 말 그대로**. 연관어로 바꿔치기하지 않는다. */
-      const exact=fsExact(inp.value);
-      if(exact){ fsPick(exact); return }
-      /* 친 말이 사전에 없다 — 후보가 하나뿐이면 그것으로, 아니면 고르게 둔다 */
-      const list=fsMatch(inp.value,2);
-      if(list.length===1){ fsPick(list[0]); return }
-      fsPaintSug();
+      if(e.isComposing||e.keyCode===229){ fsEnterPending=true; return }
+      fsEnterGo();
     }
   });
   $('#fsSug').addEventListener('click',e=>{

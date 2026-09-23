@@ -174,10 +174,10 @@ function kwGo(v){
   if(!typed){ kwPaintSug(); return }
   /* ★ 2026-09-23 — 친 말 그대로 간다. 연관어로 바꿔치기하지 않는다.
      예전에는 fsMatch 의 첫 줄을 집어서, '청바지' 를 치면 소재 '데님' 이 검색됐다.
-     사전에 그 말이 없을 때만, 후보가 딱 하나면 그것으로 대신한다(별칭·오타 한 글자). */
-  const near=selected?null:fsMatch(typed,2);
-  const match=selected||fsExact(typed)||(near&&near.length===1?near[0]:null);
-  if(!match){ kwPaintSug(); return }   /* 사전에 없으면 검색되지 않는다 */
+     '후보가 하나뿐이면 그것으로' 라는 예외도 뒀다가 뺐다 — '클래식' 을 치면 그 말을 품은
+     브랜드 '식스핏 클래식' 이 하나뿐이라 그리로 끌려갔다. 후보가 몇이든 친 말이 아니면 틀린 결과다. */
+  const match=selected||fsExact(typed);
+  if(!match){ kwPaintSug(); return }   /* 사전에 없으면 검색되지 않는다 — 목록에서 고르면 된다 */
   /* 실제로 조회하는 말은 사전의 대표 이름이다 — 화면·기록·API 가 서로 어긋나지 않게 한다 */
   const q=match.label||typed;
   inp.value=q;
@@ -220,12 +220,28 @@ export function kwWire(part){
     clear.hidden=!inp.value;
     kwPaintSug();
   });
+  /* Enter 로 할 일 — 키를 눌렀을 때와 한글 조합이 끝난 뒤가 똑같아야 한다 */
+  const kwEnterGo=()=>{
+    if(KW.cur>=0&&KW.sug[KW.cur])kwGo(KW.sug[KW.cur]); else kwGo();
+  };
+  /* ★ 2026-09-23 — 한글을 치는 중의 Enter.
+     '가을' 의 마지막 글자는 Enter 를 누르는 그 순간까지 **조합 중**이다. 그 상태에서
+     검색하고 입력칸을 비우면, 브라우저가 조합을 끝내면서 그 글자를 빈 칸에 다시 써 넣는다 —
+     검색은 됐는데 칸에는 '을' 만 남는다('나이키' → '키'). 영문은 조합이 없어 멀쩡했다.
+     조합 중에 들어온 Enter 는 여기서 멈추고, compositionend 가 이어서 처리한다. */
+  let kwEnterPending=false;
+  inp.addEventListener('compositionend',()=>{
+    if(!kwEnterPending)return;
+    kwEnterPending=false;
+    kwEnterGo();
+  });
   inp.addEventListener('keydown',e=>{
     if(e.key==='ArrowDown'){ e.preventDefault(); kwMoveSug(1) }
     else if(e.key==='ArrowUp'){ e.preventDefault(); kwMoveSug(-1) }
     else if(e.key==='Escape'){ kwHideSug() }
     else if(e.key==='Enter'){ e.preventDefault();
-      if(KW.cur>=0&&KW.sug[KW.cur])kwGo(KW.sug[KW.cur]); else kwGo();
+      if(e.isComposing||e.keyCode===229){ kwEnterPending=true; return }
+      kwEnterGo();
     }
   });
   /* 검색바를 누르면 — 친 글자가 있으면 연관어, 비어 있으면 최근 검색어 */
