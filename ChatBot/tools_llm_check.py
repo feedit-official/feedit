@@ -3,7 +3,7 @@
 ★ 이 스크립트는 **네트워크가 되는 곳에서** 돌려야 한다.
   Claude 작업 환경은 api.openai.com 이 막혀 있어 여기서는 확인할 수 없었다.
 
-    cd ~/Desktop/Final/feedit-chat
+    cd feedit/ChatBot
     python3 tools_llm_check.py
 
 키는 환경변수 OPENAI_API_KEY, 없으면 크롤러 data/keys.json 에서 읽는다.

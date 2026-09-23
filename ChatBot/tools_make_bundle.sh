@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# ⚠ 2026-09-23 — 운영(RDS 모드)에는 더 이상 필요 없다.
+#   어휘 추출기·Lexicon 은 ChatBot/vendor/ 에 들어 있어 이미지에 함께 실린다.
+#   이 스크립트는 SQLite 지표 DB 를 서버로 옮겨야 하는 옛 방식에서만 쓴다.
+#
 # 챗봇이 돌아가는 데 **꼭 필요한 것만** 묶는다.
 #
 # ── 왜 이게 필요한가 ──────────────────────────────────────
@@ -32,7 +36,7 @@ if [ -z "$CRAWLER" ] && [ -f "$REPO/.env" ]; then
   CRAWLER=$(grep -E '^FEEDIT_CRAWLER_DIR=' "$REPO/.env" | tail -1 | cut -d= -f2-)
   TOOLS=$(grep -E '^FEEDIT_EXTRACTOR_DIR=' "$REPO/.env" | tail -1 | cut -d= -f2- || true)
 fi
-[ -n "${TOOLS:-}" ] || TOOLS="$(dirname "$CRAWLER")/tools"
+[ -n "${TOOLS:-}" ] || TOOLS="$HERE/vendor"
 
 if [ -z "$CRAWLER" ] || [ ! -d "$CRAWLER" ]; then
   echo "크롤러 저장소를 못 찾았습니다: '${CRAWLER:-(비어 있음)}'" >&2

@@ -6,10 +6,9 @@
   전송 계층은 나중에 Django/FastAPI 로 갈아 끼울 것이라 지금 얇게 둔다.
   ChatEngine 은 HTTP 를 모른다 — 갈아 끼울 때 손댈 곳은 이 파일뿐이다.
 
-  ⚠ 로그인은 아직 없다. 공개 베타에서는 공유 토큰 없이 누구나 쓴다.
-     베타가 끝나 FEEDIT_PUBLIC_BETA=0 이 되면 밖에 열 때 두 가지를 둔다 —
+  ⚠ 로그인은 아직 없다. 밖에 열 때의 방어는 두 가지다 —
      ① IP 당 분당 횟수 제한 (항상 켜짐, 설정 필요 없음)
-     ② 공유 토큰 FEEDIT_CHAT_TOKEN (설정했을 때만 검사)
+     ② 공유 토큰 FEEDIT_CHAT_TOKEN (설정했을 때만 검사 — 공개 베타 중에도 검사한다)
      둘 다 로그인의 대체물이 아니다. 스캐너가 우리 OpenAI 키를 태우는 것을
      막는 최소한이다. 사용자별 한도·과금은 여전히 없다.
 
@@ -36,6 +35,7 @@ SSE 순서는 프론트가 이미 그리는 순서에 맞춘다 (chat_popup.js:1
 """
 from __future__ import annotations
 
+import hmac
 import json
 import os
 import re
@@ -77,14 +77,23 @@ MAX_IMAGE_DATAURL = 6 * 1024 * 1024   # data URL 문자열 길이 기준 — 대
 #   ★ 이건 로그인이 아니다. "주소를 아무도 모른다" 는 방어가 아니라서 둔다 —
 #     공개된 주소는 봇이 몇 시간 안에 찾아낸다. 그때 막아 주는 건 이 둘뿐이다.
 #
-#   공개 베타(FEEDIT_PUBLIC_BETA 기본 1)에서는 기존 .env 에 값이 남아 있어도
-#   FEEDIT_CHAT_TOKEN 을 무시한다. 팀원별 로컬 설정 때문에 누구는 되고 누구는
-#   목업으로 떨어지는 상태를 만들지 않는다. 베타 종료 후에만 다시 검사한다.
+#   ★ 2026-09-23 보안 — 공개 베타(FEEDIT_PUBLIC_BETA)는 **플랜만** 연다.
+#     예전에는 베타 동안 토큰까지 무시해서, 챗봇 주소만 알면 누구나
+#     /v1/chat · /v1/virtual-fitting 을 불러 OpenAI 비용을 쓸 수 있었다.
+#     토큰은 버셀 함수만 붙이므로 사용자 경험은 그대로다.
+#     "팀원별 로컬 설정 때문에 누구는 목업으로 떨어지던" 문제는 vite 개발
+#     프록시가 루트 .env 의 FEEDIT_CHAT_TOKEN 을 붙여 보내는 것으로 해결했다.
 #   FEEDIT_CHAT_TOKEN  비워 두면 검사하지 않는다(로컬 개발 그대로).
 #                      넣으면 X-FEEDiT-Token 머리글이 같아야 통과한다.
 #                      버셀 함수가 붙여 주므로 브라우저는 토큰을 모른다.
 def _chat_token() -> str:
-    return "" if plans.PUBLIC_BETA else (os.getenv("FEEDIT_CHAT_TOKEN") or "").strip()
+    return (os.getenv("FEEDIT_CHAT_TOKEN") or "").strip()
+
+
+def _token_ok(got: str | None) -> bool:
+    """상수 시간 비교. 글자 수가 다를 때 빨리 끝나면 길이가 새어 나간다."""
+    return hmac.compare_digest((got or "").encode("utf-8", "replace"),
+                               CHAT_TOKEN.encode("utf-8"))
 
 
 CHAT_TOKEN = _chat_token()
@@ -481,7 +490,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def _guard(self) -> bool:
         """토큰·횟수 검사. 막으면 응답까지 보내고 False 를 돌려준다."""
-        if CHAT_TOKEN and self.headers.get("X-FEEDiT-Token") != CHAT_TOKEN:
+        if CHAT_TOKEN and not _token_ok(self.headers.get("X-FEEDiT-Token")):
             # 왜 막혔는지 자세히 알려 주지 않는다 — 맞히는 데 도움이 된다.
             self._json(401, {"ok": False, "reason": "UNAUTHORIZED",
                              "message": "허용되지 않은 요청입니다."})
@@ -761,8 +770,8 @@ def main():
         print("먼저 채워야 할 것이 있습니다 — 챗봇 엔진을 켤 수 없습니다.\n")
         for g in gaps:
             print("  · " + g)
-        print("\n크롤러 저장소를 받은 뒤 저장소 루트 .env 에 경로를 적어 주세요:")
-        print("  FEEDIT_CRAWLER_DIR=/절대/경로/feedit-crawler")
+        print("\n어휘 추출기·Lexicon 은 ChatBot/vendor/ 에 들어 있습니다.")
+        print("RDS 모드면 DB_* 환경변수를, SQLite 모드면 FEEDIT_CHAT_DB 를 확인해 주세요.")
         print("\n자세한 진단:  python3 tools_env_check.py")
         return 2
 
@@ -781,11 +790,10 @@ def main():
         print(f"  ⚠ 엔진을 만들지 못했습니다 ({type(ex).__name__}) — 서버는 띄우고 요청 때 다시 시도합니다.")
     print(f"  모델 {llm.MODEL} · 키 {llm.key_hint()}")
     print(f"  허용 오리진 {sorted(ALLOW_ORIGINS)}")
-    access = "공개 베타(토큰 검사 안 함)" if plans.PUBLIC_BETA else (
-        "토큰 검사함" if CHAT_TOKEN else "토큰 없음(로컬 개발)")
+    access = ("토큰 검사함" if CHAT_TOKEN else "토큰 없음(로컬 개발)") + (
+        " · 공개 베타(전 기능 개방)" if plans.PUBLIC_BETA else "")
     print(f"  접근 {access} · 분당 {RATE_PER_MIN}회 제한")
-    if (not plans.PUBLIC_BETA and HOST not in ("127.0.0.1", "localhost")
-            and not CHAT_TOKEN):
+    if HOST not in ("127.0.0.1", "localhost") and not CHAT_TOKEN:
         print("  ⚠ 밖에 열면서 FEEDIT_CHAT_TOKEN 이 없습니다. 주소가 알려지면 누구나 질문할 수 있습니다.")
     try:
         srv.serve_forever()

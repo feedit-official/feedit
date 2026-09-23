@@ -54,10 +54,20 @@ class PublicBetaTests(unittest.TestCase):
         with patch.object(plans, "PUBLIC_BETA", True):
             self.assertEqual(plans.effective(plans.FREE), plans.BUSINESS)
 
-    def test_public_beta_ignores_a_stale_shared_token(self):
+    def test_public_beta_keeps_the_shared_token(self):
+        # 2026-09-23 — 베타는 플랜만 연다. 토큰까지 풀면 주소만 알아도 누구나
+        # 챗봇(=OpenAI 비용)을 부를 수 있다.
         with patch.object(plans, "PUBLIC_BETA", True), \
-             patch.dict(os.environ, {"FEEDIT_CHAT_TOKEN": "old-team-token"}):
-            self.assertEqual(server._chat_token(), "")
+             patch.dict(os.environ, {"FEEDIT_CHAT_TOKEN": "team-token"}):
+            self.assertEqual(server._chat_token(), "team-token")
+
+    def test_token_compare_is_exact(self):
+        with patch.object(server, "CHAT_TOKEN", "team-token"):
+            self.assertTrue(server._token_ok("team-token"))
+            self.assertFalse(server._token_ok("team-toke"))
+            self.assertFalse(server._token_ok(""))
+            self.assertFalse(server._token_ok(None))
+            self.assertFalse(server._token_ok("팀토큰"))   # ASCII 밖 글자도 500 이 아니라 거절
 
     def test_turning_beta_off_restores_plan_and_token_rules(self):
         with patch.object(plans, "PUBLIC_BETA", False), \

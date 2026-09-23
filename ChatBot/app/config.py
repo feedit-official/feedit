@@ -11,17 +11,26 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent      # ChatBot/
 WORKSPACE = ROOT.parent                            # feedit/ (통합 저장소 루트)
 
-# ── 크롤러 저장소가 어디 있나 ──────────────────────────────
-#   ★ 사람마다 다른 곳에 받아 둔다. 그래서 환경변수로 뺐다.
-#     `.env` 에 FEEDIT_CRAWLER_DIR=/절대/경로/feedit-crawler 를 적으면 된다.
+# ── 챗봇이 쓰는 크롤러 코드 · 어휘 추출기 (ChatBot/vendor/) ────────────
+#   ★ 2026-09-23 — 저장소 안으로 옮겼다.
+#     예전에는 `Final/feedit-crawler` 와 `Final/tools` 를 저장소 **밖**에서
+#     import 했다(개발 초기에 챗봇을 Final/feedit-chat 으로 따로 세웠을 때,
+#     크롤러 파일을 복사하면 두 곳 판정이 갈릴까 봐 그 자리를 바라보게 했다).
+#     그 결과 저장소만 받은 사람은 챗봇 엔진을 띄울 수 없었다.
 #
-#   여기가 왜 필요한가 — 데이터만이 아니라 **코드**가 필요하다:
-#     · data/feedit.db          지표 (store.py 가 읽는다)
-#     · config/lexicon.yaml     어휘 사전
-#     · feedit_crawler/lexicon.py, tools/question_extract.py
-#                               lexicon_gate.py 가 import 한다
-#   이게 없으면 ChatEngine 은 부팅되지 않는다. LLM 배선과는 별개의 문제다.
-CRAWLER = Path(os.getenv("FEEDIT_CRAWLER_DIR") or (WORKSPACE.parent / "feedit-crawler"))
+#   vendor/ 에 있는 것 (전부 표준 라이브러리 + PyYAML 만 쓴다):
+#     · question_extract.py          질문 어휘 3단 추출 (lexicon_gate 가 import)
+#     · feedit_crawler/lexicon.py    Lexicon — SQLite 모드에서만 쓴다
+#     · config/lexicon.yaml          어휘 사전 — SQLite 모드에서만 쓴다
+#   운영(RDS 모드)에 필요한 건 question_extract.py 하나다.
+#
+#   SQLite 모드의 지표 DB(data/feedit.db, 약 48MB)와 키 파일(data/keys.json)은
+#   저장소에 넣지 않는다. 필요하면 FEEDIT_CHAT_DB 로 가리키거나
+#   vendor/data/ 에 두면 된다(.gitignore 처리됨).
+#
+#   환경변수로 다른 곳을 가리키면 그쪽을 쓴다(예전 설정 호환).
+VENDOR = ROOT / "vendor"
+CRAWLER = Path(os.getenv("FEEDIT_CRAWLER_DIR") or VENDOR)
 
 # 운영 기본값은 AWS RDS다. SQLite는 회귀 테스트나 오프라인 개발 때만 명시한다.
 DATA_BACKEND = os.getenv("FEEDIT_DATA_BACKEND", "rds").strip().lower()
@@ -29,7 +38,7 @@ DB_PATH = Path(os.getenv("FEEDIT_CHAT_DB", CRAWLER / "data" / "feedit.db"))
 LEXICON_PATH = Path(os.getenv("FEEDIT_CHAT_LEXICON", CRAWLER / "config" / "lexicon.yaml"))
 
 # 어휘 추출기 (검증 완료 — 설계서 3.3)
-EXTRACTOR_DIR = Path(os.getenv("FEEDIT_EXTRACTOR_DIR") or (CRAWLER.parent / "tools"))
+EXTRACTOR_DIR = Path(os.getenv("FEEDIT_EXTRACTOR_DIR") or VENDOR)
 
 METRIC_VERSION = os.getenv("FEEDIT_METRIC_VERSION", "feedit-unified-text-v1")
 

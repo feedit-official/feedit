@@ -27,7 +27,7 @@ Production과 Preview의 환경값·접근 범위를 구분합니다. 브라우�
 
 ## EC2: API를 먼저, 챗봇을 다음에
 
-운영 서버의 저장소 루트에서 환경값과 외부 질문 추출기 마운트를 준비합니다.
+운영 서버의 저장소 루트에서 환경값을 준비합니다. 질문 어휘 추출기는 챗봇 이미지(`ChatBot/vendor/`)에 포함되어 별도 마운트가 필요 없습니다.
 
 ```bash
 docker compose --env-file .env -f docker/compose.api.yml up -d --build
@@ -45,7 +45,6 @@ docker compose --env-file .env -f docker/compose.chat.yml up -d --build
 | `FEEDIT_API_TOKEN` | Vercel 중계 토큰과 일치 |
 | `OPENAI_API_KEY` | 챗봇 모델 호출 |
 | `FEEDIT_TEXT_OPENAI_API_KEY` | 배치 텍스트 분석 |
-| `CHAT_DATA_DIR` | 하위 `tools/question_extract.py`를 읽기 전용 마운트 |
 | `FEEDIT_BACKEND_API` | 기본 `http://feedit-api:8000/api` |
 | `FEEDIT_PUBLIC_BETA`, `FEEDIT_CHAT_TOKEN` | 베타와 토큰 검사 정책을 함께 확인 |
 | `FEEDIT_CHAT_ORCHESTRATOR` | 모델 도구 오케스트레이션 사용 설정 |

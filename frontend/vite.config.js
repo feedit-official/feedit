@@ -47,6 +47,11 @@ export default defineConfig(({ mode }) => {
           target: 'http://127.0.0.1:8770',
           changeOrigin: true,
           rewrite: (p) => p.replace(/^\/api/, ''),
+          /* ★ 2026-09-23 — 챗봇은 FEEDIT_CHAT_TOKEN 이 있으면 공개 베타 중에도
+             토큰을 검사한다. 배포에서는 버셀 함수가 붙이고, 로컬에서는 이
+             프록시가 루트 .env 의 값을 붙인다. 브라우저 번들에는 들어가지 않는다
+             (이 설정은 개발 서버의 Node 쪽에서만 돈다). */
+          headers: env.FEEDIT_CHAT_TOKEN ? { 'X-FEEDiT-Token': env.FEEDIT_CHAT_TOKEN } : {},
         },
         '/api': {
           // Django 는 주소를 /api/… 그대로 받는다 (config/urls.py 에 api/ 로 걸었다).

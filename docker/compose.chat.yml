@@ -27,7 +27,6 @@
 #   FEEDIT_CHAT_TOKEN=<버셀 CHAT_BACKEND_TOKEN 과 같은 값>
 #   FEEDIT_CHAT_RATE_PER_MIN=20
 #   CHAT_DOMAIN=feedit-official.duckdns.org
-#   CHAT_DATA_DIR=/opt/feedit-chat-data
 #   (선택) CHAT_DNS=169.254.169.253   ← EC2 기본값. 다른 환경이면 1.1.1.1
 
 services:
@@ -45,7 +44,10 @@ services:
       FEEDIT_CHAT_HOST: 0.0.0.0
       FEEDIT_CHAT_PORT: 8770
       FEEDIT_DATA_BACKEND: rds
-      FEEDIT_EXTRACTOR_DIR: /tools
+      # ★ 2026-09-23 — 어휘 추출기는 이미지 안(/app/vendor)에 들어 있다.
+      #   서버 .env 에 예전 FEEDIT_EXTRACTOR_DIR 이 남아 있어도 여기 값이 이긴다.
+      FEEDIT_EXTRACTOR_DIR: /app/vendor
+      FEEDIT_CRAWLER_DIR: /app/vendor
       # ★ 2026-09-20 — 살!말? · 가격 · 리셀 · 수명주기 도구가 부르는 Django API.
       #   컨테이너 안의 127.0.0.1 은 챗봇 자신이라 닿지 않는다(기본값이 그랬다).
       #   feedit-api 네트워크에 함께 붙어 컨테이너 이름으로 부른다.
@@ -54,10 +56,6 @@ services:
     networks:
       - default
       - feedit-api
-
-    volumes:
-      # 질문 추출 코드만 사용한다. SQLite 데이터는 마운트하지 않는다.
-      - ${CHAT_DATA_DIR:-/opt/feedit-chat-data}/tools:/tools:ro
 
 
     # ★ DNS 를 명시한다.

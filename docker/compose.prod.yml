@@ -183,16 +183,14 @@ services:
     environment:
       FEEDIT_CHAT_HOST: 0.0.0.0
       FEEDIT_CHAT_PORT: 8770
-      FEEDIT_CRAWLER_DIR: /crawler
-      FEEDIT_EXTRACTOR_DIR: /tools
+      # 어휘 추출기·Lexicon 은 이미지 안 /app/vendor 에 있다 (2026-09-23)
+      FEEDIT_CRAWLER_DIR: /app/vendor
+      FEEDIT_EXTRACTOR_DIR: /app/vendor
       # FEEDIT_CHAT_TOKEN 과 FEEDIT_CHAT_RATE_PER_MIN 은 ../.env 에서 온다.
     expose:
       - "8770"
     depends_on:
       - web
-    volumes:
-      - ${FEEDIT_CRAWLER_DIR:-../../Final/feedit-crawler}:/crawler:ro
-      - ${FEEDIT_EXTRACTOR_DIR:-../../Final/tools}:/tools:ro
     restart: unless-stopped
 
 volumes:

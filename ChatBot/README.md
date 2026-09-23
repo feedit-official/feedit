@@ -17,7 +17,7 @@ cd ChatBot
 python server.py
 ```
 
-기본 포트 8770, 기본 데이터 모드는 RDS입니다. DB 접근 정보와 외부 `FEEDIT_EXTRACTOR_DIR/question_extract.py`가 필요합니다. 모델 호출에는 `OPENAI_API_KEY`, Django 도구에는 접근 가능한 `FEEDIT_BACKEND_API`를 설정합니다. `tools_llm_check.py`는 실제 모델 호출이므로 오프라인 점검이 아닙니다.
+기본 포트 8770, 기본 데이터 모드는 RDS입니다. DB 접근 정보가 필요합니다. 질문 어휘 추출기(`vendor/question_extract.py`)와 Lexicon(`vendor/feedit_crawler/`, `vendor/config/lexicon.yaml`)은 저장소에 포함되어 있습니다. 모델 호출에는 `OPENAI_API_KEY`, Django 도구에는 접근 가능한 `FEEDIT_BACKEND_API`를 설정합니다. `tools_llm_check.py`는 실제 모델 호출이므로 오프라인 점검이 아닙니다.
 
 `FEEDIT_PUBLIC_BETA` 기본값은 1입니다. 토큰·플랜 정책을 [배포 문서](../docs/DEPLOYMENT.md)에서 확인합니다. SQLite 어댑터와 `tools_make_bundle.sh`는 별도 외부 데이터가 있는 오프라인/이전 환경용이며 운영 RDS 배포의 준비 명령이 아닙니다.
 

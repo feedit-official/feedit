@@ -73,6 +73,15 @@ MIDDLEWARE = [
     'apps.dashboard.middleware.DashboardStaffMiddleware',
 ]
 
+# ── DRF (2026-09-23 보안) ────────────────────────────────────
+# 기본값을 '운영 계정만'으로 둔다. DRF 를 쓰는 뷰는 관리자용 수집 API 뿐이고,
+# 나중에 새 DRF 뷰를 더할 때 권한을 빠뜨려도 열리지 않게 한다.
+# BasicAuthentication 은 뺀다 — 백엔드 구간이 http 인 동안 비밀번호가 평문으로 다닌다.
+REST_FRAMEWORK = {
+    "DEFAULT_PERMISSION_CLASSES": ["apps.api.permissions.IsOperator"],
+    "DEFAULT_AUTHENTICATION_CLASSES": ["rest_framework.authentication.SessionAuthentication"],
+}
+
 ROOT_URLCONF = 'config.urls'
 
 TEMPLATES = [

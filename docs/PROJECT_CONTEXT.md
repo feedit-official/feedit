@@ -14,7 +14,7 @@ FEEDiT은 패션 커머스·콘텐츠·검색 신호를 모아 트렌드 탐색,
 
 운영 경로는 브라우저 → Vercel 정적/서버리스 → EC2 nginx → Django 또는 챗봇입니다. RDS PostgreSQL이 데이터 원본이며 S3가 원본/객체 저장을 담당합니다. Celery beat → Redis → worker가 정기 작업을 수행합니다. 챗봇은 RDS·Django 도구·외부 모델 API를 사용합니다. 별도 GPU 서빙 서버가 실제 운영 중인지는 확인되지 않았습니다.
 
-로컬은 Vite 5173, Django 기본 8000, 챗봇 8770입니다. 운영 nginx 예시는 Django 호스트 8001을 사용하므로 `API_PORT`와 맞춥니다. 챗봇에는 외부 `FEEDIT_EXTRACTOR_DIR/question_extract.py`가 필요합니다.
+로컬은 Vite 5173, Django 기본 8000, 챗봇 8770입니다. 운영 nginx 예시는 Django 호스트 8001을 사용하므로 `API_PORT`와 맞춥니다. 챗봇의 질문 어휘 추출기는 `ChatBot/vendor/question_extract.py`에 포함되어 있습니다.
 
 ## 답변과 디자인 원칙
 

@@ -46,7 +46,7 @@ cd ChatBot
 python server.py
 ```
 
-기본 데이터 모드는 RDS입니다. `DB_HOST`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`와 `FEEDIT_EXTRACTOR_DIR/question_extract.py`를 준비합니다. 외부 질문 추출기는 이 저장소에 포함되지 않습니다. LLM을 사용하려면 공급자 접근 권한과 `OPENAI_API_KEY`가 필요합니다.
+기본 데이터 모드는 RDS입니다. `DB_HOST`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`를 준비합니다. 질문 어휘 추출기는 `ChatBot/vendor/`에 포함되어 있어 따로 준비할 것이 없습니다. LLM을 사용하려면 공급자 접근 권한과 `OPENAI_API_KEY`가 필요합니다.
 
 `FEEDIT_BACKEND_API`는 실행 환경에서 접근 가능한 Django `/api` 주소로 맞춥니다. 운영 Docker 기본값 `http://feedit-api:8000/api`를 로컬 호스트 주소로 오해하지 마세요. `FEEDIT_LLM_DISABLED=1`은 LLM 호출을 비활성화하지만 DB·추출기 의존성까지 없애지는 않습니다. `FEEDIT_DATA_BACKEND=sqlite`는 별도 데이터가 필요한 회귀/오프라인 경로입니다.
 

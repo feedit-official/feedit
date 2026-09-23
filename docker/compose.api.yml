@@ -40,7 +40,7 @@
 #    DB_NAME=feedit
 #    DB_USER=feedit_admin
 #    DB_PASSWORD=...
-#    DB_HOST=feedit-db.cncws8gyqmnk.ap-northeast-2.rds.amazonaws.com   ← 굴이 아니다
+#    DB_HOST=<RDS 엔드포인트>   ← 굴이 아니다 (실제 값은 서버 .env 에만)
 #    DB_PORT=5432
 #    FEEDIT_API_TOKEN=<버셀 BACKEND_API_TOKEN 과 같은 값>
 #
