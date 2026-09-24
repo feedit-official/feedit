@@ -225,17 +225,29 @@ def _contains_any(field, values):
     return query
 
 
-def _published_date(metadata):
+# ★ 2026-09-23 — 긍부정 탭에 커머스 리뷰(REVIEW)를 넣는다.
+#   댓글은 analysis_metadata.published_at 에 작성 시각이 있지만
+#   리뷰는 그 키가 없고 source_published_at 에만 있다(sync_product_reviews).
+#   그래서 metadata 가 비면 source_published_at 으로 떨어진다 — 안 그러면 리뷰가 조용히 전부 빠진다.
+SENTIMENT_DOC_TYPES = ("COMMENT", "REVIEW")
+
+
+def _published_date(metadata, fallback=None):
     raw = metadata.get("published_at") if isinstance(metadata, dict) else None
     parsed = parse_datetime(str(raw)) if raw else None
-    return parsed.date() if parsed else None
+    if parsed:
+        return parsed.date()
+    if fallback:
+        return timezone.localtime(fallback).date() if timezone.is_aware(fallback) else fallback.date()
+    return None
 
 
 def _direct_sentiment_series(rows, days):
     """mention 행을 댓글 단위로 합친 뒤, 실제 게시일 기준 일별 반응으로 만든다."""
     documents = {}
     for row in rows:
-        day = _published_date(row.get("document__analysis_metadata"))
+        day = _published_date(row.get("document__analysis_metadata"),
+                              row.get("document__source_published_at"))
         score = _num(row.get("sentiment_score"))
         if day is None or score is None:
             continue
@@ -792,7 +804,7 @@ def _sentiment_evidence(term, is_brand=False, variants=None):
         ).exclude(mention_text__isnull=True).filter(_contains_any("mention_text", variants))
     else:
         qs = TextTermMention.objects.filter(
-            term=term, document__document_type=TextDocument.DocumentType.COMMENT,
+            term=term, document__document_type__in=SENTIMENT_DOC_TYPES,
             intent_code__in=intents
         ).exclude(mention_text__isnull=True)
 
@@ -838,10 +850,11 @@ def sentiment(request):
         mention_rows = list(
             TextTermMention.objects.filter(
                 term=term,
-                document__document_type=TextDocument.DocumentType.COMMENT,
+                document__document_type__in=SENTIMENT_DOC_TYPES,
                 sentiment_score__isnull=False,
             ).values(
-                "document_id", "document__analysis_metadata", "sentiment_score", "intent_code"
+                "document_id", "document__analysis_metadata", "document__source_published_at",
+                "sentiment_score", "intent_code"
             )
         )
         matched_comments = len({row["document_id"] for row in mention_rows})
@@ -885,7 +898,7 @@ def sentiment(request):
         detail = (
             "브랜드가 언급된 댓글은 있지만 해당 문맥에 연결된 긍부정 분석행이 없습니다."
             if method == "BRAND_CONTEXT" and matched_comments
-            else "댓글에서 이 용어와 연결된 긍부정 분석행이 없습니다."
+            else "댓글·리뷰에서 이 용어와 연결된 긍부정 분석행이 없습니다."
         )
         return _empty(detail, term=canonical, facet=facet, known=True)
 
@@ -901,6 +914,7 @@ def sentiment(request):
         "metric_version": "direct-text-mention-v1",
         "method": method,
         "scope_label": "브랜드 언급 문맥" if method == "BRAND_CONTEXT" else "용어 직접 언급",
+        "doc_types": ["COMMENT"] if method == "BRAND_CONTEXT" else list(SENTIMENT_DOC_TYPES),
         "matched_comments": matched_comments,
         "classified_comments": classified_comments,
         "series": series,
