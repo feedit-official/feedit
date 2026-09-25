@@ -1052,3 +1052,124 @@ class TermRequest(models.Model):
 
     def __str__(self):
         return f"{self.user} / {self.raw_term}"
+
+
+class UserDailyActivity(models.Model):
+    """하루(한국 시간) 단위 접속 · 트렌드 분석 체류 기록 — 경험치 계산용 (2026-09-25).
+
+    하루에 한 행이다.
+      · 행이 있으면 그날 접속한 것이다 (로그인한 채로 화면을 연 날).
+      · analysis_seconds 는 트렌드 분석 화면이 실제로 보이던 시간(초)의 누적이다.
+
+    ★ user_event 에 넣지 않은 이유
+      user_event 는 금주의 리포트 '요일별 활동' 막대와 개근상 뱃지가
+      행 수 · 날짜를 그대로 센다.
+
+      접속만 해도 한 줄씩 쌓이면 그 두 지표의 뜻이 바뀐다.
+      그래서 따로 둔다.
+    """
+
+    user = models.ForeignKey(
+        AppUser,
+        on_delete=models.CASCADE,
+        related_name="daily_activities",
+        verbose_name="사용자",
+    )
+    day = models.DateField(verbose_name="날짜(KST)")
+    first_seen_at = models.DateTimeField(auto_now_add=True, verbose_name="처음 접속한 시각")
+    analysis_seconds = models.PositiveIntegerField(default=0, verbose_name="트렌드 분석 체류(초)")
+    analysis_ping_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="마지막 체류 기록 시각",
+        help_text="체류 시간을 실제 흐른 시간보다 부풀리지 못하게 막는 기준점이다.",
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = '"app"."user_daily_activity"'
+        verbose_name = "일일 접속 기록"
+        verbose_name_plural = "일일 접속 기록"
+        constraints = [
+            models.UniqueConstraint(fields=["user", "day"], name="uq_daily_activity_user_day"),
+        ]
+
+    def __str__(self):
+        return f"{self.user} / {self.day}"
+
+
+class UserXp(models.Model):
+    """누적 경험치 스냅숏 (2026-09-25).
+
+    경험치는 apps/api/xp.py 가 기록에서 매번 다시 계산한다. 이 표는 계산 결과를 적어 둔 사본이다.
+
+    **다른 사람 화면**에 레벨을 보여 줄 때만 읽는다 (살!말? 댓글의 아바타 링).
+    댓글마다 작성자의 기록을 전부 다시 세면 카드 목록 한 번에 쿼리가 수백 개가 된다.
+    본인의 경험치는 이 표가 아니라 항상 새로 계산한 값을 보여 준다.
+    """
+
+    user = models.OneToOneField(
+        AppUser,
+        on_delete=models.CASCADE,
+        related_name="xp_snapshot",
+        verbose_name="사용자",
+    )
+    total = models.PositiveIntegerField(default=0, verbose_name="누적 경험치")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="마지막 계산 시각")
+
+    class Meta:
+        db_table = '"app"."user_xp"'
+        verbose_name = "경험치 스냅숏"
+        verbose_name_plural = "경험치 스냅숏"
+
+    def __str__(self):
+        return f"{self.user} / {self.total} XP"
+
+
+class SiteFeedback(models.Model):
+    """홈페이지 피드백 — 불편사항·추가요청 / 수정사항·버그리포트 (2026-09-25).
+
+    한 주에 한 건 이상 남기면 주간 경험치 +25 (apps/api/xp.py).
+    운영자가 스팸 · 무관한 글을 '반려'로 바꾸면 그 글은 경험치에서 빠진다.
+    """
+
+    class Kind(models.TextChoices):
+        REQUEST = "REQUEST", "불편사항·추가요청"
+        BUG = "BUG", "수정사항·버그리포트"
+
+    class Status(models.TextChoices):
+        OPEN = "OPEN", "확인 전"
+        DONE = "DONE", "반영·처리"
+        REJECTED = "REJECTED", "반려"
+
+    user = models.ForeignKey(
+        AppUser,
+        on_delete=models.CASCADE,
+        related_name="site_feedbacks",
+        verbose_name="작성자",
+    )
+    kind = models.CharField(max_length=20, choices=Kind.choices, verbose_name="유형")
+    content = models.TextField(verbose_name="내용")
+    page = models.CharField(max_length=120, blank=True, default="", verbose_name="남긴 화면")
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.OPEN,
+        db_index=True,
+        verbose_name="처리 상태",
+    )
+    admin_note = models.CharField(max_length=300, blank=True, default="", verbose_name="운영자 메모")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="작성일시")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="수정일시")
+
+    class Meta:
+        db_table = '"app"."site_feedback"'
+        verbose_name = "홈페이지 피드백"
+        verbose_name_plural = "홈페이지 피드백"
+        indexes = [
+            models.Index(fields=["user", "-created_at"], name="idx_site_feedback_user"),
+            models.Index(fields=["status", "-created_at"], name="idx_site_feedback_status"),
+        ]
+
+    def __str__(self):
+        return f"{self.get_kind_display()} · {self.user} · {self.get_status_display()}"

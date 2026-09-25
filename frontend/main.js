@@ -23,6 +23,8 @@ import './trend/static/js/discount_resale.js';
 import './account/static/js/rank.js';
 import './trend/static/js/my_feed.js';
 import './account/static/js/profile.js';
+import './account/static/js/xp_track.js';   /* 경험치 — 접속 · 트렌드 분석 체류 기록 */
+import './account/static/js/xp_panel.js';   /* 경험치 창 · 홈페이지 피드백 창 */
 import './account/static/js/notify.js';
 import './style/static/js/search.js';
 import './trend/static/js/assoc_popover.js';

@@ -5,15 +5,17 @@ import { IMG, itemCard, LIKED, STYLES, toggleLike, likedSync, likedClear } from 
 import { SIMG } from '../../../style/static/js/style_page.js';
 import { styleProductCard, styleProductsURL } from '../../../style/static/js/products.js';
 import { goView } from '../../../app_shell/static/js/router.js';
-import { rkLevelOf, rkPaintAll, rkPaintAv, xpPaint } from './rank.js';
+import { rkLevelOf, rkName, rkPaintAll, rkPaintAv, xpPaint } from './rank.js';
 import { trRender } from '../../../trend/static/js/dispatch.js';
 import { jobFieldApply, jobFieldBind, jobFieldCheck, jobFieldReset, jobReviewBind, jobReviewRender } from './job.js';
-import { emailCode, emailVerify, googleLogin, googleSignupAccount, kakaoLogin, kakaoSignupAccount, kakaoStart, loginAccount, logoutAccount, prepareGoogle, saveAccount, saveLiked, session, signupAccount, withdrawAccount } from './account_api.js';
-
+import { emailCode, emailVerify, googleLogin, googleSignupAccount, kakaoLogin, kakaoSignupAccount, kakaoStart, loginAccount, logoutAccount, prepareGoogle, saveAccount, saveLiked, session, signupAccount, withdrawAccount, xpState } from './account_api.js';
 /* 내 계정 — 운영자라 최고 등급 고정 */
 /* ★ 2026-09-19 — 예전 기본값(혁진 · xp 9400 · 적중 94 · 찜 128 · ADMIN)은 시연용 목업이었다.
    로그인 전 기본값은 비워 두고, 값은 전부 applyAccount() 가 서버 응답으로 채운다. */
-export const ME={name:'FEEDiT 사용자',mail:'',initial:'F',xp:0,   /* 누적 경험치 — 등급 기준 확정 전(rank.js RANK_ON=false) */
+export const ME={name:'FEEDiT 사용자',mail:'',initial:'F',
+          xp:0,              /* 누적 경험치 — 서버가 기록으로 계산한다 (backend/apps/api/xp.py) */
+          xpFixed:false,     /* 운영 계정 — 경험치를 세지 않고 최고 레벨로 고정 */
+          xpInfo:null,       /* 오늘 · 이번 주 내역 (경험치 창 · 마이페이지 요약) */
           height:'',weight:'',   /* 체형 — 가입·정보수정에서 받는다 */
           plan:'FREE',saved:0,
           role:'user',       /* 서버가 admin(슈퍼유저·스태프) 또는 user 로 준다 */
@@ -25,7 +27,24 @@ export const ME={name:'FEEDiT 사용자',mail:'',initial:'F',xp:0,   /* 누적 �
           styles:new Set()};  /* 즐겨입는 스타일 (가입 시 선택) */
 /* rank 는 저장하지 않는다 — 경험치에서 항상 다시 센다.
    이렇게 두면 XP 만 올려도 링·문구·바가 한꺼번에 따라온다. */
-Object.defineProperty(ME,'rank',{get(){ return rkLevelOf(ME.xp) }, enumerable:true});
+Object.defineProperty(ME,'rank',{get(){ return rkLevelOf(ME.xp, ME.xpFixed) }, enumerable:true});
+
+/* 경험치 — 서버가 계산한 값만 쓴다. 운영 계정은 {fixed:true} 로 와서 최고 레벨로 고정된다. */
+function xpApply(state){
+  ME.xpFixed=Boolean(state&&state.fixed);
+  ME.xp=ME.xpFixed?0:Math.max(0,Number(state&&state.total)||0);
+  ME.xpInfo=ME.xpFixed?null:(state||null);
+}
+/* 기록 API(접속 · 체류 · 피드백) 응답으로 경험치를 바꾼다.
+   레벨이 오르면 한 번 알려 주고, 화면의 링 · 바 · 사이드바 칩을 한꺼번에 다시 칠한다. */
+export function applyXp(state){
+  if(!state||!AUTH.in)return;
+  const before=ME.rank;
+  xpApply(state);
+  if(!ME.xpFixed&&ME.rank>before)acctToast('레벨이 올랐어요 · '+rkName(ME.rank));
+  xpPaint(); avaPaint();
+  try{ document.dispatchEvent(new CustomEvent('feedit:account')) }catch(e){}
+}
 
 /* DB 사용자 응답을 기존 화면 모델(ME)에 옮긴다.
    마크업과 렌더 함수는 그대로 두고, 값의 출처만 목업에서 API로 바꾼다. */
@@ -44,6 +63,7 @@ function applyAccount(user){
   /* 요금제 — 서버가 준다 (ADMIN · FREE · 이후 알파 테스트용 TEST) */
   ME.plan=user.plan||(ME.role==='admin'?'ADMIN':'FREE');
   badgesApply(user.badges||{});
+  xpApply(user.xp);
   ME.job=user.job||'';
   ME.jobRequest=user.job_request||null;   /* 심사 중인 직업 인증 — 승인 전에는 job 이 비어 있다 */
   ME.major=user.major||'';
@@ -59,7 +79,7 @@ function applyAccount(user){
    예전엔 값을 그대로 두어서, 로그아웃 뒤 트렌드 분석(로그인 안내 뒤편)에
    앞 계정의 이름·취향 피드가 그대로 비쳤다. */
 function resetAccount(){
-  Object.assign(ME,{id:null,name:'FEEDiT 사용자',mail:'',initial:'F',xp:0,height:'',weight:'',
+  Object.assign(ME,{id:null,name:'FEEDiT 사용자',mail:'',initial:'F',xp:0,xpFixed:false,xpInfo:null,height:'',weight:'',
     plan:'FREE',saved:0,role:'user',job:'',jobRequest:null,major:'',votes:0,bio:'',birth:'',ava:0});
   ME.styles.clear();
   try{ document.dispatchEvent(new CustomEvent('feedit:account')) }catch(e){}
@@ -209,6 +229,7 @@ function authPaint(){
   }
 }
 /* 로그인 뒤 이름 버튼을 누르면 뜨는 작은 메뉴 */
+export function closeAcctMenu(){ acctMenu(false) }
 function acctMenu(on){
   const m = $('#acctMenu');
   if(m){
@@ -264,7 +285,7 @@ function signupComplete(){
 }
 /* 작은 확인 토스트 — 살!말? 쪽과 같은 #toast 를 그대로 쓴다 */
 var acctToastT;
-function acctToast(msg){
+export function acctToast(msg){
   const t = $('#toast'); if(!t) return;
   t.textContent = msg; t.classList.add('on');
   clearTimeout(acctToastT);
@@ -467,6 +488,8 @@ export function myRender(){
   if(em) em.textContent = ME.mail;
   xpPaint();
   avaPaint();
+  /* 경험치는 들어올 때마다 서버에서 다시 받는다 — 다른 화면에서 쌓인 몫까지 맞춘다 */
+  if(AUTH.in) xpState().then(d=>applyXp(d&&d.xp)).catch(()=>{});
 
   /* 저장 · 투표 수는 실제 데이터에서 센다 */
   const savedN = $('#statSavedN'), votedN = $('#statVotedN');

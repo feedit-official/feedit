@@ -11,6 +11,8 @@ const ALLOWED = new Set(['me', 'signup', 'login', 'logout', 'withdraw', 'profile
   'job-request', 'job-requests', 'job-review',
   // 챗봇 대화 기록 (backend/apps/api/chat_views.py)
   'chats',
+  // 경험치 · 홈페이지 피드백 (backend/apps/api/xp_views.py)
+  'xp', 'site-feedback',
   // 알림 · 알림 설정 · 용어 등재 요청 (backend/apps/api/notification_views.py)
   'notifications', 'notification-settings', 'term-request',
   // 알파 테스트 계정 (해커톤 시연 15일 한정 · backend/apps/api/alpha_views.py)

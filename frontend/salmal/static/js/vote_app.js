@@ -1,6 +1,6 @@
 import { HAS_A, aAnimate, aSpring, aStagger, aUtils } from '../../../core/static/js/dom.js';
 import { AUTH, ME, requireAuth } from '../../../account/static/js/profile.js';
-import { RANK_ON, rkClamp, rkRingHTML } from '../../../account/static/js/rank.js';
+import { RANK_ON, rkClamp, rkLevelOf, rkRingHTML } from '../../../account/static/js/rank.js';
 import { jobBadgeHTML, jobShown } from '../../../account/static/js/job.js';
 import { smBarFill, smBarLabels } from '../../../trend/static/js/discount_resale.js';
 import { STYLES } from '../../../home/static/js/chat.js';
@@ -52,7 +52,9 @@ function cardFromApi(card,i){
     comments:(card.comments||[]).map(comment=>({
       id:comment.id, name:comment.name,
       tag:comment.choice==='BUY'?0:comment.choice==='PASS'?1:null,
-      rk:comment.rank, job:comment.job, text:comment.text, time:comment.time,
+      /* 작성자 레벨 — 서버가 경험치 사본(xp)을 주고 레벨은 rank.js 구간표로 센다.
+         운영 계정(xp_fixed)은 최고 레벨. 예전 comment.rank 는 아이콘 색 번호였다 (2026-09-25) */
+      rk:rkLevelOf(comment.xp, comment.xp_fixed), job:comment.job, text:comment.text, time:comment.time,
       me:Boolean(comment.mine),
       /* 운영 계정은 남의 댓글도 지울 수 있다 — 서버가 판단해 준다 */
       deletable:Boolean(comment.deletable??comment.mine)
