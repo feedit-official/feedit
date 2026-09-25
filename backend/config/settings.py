@@ -143,11 +143,35 @@ STATIC_URL = 'static/'
 STATICFILES_DIRS = [BASE_DIR / "static"] if (BASE_DIR / "static").exists() else []
 STATIC_ROOT = BASE_DIR / "staticfiles"    
 
-MAILERS = {
-    'default': {
-        'BACKEND': 'django.core.mail.backends.console.EmailBackend',
-    },
-}
+# ── 메일 발송 (회원가입 이메일 인증 · apps/api/email_verify.py) ──
+# Django 6.1 은 EMAIL_HOST 같은 옛 설정 대신 MAILERS 를 쓴다(섞으면 기동이 막힌다).
+# 서버 .env 에 EMAIL_HOST 가 있으면 SMTP 로 보내고, 없으면 콘솔에 찍는다(DEBUG 에서만 발송 허용).
+# 예) Gmail: EMAIL_HOST=smtp.gmail.com, EMAIL_HOST_USER=주소, EMAIL_HOST_PASSWORD=앱 비밀번호
+_EMAIL_HOST = os.getenv("EMAIL_HOST", "").strip()
+_EMAIL_USER = os.getenv("EMAIL_HOST_USER", "").strip()
+if _EMAIL_HOST:
+    MAILERS = {
+        'default': {
+            'BACKEND': 'django.core.mail.backends.smtp.EmailBackend',
+            'OPTIONS': {
+                'host': _EMAIL_HOST,
+                'port': int(os.getenv("EMAIL_PORT", "587")),
+                'username': _EMAIL_USER,
+                'password': os.getenv("EMAIL_HOST_PASSWORD", "").strip(),
+                'use_tls': os.getenv("EMAIL_USE_TLS", "1") == "1",
+                'timeout': 10,
+            },
+        },
+    }
+else:
+    MAILERS = {
+        'default': {
+            'BACKEND': 'django.core.mail.backends.console.EmailBackend',
+        },
+    }
+DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "").strip() or (
+    f"FEEDiT <{_EMAIL_USER}>" if _EMAIL_USER else "FEEDiT <noreply@localhost>"
+)
 
 CELERY_BROKER_URL = os.getenv(
     "CELERY_BROKER_URL",

@@ -3,6 +3,8 @@
 import { backendBase, backendToken } from '../_lib/db.js';
 
 const ALLOWED = new Set(['me', 'signup', 'login', 'logout', 'withdraw', 'profile', 'weekly-videos', 'google', 'google-signup',
+  // 카카오 로그인 · 가입 이메일 인증 (backend/apps/api/auth_views.py)
+  'kakao-start', 'kakao', 'kakao-signup', 'email-code', 'email-verify',
   // 활동 기록 · 금주의 리포트 (backend/apps/api/activity_views.py)
   'event', 'vote', 'vote-comment', 'vote-report', 'saved', 'weekly-report',
   // 직업 인증 신청 · 관리자 심사 (backend/apps/api/job_views.py)

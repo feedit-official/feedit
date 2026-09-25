@@ -60,6 +60,21 @@
    위의 display 지정이 기본 [hidden] 규칙을 이기므로 따로 못 박는다. */
 .acct .googleBtn[hidden],
 .acct .divider[hidden]{display:none}
+/* Google · 카카오 버튼은 한 줄에 반씩 — 아주 좁은 화면에서만 위아래로 */
+.acct .socialRow{display:flex;gap:10px}
+.acct .socialRow .googleBtn{flex:1;min-width:0;white-space:nowrap}
+@media(max-width:360px){ .acct .socialRow{flex-direction:column} }
+.acct .googleBtn.kakaoBtn{background:#FEE500;color:rgba(0,0,0,.85);box-shadow:none}
+.acct .googleBtn.kakaoBtn:hover{box-shadow:none;filter:brightness(.97)}
+/* 이메일 + [인증번호 받기], 인증번호 + [확인] 한 줄 */
+.acct .cInline{display:flex;gap:8px}
+.acct .cInline[hidden]{display:none}
+.acct .cInline .cInput{flex:1;min-width:0}
+.acct .cSideBtn{
+  flex:0 0 auto;padding:0 15px;border-radius:10px;background:var(--pink-0);color:var(--paper);
+  font-size:12.5px;white-space:nowrap;transition:opacity .25s;
+}
+.acct .cSideBtn:disabled{opacity:.4;cursor:default}
 .acct .divider{
   display:flex;align-items:center;gap:14px;margin:24px 0;
   color:var(--pink-2);font-size:11.5px;letter-spacing:.02em;

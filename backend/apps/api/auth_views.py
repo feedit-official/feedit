@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import math
 import re
+import secrets
 import time
 
 from django.contrib.auth import (
@@ -20,6 +21,7 @@ from django.contrib.auth import (
 from django.contrib.auth.models import User
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
+from django.core.validators import validate_email
 from django.db import transaction
 from django.db.models import OuterRef, Q, Subquery
 from django.http import JsonResponse
@@ -37,7 +39,7 @@ from apps.core.models import (
     UserTaste,
 )
 
-from . import google_auth
+from . import email_verify, google_auth, kakao_auth
 from .activity_views import active_saved_count, active_vote_count
 from .badges import badge_states
 from .job_views import job_request_public
@@ -48,10 +50,13 @@ STYLE_LIMIT = 3
 # 영상 analysis_tags 에서 키워드를 찾아볼 축 (검색 키워드의 사전 축을 모를 때)
 KEYWORD_FACETS = ("style", "brand", "item", "category", "color", "tpo", "material", "detail", "fit", "pattern", "mood")
 YOUTUBE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{6,20}$")
-# Google 로 인증했지만 아직 가입 폼(닉네임·체형)을 끝내지 않은 사람의 신원.
+# Google·카카오로 인증했지만 아직 가입 폼(닉네임·체형)을 끝내지 않은 사람의 신원.
 # 세션(서버 쪽)에만 두고, 이 시간 안에 가입을 마치지 않으면 다시 인증해야 한다.
-GOOGLE_PENDING_KEY = "google_pending"
-GOOGLE_PENDING_TTL = 10 * 60
+SOCIAL_PENDING_KEYS = {"google": "google_pending", "kakao": "kakao_pending"}
+SOCIAL_PENDING_TTL = 10 * 60
+SOCIAL_LABELS = {"google": "Google", "kakao": "카카오"}
+# 카카오 로그인 페이지로 보낼 때 만든 state — 돌아온 요청이 우리가 보낸 것인지 확인한다.
+KAKAO_STATE_KEY = "kakao_state"
 
 
 def _json(request):
@@ -144,6 +149,7 @@ def _auth_payload(request, user, profile):
             "authenticated": True,
             "csrf_token": get_token(request),
             "google_client_id": google_auth.client_id(),
+            "kakao_enabled": kakao_auth.is_configured(),
             "user": _user_payload(user, profile),
         },
     }
@@ -255,7 +261,9 @@ def me(request):
                 "csrf_token": token,
                 # 공개 값이다. 비어 있으면 프론트가 Google 버튼을 '설정 필요'로 안내한다.
                 "google_client_id": google_auth.client_id(),
-                "google_pending": _google_pending_public(request),
+                "google_pending": _social_pending_public(request, "google"),
+                "kakao_enabled": kakao_auth.is_configured(),
+                "kakao_pending": _social_pending_public(request, "kakao"),
                 "user": None,
             },
         })
@@ -277,6 +285,11 @@ def signup(request):
         return _error("닉네임은 2~12자로 입력해 주세요.")
     if User.objects.filter(username__iexact=username).exists():
         return _error("이미 사용 중인 아이디입니다.", status=409)
+    email = _clean_email(data.get("email"))
+    if not email or email_verify.verified_email(request) != email:
+        return _error("이메일 인증을 먼저 완료해 주세요.")
+    if User.objects.filter(email__iexact=email).exists():
+        return _error("이미 가입된 이메일입니다.", status=409)
     candidate = User(username=username, first_name=nickname)
     try:
         validate_password(password, user=candidate)
@@ -291,13 +304,60 @@ def signup(request):
             username=username,
             nickname=nickname,
             password=password,
-            email=str(data.get("email") or "").strip(),
+            email=email,
             data=data,
             body=(height, weight, body_type),
         )
     except ValueError as exc:
         return _error(str(exc))
+    email_verify.clear(request)
     return JsonResponse(_auth_payload(request, user, profile), status=201)
+
+
+# ── 이메일 인증 (일반 가입) ────────────────────────────────────
+
+def _clean_email(value):
+    email = str(value or "").strip().lower()
+    try:
+        validate_email(email)
+    except ValidationError:
+        return ""
+    return email if len(email) <= 254 else ""
+
+
+@require_POST
+def email_code(request):
+    """POST /api/auth/email-code {email} — 가입용 인증번호를 메일로 보낸다."""
+    data = _json(request)
+    if data is None:
+        return _error("요청 형식이 올바른 JSON이 아닙니다.")
+    email = _clean_email(data.get("email"))
+    if not email:
+        return _error("이메일 주소를 올바르게 입력해 주세요.")
+    if User.objects.filter(email__iexact=email).exists():
+        return _error("이미 가입된 이메일입니다. 로그인해 주세요.", status=409)
+    try:
+        email_verify.send_code(request, email)
+    except email_verify.EmailVerifyError as exc:
+        return _error(exc.reason, status=exc.status)
+    return JsonResponse({"status": "ok", "data": {"sent": True, "ttl": email_verify.CODE_TTL}})
+
+
+@require_POST
+def email_check(request):
+    """POST /api/auth/email-verify {email, code} — 받은 인증번호를 확인한다."""
+    data = _json(request)
+    if data is None:
+        return _error("요청 형식이 올바른 JSON이 아닙니다.")
+    email = _clean_email(data.get("email"))
+    code = str(data.get("code") or "").strip()
+    if not email or not re.fullmatch(r"\d{6}", code):
+        return _error("인증번호 6자리를 입력해 주세요.")
+    try:
+        email_verify.check_code(request, email, code)
+    except email_verify.EmailVerifyError as exc:
+        return _error(exc.reason, status=exc.status)
+    return JsonResponse({"status": "ok", "data": {"verified": True, "email": email}})
 
 
 def _create_account(request, *, username, nickname, password, email, data, body, extra_meta=None):
@@ -361,47 +421,126 @@ def login(request):
     return JsonResponse(_auth_payload(request, user, profile))
 
 
-# ── Google 로그인 ─────────────────────────────────────────────
+# ── 소셜 로그인 공통 (Google · 카카오) ─────────────────────────
 
-def _google_pending(request):
-    pending = request.session.get(GOOGLE_PENDING_KEY)
+def _social_pending(request, provider):
+    key = SOCIAL_PENDING_KEYS[provider]
+    pending = request.session.get(key)
     if not isinstance(pending, dict):
         return None
     if float(pending.get("expires_at") or 0) < time.time():
-        request.session.pop(GOOGLE_PENDING_KEY, None)
+        request.session.pop(key, None)
         return None
     return pending
 
 
-def _google_pending_public(request):
+def _social_pending_public(request, provider):
     """가입 폼을 채우는 데 필요한 값만 내려 준다(sub 는 내려 주지 않는다)."""
-    pending = _google_pending(request)
+    pending = _social_pending(request, provider)
     if not pending:
         return None
-    return {"email": pending["email"], "name": pending.get("name") or ""}
+    return {"email": pending.get("email") or "", "name": pending.get("name") or ""}
 
 
-def _google_username(sub):
+def _social_username(provider, sub):
     # auth_user.username 은 150자 제한이고 sub 는 최대 255자라 앞 140자만 쓴다.
-    return f"google_{sub}"[:150]
+    return f"{provider}_{sub}"[:150]
 
 
-def _google_profile(sub):
+def _social_profile(provider, sub):
     return (
         AppUser.objects.select_related("user")
-        .filter(profile_metadata__google_sub=sub)
+        .filter(**{f"profile_metadata__{provider}_sub": sub})
         .first()
     )
 
 
-@require_POST
-def google_login(request):
-    """Google 팝업에서 받은 인가 코드로 로그인한다.
+def _social_enter(request, provider, identity):
+    """인증을 마친 소셜 신원으로 로그인하거나, 처음이면 가입 폼으로 보낸다.
 
     - 이미 연결된 계정 → 바로 로그인 (authenticated: true)
-    - 처음 온 Google 계정 → 세션에 신원만 보관하고 가입 폼으로 보낸다
+    - 처음 온 계정 → 세션에 신원만 보관하고 가입 폼으로 보낸다
       (authenticated: false, needs_signup: true)
     """
+    key = SOCIAL_PENDING_KEYS[provider]
+    profile_obj = _social_profile(provider, identity["sub"])
+    if profile_obj is not None:
+        user = profile_obj.user
+        if not user.is_active:
+            return _error("사용이 중지된 계정입니다.", status=403)
+        request.session.pop(key, None)
+        django_login(request, user, backend="django.contrib.auth.backends.ModelBackend")
+        return JsonResponse(_auth_payload(request, user, profile_obj))
+
+    request.session[key] = {**identity, "expires_at": time.time() + SOCIAL_PENDING_TTL}
+    return JsonResponse({
+        "status": "ok",
+        "data": {
+            "authenticated": False,
+            "needs_signup": True,
+            "provider": provider,
+            "csrf_token": get_token(request),
+            provider: {"email": identity["email"], "name": identity["name"]},
+            "user": None,
+        },
+    })
+
+
+def _social_signup(request, provider):
+    """_social_enter 에서 보관한 신원 + 가입 폼 값으로 계정을 만든다."""
+    key = SOCIAL_PENDING_KEYS[provider]
+    label = SOCIAL_LABELS[provider]
+    pending = _social_pending(request, provider)
+    if pending is None:
+        return _error(f"{label} 인증 시간이 지났습니다. '{label}로 계속하기'를 다시 눌러 주세요.", status=401)
+    data = _json(request)
+    if data is None:
+        return _error("요청 형식이 올바른 JSON이 아닙니다.")
+    nickname = str(data.get("nickname") or "").strip()
+    if not 2 <= len(nickname) <= 12:
+        return _error("닉네임은 2~12자로 입력해 주세요.")
+    try:
+        body = _body_profile(data.get("height"), data.get("weight"))
+    except ValueError as exc:
+        return _error(str(exc))
+
+    # 두 번 눌렀거나 다른 탭에서 먼저 가입했으면 새로 만들지 않고 로그인만 한다.
+    existing = _social_profile(provider, pending["sub"])
+    if existing is not None:
+        request.session.pop(key, None)
+        django_login(request, existing.user, backend="django.contrib.auth.backends.ModelBackend")
+        return JsonResponse(_auth_payload(request, existing.user, existing))
+
+    username = _social_username(provider, pending["sub"])
+    if User.objects.filter(username=username).exists():
+        return _error(f"이미 가입된 {label} 계정입니다. 로그인해 주세요.", status=409)
+    try:
+        user, profile_obj = _create_account(
+            request,
+            username=username,
+            nickname=nickname,
+            password=None,  # 소셜 계정은 비밀번호로 로그인하지 않는다
+            email=pending.get("email") or "",
+            data=data,
+            body=body,
+            extra_meta={
+                "auth_provider": provider,
+                f"{provider}_sub": pending["sub"],
+                f"{provider}_picture": pending.get("picture") or "",
+            },
+        )
+    except ValueError as exc:
+        return _error(str(exc))
+    # django_login 이 세션 키를 새로 돌리므로, 그 뒤에 남은 보관 값을 지운다.
+    request.session.pop(key, None)
+    return JsonResponse(_auth_payload(request, user, profile_obj), status=201)
+
+
+# ── Google 로그인 ─────────────────────────────────────────────
+
+@require_POST
+def google_login(request):
+    """Google 팝업에서 받은 인가 코드로 로그인한다 (결과는 _social_enter 참고)."""
     if not google_auth.is_configured():
         return _error(
             "Google 로그인이 아직 설정되지 않았습니다. 서버 .env 의 GOOGLE_CLIENT_ID · GOOGLE_CLIENT_SECRET 을 확인해 주세요.",
@@ -417,76 +556,75 @@ def google_login(request):
         identity = google_auth.exchange_code(code)
     except google_auth.GoogleAuthError as exc:
         return _error(exc.reason, status=exc.status)
-
-    profile_obj = _google_profile(identity["sub"])
-    if profile_obj is not None:
-        user = profile_obj.user
-        if not user.is_active:
-            return _error("사용이 중지된 계정입니다.", status=403)
-        request.session.pop(GOOGLE_PENDING_KEY, None)
-        django_login(request, user, backend="django.contrib.auth.backends.ModelBackend")
-        return JsonResponse(_auth_payload(request, user, profile_obj))
-
-    request.session[GOOGLE_PENDING_KEY] = {**identity, "expires_at": time.time() + GOOGLE_PENDING_TTL}
-    return JsonResponse({
-        "status": "ok",
-        "data": {
-            "authenticated": False,
-            "needs_signup": True,
-            "csrf_token": get_token(request),
-            "google": {"email": identity["email"], "name": identity["name"]},
-            "user": None,
-        },
-    })
+    return _social_enter(request, "google", identity)
 
 
 @require_POST
 def google_signup(request):
-    """google_login 에서 보관한 신원 + 가입 폼 값으로 계정을 만든다."""
-    pending = _google_pending(request)
-    if pending is None:
-        return _error("Google 인증 시간이 지났습니다. 'Google로 계속하기'를 다시 눌러 주세요.", status=401)
+    return _social_signup(request, "google")
+
+
+# ── 카카오 로그인 ─────────────────────────────────────────────
+
+def _kakao_not_configured():
+    return _error(
+        "카카오 로그인이 아직 설정되지 않았습니다. 서버 .env 의 KAKAO_REST_API_KEY 를 확인해 주세요.",
+        status=503,
+    )
+
+
+@require_POST
+def kakao_start(request):
+    """POST /api/auth/kakao-start {redirect_uri} — 카카오 로그인 페이지 주소를 만든다.
+
+    state 와 redirect_uri 를 세션에 적어 두고, 돌아온 요청(kakao_login)에서 맞춰 본다.
+    """
+    if not kakao_auth.is_configured():
+        return _kakao_not_configured()
     data = _json(request)
     if data is None:
         return _error("요청 형식이 올바른 JSON이 아닙니다.")
-    nickname = str(data.get("nickname") or "").strip()
-    if not 2 <= len(nickname) <= 12:
-        return _error("닉네임은 2~12자로 입력해 주세요.")
-    try:
-        body = _body_profile(data.get("height"), data.get("weight"))
-    except ValueError as exc:
-        return _error(str(exc))
+    redirect_uri = str(data.get("redirect_uri") or "").strip()
+    if not kakao_auth.redirect_allowed(redirect_uri):
+        return _error("허용되지 않은 카카오 로그인 복귀 주소입니다.")
+    state = secrets.token_urlsafe(24)
+    request.session[KAKAO_STATE_KEY] = {
+        "state": state,
+        "redirect_uri": redirect_uri,
+        "expires_at": time.time() + SOCIAL_PENDING_TTL,
+    }
+    return JsonResponse({"status": "ok", "data": {"url": kakao_auth.authorize_url(redirect_uri, state)}})
 
-    # 두 번 눌렀거나 다른 탭에서 먼저 가입했으면 새로 만들지 않고 로그인만 한다.
-    existing = _google_profile(pending["sub"])
-    if existing is not None:
-        request.session.pop(GOOGLE_PENDING_KEY, None)
-        django_login(request, existing.user, backend="django.contrib.auth.backends.ModelBackend")
-        return JsonResponse(_auth_payload(request, existing.user, existing))
 
-    username = _google_username(pending["sub"])
-    if User.objects.filter(username=username).exists():
-        return _error("이미 가입된 Google 계정입니다. 로그인해 주세요.", status=409)
+@require_POST
+def kakao_login(request):
+    """POST /api/auth/kakao {code, state} — 카카오에서 돌아온 인가 코드로 로그인한다."""
+    if not kakao_auth.is_configured():
+        return _kakao_not_configured()
+    data = _json(request)
+    if data is None:
+        return _error("요청 형식이 올바른 JSON이 아닙니다.")
+    code = str(data.get("code") or "").strip()
+    state = str(data.get("state") or "")
+    saved = request.session.pop(KAKAO_STATE_KEY, None)
+    if (
+        not isinstance(saved, dict)
+        or float(saved.get("expires_at") or 0) < time.time()
+        or not secrets.compare_digest(str(saved.get("state") or ""), state)
+    ):
+        return _error("카카오 로그인 요청이 만료됐습니다. 다시 시도해 주세요.", status=401)
+    if not code or len(code) > 2048:
+        return _error("카카오 인가 코드가 없습니다.")
     try:
-        user, profile_obj = _create_account(
-            request,
-            username=username,
-            nickname=nickname,
-            password=None,  # Google 계정은 비밀번호로 로그인하지 않는다
-            email=pending["email"],
-            data=data,
-            body=body,
-            extra_meta={
-                "auth_provider": "google",
-                "google_sub": pending["sub"],
-                "google_picture": pending.get("picture") or "",
-            },
-        )
-    except ValueError as exc:
-        return _error(str(exc))
-    # django_login 이 세션 키를 새로 돌리므로, 그 뒤에 남은 보관 값을 지운다.
-    request.session.pop(GOOGLE_PENDING_KEY, None)
-    return JsonResponse(_auth_payload(request, user, profile_obj), status=201)
+        identity = kakao_auth.exchange_code(code, saved["redirect_uri"])
+    except kakao_auth.KakaoAuthError as exc:
+        return _error(exc.reason, status=exc.status)
+    return _social_enter(request, "kakao", identity)
+
+
+@require_POST
+def kakao_signup(request):
+    return _social_signup(request, "kakao")
 
 
 @require_POST

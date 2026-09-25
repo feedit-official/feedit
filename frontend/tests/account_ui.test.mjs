@@ -29,6 +29,8 @@ const reply=payload=>({ok:true,status:200,text:async()=>JSON.stringify(payload),
 globalThis.fetch=async (url,opts={})=>{
   asked.push({url:String(url),opts});
   if(String(url).includes('/api/auth/me')) return reply({status:'ok',data:{authenticated:false,csrf_token:'csrf',user:null}});
+  if(String(url).includes('/api/auth/email-code')) return reply({status:'ok',data:{sent:true,ttl:600}});
+  if(String(url).includes('/api/auth/email-verify')) return reply({status:'ok',data:{verified:true,email:'feedit01@example.com'}});
   if(String(url).includes('/api/auth/signup')) return reply({status:'ok',data:{authenticated:true,csrf_token:'csrf2',user}});
   if(String(url).includes('/api/dictionary')) return reply({status:'ok',data:[]});
   return reply({status:'empty',reason:'테스트 데이터 없음',data:null});
@@ -46,6 +48,18 @@ document.getElementById('suPw2').value='Secret!234';
 document.getElementById('suBirth').value='2000-01-02';
 document.getElementById('suHeight').value='170';
 document.getElementById('suWeight').value='60';
+document.getElementById('suEmail').value='feedit01@example.com';
+document.getElementById('signupForm').dispatchEvent(new dom.window.Event('submit',{bubbles:true,cancelable:true}));
+await new Promise(resolve=>setTimeout(resolve,20));
+assert.equal(document.getElementById('signupErr').textContent,'이메일 인증을 완료해 주세요.');
+/* 이메일 인증 — 인증번호 받기 → 6자리 입력 → 확인 */
+document.getElementById('suEmailSend').click();
+await new Promise(resolve=>setTimeout(resolve,20));
+assert.equal(document.getElementById('suCodeRow').hidden,false,'인증번호를 보내면 입력 칸이 열린다');
+document.getElementById('suCode').value='123456';
+document.getElementById('suCodeCheck').click();
+await new Promise(resolve=>setTimeout(resolve,20));
+assert.equal(document.getElementById('suEmailMsg').textContent,'이메일 인증이 완료됐어요.');
 document.getElementById('signupForm').dispatchEvent(new dom.window.Event('submit',{bubbles:true,cancelable:true}));
 await new Promise(resolve=>setTimeout(resolve,20));
 assert.equal(asked.some(x=>x.url.includes('/api/auth/signup')),false,'필수 동의 전에는 가입 요청을 보내지 않아야 한다');
@@ -59,6 +73,7 @@ await new Promise(resolve=>setTimeout(resolve,80));
 const call=asked.find(x=>x.url.includes('/api/auth/signup'));
 assert.ok(call,'회원가입 API를 호출해야 한다');
 assert.equal(JSON.parse(call.opts.body).username,'feedit01');
+assert.equal(JSON.parse(call.opts.body).email,'feedit01@example.com','인증을 마친 이메일을 함께 보낸다');
 assert.equal(profile.AUTH.in,true,'DB 가입 성공 뒤에만 로그인 상태가 된다');
 assert.equal(document.getElementById('mAuthBtn').textContent.includes('피딧회원'),true);
 assert.ok(document.getElementById('styleSelectModal').classList.contains('on'),'기존 스타일 선택 디자인을 이어서 보여 준다');

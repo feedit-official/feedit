@@ -258,6 +258,27 @@ export function googleLogin() {
 export const googleSignupAccount = data =>
   request('google-signup', { method:'POST', body:data }).finally(() => { sessionPromise = null; });
 
+/* ── 카카오 로그인 ─────────────────────────────────────────
+ * 카카오 JS SDK v2 는 팝업 로그인이 없어 페이지 이동으로 간다.
+ * kakaoStart 가 준 주소로 나갔다가 ?code=&state= 를 달고 돌아오면 kakaoLogin 을 부른다.
+ * 결과 모양은 googleLogin 과 같다 ({ authenticated } 또는 { needs_signup, kakao:{email,name} }). */
+export const kakaoStart = redirectUri =>
+  request('kakao-start', { method:'POST', body:{ redirect_uri:redirectUri } }).then(data => data.url);
+
+export const kakaoLogin = (code, state) =>
+  request('kakao', { method:'POST', body:{ code, state } })
+    .then(data => { if (data.authenticated) sessionPromise = null; return data; });
+
+export const kakaoSignupAccount = data =>
+  request('kakao-signup', { method:'POST', body:data }).finally(() => { sessionPromise = null; });
+
+/* ── 가입 이메일 인증 — 인증번호 발송 · 확인 (확인 결과는 서버 세션에 남는다) ── */
+export const emailCode = email =>
+  request('email-code', { method:'POST', body:{ email } });
+
+export const emailVerify = (email, code) =>
+  request('email-verify', { method:'POST', body:{ email, code } });
+
 /* ── 챗봇 대화 기록 (RDS app.chat_session · app.chat_message) ──────────
  * 원본은 서버다. 브라우저 localStorage 는 화면을 빨리 그리는 사본일 뿐이다.
  * 목록/본문 조회는 실패를 그대로 올린다(화면이 다시 시도). 쓰기는 조용히 실패한다 —

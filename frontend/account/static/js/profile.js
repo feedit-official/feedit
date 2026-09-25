@@ -8,7 +8,7 @@ import { goView } from '../../../app_shell/static/js/router.js';
 import { rkLevelOf, rkPaintAll, rkPaintAv, xpPaint } from './rank.js';
 import { trRender } from '../../../trend/static/js/dispatch.js';
 import { jobFieldApply, jobFieldBind, jobFieldCheck, jobFieldReset, jobReviewBind, jobReviewRender } from './job.js';
-import { googleLogin, googleSignupAccount, loginAccount, logoutAccount, prepareGoogle, saveAccount, saveLiked, session, signupAccount, withdrawAccount } from './account_api.js';
+import { emailCode, emailVerify, googleLogin, googleSignupAccount, kakaoLogin, kakaoSignupAccount, kakaoStart, loginAccount, logoutAccount, prepareGoogle, saveAccount, saveLiked, session, signupAccount, withdrawAccount } from './account_api.js';
 
 /* 내 계정 — 운영자라 최고 등급 고정 */
 /* ★ 2026-09-19 — 예전 기본값(혁진 · xp 9400 · 적중 94 · 찜 128 · ADMIN)은 시연용 목업이었다.
@@ -175,8 +175,12 @@ function runPendingAuth(){
   /* 화면 전환(goView) 애니메이션이 끝난 뒤에 이어 한다 */
   setTimeout(() => { try{ fn() }catch(e){ /* 이어 하기 실패는 조용히 넘긴다 */ } }, 320);
 }
-/* 회원가입 진행 중 구글 모드 여부 — 가입 폼을 벗어나면 반드시 초기화된다 */
-let signupGoogleMode = false;
+/* 회원가입 진행 중 소셜 모드 — '' | 'google' | 'kakao'. 가입 폼을 벗어나면 반드시 초기화된다 */
+let signupSocial = '';
+const SOCIAL_LABEL = { google:'Google', kakao:'카카오' };
+/* 아이디 가입의 이메일 인증 상태 — 인증을 마친 주소와 재발송 대기 타이머 */
+let emailVerified = '';
+let emailGapTimer = 0;
 /* 찜(위시리스트) — 원본은 서버(/api/auth/saved?view=all), 화면은 chat.js 의 LIKED 사본을 읽는다.
    로그인·세션 복구 때 likedAfterAuth() 가 서버 목록으로 맞춘다 (2026-09-19). */
 
@@ -572,7 +576,7 @@ function googleContinue(btn, errEl){
   btn.disabled = true;
   googleLogin().then(data => {
     if(data.authenticated){ authLogin(data.user); return; }
-    if(data.needs_signup) enterGoogleSignup(data.google || {});
+    if(data.needs_signup) enterSocialSignup('google', data.google || {});
   }).catch(e => {
     if(e && e.cancelled) return;   /* 사용자가 창을 닫은 것은 오류로 보이지 않는다 */
     const msg = (e && e.message) || 'Google 로그인에 실패했습니다.';
@@ -581,28 +585,85 @@ function googleContinue(btn, errEl){
   }).finally(() => { btn.disabled = false; });
 }
 
-/* 처음 온 Google 계정 — 가입 화면을 Google 모드로 연다.
-   아이디 칸에는 Google 이메일을 읽기 전용으로 두고, 비밀번호 칸은 숨긴다. */
-function enterGoogleSignup(google){
+/* 카카오로 계속하기 — 카카오 로그인 페이지로 나갔다가 이 사이트 첫 화면으로 돌아온다.
+   돌아온 뒤의 처리는 kakaoReturn() 이 맡는다. */
+const KAKAO_MARK = 'feeditKakao';
+function kakaoContinue(btn, errEl){
+  if(errEl) errEl.style.display = 'none';
+  btn.disabled = true;
+  kakaoStart(location.origin + '/').then(url => {
+    try{ sessionStorage.setItem(KAKAO_MARK, '1') }catch(e){}
+    location.href = url;
+  }).catch(e => {
+    btn.disabled = false;
+    const msg = (e && e.message) || '카카오 로그인을 시작하지 못했습니다.';
+    if(errEl && errEl.closest('.view.on')){ errEl.textContent = msg; errEl.style.display = 'block'; }
+    else acctToast(msg);
+  });
+}
+/* 카카오에서 ?code=&state= (취소면 ?error=) 를 달고 돌아왔을 때.
+   우리가 보낸 이동일 때만(표시가 남아 있을 때만) 처리하고, 주소창의 값은 바로 지운다. */
+function kakaoReturn(){
+  let mark = null;
+  try{ mark = sessionStorage.getItem(KAKAO_MARK); sessionStorage.removeItem(KAKAO_MARK) }catch(e){}
+  const qs = new URLSearchParams(location.search);
+  if(!mark || !qs.has('state') || !(qs.has('code') || qs.has('error'))) return;
+  const code = qs.get('code'), state = qs.get('state'), error = qs.get('error');
+  history.replaceState(history.state, '', location.pathname + location.hash);
+  if(error){
+    if(error !== 'access_denied') acctToast('카카오 로그인을 완료하지 못했습니다.');   /* 취소는 오류로 보이지 않는다 */
+    return;
+  }
+  kakaoLogin(code, state).then(data => {
+    if(data.authenticated){ authLogin(data.user); return; }
+    if(data.needs_signup) enterSocialSignup('kakao', data.kakao || {});
+  }).catch(e => acctToast((e && e.message) || '카카오 로그인에 실패했습니다.'));
+}
+
+/* 처음 온 소셜 계정 — 가입 화면을 소셜 모드로 연다.
+   아이디 칸에는 그 계정의 이메일을 읽기 전용으로 두고, 비밀번호·이메일 인증 칸은 숨긴다.
+   (카카오는 이메일을 안 줄 수 있다 — 그땐 '카카오 계정' 으로 적어 둔다) */
+function enterSocialSignup(provider, info){
   goView('signup');
   resetSignupForm();
-  signupGoogleMode = true;
-  const gs = $('#googleSignupBtn'), suIdField = $('#suIdField'), suPwBlock = $('#suPwBlock'),
+  signupSocial = provider;
+  const label = SOCIAL_LABEL[provider];
+  const suIdField = $('#suIdField'), suPwBlock = $('#suPwBlock'), emailField = $('#suEmailField'),
         div = $('#signupGoogleDivider'), note = $('#signupGoogleNote'), suId = $('#suId'),
         nick = $('#suNickname');
-  if(gs) gs.hidden = true;
+  ['#googleSignupBtn', '#kakaoSignupBtn'].forEach(sel => { const b = $(sel); if(b) b.hidden = true; });
   if(div) div.hidden = true;
   if(suPwBlock) suPwBlock.hidden = true;
-  if(note) note.hidden = false;
+  if(emailField) emailField.hidden = true;
+  if(note){ note.textContent = label + ' 계정으로 가입을 진행합니다. 아래 정보를 마저 입력해 주세요.'; note.hidden = false; }
   if(suIdField) suIdField.hidden = false;
-  if(suId){ suId.value = google.email || ''; suId.readOnly = true; }
-  if(nick && !nick.value) nick.value = String(google.name || '').trim().slice(0, 12);
+  if(suId){ suId.value = info.email || label + ' 계정'; suId.readOnly = true; }
+  if(nick && !nick.value) nick.value = String(info.name || '').trim().slice(0, 12);
+}
+
+/* 이메일 인증 칸을 처음 상태로 — 주소를 바꾸거나 가입 폼을 새로 열 때 */
+function emailVerifyReset(){
+  emailVerified = '';
+  clearInterval(emailGapTimer); emailGapTimer = 0;
+  const send = $('#suEmailSend'), row = $('#suCodeRow'), msg = $('#suEmailMsg'), code = $('#suCode');
+  if(send){ send.disabled = false; send.textContent = '인증번호 받기'; }
+  if(row) row.hidden = true;
+  if(code) code.value = '';
+  if(msg){ msg.textContent = ''; msg.className = 'fieldMsg'; }
+}
+function emailMsg(text, kind){
+  const msg = $('#suEmailMsg'); if(!msg) return;
+  msg.textContent = text; msg.className = 'fieldMsg' + (kind ? ' ' + kind : '');
 }
 
 /* 회원가입 폼 초기화 — 완료하지 않고 다른 화면으로 나가면 구글 모드를 포함해
    다음에 다시 들어왔을 때 처음 상태 그대로 보이게 한다. */
 export function resetSignupForm(){
-  signupGoogleMode = false;
+  signupSocial = '';
+  const ks = $('#kakaoSignupBtn'), emailField = $('#suEmailField');
+  if(ks) ks.hidden = false;
+  if(emailField) emailField.hidden = false;
+  emailVerifyReset();
   const gs = $('#googleSignupBtn'), suIdField = $('#suIdField'), suPwBlock = $('#suPwBlock'),
         div = $('#signupGoogleDivider'), note = $('#signupGoogleNote'), suId = $('#suId'),
         err = $('#signupErr'), form = $('#signupForm'),
@@ -643,6 +704,9 @@ export function acctBoot(){
   prepareGoogle().catch(()=>{ /* 서버 연결 실패는 아래 session() 경고가 이미 알린다 */ });
   const gl = $('#googleLoginBtn');
   if(gl) gl.addEventListener('click', ()=>googleContinue(gl, $('#loginErr')));
+  const kl = $('#kakaoLoginBtn');
+  if(kl) kl.addEventListener('click', ()=>kakaoContinue(kl, $('#loginErr')));
+  kakaoReturn();
 
   /* ── 직업 선택 · 서류 첨부 (가입 · 회원정보 수정 공통) ── */
   jobFieldBind('su');
@@ -657,10 +721,11 @@ export function acctBoot(){
     const nick = $('#suNickname').value.trim();
     const pw = $('#suPw').value, pw2 = $('#suPw2').value;
     const id = $('#suId').value.trim();
+    const email = ($('#suEmail').value || '').trim().toLowerCase();
     let msg = '';
-    if(signupGoogleMode){
-      /* 구글로 가입 — 아이디 칸엔 구글 이메일이 이미 채워져 있고 수정할 수 없다.
-         비밀번호도 구글이 대신하니 닉네임·체형만 본다 */
+    if(signupSocial){
+      /* 소셜 가입 — 아이디 칸엔 그 계정의 이메일이 이미 채워져 있고 수정할 수 없다.
+         비밀번호도 소셜 계정이 대신하니 닉네임·체형만 본다 */
       if(nick.length < 2 || nick.length > 12) msg = '닉네임은 2~12자로 입력해 주세요.';
       else {
         const b = bodyCheck($('#suHeight').value, $('#suWeight').value);
@@ -668,6 +733,7 @@ export function acctBoot(){
       }
     }else{
       if(!/^[A-Za-z0-9]{4,16}$/.test(id)) msg = '아이디는 영문·숫자 4~16자로 입력해 주세요.';
+      else if(!emailVerified || emailVerified !== email) msg = '이메일 인증을 완료해 주세요.';
       else if(nick.length < 2 || nick.length > 12) msg = '닉네임은 2~12자로 입력해 주세요.';
       else if(pw.length < 8) msg = '비밀번호는 8자 이상이어야 합니다.';
       else if(pw !== pw2) msg = '비밀번호가 서로 다릅니다.';
@@ -690,11 +756,11 @@ export function acctBoot(){
         height:$('#suHeight').value||null,
         weight:$('#suWeight').value||null,
       };
-      /* Google 가입은 서버 세션에 보관된 Google 신원으로 계정을 만든다 —
-         아이디·비밀번호는 보내지 않는다. */
-      const data=signupGoogleMode
-        ? await googleSignupAccount(profileFields)
-        : await signupAccount({ username:id, password:pw, ...profileFields });
+      /* 소셜 가입은 서버 세션에 보관된 Google·카카오 신원으로 계정을 만든다 —
+         아이디·비밀번호는 보내지 않는다. 아이디 가입은 인증을 마친 이메일을 함께 보낸다. */
+      const data=signupSocial==='google' ? await googleSignupAccount(profileFields)
+        : signupSocial==='kakao' ? await kakaoSignupAccount(profileFields)
+        : await signupAccount({ username:id, password:pw, email, ...profileFields });
       applyAccount(data.user);
       ME.role='user'; ME.job=''; ME.major='';
       /* 인증이 필요한 직업을 골랐으면 심사를 신청한다 — 승인 전까지 직업은 비어 있다 */
@@ -718,6 +784,58 @@ export function acctBoot(){
      처음이면 같은 회원가입 폼 위에서 아이디/비밀번호 입력만 막고 닉네임·생년월일·체형을 마저 받는다. */
   const gs = $('#googleSignupBtn');
   if(gs) gs.addEventListener('click', () => googleContinue(gs, $('#signupErr')));
+  const ks = $('#kakaoSignupBtn');
+  if(ks) ks.addEventListener('click', () => kakaoContinue(ks, $('#signupErr')));
+
+  /* 이메일 인증 — [인증번호 받기] → 메일로 온 6자리 → [확인].
+     인증한 뒤 주소를 고치면 처음부터 다시 받는다. */
+  const suEmail = $('#suEmail'), suEmailSend = $('#suEmailSend'), suCode = $('#suCode'), suCodeCheck = $('#suCodeCheck');
+  if(suEmail) suEmail.addEventListener('input', () => {
+    if(emailVerified && suEmail.value.trim().toLowerCase() !== emailVerified) emailVerifyReset();
+  });
+  if(suEmailSend) suEmailSend.addEventListener('click', async () => {
+    const email = suEmail.value.trim().toLowerCase();
+    if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){ emailMsg('이메일 주소를 올바르게 입력해 주세요.', 'err'); return; }
+    suEmailSend.disabled = true;
+    try{
+      await emailCode(email);
+      emailVerified = '';
+      $('#suCodeRow').hidden = false;
+      suCode.value = ''; suCode.focus();
+      emailMsg('인증번호를 보냈어요. 10분 안에 입력해 주세요. 메일이 없으면 스팸함도 확인해 주세요.', 'ok');
+      /* 서버가 같은 주소로 1분 안에 다시 보내지 않는다 — 버튼에도 남은 시간을 보여 준다 */
+      let left = 60;
+      suEmailSend.textContent = '다시 받기 (' + left + ')';
+      clearInterval(emailGapTimer);
+      emailGapTimer = setInterval(() => {
+        left -= 1;
+        if(left > 0){ suEmailSend.textContent = '다시 받기 (' + left + ')'; return; }
+        clearInterval(emailGapTimer); emailGapTimer = 0;
+        if(!emailVerified){ suEmailSend.disabled = false; suEmailSend.textContent = '다시 받기'; }
+      }, 1000);
+    }catch(ex){
+      suEmailSend.disabled = false;
+      emailMsg(ex.message || '인증번호를 보내지 못했습니다.', 'err');
+    }
+  });
+  const codeCheck = async () => {
+    const email = suEmail.value.trim().toLowerCase(), code = suCode.value.trim();
+    if(!/^\d{6}$/.test(code)){ emailMsg('인증번호 6자리를 입력해 주세요.', 'err'); return; }
+    suCodeCheck.disabled = true;
+    try{
+      await emailVerify(email, code);
+      emailVerified = email;
+      clearInterval(emailGapTimer); emailGapTimer = 0;
+      $('#suCodeRow').hidden = true;
+      suEmailSend.disabled = true; suEmailSend.textContent = '인증 완료';
+      emailMsg('이메일 인증이 완료됐어요.', 'ok');
+    }catch(ex){ emailMsg(ex.message || '인증번호를 확인하지 못했습니다.', 'err'); }
+    finally{ suCodeCheck.disabled = false; }
+  };
+  if(suCodeCheck) suCodeCheck.addEventListener('click', codeCheck);
+  if(suCode) suCode.addEventListener('keydown', e => {
+    if(e.key === 'Enter' && !e.isComposing){ e.preventDefault(); codeCheck(); }
+  });
   /* 아이디·비밀번호 안내는 치는 동안 바로 알려 준다 */
   const suId = $('#suId'), suIdMsg = $('#suIdMsg');
   if(suId) suId.addEventListener('input', () => {
