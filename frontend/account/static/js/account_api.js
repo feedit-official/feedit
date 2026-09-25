@@ -168,6 +168,14 @@ export const requestTerm = (term, note = '') =>
   request('term-request', { method:'POST', body:{ term, note } });
 
 /* 금주의 리포트 — 실패하면 예외를 그대로 올려 화면이 사유를 적게 한다 */
+/* 경험치 · 홈페이지 피드백 (backend/apps/api/xp_views.py) */
+export const xpState = () => request('xp');
+export const xpVisit = () => request('xp', { method:'POST', body:{ type:'VISIT' } });
+export const xpDwell = seconds => request('xp', { method:'POST', body:{ type:'DWELL', seconds } });
+export const siteFeedbackList = () => request('site-feedback');
+export const sendSiteFeedback = ({ kind, content, page = '' }) =>
+  request('site-feedback', { method:'POST', body:{ kind, content, page } });
+
 export const weeklyReport = () =>
   request('weekly-report');
 

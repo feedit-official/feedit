@@ -41,6 +41,7 @@ from . import google_auth
 from .activity_views import active_saved_count, active_vote_count
 from .badges import badge_states
 from .job_views import job_request_public
+from .xp_service import mark_visit, xp_state
 
 
 USERNAME_RE = re.compile(r"^[A-Za-z0-9]{4,16}$")
@@ -132,12 +133,18 @@ def _user_payload(user, profile):
         # 찜·투표 수는 기록 API(activity_views)가 남긴 '현재 상태' 기준으로 센다.
         "saved_count": active_saved_count(profile),
         "vote_count": active_vote_count(profile),
-        # 컬렉션 배지 — 실제 기록으로 계산 (badges.py). 등급(Lv)은 기준 확정 전이라 보내지 않는다.
+        # 컬렉션 배지 — 실제 기록으로 계산 (badges.py).
         "badges": badge_states(profile),
+        # 경험치 (2026-09-25) — 누적 · 오늘 · 이번 주. 운영 계정은 {"fixed": true} 로 최고 레벨 고정.
+        #   레벨 구간은 프론트 rank.js 의 RK_XP 가 가진다 (xp.py 설명).
+        "xp": xp_state(profile),
     }
 
 
 def _auth_payload(request, user, profile):
+    # 로그인한 사용자에게 응답할 때마다 오늘 접속을 적는다 (경험치 '접속 +3').
+    # 새로고침(me) · 로그인 · 가입 · 알파 발급이 전부 이 길을 지난다. 하루 한 행이라 여러 번 불러도 같다.
+    mark_visit(profile)
     return {
         "status": "ok",
         "data": {

@@ -6,7 +6,10 @@
 
 from django.urls import path
 
-from . import activity_views, alpha_views, auth_views, chat_views, job_views, notification_views, salmal_views, views
+from . import (
+    activity_views, alpha_views, auth_views, chat_views, job_views, notification_views, salmal_views, views,
+    xp_views,
+)
 from .crawl_views import (
     CrawlRunDetailAPIView,
     CrawlRunListAPIView,
@@ -44,6 +47,9 @@ urlpatterns = [
     path("auth/saved", activity_views.saved, name="auth-saved"),                    # 찜 / 찜 해제
     path("auth/weekly-report", activity_views.weekly_report, name="auth-weekly-report"),
     path("auth/chats", chat_views.chats, name="auth-chats"),
+    # ── 경험치 · 홈페이지 피드백 (xp_views.py) ──
+    path("auth/xp", xp_views.xp, name="auth-xp"),                                   # 내 경험치 · 접속 · 체류
+    path("auth/site-feedback", xp_views.site_feedback, name="auth-site-feedback"),  # 불편사항 · 버그리포트
 
     # ── 알림 (notification_views.py) ──
     path("auth/notifications", notification_views.notifications, name="auth-notifications"),

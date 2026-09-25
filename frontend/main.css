@@ -20,6 +20,7 @@
 @import './salmal/static/css/vote_app.css';
 @import './trend/static/css/saved_keywords.css';
 @import './account/static/css/profile.css';
+@import './account/static/css/xp.css';   /* 경험치 창 · 홈페이지 피드백 */
 @import './account/static/css/notify.css';
 @import './home/static/css/chat_popup.css';
 @import './account/static/css/job.css';

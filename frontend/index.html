@@ -178,6 +178,8 @@
         <button class="pill" id="mAuthBtn" data-v="login">로그인</button>
         <div class="acctMenu" id="acctMenu">
           <button type="button" id="menuMypage"><i>◧</i>내 정보</button>
+          <!-- 홈페이지 피드백 — 불편사항·추가요청 / 수정사항·버그리포트 (xp_panel.js) -->
+          <button type="button" id="menuFeedback"><i>✎</i>피드백 보내기</button>
           <button type="button" id="menuJobReview" hidden><i>✓</i>직업 인증 심사</button>
           <hr>
           <button type="button" class="out" id="menuLogout"><i>→</i>로그아웃</button>
@@ -861,6 +863,8 @@
               </div>
               <div class="xpBar"><i id="xpFill"></i></div>
               <div class="xpNext" id="xpNext"></div>
+              <!-- 오늘 · 이번 주 요약 — 누르면 경험치 창 (account/static/js/xp_panel.js) -->
+              <button type="button" class="xpMore" id="xpMore" hidden><span id="xpMoreText"></span><i aria-hidden="true">›</i></button>
             </div>
             <div class="profileName" id="profileName"></div>
             <div class="profileEmail" id="profileEmail">hyeokjin@feedit.co.kr</div>
@@ -1012,6 +1016,40 @@
     </div>
     <div class="bgDetail" id="bgDetail"></div>
     <div class="bgGrid" id="badgeGrid"></div>
+  </div>
+</div>
+<!-- 경험치 — 오늘 · 이번 주 내역과 레벨 구간 (account/static/js/xp_panel.js 가 채운다) -->
+<div class="acctModal" id="xpModal">
+  <div class="modalCard xpCard">
+    <div class="modalHead"><h3>경험치</h3>
+      <button type="button" class="modalClose" data-close-modal aria-label="닫기"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+    <div id="xpDetail"></div>
+  </div>
+</div>
+<!-- 홈페이지 피드백 — 이번 주 첫 피드백에 경험치 +25 (account/static/js/xp_panel.js) -->
+<div class="acctModal" id="siteFbModal">
+  <div class="modalCard sfCard">
+    <div class="modalHead"><h3>홈페이지 피드백</h3>
+      <button type="button" class="modalClose" data-close-modal aria-label="닫기"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+    <p class="sfLead">불편한 점이나 고쳐야 할 곳을 알려 주세요.<br>
+      이번 주 첫 피드백에는 25 XP 를 드려요.</p>
+    <div class="sfKinds" id="sfKinds" role="radiogroup" aria-label="피드백 유형">
+      <button type="button" class="sfKind on" role="radio" aria-checked="true" data-kind="REQUEST">
+        <b>불편사항 · 추가요청</b><span>이런 게 있으면 좋겠어요</span></button>
+      <button type="button" class="sfKind" role="radio" aria-checked="false" data-kind="BUG">
+        <b>수정사항 · 버그리포트</b><span>화면이 이상하거나 동작하지 않아요</span></button>
+    </div>
+    <textarea class="cInput sfText" id="sfText" maxlength="1000" aria-label="피드백 내용"></textarea>
+    <div class="sfMeta"><span id="sfPage"></span><span><b id="sfCount">0</b> / 1000</span></div>
+    <p class="fieldMsg" id="sfMsg"></p>
+    <div class="modalBtns">
+      <button type="button" class="pill ghost" data-close-modal>닫기</button>
+      <button type="button" class="pill" id="sfSend">보내기</button>
+    </div>
+    <div class="sfHist">
+      <div class="sfHistHead">내가 남긴 피드백</div>
+      <div id="sfList"></div>
+    </div>
   </div>
 </div>
 <div class="acctModal" id="avatarModal">

@@ -28,6 +28,7 @@ from apps.core.models import (
 )
 
 from .salmal_storage import VoteImageError, delete_vote_image, upload_vote_image, vote_image_url
+from .xp_service import is_operator, snapshot_totals
 
 VISIBLE_CARD_FILTER = Q(seed_key__startswith="youtube:") | Q(seed_key__startswith="user:")
 
@@ -344,13 +345,18 @@ def _card_payload(card, profile, tastes_by_user, taste_names_by_user):
     if card.status == VoteCard.Status.ACTIVE and card.closes_at:
         remaining = max(1, math.ceil((card.closes_at - timezone.now()).total_seconds() / 3600))
     comments = []
-    for comment in card.comments.filter(is_deleted=False).select_related("user", "user__user").order_by("-created_at"):
+    rows = list(card.comments.filter(is_deleted=False).select_related("user", "user__user").order_by("-created_at"))
+    # ★ 2026-09-25 — 작성자 레벨. 예전 "rank" 는 아이콘 색 번호(avatar % 5)를 그대로 보낸 가짜 값이었다.
+    #   이제 경험치 사본(user_xp)을 보내고, 레벨은 화면(rank.js)이 같은 구간표로 센다.
+    xp_totals = snapshot_totals(row.user_id for row in rows)
+    for comment in rows:
         user_meta = comment.user.profile_metadata or {}
         comments.append(
             {
                 "id": comment.id,
                 "name": comment.user.nickname or comment.user.user.username,
-                "rank": int(user_meta.get("avatar", 0)) % 5,
+                "xp": xp_totals.get(comment.user_id, 0),
+                "xp_fixed": is_operator(comment.user.user),
                 "job": user_meta.get("job") or "Basic",
                 "choice": comment.choice,
                 "text": comment.content,
