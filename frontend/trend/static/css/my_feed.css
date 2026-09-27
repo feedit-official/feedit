@@ -50,7 +50,7 @@
 .tpSignalList b{color:var(--coral);font-weight:500;margin-left:4px}
 .tpBrief{margin-top:14px;padding:20px 24px;display:grid;grid-template-columns:auto 1fr auto;gap:18px;
   align-items:center}
-.tpBriefNo{font-family:var(--num);font-size:10px;letter-spacing:.16em;color:var(--coral)}
+.tpBriefNo{font-family:var(--num);font-size:10px;letter-spacing:.16em;color:var(--coral-ink)}   /* 작은 코랄 글자 — 대비(USABILITY-002) */
 .tpBriefText b{display:block;font-size:14px;font-weight:600}
 .tpBriefText p{margin-top:5px;font-size:12.5px;line-height:1.65;color:var(--pink-1)}
 .tpBriefScore{font-family:var(--num);font-size:12px;color:var(--pink-2);white-space:nowrap}

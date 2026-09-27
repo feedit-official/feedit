@@ -629,6 +629,8 @@ function fsOpenPop(){
   }
   if(FS.id!=='stock')fsItemSig=null;
   FS.open=true; $('#fsPopBg').classList.add('on'); $('#fsMore').classList.add('on');
+  /* ★ 2026-09-27 (USABILITY-002) — 닫혀 있을 때는 inert 라 Tab 이 보이지 않는 칸으로 들어가지 않는다 */
+  $('#fsPopBg').removeAttribute('inert');
   fsPaintPop(); fsLoadFacets();
 }
 function fsClosePop(){
@@ -636,6 +638,7 @@ function fsClosePop(){
   clearTimeout(fsFacetT); fsFacetT=null;
   if(fsFacetAbort){ fsFacetAbort.abort(); fsFacetAbort=null; fsSeq++; FS.loading=false; }
   $('#fsPopBg').classList.remove('on'); $('#fsMore').classList.remove('on');
+  $('#fsPopBg').setAttribute('inert','');
 }
 
 /* ★ 2026-09-19 — '이전 24개 / 다음 24개' 를 걷어냈다. 칸을 끝까지 내리면

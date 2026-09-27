@@ -33,9 +33,24 @@ DISPATCH_BATCH_SIZE = 100
 # ============================================================
 
 
+# ── 공통 재시도 (2026-09-27, COLLECT-001) ────────────────────────
+# 요구사항: "수집이 실패하면 재시도하고, 계속 실패하면 담당자한테 알림이 간다."
+# 수집기마다 따로 두던 재시도(무신사 USED 등)와 별개로, 실행 단위로 한 번 더 감싼다.
+# 시도마다 CrawlRun 이 따로 남으므로 실패 이력은 그대로 보인다.
+# 담당자 알림은 **마지막 시도까지 실패했을 때만** 보낸다.
+LIVE_MAX_RETRIES = 2
+LIVE_RETRY_COUNTDOWN = (300, 900)          # 5분 뒤, 15분 뒤
+
+
+def live_retry_countdown(retries):
+    """몇 번째 재시도인지(0부터)에 맞는 대기 초."""
+    return LIVE_RETRY_COUNTDOWN[min(retries, len(LIVE_RETRY_COUNTDOWN) - 1)]
+
+
 @shared_task(
     bind=True,
     name="core.run_live_target",
+    max_retries=LIVE_MAX_RETRIES,
 )
 def run_live_target(
     self,
@@ -377,12 +392,18 @@ def run_live_target(
             target.source.code,
         )
 
+        retries = self.request.retries or 0
+        will_retry = retries < LIVE_MAX_RETRIES
+
         mark_crawl_run_failed(
             crawl_run,
-            error=exc,
+            error=(f"{exc} (재시도 {retries + 1}/{LIVE_MAX_RETRIES} 예정)" if will_retry else exc),
             error_code=exc.__class__.__name__,
+            alert=not will_retry,          # 계속 실패했을 때만 담당자에게 알린다
         )
 
+        if will_retry:
+            raise self.retry(exc=exc, countdown=live_retry_countdown(retries))
         raise
 
 
@@ -641,3 +662,30 @@ def check_data_freshness():
     result = check_freshness_and_alert()
     logger.info("장기 미갱신 확인 — %s", result)
     return result
+
+
+# ============================================================
+# 지표 다시 계산 (2026-09-27, ADMIN-001 — 운영 화면의 '지표 다시 계산' 버튼)
+# ============================================================
+
+
+@shared_task(
+    name="core.rebuild_metrics",
+    soft_time_limit=60 * 50,
+    time_limit=60 * 60,
+)
+def rebuild_metrics(days=35):
+    """이미 분석이 끝난 텍스트 언급으로 최근 days 일의 일별 지표만 다시 계산한다(LLM 호출 없음).
+
+    manage.py rebuild_term_metrics 와 같은 함수를 부른다. 매일 04:10 배치는 35일치만 다시 계산하므로
+    그보다 긴 구간을 채우거나, 사전을 고친 뒤 바로 반영하고 싶을 때 운영 화면에서 누른다.
+    """
+    from datetime import date, timedelta
+
+    from analysis.text_signals.metrics import rebuild_text_metrics
+
+    days = max(1, min(int(days), 400))
+    until = date.today()
+    result = rebuild_text_metrics(since=until - timedelta(days=days), until=until)
+    logger.info("지표 다시 계산 %s일 — %s", days, result)
+    return {"days": days, **(result or {})}

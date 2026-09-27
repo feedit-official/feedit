@@ -102,7 +102,7 @@ const rows = document.querySelectorAll('#notiList .notiItem');
 assert.equal(rows.length, 7, '받은 알림 수만큼 그린다');
 assert.ok(rows[0].classList.contains('unread'), '안 읽은 것은 표시가 남는다');
 assert.ok(rows[0].textContent.includes('찜한 상품 2개가 내려갔어요.'));
-assert.ok(rows[0].textContent.includes('찜한 상품 가격 하락'), '종류 이름을 같이 보여 준다');
+assert.ok(rows[0].textContent.includes('찜한 상품 변동'), '종류 이름을 같이 보여 준다');
 
 /* ③-b 6개가 넘으면 스크롤로 넘긴다 */
 const list = document.getElementById('notiList');

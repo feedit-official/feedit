@@ -80,7 +80,14 @@ export function trSideOpen(on){
   if(!sd)return;
   sd.classList.toggle('open',on);
   if(wr)wr.classList.toggle('open',on);
+  const toggle=$('#sToggle');
+  if(toggle){
+    toggle.setAttribute('aria-expanded',String(!!on));
+    toggle.setAttribute('aria-label',on?'사이드바 접기':'사이드바 펼치기');
+  }
 }
+const trWide=()=>typeof matchMedia!=='function'||!matchMedia('(max-width:920px)').matches;
+window.addEventListener('resize',()=>{ if(!trWide())trSideInstant(false) });
 /* 접힌 상태로 되돌리되 폭이 줄어드는 장면은 보이지 않게 — 전환을 한 프레임 끈다 */
 function trSideInstant(on){
   const sd=$('#side'), wr=$('.trWrap');
@@ -208,12 +215,12 @@ export function goView(v,fromTopNav=false){
     if(seamless){
       /* 상단 탭에서 돌아올 때는 기존 내 피드 DOM을 유지한다.
          매번 다시 그리면 카드가 0% 투명도로 돌아갔다 나타난다. */
-      trSideInstant(true);
+      trSideInstant(trWide());
       if(!reuseTr)trRender(startTr);
     }else{
       trSideReset();                     /* 첫 진입에서는 기존 사이드바 모션 유지 */
       setTimeout(()=>{ if(seq===viewSeq&&curView==='trend')trRender(startTr) },130);
-      setTimeout(()=>{ if(seq===viewSeq&&curView==='trend')trSideOpen(true) },240);
+      setTimeout(()=>{ if(seq===viewSeq&&curView==='trend')trSideOpen(trWide()) },240);
     }
   }
   trendGateSync();   /* 트렌드를 벗어나면 관문도 같이 내린다 */
@@ -292,6 +299,8 @@ document.addEventListener('click',e=>{
   const tr=e.target.closest('[data-tr]');
   if(tr){ $$('.sItem').forEach(x=>x.classList.remove('on')); tr.classList.add('on');
           curTr=tr.dataset.tr; pushNav();
+          /* 좁은 화면(920px 이하, responsive.css)에서는 메뉴를 고르면 사이드바를 접어 본문을 가리지 않는다 */
+          if(!trWide()&&tr.classList.contains('sItem'))trSideOpen(false);
           return trRender(tr.dataset.tr) }
   const vt=e.target.closest('[data-vote]'); if(vt)return mVote(vt.dataset.vote);
 });

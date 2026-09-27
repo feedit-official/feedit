@@ -1,5 +1,5 @@
 import { $, $$, HAS_A, aAnimate } from '../../../core/static/js/dom.js';
-import { SAY, SM_ON, SM_SAY, STYLES, LIKED, M_QUESTIONS, SM_QUESTIONS, ansCardHTML, smSwitch } from './chat.js';
+import { SM_ON, STYLES, LIKED, M_QUESTIONS, SM_QUESTIONS, ansCardHTML, smSwitch } from './chat.js';
 import { API_BASE, classifyFitImages, sendAnswerFeedback, isUp, askStream, reportHTML, notesHTML, followupHTML, actionsHTML, refusalHTML, requestLexicon, fillBars, MAX_IMAGES, imageFileToDataURL, bindImageDrop, wantsVirtualFit, responseCardHTML } from './chat_api.js';
 import { AUTH, ME, openStyleSelect, requireAuth } from '../../../account/static/js/profile.js';
 import { logChat, chatList, chatLoad, chatSaveTurn, chatImport, chatUpdate, chatTruncate, chatDelete } from '../../../account/static/js/account_api.js';
@@ -1125,19 +1125,16 @@ function cpTasteContext(c){
           searched_terms:[...new Set(searched)].slice(-20),
           saved_terms:[...new Set(saved)].slice(0,30)};
 }
-function cpAskMock(c,aiMsg,key){
-  /* 이 시점엔 이미 서버 연결을 한 번 시도해 본 뒤다(isUp() 또는 askStream 실패) —
-     그 위에 예전처럼 650~1200ms + 타이핑 애니메이션을 더 얹지 않는다.
-     즉시 채우고, 카드도 이 함수가 직접 붙인다 — cardHtml 이 ''(비어 있음, 아직
-     스트리밍 전)으로 잠겨 있는 채로 남으면 목업인데 카드가 안 뜬다. */
-  aiMsg.html=(SM_ON?SM_SAY[key]:SAY[key])||SAY.rise;
-  aiMsg.cardHtml=ansCardHTML(key);
+function cpAskUnavailable(c,aiMsg){
+  // 불완전한 결과와 예시 카드를 지운다. 질문·사진은 재전송 버튼으로 다시 보낼 수 있다.
+  aiMsg.html='<p role="alert">답변을 받지 못했습니다.<br>잠시 후 질문 아래의 재전송 버튼으로 다시 시도해 주세요.</p>';
+  aiMsg.cardHtml=''; aiMsg.followHtml=''; aiMsg.cueHtml=''; aiMsg.actionsHtml='';
+  aiMsg.turn=null; aiMsg.key=null;
   aiMsg.pending=false;
   if(cpActiveConvo()===c)cpRenderThread();
 }
-/* feedit-chat(:8770)에 실제로 묻는다. 서버가 없으면(isUp() false) 또는
-   도중에 끊기면 cpAskMock 의 데모 답으로 조용히 떨어진다 — 서버가 없어도
-   데모가 깨지면 안 된다(AGENTS.md). 대화 id 에 모드를 붙여 보낸다 —
+/* feedit-chat(:8770)에 실제로 묻는다. 연결 실패와 불완전한 스트림은 오류로 안내한다.
+   대화 id 에 모드를 붙여 보낸다 —
    두 모드가 따로 1,2,3… 으로 세므로 안 붙이면 섞인다. */
 async function cpAskLive(c,aiMsg,text,images){
   const run=aiMsg.run;
@@ -1258,8 +1255,7 @@ export function cpStop(){
   fetch(API_BASE+'/v1/chat/cancel',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({request_id:run.requestId})}).catch(()=>{});
 }
-/* 질문 하나를 대화에 밀어 넣는다. 서버가 떠 있으면 실제 답(마크다운·근거가
-   전부 정리된 리포트 카드)을, 아니면 데모용 캔 답을 "생각 중" 뒤에 채운다. */
+/* 질문 하나를 대화에 밀어 넣고 실제 응답 또는 연결 오류를 표시한다. */
 function cpAsk(text,key,opts){
   const images=(opts&&opts.images)||[];
   /* 승인된 코디 — 이 턴에만 서버의 build_fit 이 목록에 있다(tools.specs_for) */
@@ -1304,7 +1300,7 @@ function cpAskInto(c,text,key,images,fit){
            코디가 사라진다. 사진 검수(build_fit)만 없는 상태로 그대로 펼친다. */
         if(fit){ aiMsg.pending=false; aiMsg.html=cpFitWhyHTML(fit);
                  aiMsg.fit=cpFitFromServer(fit,text); cpRenderThread(); return }
-        cpAskMock(c,aiMsg,key);return
+        cpAskUnavailable(c,aiMsg);return
       }
       await cpAskLive(c,aiMsg,text,images);
     }
@@ -1322,8 +1318,7 @@ function cpAskInto(c,text,key,images,fit){
                           .replace(/\n/g,'<br>')+'</p>';
         if(cpActiveConvo()===c)cpRenderThread();
       }else{
-        const last=c.messages[c.messages.length-1];
-        if(last===aiMsg) cpAskMock(c,aiMsg,key);
+        cpAskUnavailable(c,aiMsg);
       }
     }finally{
       delete aiMsg.run;

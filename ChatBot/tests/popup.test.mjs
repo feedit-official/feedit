@@ -60,7 +60,7 @@ function sseBody(rep){
   let i=0;
   return {getReader:()=>({read:async()=>i<parts.length?{done:false,value:parts[i++]}:{done:true}})};
 }
-let SERVE = FX.level, HEALTH = true, LEXREQ = null;
+let SERVE = FX.level, HEALTH = true, LEXREQ = null, FAILURE = null;
 global.fetch = async (url, opt) => {
   const u = String(url);
   if(!HEALTH) throw new Error('서버 없음');   /* 죽으면 전부 실패한다 */
@@ -70,7 +70,18 @@ global.fetch = async (url, opt) => {
     LEXREQ = JSON.parse(opt.body);
     return {ok:true, json:async()=>({ok:true, surface:LEXREQ.surface, count:1})};
   }
-  if(u.endsWith('/v1/chat')) return {ok:true, body:sseBody(SERVE)};
+  if(u.endsWith('/v1/chat')) {
+    if(FAILURE==='http') return {ok:false,status:503};
+    if(FAILURE==='stream' || FAILURE==='eof') {
+      let sent=false;
+      return {ok:true,body:{getReader:()=>({read:async()=>{
+        if(!sent){ sent=true; return {done:false,value:new TextEncoder().encode('event: text\ndata: {"delta":"중간 응답"}\n\n')}; }
+        if(FAILURE==='stream') throw new Error('connection lost');
+        return {done:true};
+      }})}};
+    }
+    return {ok:true, body:sseBody(SERVE)};
+  }
   throw new Error('unexpected '+u);
 };
 
@@ -143,17 +154,37 @@ thread().querySelector('.kwReq .near button').dispatchEvent(new dom.window.Mouse
 await wait(2200);
 ok(thread().querySelectorAll('.msg.me').length===before+1, '질문이 하나 더 쌓임');
 
-console.log('\n=== 4. 서버가 도중에 죽었을 때 — 목업으로 떨어지나 ===');
-/* isUp() 은 30초 캐시라 아직 "살아 있다"고 믿는다.
-   그 상태에서 askStream 이 던져야 폴백이 도는지를 본다 — 실제로 일어나는 순서다. */
-HEALTH = false;
+console.log('\n=== 4. 서버 장애 — 예시 수치 없이 오류와 재전송 ===');
+const api = await import('./chat_api.js');
+function checkUnavailable(label){
+  const host=thread();
+  ok(host.textContent.includes('답변을 받지 못했습니다'), label+' 오류 안내');
+  ok(!host.querySelector('.skillReport,.ansCard,.bars'), label+' 예시/부분 리포트 없음');
+  ok(!host.textContent.includes('LIVE REPORT'), label+' 실데이터 머리표 없음');
+  ok(!!host.querySelector('[data-resend]'), label+' 재전송 유지');
+  ok(host.querySelector('.msg.me').textContent.includes('고프코어'), label+' 질문 보존');
+  ok(!host.querySelector('.thinking'), label+' 진행 상태 종료');
+}
+HEALTH=false;
 cp.cpNewConvo(); cp.openChatWith('고프코어 꺾였어?','gorp');
-await wait(2600);
-th = thread();
-ok(!!th.querySelector('.skillReport, .ansCard'), '그래도 카드가 뜬다 (목업)');
-ok(th.querySelector('.say').textContent.includes('고프코어'), '목업 문구가 나온다');
-ok(!th.querySelector('.kwReq'), '거절 화면이 아니다');
-ok(th.querySelectorAll('.bars .b').length>0, '목업 카드의 막대도 채워진다');
+await wait(100);
+checkUnavailable('전송 실패');
+await api.isUp({force:true});
+cp.cpNewConvo(); cp.openChatWith('고프코어 꺾였어?','gorp');
+await wait(100);
+checkUnavailable('health 실패');
+HEALTH=true;
+for(const mode of ['http','stream','eof']){
+  FAILURE=mode;
+  cp.cpNewConvo(); cp.openChatWith('고프코어 꺾였어?','gorp');
+  await wait(100);
+  checkUnavailable(mode);
+}
+FAILURE=null; SERVE=FX.level;
+thread().querySelector('[data-resend]').dispatchEvent(new dom.window.MouseEvent('click',{bubbles:true}));
+await wait(200);
+ok(thread().querySelectorAll('.msg.me').length===2,'복구 후 같은 질문 재전송');
+ok(!!thread().querySelector('.skillReport'),'복구 후 서버 리포트 표시');
 
 console.log('\n=== 5. FREE 플랜 — 서버가 자른 대로 그린다 ===');
 HEALTH = true; SERVE = FX.level_free;

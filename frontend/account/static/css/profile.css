@@ -44,7 +44,7 @@
   box-shadow:0 50px 100px -60px rgba(10,10,10,.4);
 }
 .acct .authEyebrow{
-  font-family:var(--num);font-size:10.5px;letter-spacing:.18em;color:var(--coral);
+  font-family:var(--num);font-size:10.5px;letter-spacing:.18em;color:var(--coral-ink);   /* 대비(USABILITY-002) */
   text-transform:uppercase;margin-bottom:10px;
 }
 .acct .authTitle{font-size:clamp(22px,3vw,27px);font-weight:600;letter-spacing:-.03em;margin-bottom:8px}
@@ -87,13 +87,13 @@
 }
 .acct .signupConsent label{display:flex;align-items:flex-start;gap:9px;font-size:12px;line-height:1.55;color:var(--pink-1);cursor:pointer}
 .acct .signupConsent input{width:15px;height:15px;margin-top:2px;accent-color:var(--coral);flex:0 0 auto}
-.acct .signupConsent b{font-weight:600;color:var(--coral)}
+.acct .signupConsent b{font-weight:600;color:var(--coral-ink)}   /* 작은 코랄 글자 — 대비 */
 .acct .signupConsent a{color:var(--pink-0);text-decoration:underline;text-underline-offset:3px}
 .acct .authSubmit{
   width:100%;justify-content:center;margin-top:6px;padding:15px;font-size:14px;
 }
 .acct .authFoot{text-align:center;font-size:12.5px;color:var(--pink-1);margin-top:22px;line-height:1.8}
-.acct .authFoot a{color:var(--coral);font-weight:600}
+.acct .authFoot a{color:var(--coral-ink);font-weight:600}   /* 작은 코랄 글자 — 대비 */
 .acct .authFoot a:hover{text-decoration:underline}
 .acct .miniLink{font-size:12px;color:var(--pink-2);text-align:right;display:block;margin:-8px 0 18px}
 .acct .miniLink:hover{color:var(--pink-0)}
@@ -318,7 +318,7 @@
 .acct .cUnit em, .acctModal .cUnit em{
   position:absolute;right:13px;top:50%;transform:translateY(-50%);
   font-style:normal;font-family:var(--num);font-size:11.5px;line-height:1;
-  color:rgba(74,62,54,.5);            /* 잉크보다 따뜻한 회갈색 — 값과 헷갈리지 않게 */
+  color:rgba(74,62,54,.78);           /* 잉크보다 따뜻한 회갈색 — 값과 헷갈리지 않게 (.5 → .78, 대비 USABILITY-002) */
   letter-spacing:.02em;pointer-events:none;
 }
 

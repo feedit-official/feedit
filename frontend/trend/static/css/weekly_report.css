@@ -357,7 +357,7 @@
 .chartBox{position:relative}
 .chartBox svg{display:block;width:100%;height:auto;overflow:visible;touch-action:none}
 .chartBox .grid{stroke:var(--pink-3);stroke-width:1;stroke-dasharray:2 4}
-.chartBox .axl{font-family:var(--num);font-size:8.5px;letter-spacing:.1em;fill:var(--pink-2)}
+.chartBox .axl{font-family:var(--num);font-size:8.5px;letter-spacing:.1em;fill:var(--pink-2-line)}
 .chartBox .ln{fill:none;stroke:var(--pink-0);stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 .chartBox .ln2{fill:none;stroke:var(--coral);stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 .chartBox .ar{fill:url(#gFill)}

@@ -311,12 +311,12 @@
 @container (max-width:170px){ .cpFitItems{grid-template-columns:1fr} }
 .cpFitItems::-webkit-scrollbar{width:6px}
 .cpFitItems::-webkit-scrollbar-thumb{background:var(--pink-3);border-radius:99px}
-.cpFitItems::-webkit-scrollbar-thumb:hover{background:var(--pink-2)}
+.cpFitItems::-webkit-scrollbar-thumb:hover{background:var(--pink-2-line)}
 .cpFitItems::-webkit-scrollbar-track{background:transparent}
 .cpFitSlot{min-width:0;position:relative}
 /* ★ 정사각형으로 둔다 — 옷 사진은 세로로 긴 것이 많아, 가로로 납작한 칸에
    넣으면 실제 사진은 가운데 조금만 차지하고 양옆이 비어 보인다. */
-.cpFitItem{position:relative;width:100%;aspect-ratio:1;padding:8px;border:1px dashed var(--pink-2);border-radius:10px;overflow:hidden;background:var(--paper);display:flex;align-items:center;justify-content:center}
+.cpFitItem{position:relative;width:100%;aspect-ratio:1;padding:8px;border:1px dashed var(--pink-2-line);border-radius:10px;overflow:hidden;background:var(--paper);display:flex;align-items:center;justify-content:center}
 .cpFitItemImg{max-width:100%;max-height:100%;width:auto;height:auto;object-fit:contain}
 .cpFitItem small{position:absolute;left:5px;right:5px;bottom:5px;padding:4px 6px;border-radius:20px;background:rgba(20,18,17,.72);color:#fff;font-size:9px;text-align:center;white-space:nowrap}
 .cpFitRemove{position:absolute;z-index:2;left:6px;top:6px;width:22px;height:22px;border-radius:50%;display:grid;place-items:center;background:rgba(20,18,17,.76);color:#fff;font-size:14px;line-height:1;box-shadow:0 2px 8px rgba(0,0,0,.16);opacity:0;transition:opacity .16s,background .18s}
@@ -454,7 +454,7 @@
   border-radius:7px;background:#fff;font:inherit;font-size:10px;color:var(--pink-0);
   text-align:center;text-align-last:center;cursor:pointer;
 }
-.cpFitCat:hover{border-color:var(--pink-2)}
+.cpFitCat:hover{border-color:var(--pink-2-line)}
 .cpFitCat:focus{outline:none;border-color:var(--coral)}
 
 /* 합성 옵션 서랍 — 결과 이미지 왼쪽 위. 접으면 켠 개수만 남는다.
@@ -502,7 +502,7 @@
   background:var(--pink-3);box-shadow:inset 0 0 0 1px rgba(10,10,10,.05);
   transition:background-color .26s var(--ease),box-shadow .26s var(--ease);
 }
-.cpVfSw:hover{box-shadow:inset 0 0 0 1px var(--pink-2)}
+.cpVfSw:hover{box-shadow:inset 0 0 0 1px var(--pink-2-line)}
 .cpVfSw.on{background:var(--coral);box-shadow:none}
 .cpVfSw.on:hover{background:#ff8464}
 .cpVfSw .thumb{

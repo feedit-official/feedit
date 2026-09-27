@@ -31,7 +31,7 @@
   color:var(--pink-1);text-transform:uppercase;margin-bottom:clamp(20px,2.8vh,32px);
   border:1px solid var(--pink-3);border-radius:999px;padding:6px 13px;
 }
-.mKicker b{color:var(--coral);font-weight:500}
+.mKicker b{color:var(--coral-ink);font-weight:500}   /* 작은 코랄 글자 — 대비(USABILITY-002) */
 .mStatement{font-weight:600;line-height:1.0;letter-spacing:-.048em;font-size:clamp(40px,6.4vw,112px)}
 .mStatement .ln{display:block;overflow:hidden}
 .mStatement .wd{display:inline-block;will-change:transform,opacity}
@@ -84,7 +84,7 @@
   transition:color .35s var(--ease);
 }
 .hot.open .hotTop .lbl{color:var(--pink-1)}
-.hotTop .lbl u{color:var(--coral);text-decoration:none}
+.hotTop .lbl u{color:var(--coral-ink);text-decoration:none}   /* 작은 코랄 글자 — 대비 */
 /* ★ 2026-09-21 — 폭을 고정하고 넘치는 글자를 잘라 냈더니 살!말? 모드의
    긴 상품명이 앞뒤로 잘려 나갔다. 이제 내용만큼 넓어지고, 그래도 모자라면
    줄을 바꿔 **전부 보인다**. 세로 롤 애니메이션은 그대로(한 칸에 겹쳐 쌓는다). */
@@ -178,7 +178,7 @@
 }
 /* 사진을 끌어다 놓는 동안 */
 .chatbar.dragOver{outline:2px dashed var(--coral);outline-offset:2px}
-.chatbar:focus-within{border-color:var(--pink-2);box-shadow:0 26px 62px -32px rgba(10,10,10,.55)}
+.chatbar:focus-within{border-color:var(--pink-2-line);box-shadow:0 26px 62px -32px rgba(10,10,10,.55)}
 /* 입력칸만의 영역. 예시 질문은 이 안에서만 움직여서
    왼쪽 살!말? 버튼 뒤로 숨는 일이 없다. */
 .cfield{position:relative;flex:1;min-width:0;display:flex}

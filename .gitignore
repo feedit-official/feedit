@@ -249,3 +249,9 @@ Claude outputs/
 
 # 챗봇 vendor 의 로컬 데이터 (SQLite 지표 DB · 키 파일) — 저장소에 넣지 않는다
 ChatBot/vendor/data/
+
+# 로컬 전용 — 배포 사이트와 무관 (2026-09-28)
+#   exports/              서비스 테스트·제출용 내보내기 자료
+#   frontend/design-lab/  디자인 시안 실험 페이지(앱에서 불러오지 않는다)
+/exports/
+/frontend/design-lab/

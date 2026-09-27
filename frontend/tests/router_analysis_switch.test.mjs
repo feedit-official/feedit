@@ -95,5 +95,15 @@ for(const view of ['home','trend','salmal','style','style','price','home']){
 }
 assert.deepEqual(viewAnimations,[],'상단 탭 전환에서 화면 전체 페이드 모션을 실행하지 않는다');
 
+globalThis.matchMedia=()=>({matches:true,addEventListener(){},addListener(){}});
+router.goView('home');
+router.goView('trend',true);
+assert.ok(!document.getElementById('side').classList.contains('open'),'작은 화면에서는 사이드바가 자동으로 본문을 덮지 않는다');
+router.trSideOpen(true);
+assert.equal(document.getElementById('sToggle').getAttribute('aria-expanded'),'true');
+window.dispatchEvent(new window.Event('resize'));
+assert.ok(!document.getElementById('side').classList.contains('open'),'작은 화면으로 바꾸면 사이드바가 접힌다');
+assert.equal(document.getElementById('sToggle').getAttribute('aria-expanded'),'false');
+
 console.log('✅ 상단 탭과 트렌드 분석 ↔ 살!말? 빠른 전환에서 화면 깜빡임이 없습니다.');
 process.exit(0);

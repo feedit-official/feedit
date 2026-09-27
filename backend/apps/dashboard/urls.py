@@ -69,6 +69,7 @@ urlpatterns = [
         name="exclude_brand_source",
     ),
     path("trend/metrics/", views.trend_metrics, name="trend_metrics"),
+    path("trend/metrics/rebuild/", views.rebuild_metrics, name="rebuild_metrics"),
 
     path("data/products/", views.products, name="products"),
     path("data/brands/", views.brands, name="brands"),

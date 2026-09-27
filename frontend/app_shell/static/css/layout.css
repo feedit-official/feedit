@@ -9,9 +9,15 @@
 :root{
   --paper:#f1efea;         /* 오프화이트 지면 */
   --pink-0:#0a0a0a;        /* 잉크 */
-  --pink-1:rgba(10,10,10,.62);
-  --pink-2:rgba(10,10,10,.34);
+  /* ★ 2026-09-27 (USABILITY-002) — 글자에 쓰는 회색을 명도 대비 4.5:1(WCAG AA) 이상으로 올렸다.
+     pink-2 는 지면 위 #a2a19e(2.2:1)였다 → .57(#6d6b67, 4.6:1). pink-1 은 한 단계 위로 벌려 위계를 지킨다.
+     선 · 테두리에 쓰던 옅은 값은 --pink-2-line 으로 옮겨 모양을 그대로 둔다. */
+  --pink-1:rgba(10,10,10,.72);
+  --pink-2:rgba(10,10,10,.57);
+  --pink-2-line:rgba(10,10,10,.34);
   --pink-3:rgba(10,10,10,.12);
+  /* 작은 코랄 글자(눈썹 글 · 번호)용 — 브랜드 코랄(#ff6b4a)은 흰 바탕 2.8:1 이라 작은 글자에는 못 쓴다 */
+  --coral-ink:#c2401f;
   /* 사이드바 — 지면(#f1efea, 웜 뉴트럴)과 같은 색상환에 놓인 짙은 잉크.
      순수 검정(#0a0a0a)은 오프화이트 옆에서 차갑게 튄다. */
   --side:#1c1a17;
@@ -22,6 +28,10 @@ body.mainmode{overflow-y:auto;overflow-x:hidden;background:var(--paper)}
 body.mainmode .deck,body.mainmode .wash,body.mainmode .ftr,
 body.mainmode .replay,body.mainmode .markStage,
 body.mainmode .jump{opacity:0 !important;pointer-events:none}
+/* ★ 2026-09-28 (USABILITY-002) — 투명하게만 두면 키보드 Tab 이 보이지 않는 인트로 버튼
+   (바로 시작 · 지금 시작하세요 · 로딩 다시 보기)으로 들어갔다. 본문 모드에서는 초점 순서에서도 뺀다. */
+body.mainmode .deck,body.mainmode .ftr,body.mainmode .replay,body.mainmode .markStage,
+body.mainmode .jump{visibility:hidden}
 body.mainmode .grain{opacity:.028;mix-blend-mode:multiply}
 
 .mainpage{
@@ -89,3 +99,7 @@ body.mainmode .mainpage{opacity:1;visibility:visible}
 /* ── 뷰 전환 ────────────────────────────────────────── */
 .view{display:none}
 .view.on{display:block}
+
+/* ★ 2026-09-27 (USABILITY-002) — 키보드로 옮겨 다닐 때 지금 어디에 있는지 보이게.
+   마우스 클릭에는 뜨지 않는다(:focus-visible). 자기 포커스 모양을 따로 둔 곳은 그 규칙이 이긴다. */
+:focus-visible{outline:2px solid var(--coral-ink,#c2401f);outline-offset:2px}

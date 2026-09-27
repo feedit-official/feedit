@@ -12,8 +12,8 @@
        .pill .pill.ghost                              (app_shell/static/css/layout.css)
      main.css 가 전부 한 문서로 @import 하므로 챗봇 팝업 안에서도 그대로 걸린다.
 
-   ★ 서버가 없으면 조용히 실패한다.
-     목업 데모가 깨지면 안 된다. isUp() 이 false 면 부르는 쪽이 기존 응답으로 떨어진다.
+   ★ 서버 연결 실패는 호출 화면에서 오류와 재전송 동작으로 안내한다.
+     실제 대화의 장애를 예시 리포트로 대체하지 않는다.
    ══════════════════════════════════════════════════════ */
 
 /* 알파 테스트 모드 — 시연 15일 한정 (app_shell/static/js/alpha.js 와 한 쌍) */
@@ -112,9 +112,10 @@ export function bindImageDrop(el, onFiles){
 }
 
 /* 서버가 떠 있나. 30초 동안은 결과를 재사용한다 — 매 질문마다 물으면 느려진다. */
-export async function isUp(){
+export async function isUp({force=false}={}){
   const now = Date.now();
-  if(_up !== null && now - _upAt < 30000) return _up;
+  // 실패는 캐시하지 않는다. 서버 복구 후 재전송을 즉시 허용한다.
+  if(!force && _up === true && now - _upAt < 30000) return true;
   try{
     const c = new AbortController();
     const t = setTimeout(()=>c.abort(), 1500);
@@ -154,6 +155,7 @@ export async function askStream(payload, on, options={}){
   const reader = res.body.getReader();
   const dec = new TextDecoder();
   let buf = '';
+  let completed = false;
   for(;;){
     const {done, value} = await reader.read();
     if(done) break;
@@ -169,9 +171,11 @@ export async function askStream(payload, on, options={}){
       });
       if(!data) continue;
       let parsed; try{ parsed = JSON.parse(data) }catch(e){ continue }
+      if(ev === 'done') completed = true;
       if(on[ev]) on[ev](parsed);
     }
   }
+  if(!completed) throw new Error('답변 스트림이 완료되기 전에 연결이 끊겼습니다.');
 }
 
 /* ── 리포트 → 카드 ────────────────────────────────────

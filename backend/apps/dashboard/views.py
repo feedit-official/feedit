@@ -71,6 +71,8 @@ from django.conf import settings
 from django.utils import timezone
 from .services.dashboard_service import get_dashboard_context, source_freshness
 from .services.data_quality import data_quality_context
+
+logger = logging.getLogger(__name__)
 from apps.core.models import (
     Brand,
     BrandSource,
@@ -2205,6 +2207,7 @@ def trend_metrics(request):
         "top_mention": top_mention,
         "by_type": by_type,
         "top_assoc": top_assoc,
+        "rebuild_days": REBUILD_DAYS,
     }
 
     return render(
@@ -2212,6 +2215,45 @@ def trend_metrics(request):
         "dashboard/analytics/trend_metrics.html",
         context,
     )
+
+
+REBUILD_DAYS = (35, 90, 365)
+REBUILD_LOCK = "dashboard:rebuild-metrics"
+REBUILD_LOCK_SECONDS = 60 * 10
+
+
+@login_required(login_url="/admin-dashboard/login/")
+def rebuild_metrics(request):
+    """POST — 지표 다시 계산을 Celery 에 맡긴다 (ADMIN-001, 2026-09-27).
+
+    10분 안에 다시 누르면 한 번만 보낸다(연타로 같은 계산이 겹쳐 돌지 않게).
+    워커가 계산을 끝내면 트렌드 지표 화면의 '집계 기준일' 과 행 수가 바뀐다.
+    """
+    from django.core.cache import cache
+
+    if request.method != "POST":
+        return redirect("dashboard:trend_metrics")
+    try:
+        days = int(request.POST.get("days", "35"))
+    except ValueError:
+        days = 0
+    if days not in REBUILD_DAYS:
+        messages.error(request, "다시 계산할 기간이 올바르지 않습니다.")
+        return redirect("dashboard:trend_metrics")
+    if not cache.add(REBUILD_LOCK, days, REBUILD_LOCK_SECONDS):
+        messages.warning(request, "방금 요청한 다시 계산이 아직 돌고 있습니다. 10분 뒤에 다시 눌러 주세요.")
+        return redirect("dashboard:trend_metrics")
+    try:
+        from apps.core.tasks import rebuild_metrics as task
+        job = task.delay(days)
+    except Exception as exc:          # 브로커(Redis)에 닿지 못함
+        cache.delete(REBUILD_LOCK)
+        logger.exception("지표 다시 계산 요청 실패")
+        messages.error(request, f"작업을 보내지 못했습니다 — Celery/Redis 상태를 확인하세요 ({exc.__class__.__name__}).")
+        return redirect("dashboard:trend_metrics")
+    messages.success(request, f"최근 {days}일 지표 다시 계산을 요청했습니다 (작업 {str(job.id)[:8]}). "
+                              "끝나면 이 화면의 집계 기준일과 행 수가 바뀝니다. 진행은 시스템 › Celery 로그에서 봅니다.")
+    return redirect("dashboard:trend_metrics")
 
 
 @login_required(login_url="/admin-dashboard/login/")

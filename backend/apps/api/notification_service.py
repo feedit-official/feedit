@@ -3,7 +3,7 @@
 문구와 판정 기준은 notifications.py 에 있다. 여기서는 그것을 DB 에 붙인다.
 
 다루는 알림 (2026-09-19):
-  PRICE_DROP     찜한 상품 가격 하락 — 하루 한 번 묶어서 (배치)
+  PRICE_DROP     찜한 상품 변동 — 급락 · 6개월 최저가 · 급등 · 품절, 하루 한 번 묶어서 (배치)
   VOTE_RESULT    살!말? 투표가 기준 표 수를 넘었을 때 (투표가 들어온 순간)
   WEEKLY_REPORT  주간 트렌드 리포트 — 주 1회 (배치)
   BADGE          뱃지 달성 (활동이 기록된 순간)
@@ -128,48 +128,100 @@ def sync_saved_price(saved_item, product_source_id):
     return True
 
 
+def _stock_and_low(source_ids, now):
+    """판매처 id → {"sold_out_now": bool, "was_sold_out": bool, "low_before": 가격|None}.
+
+    - 품절: 가장 최근 스냅숏이 품절이고 바로 앞 스냅숏은 아니었을 때만 '새로 품절' 로 본다
+      (매일 같은 품절을 다시 알리지 않는다).
+    - 최저가: 최근 6개월 스냅숏 중 **가장 최근 것을 뺀** 최저 가격. 지금 가격이 이보다 낮으면 새 최저가다.
+    """
+    out = {}
+    ids = [i for i in source_ids if i]
+    if not ids:
+        return out
+    since = now - timedelta(days=rules.LOW_WINDOW_DAYS)
+    rows = (ProductSourceSnapshot.objects
+            .filter(product_source_id__in=ids, observed_at__gte=since)
+            .order_by("product_source_id", "-observed_at", "-id")
+            .values("product_source_id", "stock_status", "sale_price", "list_price"))
+    seen = {}
+    for r in rows:
+        sid = r["product_source_id"]
+        k = seen.get(sid, 0)
+        seen[sid] = k + 1
+        row = out.setdefault(sid, {"sold_out_now": False, "was_sold_out": None, "low_before": None})
+        price = r["sale_price"] if r["sale_price"] is not None else r["list_price"]
+        if k == 0:
+            row["sold_out_now"] = rules.is_sold_out(r["stock_status"])
+            continue
+        if k == 1:
+            row["was_sold_out"] = rules.is_sold_out(r["stock_status"])
+        if price is not None and (row["low_before"] is None or price < row["low_before"]):
+            row["low_before"] = price
+    return out
+
+
 def price_drop_digest(profile, now=None, setting=None):
-    """한 사용자의 오늘치 가격 하락 알림. 만들었으면 Notification, 아니면 None."""
+    """한 사용자의 오늘치 찜 상품 변동 알림 — 급락 · 6개월 최저가 · 급등 · 품절 (FAVORITE-002).
+
+    만들었으면 Notification, 아니면 None. 종류는 예전과 같은 PRICE_DROP 이다
+    (알림 설정의 '찜한 상품' 칸 하나로 켜고 끈다).
+    """
     now = now or timezone.now()
     items = list(UserSavedItem.objects.filter(
         user=profile, saved_price__isnull=False, saved_price_source__isnull=False,
     ).select_related("saved_price_source", "product"))
     if not items:
         return None
-    latest = _latest_price([i.saved_price_source_id for i in items])
+    source_ids = [i.saved_price_source_id for i in items]
+    latest = _latest_price(source_ids)
+    extra = _stock_and_low(source_ids, now)
 
-    rows, by_key = [], {}
+    rows, by_key, sold_out, lows = [], {}, [], set()
     for item in items:
+        name = (item.saved_price_source.source_name
+                or (item.product.canonical_name if item.product_id else ""))
+        key = f"src-{item.saved_price_source_id}"
+        info = extra.get(item.saved_price_source_id) or {}
+        if info.get("sold_out_now") and info.get("was_sold_out") is False:
+            sold_out.append({"item_id": key, "name": name})
         got = latest.get(item.saved_price_source_id)
         if not got:
             continue
         current, _observed = got
-        # 이미 알린 가격이 있으면 그것과 견준다 — 같은 하락을 며칠 내리 알리지 않는다.
+        # 이미 알린 가격이 있으면 그것과 견준다 — 같은 변동을 며칠 내리 알리지 않는다.
         base = item.notified_price if item.notified_price is not None else item.saved_price
-        name = (item.saved_price_source.source_name
-                or (item.product.canonical_name if item.product_id else ""))
-        key = f"src-{item.saved_price_source_id}"
         rows.append({"item_id": key, "name": name, "base": base, "current": current})
         by_key[key] = (item, current)
+        low = info.get("low_before")
+        if low is not None and current < low:
+            lows.add(key)
 
     drops = rules.price_drops(rows)
-    if not drops:
+    rises = rules.price_rises(rows)
+    title, body = rules.saved_change_digest(drops, rises, sold_out, lows)
+    if not title:
         return None
-    title, body = rules.price_digest(drops)
     day = rules.kst_day(now).isoformat()
+    payload_items = [{"name": d["name"], "percent": d["percent"], "change": "drop",
+                      "low": d["item_id"] in lows,
+                      "source_id": int(d["item_id"].split("-")[1]),
+                      "base": float(d["base"]), "current": float(d["current"])} for d in drops]
+    payload_items += [{"name": r["name"], "percent": r["percent"], "change": "rise",
+                       "source_id": int(r["item_id"].split("-")[1]),
+                       "base": float(r["base"]), "current": float(r["current"])} for r in rises]
+    payload_items += [{"name": s["name"], "change": "sold_out",
+                       "source_id": int(s["item_id"].split("-")[1])} for s in sold_out]
     row = notify(
         profile, rules.PRICE_DROP, f"PRICE_DROP:{day}", title, body,
         link="mypage",
-        payload={"items": [{"name": d["name"], "percent": d["percent"],
-                            "source_id": int(d["item_id"].split("-")[1]),
-                            "base": float(d["base"]), "current": float(d["current"])}
-                           for d in drops]},
+        payload={"items": payload_items},
         setting=setting,
     )
     if row is None:
         # 꺼 두었거나 오늘 이미 보냈다 — 기준값은 손대지 않는다.
         return None
-    for d in drops:
+    for d in list(drops) + list(rises):
         item, current = by_key[d["item_id"]]
         item.notified_price = current
         item.notified_at = now

@@ -251,7 +251,7 @@
                   <span class="spark">✧</span>
                   <span class="qline" id="qline"></span>
                 </div>
-                <input type="text" id="mInput" autocomplete="off">
+                <input type="text" id="mInput" autocomplete="off" aria-label="FEEDiT 에게 물어보기">
               </div>
               <button class="sendBtn" id="mSend" aria-label="보내기">→</button>
             </div>
@@ -496,7 +496,7 @@
      ★ 칸 안의 버튼은 data-fv 다. data-v 를 쓰면 안 된다 —
        app_shell/static/js/router.js 의 전역 클릭 위임이 [data-v] 를
        화면 전환으로 읽어, 필터를 누르는 순간 화면이 통째로 비어 버린다. -->
-<div class="fsPopBg" id="fsPopBg">
+<div class="fsPopBg" id="fsPopBg" inert>
   <div class="fsPop" role="dialog" aria-label="세부 검색">
     <div class="fsPopHead">
       <div>

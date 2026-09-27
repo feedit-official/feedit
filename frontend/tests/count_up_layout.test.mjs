@@ -22,7 +22,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 const SRC = path.resolve(import.meta.dirname, '../trend/static/js/count_up.js');
 const body = fs.readFileSync(SRC,'utf8');
-/* import 줄만 걷어낸다 — lockWidths 는 dom.js 에 기대지 않는다 */
+/* 폭 잠금 함수와 실제 DOM 조회 도우미를 함께 브라우저에 넣는다. */
+const domBody = fs.readFileSync(path.resolve(import.meta.dirname, '../core/static/js/dom.js'), 'utf8');
+const queryAll = domBody.split('\n').find(line => line.startsWith('export const $$=')).replace('export ', '');
 const lock = body.slice(body.indexOf('export function lockWidths'),
                         body.indexOf('export function trCountUp'))
                  .replace('export function','function');
@@ -48,6 +50,7 @@ body{font-family:sans-serif}.wrap{width:360px}
 <div class="tpBrief"><div>01</div><div class="tpBriefText"><b>브리핑</b></div>
   <div class="tpBriefScore"><b>86</b>점</div></div>
 </div><script type="module">
+${queryAll}
 ${lock}
 window.__run = () => {
   const els=[...document.querySelectorAll('.mTable .n'),

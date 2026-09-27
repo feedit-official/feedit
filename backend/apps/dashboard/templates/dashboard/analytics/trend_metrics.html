@@ -20,7 +20,20 @@
         <h2 class="page-title">트렌드 지표</h2>
         <p class="sub">{{ page_description }}</p>
     </div>
+    {# 지표 다시 계산 — 이미 분석된 언급으로 일별 지표만 다시 만든다(LLM 호출 없음, ADMIN-001) #}
+    <form method="post" action="{% url 'dashboard:rebuild_metrics' %}" class="tm-rebuild">
+        {% csrf_token %}
+        <select name="days" aria-label="다시 계산할 기간">
+            {% for d in rebuild_days %}<option value="{{ d }}">최근 {{ d }}일</option>{% endfor %}
+        </select>
+        <button type="submit">지표 다시 계산</button>
+    </form>
 </div>
+<style>
+    .tm-rebuild { display: flex; gap: 8px; align-items: center; }
+    .tm-rebuild select { padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); font-size: 12.5px; }
+    .tm-rebuild button { padding: 9px 16px; border: 0; border-radius: 10px; background: var(--tx); color: #fff; font-size: 12.5px; font-weight: 600; cursor: pointer; }
+</style>
 
 <div class="nz-cards">
     <div class="nz-card">

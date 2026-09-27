@@ -15,6 +15,12 @@ KST = timezone(timedelta(hours=9))
 # ── 찜한 상품 가격 하락 ────────────────────────────────────────
 # 몇 퍼센트부터 알릴 것인가. 1~2% 는 판매처의 일상적인 등락이라 알림이 소음이 된다.
 PRICE_DROP_MIN_RATE = 0.05
+# ★ 2026-09-27 (FAVORITE-002) — 찜 상품 '급등'. 오르는 쪽은 내릴 때보다 알림 가치가 낮아
+#   (살 사람에게는 '이미 늦었다' 는 소식) 기준을 두 배로 둔다.
+PRICE_RISE_MIN_RATE = 0.10
+# '최저가' 는 이 기간 안에서 본다 — 요구사항 TREND-005 의 '최근 6개월 내 최저가' 와 같은 창
+LOW_WINDOW_DAYS = 180
+SOLD_OUT_STATUSES = ("SOLD_OUT", "OUT_OF_STOCK")
 
 # ── 살!말? 투표 결과 ──────────────────────────────────────────
 # 표가 이만큼 모이면 작성자에게 한 번 알린다. 뒤에 숫자를 더 넣으면 그때마다 또 알린다.
@@ -102,6 +108,70 @@ def price_drops(items, min_rate=PRICE_DROP_MIN_RATE):
         out.append(row)
     out.sort(key=lambda r: r["rate"], reverse=True)
     return out
+
+
+def rise_rate(base, current):
+    """기준가 대비 오른 비율(0~). 내렸거나 값이 없으면 None."""
+    try:
+        base = float(base)
+        current = float(current)
+    except (TypeError, ValueError):
+        return None
+    if base <= 0 or current <= base:
+        return None
+    return (current - base) / base
+
+
+def price_rises(items, min_rate=PRICE_RISE_MIN_RATE):
+    """크게 오른 상품만. 많이 오른 것이 앞에 온다. items 모양은 price_drops 와 같다."""
+    out = []
+    for it in items:
+        rate = rise_rate(it.get("base"), it.get("current"))
+        if rate is None or rate < min_rate:
+            continue
+        row = dict(it)
+        row["rate"] = rate
+        row["percent"] = int(round(rate * 100))
+        out.append(row)
+    out.sort(key=lambda r: r["rate"], reverse=True)
+    return out
+
+
+def is_sold_out(status):
+    return str(status or "").upper() in SOLD_OUT_STATUSES
+
+
+def saved_change_digest(drops, rises=(), sold_out=(), lows=()):
+    """찜 상품 변동을 하루 한 건으로 (FAVORITE-002: 급락 · 최저가 · 급등 · 품절).
+
+    drops · rises: price_drops · price_rises 결과. sold_out: [{"item_id","name"}].
+    lows: 6개월 최저가를 새로 찍은 item_id 모음(급락 줄에 '최저가' 를 덧붙인다).
+    내린 것만 있으면 예전 문구(price_digest)를 그대로 쓴다.
+    """
+    rises, sold_out, lows = list(rises), list(sold_out), set(lows)
+    if not (drops or rises or sold_out):
+        return None, None
+    if drops and not rises and not sold_out and not (lows & {d["item_id"] for d in drops}):
+        return price_digest(drops)
+    lines = []
+    for d in drops:
+        low = " · 6개월 최저가" if d["item_id"] in lows else ""
+        lines.append(f"{d.get('name') or '이름 없는 상품'} {d['percent']}% ↓{low}")
+    for r in rises:
+        lines.append(f"{r.get('name') or '이름 없는 상품'} {r['percent']}% ↑")
+    for s in sold_out:
+        lines.append(f"{s.get('name') or '이름 없는 상품'} 품절")
+    n = len(lines)
+    if n == 1:
+        only = (drops or rises or sold_out)[0]
+        name = only.get("name") or "찜한 상품"
+        if sold_out:
+            return f"찜한 {name}{josa(name, '이', '가')} 품절됐어요.", ""
+        if rises:
+            return f"찜한 {name}{josa(name, '이', '가')} {only['percent']}% 올랐어요.", ""
+        return f"찜한 {name}{josa(name, '이', '가')} 6개월 최저가예요 ({only['percent']}% 내림).", ""
+    body = "\n".join(lines[:5]) + (f"\n외 {n - 5}개" if n > 5 else "")
+    return f"찜한 상품 {n}개에 변동이 있어요.", body
 
 
 def price_digest(drops):

@@ -38,7 +38,7 @@
   transition:transform .5s var(--ease),box-shadow .5s var(--ease),border-color .34s;
 }
 .svAlsoCard:hover{transform:translateY(-3px);box-shadow:0 26px 46px -34px rgba(10,10,10,.5);
-  border-color:var(--pink-2)}
+  border-color:var(--pink-2-line)}
 .svAlsoTop{display:flex;align-items:center;justify-content:space-between;gap:10px}
 .svTag{
   font-size:10.5px;padding:4px 10px;border-radius:999px;letter-spacing:-.01em;
@@ -61,7 +61,7 @@
   transition:.32s var(--ease);
 }
 .svChip i{font-style:normal;font-family:var(--num);font-size:10px;color:var(--pink-2)}
-.svChip:hover{border-color:var(--pink-2)}
+.svChip:hover{border-color:var(--pink-2-line)}
 .svChip.on{background:var(--pink-0);border-color:var(--pink-0);color:#fff}
 .svChip.on i{color:rgba(255,255,255,.5)}
 
