@@ -86,7 +86,8 @@ await t('★ 세 번째, 네 번째도 된다', async () => {
 
 await t('★ 엔터 한 번에 조회도 한 번만 나간다 (배선 중복 아님)', async () => {
   asked=[]; inp().value='데님'; enter(); await wait();
-  const n=asked.filter(u=>u.includes('데님')).length;
+  /* 검색량 지표(/api/search)도 같은 말로 한 번 묻는다 — 배선 중복이면 /api/trend 가 두 번 나간다 */
+  const n=asked.filter(u=>u.includes('/api/trend')&&u.includes('데님')).length;
   assert.equal(n, 1, `${n}번 나갔다 — kwWire 가 두 번 붙었다`);
 });
 

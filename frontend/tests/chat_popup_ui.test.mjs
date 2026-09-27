@@ -26,6 +26,9 @@ globalThis.addEventListener = dom.window.addEventListener.bind(dom.window);
 globalThis.removeEventListener = dom.window.removeEventListener.bind(dom.window);
 globalThis.matchMedia = () => ({ matches: false, addEventListener() {}, addListener() {} });
 globalThis.scrollTo = () => {};
+/* 인트로 로더가 창 너비로 슬롯을 잰다 — 다른 UI 시험과 같은 창 크기를 준다 */
+globalThis.innerWidth = 1440;
+globalThis.innerHeight = 900;
 globalThis.IntersectionObserver = class { observe(){} unobserve(){} disconnect(){} };
 globalThis.ResizeObserver = class { observe(){} unobserve(){} disconnect(){} };
 globalThis.location = dom.window.location;

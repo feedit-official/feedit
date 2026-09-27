@@ -100,44 +100,33 @@ const dispatch=await import(`${root}/trend/static/js/dispatch.js`);
 const {paintStockPriceChart}=await import(`${root}/trend/static/js/stock_price_chart.js`);
 dispatch.trRender('stock');
 await new Promise(resolve=>setTimeout(resolve,50));
-assert.equal(document.getElementById('dzImageFallback'),null,
-  '빈 사진 영역에 별도의 이미지 없음 문구를 두지 않는다');
-assert.equal(document.getElementById('dzPlaceholder').hidden,false,
-  '선택 전에는 상품 선택 안내를 보여 준다');
+/* ★ 2026-09-19 — 드래그해 옮기던 큰 사진 칸(드롭존)과 '찜 추가' 버튼을 걷어냈다(f8d0b45).
+   지금은 찜 목록 카드를 눌러 고르고, 같은 카드를 다시 누르면 풀리고, 카드의 하트로 찜을 푼다. */
+assert.equal(document.getElementById('dzDropZone'),null,'드롭존은 걷어냈다');
 assert.match(document.getElementById('stockPickerSummary').textContent,/상품을 고르면/,
   '상품 선택 전에는 요약 자리에 안내를 보여 준다');
+assert.ok(document.querySelector('#stockDiscountSlot .stockPickerDialEmpty'),'선택 전에는 빈 원형만 둔다');
 assert.equal(document.querySelectorAll('#dzWishListBody .wlItem').length,6,'DB 찜목록을 상품 카드로 보여 준다');
 assert.ok(asked.some(url=>url.includes('/api/auth/saved')),'찜목록을 DB에서 요청한다');
 assert.equal(document.querySelectorAll('#dzWishListBody .wlPic img').length,6,'카드마다 실제 상품 이미지를 보여 준다');
-assert.equal(document.querySelector('#dzWishListBody .wlPrice em').textContent,'25%');
+assert.equal(document.querySelectorAll('#dzWishListBody .wlHeart[data-wish-off]').length,6,'카드마다 찜 해제 하트가 있다');
 const css=fs.readFileSync(new URL('../trend/static/css/my_feed.css',import.meta.url),'utf8');
-assert.match(css,/\.stockPicker \.wlBody\{[^}]*grid-template-columns:repeat\(3,minmax\(0,1fr\)\)/s,
-  '넓은 화면에서는 한 줄에 세 장을 배치한다');
-assert.match(css,/\.stockPicker \.wlBody\{[^}]*overflow-y:auto/s,'기존 세로 스크롤을 유지한다');
-assert.match(css,/\.stockPicker \.dropZone\{[^}]*aspect-ratio:1;max-height:296px/s,
-  '큰 사진의 너비는 유지하되 높이를 조금 줄여 상품명과 찜 버튼을 올린다');
-assert.match(css,/\.stockPicker \.dzWrap\{[^}]*gap:8px/s,
-  '큰 사진과 아래 상품 정보 사이에 여백을 둔다');
-assert.match(css,/\.stockPicker \.dzSelection b\{font-size:11px/s,
-  '큰 사진 아래 상품명만 조금 작게 보여 준다');
-assert.match(css,/\.stockPicker \.dzPlaceholder\{[^}]*align-items:center;justify-content:center;[^}]*text-align:center/s,
-  '더하기 버튼과 안내 문구를 사진 영역 중앙에 정렬한다');
-assert.match(css,/\.stockPicker \.dropZone img\{[^}]*object-fit:cover;object-position:center center/s,
-  '큰 이미지는 중앙을 기준으로 위아래를 균형 있게 잘라 프레임을 채운다');
+assert.match(css,/\.stockPicker \.wlBody\{[^}]*grid-template-columns:repeat\(4,minmax\(0,1fr\)\)/s,
+  '넓은 화면에서는 한 줄에 네 장을 배치한다');
+assert.match(css,/\.stockPicker \.wlBody\{[^}]*overflow-y:auto/s,'넘치면 찜목록 안에서만 세로 스크롤한다');
 assert.match(css,/\.stockPicker \.wlPic img\{[^}]*object-fit:cover;object-position:center top/s,
   '찜목록 이미지는 위쪽을 보존하며 카드 사진을 채운다');
-assert.match(css,/\.stockPicker \.dzWishlist\{height:320px/s,
-  '큰 사진을 줄여도 찜목록 높이와 스크롤 영역은 유지한다');
+assert.match(css,/\.stockPicker \.dzWishlist\{height:320px/s,'찜목록 높이와 스크롤 영역을 유지한다');
 assert.match(css,/\.fsPop\.is-discount \.fsOpt\.has-thumb \{[^}]*justify-content: flex-start/s,
   '세부검색 상품명은 썸네일 바로 옆에 배치한다');
 assert.match(css,/\.stockPickerGrid\{[^}]*grid-template-columns:[^}]*minmax\(0,1fr\)/s,
-  '할인율·큰 이미지·가격 요약·찜목록을 한 줄에 배치한다');
+  '할인율·가격 요약·찜목록을 한 줄에 배치한다');
 assert.match(css,/\.stockPickerRate \.dial,\.stockPickerDialEmpty\{width:min\(100%,165px\)/s,
   '선택 전후 원형 박스에 같은 크기를 적용한다');
 assert.match(css,/\.stockPickerDial \.trk,\.stockPickerDial \.val\{stroke-width:8\}/s,
   '선택 후 원형의 선 두께를 선택 전 테두리 크기에 맞춘다');
 assert.match(css,/\.stockPickerSummary\{[^}]*padding:0 0 0 78px/s,
-  '원형 그래프는 그대로 두고 가격 설명만 오른쪽으로 20px 더 옮긴다');
+  '원형 그래프는 그대로 두고 가격 설명만 오른쪽으로 옮긴다');
 assert.match(css,/\.stockPickerSummary h4\{[^}]*-webkit-line-clamp:2/s,
   '긴 상품명은 두 줄까지만 표시한다');
 const wishlist=document.getElementById('dzWishListBody');
@@ -145,29 +134,20 @@ wishlist.scrollTop=73;
 dispatch.trRender('stock');
 assert.equal(wishlist.scrollTop,73,'지표 갱신 후에도 찜목록 스크롤 위치를 유지한다');
 
-const transfer=new Map();
-const dataTransfer={setData:(key,value)=>transfer.set(key,value),getData:key=>transfer.get(key)||'',effectAllowed:'',dropEffect:''};
-const row=document.querySelector('#dzWishListBody .wlItem');
-const drag=new dom.window.Event('dragstart',{bubbles:true});
-Object.defineProperty(drag,'dataTransfer',{value:dataTransfer});
-row.dispatchEvent(drag);
-const drop=new dom.window.Event('drop',{bubbles:true,cancelable:true});
-Object.defineProperty(drop,'dataTransfer',{value:dataTransfer});
-document.getElementById('dzDropZone').dispatchEvent(drop);
+const card=id=>document.querySelector(`#dzWishListBody .wlItem[data-source-id="${id}"]`);
+card(17).click();
 await new Promise(resolve=>setTimeout(resolve,50));
-assert.equal(search.FS.stockItem.id,17);
-assert.ok(document.querySelector('#dzWishListBody .wlItem[data-source-id="17"]').classList.contains('on'));
-assert.ok(document.querySelector('#stockDiscountSlot .dial'),'할인율 원형을 큰 이미지 옆에 보여 준다');
+assert.equal(search.FS.stockItem.id,17,'찜 카드를 누르면 그 상품을 고른다');
+assert.ok(card(17).classList.contains('on'));
+assert.equal(card(17).getAttribute('aria-pressed'),'true');
+assert.ok(document.querySelector('#stockDiscountSlot .dial'),'할인율 원형을 요약 옆에 보여 준다');
 assert.equal(document.querySelector('#stockDiscountSlot .dial .trk').getAttribute('r'),'56',
   '선택 후 원형도 선택 전처럼 박스 가장자리까지 채운다');
 assert.equal(document.querySelector('#dzDashboard .ph em'),null,'불필요한 일반 판매 상품 문구를 제거한다');
 assert.equal(document.querySelector('#stockAnalyticsBody .dial'),null,'아래 가격 요약에 원형을 중복 배치하지 않는다');
 assert.ok(document.querySelector('#dzDashboard #stockPickerSummary'),'가격 요약을 같은 상품 박스 안에 둔다');
-assert.ok(document.getElementById('stockPickerSummary').compareDocumentPosition(document.querySelector('.stockPicker .dzWrap'))&Node.DOCUMENT_POSITION_FOLLOWING,
-  '상품 설명·가격이 큰 상품 이미지보다 먼저 나온다');
 assert.equal(document.querySelector('#stockAnalyticsBody .stockVerdict'),null,'아래에 별도 가격 요약 박스를 만들지 않는다');
 assert.ok(asked.some(url=>url.includes('/api/discount?source_id=17')),'상품 ID로 할인률을 조회한다');
-assert.match(document.getElementById('dzImage').src,/17\.jpg/);
 assert.match(document.getElementById('stockPickerSummary').textContent,/100,000원/);
 assert.match(document.getElementById('stockPickerSummary').textContent,/75,000원/);
 assert.match(document.getElementById('stockPickerSummary').textContent,/관측 기간 최저가/);
@@ -177,16 +157,33 @@ assert.match(document.querySelector('#stockPriceChart svg').getAttribute('aria-l
 assert.match(document.getElementById('stockAnalyticsBody').textContent,/관측 최고가|판매처별 가격 비교/);
 assert.equal(document.querySelectorAll('.stockCompareTable tr').length,3,'매칭된 두 판매처를 가격 옆에 보여 준다');
 assert.match(document.querySelector('.stockPriceGrid').className,/trGrid/,'기존 1.5:1 그리드 비율을 유지한다');
-const saveButton=document.getElementById('dzSaveBtn');
-assert.equal(saveButton.textContent,'♥ 찜 해제','DB 찜 상품은 같은 버튼으로 해제할 수 있다');
-saveButton.click();
+
+card(17).click();
 await new Promise(resolve=>setTimeout(resolve,50));
-assert.equal(document.querySelectorAll('#dzWishListBody .wlItem').length,5,'찜 해제가 DB 목록에 반영된다');
-assert.equal(saveButton.textContent,'♡ 찜 추가');
-saveButton.click();
+assert.equal(search.FS.stockItem,null,'같은 카드를 다시 누르면 선택이 풀린다');
+assert.match(document.getElementById('stockPickerSummary').textContent,/상품을 고르면/);
+
+card(17).dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Enter',bubbles:true}));
 await new Promise(resolve=>setTimeout(resolve,50));
-assert.equal(document.querySelectorAll('#dzWishListBody .wlItem').length,6,'같은 버튼으로 다시 찜할 수 있다');
-assert.equal(saveButton.textContent,'♥ 찜 해제');
+assert.equal(search.FS.stockItem.id,17,'키보드(Enter)로도 고를 수 있다');
+
+document.querySelector('#dzWishListBody [data-wish-off="30"]').click();
+await new Promise(resolve=>setTimeout(resolve,50));
+assert.equal(document.querySelectorAll('#dzWishListBody .wlItem').length,5,'하트로 찜을 풀면 DB 목록에 반영된다');
+assert.equal(search.FS.stockItem.id,17,'다른 카드의 찜을 풀어도 고른 상품은 그대로다');
+
+failSave=true;
+document.querySelector('#dzWishListBody [data-wish-off="31"]').click();
+await new Promise(resolve=>setTimeout(resolve,50));
+assert.equal(document.querySelectorAll('#dzWishListBody .wlItem').length,5,'저장 실패 시 찜 상태를 잘못 뒤집지 않는다');
+assert.match(document.getElementById('dzSaveError').textContent,/저장 실패 테스트/);
+assert.equal(document.getElementById('dzSaveError').hidden,false,'실패 사유를 보여 준다');
+failSave=false;
+
+document.querySelector('#dzWishListBody [data-wish-off="17"]').click();
+await new Promise(resolve=>setTimeout(resolve,50));
+assert.equal(document.querySelectorAll('#dzWishListBody .wlItem').length,4);
+assert.equal(search.FS.stockItem,null,'고른 상품의 찜을 풀면 선택도 같이 풀린다');
 
 const searchInput=document.getElementById('fsInput');
 searchInput.value='코튼';
@@ -209,19 +206,7 @@ document.getElementById('fsApply').click();
 await new Promise(resolve=>setTimeout(resolve,50));
 assert.equal(search.FS.stockItem.id,24,'세부검색이 다른 상품 ID를 선택한다');
 assert.ok(asked.some(url=>url.includes('/api/discount?source_id=24')));
-assert.match(document.getElementById('dzImage').src,/24\.jpg/,'세부검색 썸네일이 선택 카드에 뜬다');
-assert.match(document.getElementById('stockPickerSummary').textContent,/60,000원/);
-assert.equal(document.getElementById('dzSaveBtn').textContent,'♡ 찜 추가');
-document.getElementById('dzSaveBtn').click();
-await new Promise(resolve=>setTimeout(resolve,50));
-assert.equal(document.getElementById('dzSaveBtn').textContent,'♥ 찜 해제','세부검색 상품도 DB에 찜할 수 있다');
-assert.ok(document.querySelector('#dzWishListBody .wlItem[data-source-id="24"]'));
-failSave=true;
-document.getElementById('dzSaveBtn').click();
-await new Promise(resolve=>setTimeout(resolve,50));
-assert.equal(document.getElementById('dzSaveBtn').textContent,'♥ 찜 해제','저장 실패 시 찜 상태를 잘못 뒤집지 않는다');
-assert.match(document.getElementById('dzSaveError').textContent,/저장 실패 테스트/);
-failSave=false;
+assert.match(document.getElementById('stockPickerSummary').textContent,/60,000원/,'세부검색으로 고른 상품의 가격 요약을 보여 준다');
 assert.equal(document.querySelectorAll('.stockCompareTable tr').length,2,'매칭이 없으면 다른 상품을 끼워 넣지 않는다');
 assert.match(document.querySelector('.stockComparePanel .note').textContent,/다른 판매처가 없습니다/);
 
@@ -235,21 +220,25 @@ assert.ok(asked.slice(beforePagedSearch).some(url=>url.includes('item_limit=24')
   '할인률 상품은 첫 24개만 요청한다');
 assert.equal(productList.querySelectorAll('.fsOpt.has-thumb img').length,24,
   '첫 화면에 상품 이미지 URL 24개만 렌더링한다');
-productList.querySelector('[data-stock-page="24"]').click();
-await new Promise(resolve=>setTimeout(resolve,50));
+/* ★ 2026-09-19 — '이전/다음 24개' 버튼을 걷어내고, 칸을 끝까지 내리면 다음 묶음을 이어 붙인다 */
+assert.ok(productList.querySelector('[data-stock-tail]'),'더 있으면 끝에 이어 받기 안내를 둔다');
+const scrollMore=async()=>{
+  productList.dispatchEvent(new dom.window.Event('scroll',{bubbles:true}));
+  await new Promise(resolve=>setTimeout(resolve,50));
+};
+await scrollMore();
 assert.ok(asked.some(url=>url.includes('items_only=1')&&url.includes('item_offset=24')),
-  '다음 페이지는 상품 후보만 별도로 요청한다');
-assert.equal(productList.querySelectorAll('.fsOpt.has-thumb img').length,24);
+  '끝까지 내리면 다음 묶음은 상품 후보만 따로 요청한다');
+assert.equal(productList.querySelectorAll('.fsOpt.has-thumb img').length,48,'이어 받은 묶음을 뒤에 붙인다');
+assert.ok(productList.querySelector('[data-source-id="1000"]'),'앞 묶음도 그대로 남는다');
 assert.ok(productList.querySelector('[data-source-id="1024"]'));
-productList.querySelector('[data-stock-page="48"]').click();
-await new Promise(resolve=>setTimeout(resolve,50));
-assert.equal(productList.querySelectorAll('.fsOpt.has-thumb img').length,7);
-assert.equal(productList.querySelector('[data-stock-page="72"]'),null,
-  '마지막 페이지에서는 다음 버튼을 보이지 않는다');
-productList.querySelector('[data-stock-page="24"]').click();
-await new Promise(resolve=>setTimeout(resolve,50));
-assert.ok(productList.querySelector('[data-source-id="1024"]'),
-  '이전 페이지로 돌아갈 수 있다');
+await scrollMore();
+assert.equal(productList.querySelectorAll('.fsOpt.has-thumb img').length,55);
+assert.equal(productList.querySelector('[data-stock-tail]'),null,'마지막 묶음 뒤에는 안내를 두지 않는다');
+const tailAsks=asked.filter(url=>url.includes('items_only=1')&&url.includes('item_offset=')).length;
+await scrollMore();
+assert.equal(asked.filter(url=>url.includes('items_only=1')&&url.includes('item_offset=')).length,tailAsks,
+  '더 없으면 스크롤해도 다시 묻지 않는다');
 
 const thin=document.createElement('div');
 paintStockPriceChart(thin,[{date:'2026-09-18',sale_price:60000,list_price:100000}]);
@@ -260,5 +249,5 @@ dispatch.trRender('life');
 assert.equal(search.FS.stockItem,null,'다른 지표 탭으로 넘어가면 할인률 상품 선택을 격리한다');
 assert.ok(search.getFsCols().some(col=>col.ax==='아이템명'),'수명주기 모달의 기존 축을 유지한다');
 assert.ok(!search.getFsCols().some(col=>col.ax==='상품명'));
-console.log('✅ DB 찜 추가·해제·실패, 드래그, 빠른 상품 검색, 다른 탭 격리 통과');
+console.log('✅ DB 찜 카드 선택·해제·실패, 빠른 상품 검색, 다른 탭 격리 통과');
 process.exit(0);

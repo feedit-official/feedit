@@ -15,6 +15,8 @@ globalThis.document = dom.window.document;
 globalThis.Element = dom.window.Element;
 globalThis.SVGElement = dom.window.SVGElement;
 globalThis.getComputedStyle = dom.window.getComputedStyle;
+/* 차트가 new CustomEvent('gwin') 을 쏜다 — Node 전역 CustomEvent 는 jsdom 요소가 받지 않는다 */
+globalThis.CustomEvent = dom.window.CustomEvent;
 
 let fetchReply = null;
 /* 진짜 fetch 처럼 text() 를 준다. 코드가 text() → JSON.parse 로 읽기 때문이다

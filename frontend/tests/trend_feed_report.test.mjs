@@ -120,7 +120,10 @@ await t('리포트 — 기간 · 받기 전에는 키워드 · 활동 지표를 
   assert.match(r, /\d{4}\.\d{2} · W\d · \d+\/\d+ – \d+\/\d+/);
   assert.match(body().querySelector('#wkLine').textContent, /확인하고 있습니다/);
   const m = [...body().querySelectorAll('.wkMetric strong')].map(e => e.textContent);
-  assert.deepEqual(m, ['–개', '–개', '–표', '–분']);   /* ★ 2026-09-19 — '…' 대신 '–', 값이 오면 카운트업으로 굴러 올라간다 */
+  /* ★ 2026-09-19 — 받기 전에는 숫자 자리에 뼈대(WK_SKEL)만 둔다. 값이 오면 카운트업으로 굴러 올라간다.
+     지어낸 숫자가 없으면 된다 — 단위만 남는다. */
+  assert.deepEqual(m, ['개', '개', '표', '분']);
+  assert.ok(m.every(x => !/\d/.test(x)), '받기 전에 숫자를 지어내면 안 된다');
   await wait();
 });
 

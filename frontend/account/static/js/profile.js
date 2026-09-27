@@ -629,8 +629,9 @@ function kakaoContinue(btn, errEl){
 function kakaoReturn(){
   let mark = null;
   try{ mark = sessionStorage.getItem(KAKAO_MARK); sessionStorage.removeItem(KAKAO_MARK) }catch(e){}
+  if(!mark) return;                      /* 우리가 보낸 이동이 아니면 주소창을 읽지도 않는다 */
   const qs = new URLSearchParams(location.search);
-  if(!mark || !qs.has('state') || !(qs.has('code') || qs.has('error'))) return;
+  if(!qs.has('state') || !(qs.has('code') || qs.has('error'))) return;
   const code = qs.get('code'), state = qs.get('state'), error = qs.get('error');
   history.replaceState(history.state, '', location.pathname + location.hash);
   if(error){

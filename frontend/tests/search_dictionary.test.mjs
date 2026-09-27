@@ -169,7 +169,8 @@ await t('★ 서버를 못 봐도 STYLE 칸은 같은 10종이고, 그 사실을
   facetMode = 'down'; S.fsReset();
   await S.fsLoadFacets();
   const names = colBtns(0).map(labelOf);
-  assert.deepEqual(names, CORE, names.join(','));
+  /* 2026-09-23 부터 세부 검색의 모든 칸은 가나다순 (search.js 칸 정렬) */
+  assert.deepEqual(names, [...CORE].sort((a,b)=>a.localeCompare(b,'ko-KR')), names.join(','));
   assert.ok(colBtns(0).every((b) => countOf(b) === null), '서버가 세지 않은 숫자를 만들면 안 된다');
   assert.ok(!names.includes('미니멀'), '사전 스타일을 섞으면 안 된다');
   assert.match(stateText(), /박아 둔 목록/);
@@ -183,7 +184,7 @@ await t('스타일을 고르면 칩이 생기고, 박아 둔 계층 안에서 �
   assert.deepEqual(S.FS.pick['스타일'], ['고프코어']);
   assert.ok(document.getElementById('fsPicked').textContent.includes('고프코어'));
   const kinds = colBtns(2).map(labelOf);
-  assert.deepEqual(kinds, ['테크 셸', '플리스', '트레일 러너', '카고 팬츠'], kinds.join(','));
+  assert.deepEqual(kinds, ['카고 팬츠', '테크 셸', '트레일 러너', '플리스'], kinds.join(','));   /* 가나다순 */
   await wait(250);   // 뒤따라 도는 후보 요청이 상태를 덮어도 칩은 그대로여야 한다
   assert.deepEqual(S.FS.pick['스타일'], ['고프코어']);
 });

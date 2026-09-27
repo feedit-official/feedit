@@ -60,7 +60,7 @@ t('조회 중에는 두 번 못 누르게 잠근다', () => {
 // ── 조회 중 표시 ─────────────────────────────────────────
 t('★ 조회하는 동안 busy 를 켜고, 실패해도 반드시 끈다', () => {
   const i = saved.indexOf('function kwGo(');
-  const seg = saved.slice(i, i + 1400);
+  const seg = saved.slice(i, saved.indexOf('function kwBusy(', i));   /* 함수 끝까지 — 주석이 늘어도 창 밖으로 밀리지 않게 */
   assert.match(seg, /kwBusy\(true\)/);
   assert.match(seg, /\.catch\(\(\)=>\{\}\)\)\)\.then\(\(\)=>\{/, '실패해도 끝나야 한다');
   assert.match(seg, /kwBusy\(false\)/);

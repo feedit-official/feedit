@@ -82,7 +82,8 @@ t("★ 온도가 아직 계산 안 됐으면 화면을 안 채운다", () => {
 });
 
 t("실값일 때 언제 기준인지 밝힌다", () => {
-  assert.match(dispatch, /S\.asOf\+' 기준 · 관측 '\+S\.points\+'일'/);
+  /* 2026-09-21 — 기준일은 데이터 적재일(dataAsOf)을 먼저 쓴다. 기간은 일/주/월 전환 라벨(data-win-label) */
+  assert.match(dispatch, /\(S\.dataAsOf\|\|S\.asOf\)\+' 기준 · <span data-win-label>/);
   assert.match(dispatch, /S\.thin\?' — 자료가 짧아 변화값은 참고만 하세요'/);
 });
 
