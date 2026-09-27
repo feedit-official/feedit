@@ -347,6 +347,11 @@ def run_crawl_target(
                 ]
             )
 
+            # 항목이 전부 실패했으면 담당자에게 알린다 — 저장이 확정된 뒤에 (2026-09-27)
+            if final_status == CrawlRun.Status.FAILED:
+                from apps.core.services.ops_alerts import alert_crawl_failed
+                transaction.on_commit(lambda: alert_crawl_failed(crawl_run))
+
             # ----------------------------------------------
             # CrawlTarget
             # ----------------------------------------------
@@ -452,5 +457,9 @@ def run_crawl_target(
                 "finished_at",
             ]
         )
+
+        # 담당자 알림 — 소스마다 하루 한 번. 알림 쪽 오류는 여기로 새지 않는다 (2026-09-27)
+        from apps.core.services.ops_alerts import alert_crawl_failed
+        alert_crawl_failed(crawl_run)
 
         raise

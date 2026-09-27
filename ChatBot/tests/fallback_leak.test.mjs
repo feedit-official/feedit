@@ -3,16 +3,21 @@
           목업 문장("…1,284명 중 73%가 산다에 투표…")이 그 위에 그대로 남았다.
    원인 — `if(head) aiMsg.html=head` 라서 head 가 빈 거절 응답에서는 목업이 안 지워졌다. */
 import { JSDOM } from 'jsdom';
+import { browserEnv } from './browser_env.mjs';
 import fs from 'node:fs';
 
 const POPUP = fs.readFileSync('popup.html','utf8');
-const dom = new JSDOM('<!doctype html><body>'+POPUP+'</body>',
+/* ★ 2026-09-27 — 팝업 모듈이 앱 셸(라우터 · 인트로 · 연관어 팝오버)까지 끌고 들어와
+   불러오는 순간 그 칸들을 찾는다. 조각 마크업 대신 실제 index.html 을 세운다(run.sh 가 app_index.html 로 복사). */
+const dom = new JSDOM(fs.existsSync('app_index.html') ? fs.readFileSync('app_index.html','utf8')
+                                                    : '<!doctype html><body>'+POPUP+'</body>',
   {url:'http://localhost:5173/', pretendToBeVisual:true});
 for (const k of ['location','requestAnimationFrame','cancelAnimationFrame','HTMLElement',
                  'Node','Event','CustomEvent','MouseEvent','getComputedStyle',
                  'TextDecoder','AbortController'])
   { try{ global[k]=dom.window[k]??global[k] }catch(e){} }
 global.window = dom.window; global.document = dom.window.document;
+browserEnv(dom);   /* 앱 셸이 따라 들어오며 찾는 나머지 창 전역 */
 
 const FX = JSON.parse(fs.readFileSync('_chat_fixtures.json','utf8'));
 let SERVE = FX.refusal;
@@ -29,6 +34,11 @@ global.fetch = async (url) => {
   return {ok:true, body:{getReader:()=>({read:async()=>i<parts.length?{done:false,value:parts[i++]}:{done:true}})}};
 };
 
+/* 앱과 같은 순서로 불러온다 — chat_popup.js 를 먼저 부르면 모듈 순환에서 ME 가 아직 없다 */
+if (fs.existsSync('app/main.js')) await import('./app/main.js');
+/* 2026-09 부터 챗봇은 로그인 관문을 지나야 질문을 보낸다 — 지난 상태로 둔다 (frontend/tests/chat_popup_ui 와 같다) */
+if (fs.existsSync('app/account/static/js/profile.js'))
+  (await import('./app/account/static/js/profile.js')).AUTH.in = true;
 const cp = await import('./app/home/static/js/chat_popup.js');
 const chat = await import('./app/home/static/js/chat.js');
 const wait = ms => new Promise(r=>setTimeout(r,ms));
@@ -57,7 +67,7 @@ await wait(6000);
 const t2=th(); const say2=(t2.querySelector('.say')||{textContent:''}).textContent;
 ok(say2.includes('판단하지 못합니다'), `못 한다고 먼저 말한다`);
 ok(t2.textContent.includes('살!말?지수는 아직'), '카드 각주에도 남는다');
-ok(!!t2.querySelector('.ansCard'), '아는 것은 그대로 보여준다');
+ok(!!t2.querySelector('.skillReport, .ansCard'), '아는 것은 그대로 보여준다');   /* 2026-09 부터 .skillReport */
 
 console.log(fail? `\n실패 ${fail}건` : '\n전부 통과');
 process.exit(fail?1:0);

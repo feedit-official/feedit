@@ -94,6 +94,13 @@ app.conf.beat_schedule = {
         "task": "core.collect_search_weekly",
         "schedule": crontab(hour=6, minute=10, day_of_week="1-5"),
     },
+    # ── 운영 알림 (2026-09-27) ──
+    #   매일 09:20 — 장기 미갱신 소스가 있으면 운영 계정 · 메일로 알린다 (apps/core/services/ops_alerts.py)
+    #   ★ settings.py 의 CELERY_BEAT_SCHEDULE 에도 같은 항목이 있다(두 곳 모두 넣는 이유는 그쪽 주석).
+    "check-data-freshness": {
+        "task": "core.check_data_freshness",
+        "schedule": crontab(hour=9, minute=20),
+    },
 }
 
 # ============================================================

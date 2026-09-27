@@ -1969,6 +1969,31 @@ LIFECYCLE_RULE = (
 )
 
 
+# ── 발주 판별 (2026-09-27, METRIC-002) ─────────────────────────
+# 요구사항: 단계를 판정하고 '발주 적기인지 비추천인지' 를 판별한다.
+# 판별은 단계 하나에서만 나온다 — 리드타임 · 재고 같은 입력은 우리 데이터에 없으므로
+# 숫자(몇 주 뒤 등)를 지어내지 않는다. 화면 · 챗봇이 같은 값을 쓰도록 여기서 한 번만 정한다.
+ORDER_TIMING = {
+    "태동": ("GOOD", "발주 적기",
+             "화제성이 막 오르기 시작했습니다. 먼저 들이면 선점할 수 있지만 그대로 사라질 수도 있어 소량부터 권합니다."),
+    "확산": ("GOOD", "발주 적기",
+             "오름세가 이어지는 구간입니다. 지금 들여도 수요가 남아 있을 가능성이 가장 높습니다."),
+    "정점": ("CAUTION", "주의",
+             "오름세가 멈춘 정점 부근입니다. 들여온 물량이 팔릴 기간이 짧을 수 있어 추가 발주는 신중해야 합니다."),
+    "쇠퇴": ("AVOID", "발주 비추천",
+             "최고점을 지나 내려가는 중입니다. 추가 발주보다 남은 재고를 소진하는 편이 낫습니다."),
+}
+ORDER_TIMING_RULE = "발주 판별은 수명주기 단계로만 정합니다 — 태동 · 확산은 적기, 정점은 주의, 쇠퇴는 비추천. 판정을 보류한 용어는 판별하지 않습니다."
+
+
+def _order_timing(stage):
+    hit = ORDER_TIMING.get(stage)
+    if hit is None:
+        return None
+    code, label, reason = hit
+    return {"code": code, "label": label, "reason": reason}
+
+
 def _smooth_level(p):
     """판정에 쓰는 수준 — 하루치 level 은 드문 용어에서 0↔100 으로 튄다(2026-09-19).
     ma7 이 있으면 ma7, 없으면 level."""
@@ -2090,6 +2115,8 @@ def lifecycle(request):
         "series": series,
         "sales_series": sales,
         "rule": LIFECYCLE_RULE,
+        "order_timing": _order_timing(stage),
+        "order_rule": ORDER_TIMING_RULE,
     })
 
 

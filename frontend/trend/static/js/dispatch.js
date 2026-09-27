@@ -1957,6 +1957,8 @@ export function trRender(id){
     const RAMP=['#3d7fd6','#1f9e6e','#c98a1b','#b23b3b'].slice(0,si+1);
     const pct=D.progress==null?0:D.progress;
     const timing=['적기','적기','주의','비추천'][si];
+    /* ★ 2026-09-27 — 발주 판별은 서버(/api/lifecycle order_timing)가 정한 값을 그대로 쓴다 (METRIC-002) */
+    const OT=D.order_timing||null;
     const mom=D.momentum==null?null:Math.round(D.momentum-50);
     const MSG=[
       ['아직 아무도 모릅니다','지금 사면 남들보다 먼저 입는 구간입니다. 다만 물량이 적어 선택지가 좁고, 그대로 사라질 위험도 함께 있습니다.'],
@@ -1984,6 +1986,7 @@ export function trRender(id){
           '</div>'+
         '</div></div>'+
       '<div class="note" style="margin:0 0 12px"><i>◆</i>'+trEsc(D.data_as_of||D.as_of)+' 기준 · ‘'+trEsc(D.term)+'’ 관측 '+D.points+'일</div>'+
+      (OT?'<div class="note lcOrder" data-order="'+trEsc(OT.code)+'" style="margin:0 0 12px"><i>◆</i><b>발주 관점 · '+trEsc(OT.label)+'</b> — '+trEsc(OT.reason)+'</div>':'')+
       '<div class="kpis">'+
         kpi('구매 타이밍',timing,'',MSG[0],si<2?1:0)+
         kpi('신규 유입률',D.inflow_pct==null?'–':(D.inflow_pct>0?'+':'')+Math.round(D.inflow_pct),D.inflow_pct==null?'':'%','최근 4주 언급 · 직전 4주 대비',(D.inflow_pct||0)>0?1:0)+

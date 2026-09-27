@@ -1,11 +1,17 @@
 /* 이번 변경의 브라우저 경계: 중단 signal과 하단 행동 버튼 마크업. */
-global.location={protocol:'http:'};
+import { JSDOM } from 'jsdom';
+import { browserEnv } from './browser_env.mjs';
+/* chat_api.js 가 alpha.js 를 불러오고, alpha.js 는 불러오는 순간 document 를 본다 */
+browserEnv(new JSDOM('<!doctype html><body></body>', {url:'http://localhost:5173/'}));
 
 let lastSignal=null;
 global.fetch=async (_url,opt={})=>{
   lastSignal=opt.signal;
   return await new Promise((_resolve,reject)=>{
     if(!opt.signal)return reject(new Error('signal missing'));
+    /* 브라우저 fetch 는 이미 끊긴 signal 을 받으면 곧바로 거절한다.
+       askStream 이 알파 횟수 차감(await)을 먼저 하므로, 그 사이에 끊기면 이 경우가 된다. */
+    if(opt.signal.aborted)return reject(new Error('aborted'));
     opt.signal.addEventListener('abort',()=>reject(new Error('aborted')),{once:true});
   });
 };

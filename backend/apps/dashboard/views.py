@@ -69,7 +69,8 @@ from datetime import datetime, timezone as dt_timezone
 from datetime import timedelta
 from django.conf import settings
 from django.utils import timezone
-from .services.dashboard_service import get_dashboard_context
+from .services.dashboard_service import get_dashboard_context, source_freshness
+from .services.data_quality import data_quality_context
 from apps.core.models import (
     Brand,
     BrandSource,
@@ -826,6 +827,17 @@ def normalized_products(request):
 
 
 @login_required(login_url="/admin-dashboard/login/")
+def data_quality(request):
+    """데이터 품질 — 누락 · 중복 · 정규화 상태 (DATA_QUALITY-001·002·003)."""
+    context = data_quality_context()
+    context.update({
+        "page_title": "데이터 품질",
+        "page_description": "플랫폼별 빈 칸 · 중복 · 정규화 상태를 실제 테이블에서 셉니다.",
+    })
+    return render(request, "dashboard/normalization/quality.html", context)
+
+
+@login_required(login_url="/admin-dashboard/login/")
 def normalization_failures(request):
     """정규화 실패 — 실패한 RawDocument와 오류 내용."""
 
@@ -1559,15 +1571,16 @@ def platform_status(request):
         failed=Q(status="FAILED"),
     )
     doc_stats = _group_count(RawDocument.objects.all())
+    fresh = source_freshness()
 
-    # 소스별 최근 실행 1건씩 — 한 번의 쿼리로 가져와 앞선 것만 남긴다.
+    # 소스별 최근 실행 1건씩. 예전에는 실행 기록 전부를 읽어 앞선 것만 남겼다 —
+    # 기록이 쌓일수록 화면이 느려지므로 소스마다 한 건만 가져온다.
     last_runs = {}
-    for run in (
-        CrawlRun.objects
-        .order_by("source_id", "-started_at")
-        .only("id", "source_id", "started_at", "status")
-    ):
-        last_runs.setdefault(run.source_id, run)
+    for source in sources:
+        run = (CrawlRun.objects.filter(source_id=source.id)
+               .order_by("-started_at").only("id", "source_id", "started_at", "status").first())
+        if run is not None:
+            last_runs[source.id] = run
 
     rows = []
     for source in sources:
@@ -1591,6 +1604,7 @@ def platform_status(request):
             "failed_count": runs.get("failed", 0),
             "doc_count": doc_stats.get(source.id, {}).get("n", 0),
             "last_run": last_runs.get(source.id),
+            "fresh": fresh.get(source.id),
         })
 
     context = {
@@ -1600,6 +1614,7 @@ def platform_status(request):
         "total_targets": sum(r["target_count"] for r in rows),
         "total_runs": sum(r["run_count"] for r in rows),
         "total_docs": sum(r["doc_count"] for r in rows),
+        "stale_count": sum(1 for r in rows if r["fresh"] and r["fresh"]["state"] in ("late", "never")),
     }
     return render(request, "dashboard/collection/platform_status.html", context)
 

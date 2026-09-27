@@ -810,6 +810,8 @@ class Notification(models.Model):
         TERM_ADDED = "TERM_ADDED", "용어 사전 등재"
         JOB_REVIEW = "JOB_REVIEW", "직업 인증 결과"
         VOTE_COMMENT = "VOTE_COMMENT", "살!말? 새 댓글"
+        # 운영 계정만 받는다 — 수집 실패 · 장기 미갱신 (apps/core/services/ops_alerts.py, 2026-09-27)
+        OPS_ALERT = "OPS_ALERT", "운영 알림"
 
     user = models.ForeignKey(
         AppUser,

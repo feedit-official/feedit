@@ -1,4 +1,5 @@
 import os
+import sys
 
 from celery.schedules import crontab
 from pathlib import Path
@@ -221,6 +222,13 @@ CELERY_BEAT_SCHEDULE = {
         "task": "core.collect_search_weekly",
         "schedule": crontab(hour=6, minute=10, day_of_week="1-5"),
     },
+    # ── 운영 알림 (2026-09-27) ──
+    #   매일 09:20 — 장기 미갱신 소스가 있으면 운영 계정 · 메일로 알린다 (apps/core/services/ops_alerts.py)
+    #   ★ config/celery.py 의 beat_schedule 에도 같은 항목이 있다(두 곳 모두 넣는 이유는 그쪽 주석).
+    "check-data-freshness": {
+        "task": "core.check_data_freshness",
+        "schedule": crontab(hour=9, minute=20),
+    },
 }
 
 # ★ 2026-09-20 — config/celery.py 와 같은 스위치 (크롤하지 않는 서버에서는 끈다)
@@ -265,6 +273,13 @@ STORAGES = {
     "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
     "staticfiles": {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"},
 }
+# ★ 2026-09-27 — 시험(manage.py test)에서는 collectstatic 을 돌리지 않으므로 해시 목록(manifest)이 없다.
+#   그대로 두면 관리자 화면을 그리는 순간 'Missing staticfiles manifest entry' 로 터진다.
+#   시험에서만 일반 저장소를 쓴다. 운영 설정은 그대로다.
+if len(sys.argv) > 1 and sys.argv[1] == "test":
+    STORAGES["staticfiles"] = {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"}
+    # 시험 계정 비밀번호 해시가 시험 시간의 대부분을 먹는다 — 시험에서만 빠른 해시를 쓴다
+    PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
 
 # 앞단 프록시(Caddy/nginx)가 있을 때만 켠다.
 if os.getenv("DJANGO_BEHIND_PROXY", "False").lower() == "true":

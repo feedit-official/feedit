@@ -37,6 +37,7 @@ from apps.core.models import (
     ProductTerm,
     UserSavedItem,
     UserTaste,
+    VoteReport,
 )
 
 from . import email_verify, google_auth, kakao_auth
@@ -651,11 +652,21 @@ def withdraw(request):
     auth.User 를 지우면 AppUser(OneToOne · CASCADE)와 그 아래 찜 · 투표 ·
     알림 · 직업 인증 · 취향 기록이 모두 함께 지워진다(FK on_delete=CASCADE).
     신고자(reporter)만 SET_NULL 이라 게시물은 남고 신고자만 익명이 된다.
+
+    ★ 2026-09-27 — 신고 기록(vote_report)의 대상 사본(target_snapshot)에는 신고당한 글쓴이의
+      id 와 댓글 원문이 들어 있다. 신고 행은 남으므로(다른 사람의 신고다) 사본에서 이 사람의 것만 지운다.
+      그러지 않으면 탈퇴한 사람의 댓글이 운영 화면에 계속 남는다(PRIVACY-001).
     """
     if not request.user.is_authenticated:
         return _error("로그인이 필요합니다.", status=401)
     user = request.user
+    profile_obj = AppUser.objects.filter(user=user).first()
     with transaction.atomic():
+        if profile_obj is not None:
+            VoteReport.objects.filter(
+                Q(target_snapshot__author_id=profile_obj.id)
+                | Q(target_snapshot__comment_author_id=profile_obj.id)
+            ).update(target_snapshot={"withdrawn": True})
         django_logout(request)      # 세션을 먼저 끊는다 — 지운 뒤 세션이 남으면 안 된다
         User.objects.filter(pk=user.pk).delete()
     return JsonResponse({

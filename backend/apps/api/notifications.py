@@ -29,6 +29,7 @@ BADGE = "BADGE"
 TERM_ADDED = "TERM_ADDED"
 JOB_REVIEW = "JOB_REVIEW"
 VOTE_COMMENT = "VOTE_COMMENT"
+OPS_ALERT = "OPS_ALERT"   # 운영 계정만 — 설정 칸이 없어 끌 수 없다(SETTING_FIELD 에 없음)
 
 # 종류 → NotificationSetting 의 칸 이름
 SETTING_FIELD = {

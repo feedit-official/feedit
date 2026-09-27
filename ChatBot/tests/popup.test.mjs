@@ -1,4 +1,5 @@
 import { JSDOM } from 'jsdom';
+import { browserEnv } from './browser_env.mjs';
 import fs from 'node:fs';
 
 /* 팝업 마크업을 index.html 에서 쓰는 그대로 세운다 */
@@ -26,7 +27,10 @@ const POPUP = `
  <div class="ghostQ" id="ghostQ"><span class="spark">✧</span><span class="qline" id="qline"></span></div>
  <input id="mInput"></div><div class="thread" id="thread"></div></section>`;
 
-const dom = new JSDOM('<!doctype html><body>'+POPUP+'</body>',
+/* ★ 2026-09-27 — 팝업 모듈이 앱 셸(라우터 · 인트로 · 연관어 팝오버)까지 끌고 들어와
+   불러오는 순간 그 칸들을 찾는다. 조각 마크업 대신 실제 index.html 을 세운다(run.sh 가 app_index.html 로 복사). */
+const dom = new JSDOM(fs.existsSync('app_index.html') ? fs.readFileSync('app_index.html','utf8')
+                                                    : '<!doctype html><body>'+POPUP+'</body>',
   {url:'http://localhost:5173/', pretendToBeVisual:true});
 for (const k of ['location','requestAnimationFrame','cancelAnimationFrame','HTMLElement',
                  'Node','Event','CustomEvent','MouseEvent','getComputedStyle',
@@ -34,6 +38,7 @@ for (const k of ['location','requestAnimationFrame','cancelAnimationFrame','HTML
   try { global[k] = dom.window[k] ?? global[k]; } catch(e) { /* getter-only 는 건너뛴다 */ }
 }
 global.window = dom.window; global.document = dom.window.document;
+browserEnv(dom);   /* 앱 셸이 따라 들어오며 찾는 나머지 창 전역 */
 /* setTimeout 은 노드 것을 그대로 쓴다 — jsdom 것으로 덮으면 재귀에 빠진다 */
 
 const FX = JSON.parse(fs.readFileSync('_chat_fixtures.json','utf8'));
@@ -69,6 +74,11 @@ global.fetch = async (url, opt) => {
   throw new Error('unexpected '+u);
 };
 
+/* 앱과 같은 순서로 불러온다 — chat_popup.js 를 먼저 부르면 모듈 순환에서 ME 가 아직 없다 */
+if (fs.existsSync('app/main.js')) await import('./app/main.js');
+/* 2026-09 부터 챗봇은 로그인 관문을 지나야 질문을 보낸다 — 지난 상태로 둔다 (frontend/tests/chat_popup_ui 와 같다) */
+if (fs.existsSync('app/account/static/js/profile.js'))
+  (await import('./app/account/static/js/profile.js')).AUTH.in = true;
 const cp = await import('./app/home/static/js/chat_popup.js');
 const chat = await import('./app/home/static/js/chat.js');
 const wait = ms => new Promise(r=>setTimeout(r,ms));
@@ -88,15 +98,26 @@ await wait(2600);
 let th = thread();
 ok(th.querySelectorAll('.msg.me').length===1, '내 말풍선 1개');
 ok(th.querySelectorAll('.msg.ai').length===1, 'AI 말풍선 1개');
-ok(!!th.querySelector('.ansCard'), '.ansCard 렌더');
+/* 2026-09 부터 리포트는 .skillReport 안에 그린다(예전 .ansCard) */
+ok(!!th.querySelector('.skillReport, .ansCard'), '리포트 카드 렌더');
 ok(th.querySelector('.say').textContent.includes('발레코어'), '한 줄 결론에 키워드');
 ok(th.querySelectorAll('.rank .row').length>=2, `.rank 행 ${th.querySelectorAll('.rank .row').length}개`);
 ok(th.querySelectorAll('.bars .b').length>0, `.bars 막대 ${th.querySelectorAll('.bars .b').length}개 (PRO)`);
-ok(th.querySelectorAll('.act .pill').length===2, `행동 버튼 ${th.querySelectorAll('.act .pill').length}개`);
-const sBtn = th.querySelector('[data-style]');
-ok(sBtn && sBtn.dataset.style==='ballet',
-   `스타일 버튼이 id 로 바뀜 (data-style="${sBtn&&sBtn.dataset.style}") — 이름 그대로면 라우터가 엉뚱한 데로 간다`);
+/* 발레코어는 스타일 탭 10종 밖이라 'Style 탭에서 자세히' 는 지워지고 '지표로 보기' 만 남는다 */
+ok(th.querySelectorAll('.act .pill').length===1, `행동 버튼 ${th.querySelectorAll('.act .pill').length}개 (10종 밖 스타일 버튼은 지운다)`);
+ok(!th.querySelector('[data-style]'), '10종 밖 스타일은 첫 번째 스타일로 떨어지지 않는다');
 ok(!th.querySelector('[data-style-name]:not([data-style])'), '해석 못 한 스타일 버튼은 남지 않는다');
+
+/* 10종 안의 스타일이면 이름 → id 로 바꿔 단다 */
+SERVE = {...FX.level, terms:[{...FX.level.terms[0], canonical:'고프코어'}, ...FX.level.terms.slice(1)]};
+cp.cpNewConvo(); cp.openChatWith('고프코어 어때?');
+await wait(2600);
+th = thread();
+const sBtn = th.querySelector('[data-style]');
+ok(th.querySelectorAll('.act .pill').length===2, `행동 버튼 ${th.querySelectorAll('.act .pill').length}개`);
+ok(sBtn && sBtn.dataset.style==='gorp',
+   `스타일 버튼이 id 로 바뀜 (data-style="${sBtn&&sBtn.dataset.style}") — 이름 그대로면 라우터가 엉뚱한 데로 간다`);
+SERVE = FX.level;
 
 console.log('\n=== 2. 사전에 없는 말 ===');
 SERVE = FX.refusal;
@@ -129,7 +150,7 @@ HEALTH = false;
 cp.cpNewConvo(); cp.openChatWith('고프코어 꺾였어?','gorp');
 await wait(2600);
 th = thread();
-ok(!!th.querySelector('.ansCard'), '그래도 카드가 뜬다 (목업)');
+ok(!!th.querySelector('.skillReport, .ansCard'), '그래도 카드가 뜬다 (목업)');
 ok(th.querySelector('.say').textContent.includes('고프코어'), '목업 문구가 나온다');
 ok(!th.querySelector('.kwReq'), '거절 화면이 아니다');
 ok(th.querySelectorAll('.bars .b').length>0, '목업 카드의 막대도 채워진다');

@@ -12,10 +12,12 @@
       
       <a href="{% url 'dashboard:raw_documents' %}" class="btn {% if url_name == 'raw_documents' %}on{% endif %}">원본데이터</a>
       
-      <a href="{% url 'dashboard:normalized_products' %}" class="btn {% if url_name in 'normalized_products,normalization_failures,normalized_musinsa,normalized_zigzag,normalized_ably,normalized_kream,normalized_musinsa_used,normalized_youtube,normalized_naver' %}on{% endif %}">정규화데이터</a>
+      <a href="{% url 'dashboard:normalized_products' %}" class="btn {% if url_name in 'normalized_products,normalization_failures,data_quality,normalized_musinsa,normalized_zigzag,normalized_ably,normalized_kream,normalized_musinsa_used,normalized_youtube,normalized_naver' %}on{% endif %}">정규화데이터</a>
       
       <a href="{% url 'dashboard:trend_metrics' %}" class="btn {% if url_name in 'trend_metrics,term_metrics,product_metrics,product_snapshot' %}on{% endif %}">데이터분석</a>
       
+      <a href="{% url 'dashboard:feedback_list' %}" class="btn {% if url_name in 'feedback_list,report_list' %}on{% endif %}">서비스</a>
+
       <a href="{% url 'dashboard:system_status' %}" class="btn {% if url_name in 'system_status,jobs,system_api,system_aws,system_celery' %}on{% endif %}">시스템</a>
       
       <a href="{% url 'dashboard:dictionary_terms' %}" class="btn {% if url_name in 'dictionary_terms,dictionary_candidates,dictionary_candidate_detail,brand_sources' %}on{% endif %}">사전</a>

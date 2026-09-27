@@ -75,6 +75,10 @@ def mark_crawl_run_failed(
         ]
     )
 
+    # 담당자 알림 — 소스마다 하루 한 번 (apps/core/services/ops_alerts.py, 2026-09-27)
+    from apps.core.services.ops_alerts import alert_crawl_failed
+    alert_crawl_failed(crawl_run)
+
 
 def create_raw_document(
     *,

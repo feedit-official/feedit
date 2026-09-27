@@ -93,7 +93,8 @@ class OtherTextTest(unittest.TestCase):
 
     def test_weekly(self):
         title, _body = weekly_report_text(date(2026, 9, 14))
-        self.assertEqual(title, "이번 주 트렌드 리포트가 도착했어요.")
+        # 2026-09-21 — 일요일 18:00 에 금주의 리포트가 갱신된다는 문구로 바뀌었다(0479ac4)
+        self.assertEqual(title, "일요일이 왔어요.")
 
 
 class JosaTest(unittest.TestCase):

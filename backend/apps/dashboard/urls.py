@@ -1,5 +1,5 @@
 from django.urls import path
-from . import views
+from . import service_views, views
 
 
 app_name = "dashboard"
@@ -28,6 +28,13 @@ urlpatterns = [
 
     path("normalization/products/", views.normalized_products, name="normalized_products"),
     path("normalization/failures/", views.normalization_failures, name="normalization_failures"),
+    path("normalization/quality/", views.data_quality, name="data_quality"),
+
+    # 서비스 운영 — 홈페이지 피드백 · 살!말? 신고 처리 (2026-09-27)
+    path("service/feedback/", service_views.feedback_list, name="feedback_list"),
+    path("service/feedback/<int:pk>/", service_views.feedback_update, name="feedback_update"),
+    path("service/reports/", service_views.report_list, name="report_list"),
+    path("service/reports/<int:pk>/", service_views.report_update, name="report_update"),
 
     path("dictionary/terms/", views.dictionary_terms, name="dictionary_terms"),
     path("dictionary/candidates/", views.dictionary_candidates, name="dictionary_candidates"),

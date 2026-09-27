@@ -622,3 +622,22 @@ def collect_search_weekly():
     out = StringIO()
     call_command("collect_search_signals", mode="weekly", stdout=out)
     return out.getvalue()[-2000:]
+
+
+# ============================================================
+# 장기 미갱신 확인 (2026-09-27, OPERATIONS-002)
+# ============================================================
+
+
+@shared_task(
+    name="core.check_data_freshness",
+)
+def check_data_freshness():
+    """소스별 마지막 정상 수집이 기준(수집 주기 × 2)을 넘겼으면 운영 계정 · 메일로 알린다.
+
+    하루 한 번. 같은 날 다시 돌아도 알림은 한 번만 나간다(dedup 키가 날짜다).
+    """
+    from apps.core.services.ops_alerts import check_freshness_and_alert
+    result = check_freshness_and_alert()
+    logger.info("장기 미갱신 확인 — %s", result)
+    return result

@@ -63,7 +63,15 @@ bash ChatBot/tests/run.sh
 # 저장소 루트
 PYTHONPATH=ChatBot python -m unittest discover -s ChatBot/tests -p 'test_*.py'
 git diff --check
+
+# backend 폴더: 빈 Postgres(pgvector)에 DB_* 를 맞추고
+python -m pip install -r requirements-api.txt rapidfuzz beautifulsoup4
+python manage.py migrate
+python manage.py makemigrations --check --dry-run
+python manage.py test apps
 ```
+
+같은 검사를 GitHub Actions(`.github/workflows/ci.yml`)가 main 에 올릴 때와 PR 마다 돌립니다. 배포는 하지 않습니다.
 
 Python 전체 테스트에는 환경·외부 의존성이 필요한 항목이 있을 수 있습니다. 네트워크 호출 도구(`tools_llm_check.py` 등)는 오프라인 검사로 취급하지 않습니다. 테스트 실패는 원인과 실행 환경을 기록하고, 통과한 검증과 분리해 보고합니다.
 

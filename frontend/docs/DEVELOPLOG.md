@@ -3894,3 +3894,51 @@ CI 를 붙이려면 먼저 초록이어야 해서 시험을 지금 코드에 맞
 - 드롭존용 CSS(`.stockPicker .dropZone` · `.dzPlaceholder` · `.dzSelection`)는 쓰이지 않지만 남아 있다.
 - 챗봇 시험은 아직 실패가 남아 있다: `bash ChatBot/tests/run.sh` 4건(chat_features · fallback_leak · popup · popup_ui, 불러오는 순간 DOM 이 없어 멈춤)과
   `python -m unittest` 1건(`test_item_draft` — 초안에 `image` 칸이 새로 생김).
+
+## 2026-09-27 22:30 KST — Claude · 요구사항 '부분'·'F' 중 바로 할 수 있는 것 정리 (시험 · 관리자 화면 · 운영 알림 · CI)
+
+### 무엇을 왜 고쳤나
+
+LLM 연동 웹 애플리케이션 문서(9/23)의 '부분' · 'F' 항목 가운데 데이터나 기획 결정 없이 코드로 끝낼 수 있는 것만 했다.
+
+- **시험 전부 초록** — CI 를 붙이려면 먼저 통과해야 했다. 기능은 그대로고 시험을 지금 화면에 맞췄다.
+  - 챗봇 JS 4건: 팝업 모듈이 앱 셸(라우터 · 인트로 · 알파)까지 끌고 들어와 불러오는 순간 멈췄다.
+    `ChatBot/tests/browser_env.mjs`(창 전역 한곳에서) · 실제 `index.html` · `main.js` 순서로 세우고, 로그인 관문을 지난 상태로 둔다.
+    바뀐 화면(`.skillReport`, ⋮ 메뉴, `cpToggleMode`, 10종 밖 스타일 버튼 제거)에 기대값을 맞췄다.
+  - `intro/static/js/loader.js` — 인트로 칸(#slot)이 없는 문서에서 불러와도 멈추지 않게 준비 코드를 감쌌다(동작 변화 없음).
+  - 챗봇 Python 1건(`test_item_draft` — 초안의 `image` 칸), Django 1건(`test_weekly` — '일요일이 왔어요.').
+  - Django 시험에서만 일반 정적 저장소 · 빠른 비밀번호 해시(`config/settings.py`). 관리자 화면 시험이 manifest 없음으로 터지던 것, 시험 시간 90초 → 3초.
+- **DATA_STATUS-003 장기 미갱신 경고** — 소스마다 마지막 **정상** 수집(SUCCESS · PARTIAL_SUCCESS)을 보고, 활성 LIVE 타깃의 가장 짧은 주기 × 2 를 넘기면 '지연'.
+  활성 타깃이 있는데 성공이 없으면 '기록 없음', 타깃이 없으면 '수집 안 함'(경고 안 함). 플랫폼 현황 표 · 메인 대시보드 '점검이 필요한 항목'.
+  플랫폼 현황이 실행 기록 전부를 읽던 것을 소스마다 한 건으로 줄였다.
+- **DATA_QUALITY-001·002·003 데이터 품질** (`/admin-dashboard/normalization/quality/`) — 플랫폼별 빈 칸 비율(통합 상품 연결 · 브랜드 · 카테고리 · 대표 이미지 · 상품 주소 · 가격 관측),
+  같은 브랜드 · 같은 정규화 이름 상품, 대소문자만 다른 브랜드, 같은 원본을 두 번 받은 수집 문서, 플랫폼별 정규화 상태. 전부 실제 행을 센다.
+- **ADMIN-001 피드백 · 신고 처리** (상단 '서비스' 탭) — 홈페이지 피드백 확인 전/반영·처리/반려 + 운영자 메모, 반려로 바뀌면 작성자 경험치 사본을 바로 다시 계산.
+  살!말? 신고 검토 대기/검토 완료/기각, 같은 대상 신고는 한 번에, 댓글은 '숨기기'(앱의 ADMIN 삭제와 같은 is_deleted). 카드 삭제는 여전히 앱에서.
+- **COLLECT-001 · OPERATIONS-002 운영 알림** (`apps/core/services/ops_alerts.py`) — 수집 실행이 FAILED 로 끝나면 운영 계정(is_staff) 알림 + 메일, 소스마다 하루 한 번.
+  매일 09:20 `core.check_data_freshness` 가 장기 미갱신을 확인해 하루 한 번 알린다(beat 스케줄은 celery.py · settings.py 두 곳).
+  새 알림 종류 `OPS_ALERT`(마이그레이션 `0067` — 선택지만 바뀌어 DB 변경 없음). 사용자 알림 설정과 상관없이 받는다.
+- **OPERATIONS-001 CI** — `.github/workflows/ci.yml`: 프런트 build · test, 챗봇 Python · JS, 빈 Postgres(pgvector) migrate → 마이그레이션 누락 검사 → Django 시험. 배포는 하지 않는다.
+- **METRIC-002 발주 판별** — `/api/lifecycle` 이 `order_timing`(GOOD · CAUTION · AVOID)을 준다. 태동 · 확산 적기, 정점 주의, 쇠퇴 비추천. 수명주기 화면에 '발주 관점' 한 줄.
+  리드타임 · 잔여 주 수 같은 숫자는 우리 데이터에 없으므로 문구에 넣지 않는다(시험으로 막아 둠).
+- **PRIVACY-001** — `docs/PRIVACY.md`(저장 보호 · 통계 비식별 · 탈퇴 삭제를 코드 기준으로). 탈퇴 시 다른 사람의 신고 기록에 남던
+  내 글 사본(`vote_report.target_snapshot` 의 글쓴이 id · 댓글 원문)도 지운다.
+
+### 어떻게 확인했나
+
+- `npm test` 30건(새 `lifecycle_order` 포함) · `npm run build` 통과.
+- `bash ChatBot/tests/run.sh` 7건 · `python -m unittest`(ChatBot) 147건 통과.
+- 빈 Postgres 16 + pgvector 에 migrate → `makemigrations --check` 변경 없음 → `manage.py test apps` 142건 통과. `DJANGO_DEBUG=False` 로도 통과.
+- `actionlint` 로 워크플로 검사.
+- 시드 데이터로 runserver 를 띄워 Chromium 으로 대시보드 · 플랫폼 현황 · 데이터 품질 · 피드백 · 신고 화면을 열어 보고,
+  피드백 '반영·처리'와 신고 '검토 완료 + 댓글 숨기기'를 실제로 눌러 CSRF 포함 저장까지 확인했다.
+
+### 남은 것 · 주의
+
+- 배포 순서: EC2 에서 `migrate`(0067, 실제 변경 없음) → API 재시작 → **celery-beat 재시작**(새 스케줄) → 버셀 배포.
+- 메일은 `EMAIL_HOST` 가 있어야 나간다. 받는 주소는 `OPS_ALERT_EMAILS`(없으면 운영 계정 이메일).
+  수집 실패 알림은 **크롤하는 서버**에서 나가므로 그 서버 `.env` 에도 `EMAIL_*` · `OPS_ALERT_EMAILS` 를 넣는다.
+- CI 가 돌려면 이 파일이 GitHub 의 기본 브랜치에 올라가야 한다.
+- 챗봇 팝업은 서버가 죽으면 여전히 목업 리포트(가짜 수치)로 떨어지고 'LIVE REPORT' 머리표를 단다(시험 popup 4번이 이것을 지킨다). 프로젝트 원칙과 어긋나 따로 결정이 필요하다.
+- `requirements-api.txt` 에 `rapidfuzz` · `beautifulsoup4` 가 없다. API 이미지에서는 수집을 돌리지 않아(CELERY_CRAWL_DISPATCH=0) 괜찮지만, 시험과 CI 는 따로 설치한다.
+- 취향 · 체형은 해시하지 않는다(화면에 다시 보여 줘야 한다). 명세의 '단방향 해시' 범위와 RDS 백업 보존 기간(30일 이하)은 확인이 필요하다 — `docs/PRIVACY.md`.

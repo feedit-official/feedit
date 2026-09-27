@@ -1,6 +1,7 @@
 /* 팝업의 새 조작 세 가지 — 제목 수정 · 새 세션 · 모드 뒤집기.
  * jsdom 으로 진짜 실행한다. node --check 는 정의되지 않은 이름을 통과시킨다 (AGENTS.md §5). */
 import { JSDOM } from 'jsdom';
+import { browserEnv } from './browser_env.mjs';
 import fs from 'node:fs';
 
 const POPUP = `
@@ -26,7 +27,10 @@ const POPUP = `
  <input id="mInput"><button class="cpOpenBtn" id="cpOpen"><i>☰</i><span>지난 대화</span></button>
  </div><div class="thread" id="thread"></div></section>`;
 
-const dom = new JSDOM('<!doctype html><body>'+POPUP+'</body>',
+/* ★ 2026-09-27 — 팝업 모듈이 앱 셸(라우터 · 인트로 · 연관어 팝오버)까지 끌고 들어와
+   불러오는 순간 그 칸들을 찾는다. 조각 마크업 대신 실제 index.html 을 세운다(run.sh 가 app_index.html 로 복사). */
+const dom = new JSDOM(fs.existsSync('app_index.html') ? fs.readFileSync('app_index.html','utf8')
+                                                    : '<!doctype html><body>'+POPUP+'</body>',
   {url:'http://localhost:5173/', pretendToBeVisual:true});
 for (const k of ['location','requestAnimationFrame','cancelAnimationFrame','HTMLElement','Node',
                  'Event','CustomEvent','MouseEvent','KeyboardEvent','getComputedStyle',
@@ -34,21 +38,32 @@ for (const k of ['location','requestAnimationFrame','cancelAnimationFrame','HTML
   try { global[k] = dom.window[k] ?? global[k] } catch(e) {}
 }
 global.window = dom.window; global.document = dom.window.document;
+browserEnv(dom);   /* 앱 셸이 따라 들어오며 찾는 나머지 창 전역 */
 global.fetch = async () => { throw new Error('서버 없음 (의도됨)') };
 
+/* 앱과 같은 순서로 불러온다 — chat_popup.js 를 먼저 부르면 모듈 순환에서 ME 가 아직 없다 */
+if (fs.existsSync('app/main.js')) await import('./app/main.js');
+/* 2026-09 부터 챗봇은 로그인 관문을 지나야 질문을 보낸다 — 지난 상태로 둔다 (frontend/tests/chat_popup_ui 와 같다) */
+if (fs.existsSync('app/account/static/js/profile.js'))
+  (await import('./app/account/static/js/profile.js')).AUTH.in = true;
 const cp = await import('./app/home/static/js/chat_popup.js');
 const wait = ms => new Promise(r=>setTimeout(r,ms));
 let fail=0;
 const ok=(c,m)=>{ console.log((c?'  OK  ':'  X!! ')+m); if(!c) fail++ };
 const $=s=>document.querySelector(s);
 
-console.log('=== 1. 대화 목록에 연필이 붙는가 ===');
+/* 팝업을 한 번 열어 로그인한 사람의 대화함으로 맞춘다(cpSyncOwner).
+   열기 전에 만든 대화는 주인이 바뀌면서 빠진다 — 실제 앱에서도 팝업을 연 뒤에 대화가 생긴다. */
+cp.openChatPopup(); cp.closeChatPopup();
+
+console.log('=== 1. 대화 목록에 메뉴(⋮)가 붙는가 ===');
 const a=cp.cpNewConvo(); a.title='발레코어는 지금 유행이야?';
 const b=cp.cpNewConvo(); b.title='고프코어 반응';
 cp.cpRenderList();
 ok(document.querySelectorAll('.cpItemRow').length===2, '.cpItemRow 두 줄');
 ok(document.querySelectorAll('.cpItem[data-cid]').length===2, '.cpItem[data-cid] 는 그대로 (라우터가 이걸 잡는다)');
-ok(document.querySelectorAll('.cpEdit[data-edit]').length===2, '.cpEdit[data-edit] 두 개');
+/* 2026-09 부터 연필 대신 ⋮ 메뉴(이름 바꾸기 · 고정 · 삭제) */
+ok(document.querySelectorAll('.cpKebab[data-menu]').length===2, '.cpKebab[data-menu] 두 개');
 ok($('.cpItem').querySelector('button')===null, '.cpItem 안에 버튼이 없다 (버튼 중첩은 잘못된 HTML)');
 
 console.log('\n=== 2. 제목을 그 자리에서 고치는가 ===');
@@ -98,9 +113,9 @@ ok(cp.cpStore().convos[0].messages.length>m0, '같은 대화에 쌓였다');
 
 console.log('\n=== 7. 아바타 뒤집기가 터지지 않는가 (anime 없는 환경) ===');
 let threw=null;
-try{ cp.cpFlipMode(new dom.window.MouseEvent('click')) }catch(e){ threw=e }
+try{ cp.cpToggleMode() }catch(e){ threw=e }   /* 예전 cpFlipMode */
 await wait(60);
-ok(!threw, 'cpFlipMode 가 예외를 던지지 않는다'+(threw?' — '+threw.message:''));
+ok(!threw, 'cpToggleMode 가 예외를 던지지 않는다'+(threw?' — '+threw.message:''));
 ok($('#cpAv').getAttribute('role')==='button', '아바타에 role=button 이 붙는다');
 ok($('#cpAv').hasAttribute('title'), '무엇을 하는 버튼인지 title 로 알려준다');
 
@@ -108,7 +123,7 @@ console.log('\n=== 8. 쓰는 클래스가 CSS 에 있는가 ===');
 /* 7번에서 살말 모드로 넘어가 목록이 비었다. 일반 모드 목록을 다시 세워 놓고 본다.
    smSwitch 는 연타를 막으려 900ms 동안 smBusy 를 걸어 둔다 — 그만큼 기다려야 되돌아간다. */
 await wait(950);          /* 먼저 기다린다 — 7번 직후엔 아직 잠겨 있어 전환이 무시된다 */
-cp.cpFlipMode(new dom.window.MouseEvent('click'));
+cp.cpToggleMode();
 await wait(60);
 cp.cpRenderList();
 const css=fs.readdirSync('css').map(f=>fs.readFileSync('css/'+f,'utf8')).join('\n');

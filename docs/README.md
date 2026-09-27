@@ -10,6 +10,7 @@
 | [개발](DEVELOPMENT.md) | 새 환경 준비와 테스트 |
 | [배포](DEPLOYMENT.md) | Vercel·EC2 구성과 점검 |
 | [데이터 파이프라인](DATA_PIPELINE.md) | 수집·정규화·분석·스케줄 |
+| [개인정보 처리](PRIVACY.md) | 저장 보호·통계 비식별·탈퇴 삭제 (PRIVACY-001) |
 | [저장소 관리](REPOSITORY_MAINTENANCE.md) | 추적 제외 기준과 정리 내역 |
 | [협업 규칙](../frontend/docs/WORKFLOW.md) | 브랜치·검증·변경 기록 |
 | [과거 자료](archive/README.md) | 당시 설계·점검·제출 문서 |

@@ -31,6 +31,8 @@ const KINDS = [
   { id:'VOTE_COMMENT',  n:'살!말? 새 댓글',      d:'내가 올린 상품에 누군가 댓글을 달면 알려 드려요.' },
 ];
 const KIND_NAME = Object.fromEntries(KINDS.map(k => [k.id, k.n]));
+/* 운영 계정만 받는 알림 — 수집 실패 · 장기 미갱신 (2026-09-27). 끌 수 없어 설정 모달(KINDS)에는 없다 */
+KIND_NAME.OPS_ALERT = '운영 알림';
 
 /* 종류별 아이콘 (2026-09-19 디자인 개편) — 라벨 글자 대신 작은 원 안의 선 아이콘으로 구분한다 */
 const SVG = d => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" ' +
@@ -44,6 +46,8 @@ const KIND_ICON = {
   TERM_ADDED:    SVG('<path d="M5 4h11a3 3 0 013 3v13H8a3 3 0 01-3-3z"/><path d="M5 17a3 3 0 013-3h11"/>'),
   JOB_REVIEW:    SVG('<path d="M12 3l7 3v5c0 4.4-3 8-7 10-4-2-7-5.6-7-10V6z"/><path d="M9 12l2 2 4-4"/>'),
   VOTE_COMMENT:  SVG('<path d="M4 5.5h16v10H9.5L5 19.5v-4H4z"/><path d="M8 9.5h8M8 12.3h5"/>'),
+  /* 운영 알림 — 경고 삼각형 */
+  OPS_ALERT:     SVG('<path d="M12 4l9 16H3z"/><path d="M12 10v4.5M12 17.2v.3"/>'),
 };
 /* 운영 계정이 받는 '직업 인증 심사 대기' — 서류 판 */
 const CLIPBOARD = SVG('<rect x="5" y="4.5" width="14" height="16.5" rx="2"/><path d="M9 4.5V3h6v1.5"/><path d="M8.5 10h7M8.5 13.5h7M8.5 17h4"/>');

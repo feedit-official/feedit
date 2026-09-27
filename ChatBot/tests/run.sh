@@ -11,7 +11,9 @@ web="$(cd "$web" && pwd)"
 stage="$(mktemp -d "${TMPDIR:-/tmp}/feedit-chat-tests.XXXXXX")"
 trap 'rm -rf "$stage"' EXIT
 mkdir -p "$stage/app" "$stage/css"
-cp "$here"/*.test.mjs "$here"/popup.html "$stage"/
+cp "$here"/*.test.mjs "$here"/browser_env.mjs "$here"/popup.html "$stage"/
+cp "$web/index.html" "$stage/app_index.html"
+cp "$web/main.js" "$stage/app/main.js"   # 앱 진입점 — 모듈을 실제 순서대로 불러온다
 cp -r "$here/sse" "$stage/"
 cp "$here/fixtures.json" "$stage/_chat_fixtures.json"
 for dir in "$web"/*/static/js; do

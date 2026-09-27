@@ -109,8 +109,15 @@ class DraftHandoffTests(unittest.TestCase):
                          "result": {"found": True, "item_name": "트랙 재킷",
                                     "brand": "아디다스", "price_krw": 129000}}])
         draft = agent_path._item_draft(trace)
+        # 2026-09-21 — 살!말? 카드에 상품 사진을 싣는다(0479ac4). 링크가 사진을 못 주면 빈 칸이다.
         self.assertEqual(draft, {"title": "트랙 재킷", "brand": "아디다스",
-                                 "price": 129000, "source": "상품 링크에서 확인한 값"})
+                                 "price": 129000, "image": "", "source": "상품 링크에서 확인한 값"})
+
+    def test_link_inspection_carries_the_product_image(self):
+        trace = _Trace([{"tool": "inspect_product_link", "args": {"url": "https://shop.test/p/1"},
+                         "result": {"found": True, "item_name": "트랙 재킷", "brand": "아디다스",
+                                    "price_krw": 129000, "image_url": "https://img.test/1.jpg"}}])
+        self.assertEqual(agent_path._item_draft(trace)["image"], "https://img.test/1.jpg")
 
     def test_no_lookup_means_no_draft(self):
         self.assertIsNone(agent_path._item_draft(_Trace([
