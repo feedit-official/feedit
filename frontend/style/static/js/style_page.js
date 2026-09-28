@@ -5,15 +5,16 @@ import { ST_ITEM_CATS, ST_ITEM_PAGE_SIZE, ST_PICK_COUNT, ST_RECOMMEND_NOTE, ST_S
 /* ── Style ──────────────────────────────────────────── */
 export var stShowI=0, stItemPage=0, stCur=null;
 let stSort='recommend';   /* 아이템 정렬 — 스타일에 들어갈 때마다 FEEDiT 추천순으로 돌아간다 */
-/* ★ 2026-09-23 — 아이템 카테고리. 이미 받아 둔 카드를 감추고 보이는 방식이라
-   '더 보기' 로 뒤에 붙는 카드에도 같은 조건이 그대로 걸린다. */
+/* 아이템 카테고리. 서버가 카테고리를 먼저 거른 뒤 페이지를 나눠 준다.
+   예전처럼 첫 24개 안에서만 감추면 아우터가 1~2개씩 보이고, '더 보기'를
+   누를 때마다 몇 개씩 생기는 잘못된 목록이 된다. */
 let stCat='all';
 function stCatsPaint(){
   const box=$('#stItemCats'); if(!box)return;
   box.innerHTML=ST_ITEM_CATS.map(([k,l])=>
     '<button type="button" class="itCat'+(k===stCat?' on':'')+'" data-item-cat="'+k+'">'+l+'</button>').join('');
 }
-/* 고른 카테고리만 남긴다. 카테고리를 못 가린 카드는 '전체' 에서만 보인다. */
+/* 서버 결과를 방어적으로 한 번 더 확인한다. '전체'는 분류 불가 상품도 남긴다. */
 function stCatsApply(){
   const host=$('#stItems'); if(!host)return;
   let shown=0;
@@ -27,23 +28,23 @@ function stCatsApply(){
     if(!none){
       const el=document.createElement('div');
       el.className='itState itCatEmpty';
-      el.textContent='이 카테고리에 해당하는 상품이 아직 없습니다. ‘더 보기’ 로 더 불러올 수 있습니다.';
+      el.textContent='이 카테고리에 해당하는 상품이 아직 없습니다.';
       host.appendChild(el);
     }
   }else if(none)none.remove();
   const cnt=$('#stItemCount');
-  if(cnt&&stCat!=='all')cnt.textContent=shown+' ITEMS';
+  if(cnt&&stCat!=='all')cnt.textContent=(stTotal??shown)+' ITEMS';
 }
 function stCatsWire(){
   const box=$('#stItemCats'); if(!box)return;
   box.addEventListener('click',e=>{
     const b=e.target.closest('button[data-item-cat]'); if(!b)return;
+    if(b.dataset.itemCat===stCat)return;
     stCat=b.dataset.itemCat;
-    stCatsPaint(); stCatsApply();
-    if(stCat==='all'){
-      const loaded=$$('#stItems .itemCard').length;
-      const cnt=$('#stItemCount'); if(cnt)cnt.textContent=(stTotal||loaded)+' ITEMS';
-    }
+    stCatsPaint();
+    /* 선택한 카테고리의 0페이지를 다시 받는다. 그래야 페이지 하나가 해당
+       카테고리 상품으로 채워지고, 더보기도 같은 카테고리의 다음 페이지다. */
+    stResetItems();
   });
 }
 /* 'FEEDiT Pick!' — 그 스타일의 추천순 최상단 6개. 스타일마다 한 번 받아 두고,
@@ -247,7 +248,10 @@ export async function stMoreItems(requestSeq=stRequestSeq){
   stItemsLoading=true; stItemsError=false;
   stMoreState('상품을 불러오는 중…');
   try{
-    const [res,picks]=await Promise.all([fetch(styleProductsURL(styleName,offset,ST_ITEM_PAGE_SIZE,stSort)),stPicks]);
+    const [res,picks]=await Promise.all([
+      fetch(styleProductsURL(styleName,offset,ST_ITEM_PAGE_SIZE,stSort,stCat)),
+      stPicks
+    ]);
     const body=await res.text();
     if(!res.ok)throw new Error('HTTP '+res.status);
     let json;

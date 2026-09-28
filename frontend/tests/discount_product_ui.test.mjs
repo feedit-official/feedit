@@ -100,16 +100,19 @@ const dispatch=await import(`${root}/trend/static/js/dispatch.js`);
 const {paintStockPriceChart}=await import(`${root}/trend/static/js/stock_price_chart.js`);
 dispatch.trRender('stock');
 await new Promise(resolve=>setTimeout(resolve,50));
-/* ★ 2026-09-19 — 드래그해 옮기던 큰 사진 칸(드롭존)과 '찜 추가' 버튼을 걷어냈다(f8d0b45).
-   지금은 찜 목록 카드를 눌러 고르고, 같은 카드를 다시 누르면 풀리고, 카드의 하트로 찜을 푼다. */
+/* 큰 사진 드롭존은 두지 않되, 할인율 원형 자체가 상품 선택/드롭 대상이다. */
 assert.equal(document.getElementById('dzDropZone'),null,'드롭존은 걷어냈다');
 assert.match(document.getElementById('stockPickerSummary').textContent,/상품을 고르면/,
   '상품 선택 전에는 요약 자리에 안내를 보여 준다');
-assert.ok(document.querySelector('#stockDiscountSlot .stockPickerDialEmpty'),'선택 전에는 빈 원형만 둔다');
+const addButton=document.querySelector('#stockDiscountSlot button.stockPickerDialEmpty[data-stock-add]');
+assert.ok(addButton,'선택 전에는 세부검색을 여는 + 원형 버튼을 둔다');
+assert.match(addButton.textContent,/\+/);
 assert.equal(document.querySelectorAll('#dzWishListBody .wlItem').length,6,'DB 찜목록을 상품 카드로 보여 준다');
 assert.ok(asked.some(url=>url.includes('/api/auth/saved')),'찜목록을 DB에서 요청한다');
 assert.equal(document.querySelectorAll('#dzWishListBody .wlPic img').length,6,'카드마다 실제 상품 이미지를 보여 준다');
 assert.equal(document.querySelectorAll('#dzWishListBody .wlHeart[data-wish-off]').length,6,'카드마다 찜 해제 하트가 있다');
+assert.equal(document.querySelectorAll('#dzWishListBody .wlItem[draggable="true"]').length,6,
+  '찜 카드를 할인율 원형으로 끌 수 있다');
 const css=fs.readFileSync(new URL('../trend/static/css/my_feed.css',import.meta.url),'utf8');
 assert.match(css,/\.stockPicker \.wlBody\{[^}]*grid-template-columns:repeat\(4,minmax\(0,1fr\)\)/s,
   '넓은 화면에서는 한 줄에 네 장을 배치한다');
@@ -121,10 +124,16 @@ assert.match(css,/\.fsPop\.is-discount \.fsOpt\.has-thumb \{[^}]*justify-content
   '세부검색 상품명은 썸네일 바로 옆에 배치한다');
 assert.match(css,/\.stockPickerGrid\{[^}]*grid-template-columns:[^}]*minmax\(0,1fr\)/s,
   '할인율·가격 요약·찜목록을 한 줄에 배치한다');
-assert.match(css,/\.stockPickerRate \.dial,\.stockPickerDialEmpty\{width:min\(100%,165px\)/s,
-  '선택 전후 원형 박스에 같은 크기를 적용한다');
-assert.match(css,/\.stockPickerDial \.trk,\.stockPickerDial \.val\{stroke-width:8\}/s,
+assert.match(css,/\.stockPickerRate \.stockPickerDial,\.stockPickerDialEmpty\{width:min\(100%,190px\)/s,
+  '사진을 담는 선택 전후 원형을 기존보다 크게 보여 준다');
+assert.match(css,/\.stockPickerDial \.trk,\.stockPickerDial \.val\{fill:none;stroke-width:8\}/s,
   '선택 후 원형의 선 두께를 선택 전 테두리 크기에 맞춘다');
+assert.match(css,/\.stockDialPhoto img\{[^}]*object-fit:cover;object-position:center top/s,
+  '선택 상품 사진을 원형 안에 채운다');
+assert.match(css,/#stockDiscountSlot\.dragover\{[^}]*var\(--coral\)/s,
+  '찜 카드를 원형 위에 올리면 드롭 위치를 표시한다');
+assert.match(css,/\.stockPickerRate\{[^}]*translate\(40px,-10px\)/s,
+  '할인율 원형 묶음을 오른쪽으로 조금 이동한다');
 assert.match(css,/\.stockPickerSummary\{[^}]*padding:0 0 0 78px/s,
   '원형 그래프는 그대로 두고 가격 설명만 오른쪽으로 옮긴다');
 assert.match(css,/\.stockPickerSummary h4\{[^}]*-webkit-line-clamp:2/s,
@@ -135,6 +144,34 @@ dispatch.trRender('stock');
 assert.equal(wishlist.scrollTop,73,'지표 갱신 후에도 찜목록 스크롤 위치를 유지한다');
 
 const card=id=>document.querySelector(`#dzWishListBody .wlItem[data-source-id="${id}"]`);
+document.querySelector('#stockDiscountSlot [data-stock-add]').click();
+assert.ok(document.getElementById('fsPopBg').classList.contains('on'),'+ 버튼은 세부검색창을 연다');
+document.getElementById('fsPopX').click();
+
+const transfer={data:{},effectAllowed:'',dropEffect:'',
+  setData(type,value){this.data[type]=String(value)},getData(type){return this.data[type]||''}};
+const drag=(target,type)=>{
+  const event=new dom.window.Event(type,{bubbles:true,cancelable:true});
+  Object.defineProperty(event,'dataTransfer',{value:transfer});
+  target.dispatchEvent(event);
+};
+drag(card(17),'dragstart');
+const dropSlot=document.getElementById('stockDiscountSlot');
+drag(dropSlot,'dragover');
+assert.ok(dropSlot.classList.contains('dragover'),'드래그 중 원형을 강조한다');
+drag(dropSlot,'drop');
+await new Promise(resolve=>setTimeout(resolve,50));
+assert.equal(search.FS.stockItem.id,17,'찜 카드를 원형에 놓으면 그 상품을 고른다');
+assert.match(document.querySelector('#stockDiscountSlot .stockDialPhoto img').src,/17\.jpg$/,
+  '고른 상품 사진을 할인율 원형 안에 넣는다');
+assert.equal(document.getElementById('dzSaveBtn').hidden,false,'상품을 고르면 찜목록 버튼을 보여 준다');
+assert.match(document.getElementById('dzSaveBtn').textContent,/찜목록에서 제거/,
+  '이미 찜한 상품은 현재 상태를 정확히 표시한다');
+document.querySelector('#stockDiscountSlot [data-stock-clear]').click();
+await new Promise(resolve=>setTimeout(resolve,30));
+assert.equal(search.FS.stockItem,null,'원형 속 옷을 한 번 더 누르면 선택이 풀린다');
+assert.equal(document.getElementById('dzSaveBtn').hidden,true,'선택을 풀면 찜목록 버튼도 숨긴다');
+
 card(17).click();
 await new Promise(resolve=>setTimeout(resolve,50));
 assert.equal(search.FS.stockItem.id,17,'찜 카드를 누르면 그 상품을 고른다');
@@ -209,6 +246,13 @@ assert.ok(asked.some(url=>url.includes('/api/discount?source_id=24')));
 assert.match(document.getElementById('stockPickerSummary').textContent,/60,000원/,'세부검색으로 고른 상품의 가격 요약을 보여 준다');
 assert.equal(document.querySelectorAll('.stockCompareTable tr').length,2,'매칭이 없으면 다른 상품을 끼워 넣지 않는다');
 assert.match(document.querySelector('.stockComparePanel .note').textContent,/다른 판매처가 없습니다/);
+assert.match(document.getElementById('dzSaveBtn').textContent,/찜목록에 추가/,
+  '찜하지 않은 검색 상품에는 찜목록 추가 버튼을 보여 준다');
+document.getElementById('dzSaveBtn').click();
+await new Promise(resolve=>setTimeout(resolve,50));
+assert.ok(card(24),'찜목록 추가 버튼으로 고른 상품을 목록에 넣는다');
+assert.match(document.getElementById('dzSaveBtn').textContent,/찜목록에서 제거/,
+  '추가 직후 버튼 상태도 찜목록 제거로 바뀐다');
 
 const beforePagedSearch=asked.length;
 searchInput.value='원피스';

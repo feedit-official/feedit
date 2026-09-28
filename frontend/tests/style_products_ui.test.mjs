@@ -30,8 +30,13 @@ const productReply={status:'ok',data:{
   }]
 }};
 
+const asked=[];
 globalThis.fetch=async url=>{
-  const body=String(url).startsWith('/api/products')?productReply:{status:'empty',reason:'테스트'};
+  const href=String(url); asked.push(href);
+  let body=href.startsWith('/api/products')?productReply:{status:'empty',reason:'테스트'};
+  if(href.includes('category_group=outer')){
+    body={...productReply,data:{...productReply.data,total:7,category_group:'outer'}};
+  }
   return {ok:true,status:200,text:async()=>JSON.stringify(body),json:async()=>body};
 };
 
@@ -53,6 +58,13 @@ assert.equal(document.getElementById('stSort').dataset.sort,'recommend');
 assert.equal(document.getElementById('stSortLabel').textContent,'FEEDiT 추천순');
 assert.ok(document.getElementById('stSortInfoBtn'),'추천순 기준 설명 버튼이 있다');
 assert.match(cards[0].querySelector('.pickTag').textContent,/FEEDiT Pick!/);
+
+/* 카테고리는 이미 받은 한 페이지를 숨기는 대신 서버에서 0페이지를 다시 받는다. */
+document.querySelector('[data-item-cat="outer"]').click();
+await new Promise(r=>setTimeout(r,40));
+assert.ok(asked.some(url=>url.includes('category_group=outer')&&url.includes('offset=0')),
+  '아우터 조건을 상품 API에 전달해야 한다');
+assert.equal(document.getElementById('stItemCount').textContent,'7 ITEMS');
 
 console.log('✅ 스타일 상세에 API 실상품 카드가 그려진다');
 process.exit(0);

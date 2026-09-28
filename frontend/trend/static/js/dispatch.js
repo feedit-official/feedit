@@ -2,7 +2,7 @@ import { $, $$, HAS_A, aAnimate, aSpring, aStagger, aUtils } from '../../../core
 import { WK, feedSmPicks, feedSmLoad } from './my_feed.js';
 import { STYLES } from '../../../home/static/js/chat.js';
 import { SIMG } from '../../../style/static/js/style_page.js';
-import { FS, getFsCols, fsBuild, fsChipsPaint, fsDropDisallowed, fsHideSug, fsLoadDictionary, fsReset, fsPaintPop, fsStockSelect, fsStockClear } from '../../../style/static/js/search.js';
+import { FS, getFsCols, fsBuild, fsChipsPaint, fsDropDisallowed, fsHideSug, fsLoadDictionary, fsOpenPop, fsReset, fsPaintPop, fsStockSelect, fsStockClear } from '../../../style/static/js/search.js';
 import { G_CFG, KW, fsItem, fsItemFull, fsSelectionLabel, gMount, josa, trEmpty, trFillBars, trToast } from './render_helpers.js';
 import { ME, bioPaint } from '../../../account/static/js/profile.js';
 import { S_EDIT, S_FEED, TR_META } from './nav_meta.js';
@@ -126,7 +126,7 @@ function stockWishlistHTML(){
     /* ★ 2026-09-19 — 카드는 사진 한 장이다. 브랜드 · 상품명은 사진 왼쪽 위에 얹고,
        가격은 고르면 오른쪽 요약에서 보이므로 카드에서는 뺀다.
        하트는 스타일 페이지 아이템 카드와 같은 모양(.likeBtn)으로 오른쪽 위에 둔다. */
-    return '<div class="wlItem'+(selected?' on':'')+'" role="button" tabindex="0"'+
+    return '<div class="wlItem'+(selected?' on':'')+'" role="button" tabindex="0" draggable="true"'+
       ' data-source-id="'+Number(item.id)+'" aria-pressed="'+(selected?'true':'false')+'"'+
       ' title="'+trEsc([item.brand||item.source,item.name].filter(Boolean).join(' · '))+
         (discount==null?'':' · '+discount+'%')+'"'+
@@ -142,16 +142,19 @@ function stockWishlistHTML(){
   }).join('');
 }
 function stockDiscountDial(product, selected){
-  if(!selected)return '<div class="stockPickerDialEmpty"><b>–</b><small>상품 선택 전</small></div>';
+  if(!selected)return '<button type="button" class="stockPickerDialEmpty" data-stock-add'+
+    ' aria-label="세부 검색에서 할인률 상품 추가"><b>+</b><small>상품 추가</small></button>';
   const rate=product?.discount_rate==null?null:Number(product.discount_rate);
-  if(!Number.isFinite(rate)||rate<0||rate>100)
-    return '<div class="stockPickerDialEmpty"><b>–</b><small>'+
-      (product?'할인율 정보 없음':'가격 확인 중')+'</small></div>';
-  return '<div class="dial stockPickerDial"><svg viewBox="0 0 120 120">'+
+  const hasRate=Number.isFinite(rate)&&rate>=0&&rate<=100;
+  const image=stockSafeImg(product?.image||selected?.thumb||selected?.image);
+  return '<button type="button" class="'+(hasRate?'dial ':'')+'stockPickerDial'+(hasRate?'':' no-rate')+'"'+
+    ' data-stock-clear aria-label="선택한 상품 해제" title="한 번 더 누르면 선택 해제">'+
+    '<span class="stockDialPhoto">'+(image?'<img src="'+trEsc(image)+'" alt="'+trEsc(product?.name||selected?.label||'선택 상품')+'">':'')+'</span>'+
+    '<svg viewBox="0 0 120 120">'+
     '<circle class="trk" cx="60" cy="60" r="56"/>'+
-    '<circle class="val" cx="60" cy="60" r="56" data-ramp="#ff6b4a" data-score="'+rate+'" '+
-      'stroke-dasharray="351.86" stroke-dashoffset="351.86"/></svg>'+
-    '<span class="num"><b>0</b><small>할인율 %</small></span></div>';
+    (hasRate?'<circle class="val" cx="60" cy="60" r="56" data-ramp="#ff6b4a" data-score="'+rate+'" '+
+      'stroke-dasharray="351.86" stroke-dashoffset="351.86"/>':'')+'</svg>'+
+    '<span class="num"><b>'+(hasRate?'0':'–')+'</b><small>'+(hasRate?'% OFF':product?'할인율 없음':'가격 확인 중')+'</small></span></button>';
 }
 function stockSummaryHTML(product, selected){
   if(!selected)return '<p class="stockSummaryEmpty">상품을 고르면 이곳에 정가·할인가·관측 기간 최저가가 표시됩니다.</p>';
@@ -174,7 +177,6 @@ function stockSummaryHTML(product, selected){
 function stockPaintSaveButton(){
   const button=$('#dzSaveBtn'), error=$('#dzSaveError'), selected=FS.stockItem;
   if(!button){
-    /* 드롭존을 걷어내 저장 버튼이 없다 — 오류만 따로 알린다 */
     if(error){ error.hidden=!stockSaveError; error.textContent=stockSaveError; }
     return;
   }
@@ -184,7 +186,7 @@ function stockPaintSaveButton(){
   button.classList.toggle('on',saved);
   button.setAttribute('aria-pressed',String(saved));
   button.textContent=stockSavePending?'저장 중…':STOCK_SAVED.status==='error'?'찜 사용 불가':
-    STOCK_SAVED.status!=='ok'?'찜 확인 중':saved?'♥ 찜 해제':'♡ 찜 추가';
+    STOCK_SAVED.status!=='ok'?'찜 확인 중':saved?'♥ 찜목록에서 제거':'♡ 찜목록에 추가';
   button.title=STOCK_SAVED.status==='error'?STOCK_SAVED.error:'';
   const message=stockSaveError||(selected&&STOCK_SAVED.status==='error'?STOCK_SAVED.error:'');
   if(error){error.hidden=!message;error.textContent=message;}
@@ -268,10 +270,10 @@ function stockChoose(item){
   trRender('stock');
 }
 function stockWirePicker(){
-  /* ★ 2026-09-19 — 드래그해 옮기던 칸(드롭존)을 걷어냈다. 찜 목록에서 클릭으로 고르고,
-     같은 카드를 다시 누르면 풀린다. 하트는 그 자리에서 찜을 해제한다. */
+  /* 찜 카드는 클릭하거나 현재 할인율 원형으로 드래그해서 고른다. */
   const list=$('#dzWishListBody');
   if(!list)return;
+  const slot=$('#stockDiscountSlot');
   const itemOf=id=>STOCK_SAVED.items.find(item=>item.id===Number(id));
   list.addEventListener('click',event=>{
     if(event.target.closest('[data-stock-retry]')){
@@ -288,6 +290,42 @@ function stockWirePicker(){
     event.preventDefault();
     stockChoose(itemOf(row.dataset.sourceId));
   });
+  list.addEventListener('dragstart',event=>{
+    const row=event.target.closest('[data-source-id]');
+    if(!row||!event.dataTransfer)return;
+    event.dataTransfer.effectAllowed='copy';
+    event.dataTransfer.setData('text/feedit-stock-id',row.dataset.sourceId);
+    event.dataTransfer.setData('text/plain',row.dataset.sourceId);
+    row.classList.add('dragging');
+  });
+  list.addEventListener('dragend',event=>{
+    event.target.closest('[data-source-id]')?.classList.remove('dragging');
+    slot?.classList.remove('dragover');
+  });
+  if(slot){
+    slot.addEventListener('click',event=>{
+      if(event.target.closest('[data-stock-add]'))fsOpenPop();
+      else if(event.target.closest('[data-stock-clear]')){
+        fsStockClear(); fsChipsPaint(); trRender('stock');
+      }
+    });
+    slot.addEventListener('dragenter',event=>{ event.preventDefault(); slot.classList.add('dragover'); });
+    slot.addEventListener('dragover',event=>{
+      event.preventDefault();
+      if(event.dataTransfer)event.dataTransfer.dropEffect='copy';
+      slot.classList.add('dragover');
+    });
+    slot.addEventListener('dragleave',event=>{
+      if(!slot.contains(event.relatedTarget))slot.classList.remove('dragover');
+    });
+    slot.addEventListener('drop',event=>{
+      event.preventDefault(); slot.classList.remove('dragover');
+      const id=event.dataTransfer?.getData('text/feedit-stock-id')||event.dataTransfer?.getData('text/plain');
+      const item=itemOf(id);
+      if(item&&FS.stockItem?.id!==Number(item.id))stockChoose(item);
+    });
+  }
+  $('#dzSaveBtn')?.addEventListener('click',stockToggleSaved);
 }
 
 /* 조회를 이미 한 번 보냈다고 표시한다.
@@ -438,6 +476,11 @@ document.addEventListener('click',e=>{
 /* DB 에서 온 글자는 반드시 이스케이프해서 넣는다 */
 function trEsc(v){ return String(v==null?'':v).replace(/[&<>"']/g,m=>(
   {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])) }
+/* 검색/언급 출처는 내부 계산용이다. 예전 적재값에 꼬리표가 문자열로 남아 있어도
+   사용자가 보는 연관어 이름에는 노출하지 않는다. */
+function assocDisplayTerm(v){
+  return String(v==null?'':v).replace(/\s*\((?:검색|둘\s*다)\)\s*$/u,'').trim();
+}
 const wkMetric = value => Number(value||0).toLocaleString('ko-KR');
 async function wkLoadVideo(term){
   const host=$('#wkVideoRec');
@@ -1426,47 +1469,33 @@ export function trRender(id){
     const groups = {};
     (A.items || []).forEach(it => { const c = it.facet_ko || it.facet; (groups[c] = groups[c] || []).push(it) });
     const cats = AX_ORDER.filter(c => groups[c]).concat(Object.keys(groups).filter(c => AX_ORDER.indexOf(c) < 0));
-    /* PMI 상위 10개 + 동시출현 상위 10개의 합집합 → 두 정렬 모두에서 의미 있는 항목을 보존 */
-    cats.forEach(c => {
-      const all = groups[c];
-      if (all.length <= 10) return;
-      const byPmi = all.slice(0, 10);
-      const byCooc = all.slice().sort((a, b) => (b.cooccurrence || 0) - (a.cooccurrence || 0)).slice(0, 10);
-      const seen = new Set();
-      const merged = [];
-      byPmi.concat(byCooc).forEach(it => {
-        const k = it.term;
-        if (!seen.has(k)) { seen.add(k); merged.push(it); }
-      });
-      groups[c] = merged;
-    });
     const ALL = cats.reduce((a, c) => a.concat(groups[c]), []);
     if (!ALL.length) {
       body.innerHTML = unavailableHTML('‘' + kw + '’ 의 연관어가 아직 없습니다.', '함께 언급된 문서가 모자랍니다.');
       return;
     }
-    const MAX_TAGS = 50; /* 축 5개 × 축당 최대 10개 */
-    const density = Math.min(100, Math.round(ALL.length / MAX_TAGS * 100));
-    const strength = a => a.percentile != null ? a.percentile : (a.lift != null ? a.lift * 10 : a.cooccurrence);
+    /* 포화도는 API 반환 개수나 더보기 행 수에 따라 100%가 되면 안 된다.
+       사전에 정의된 8개 축 × 축당 10칸을 분모로 두고, 한 축이 30개여도
+       최대 10칸만 기여시켜 다양성과 축 분산을 함께 본다. */
+    const MAX_TAGS = AX_ORDER.length * 10;
+    const filledSlots = AX_ORDER.reduce((sum, c) => sum + Math.min(10, (groups[c] || []).length), 0);
+    const density = Math.min(100, Math.round(filledSlots / MAX_TAGS * 100));
+    /* 최다 연관어도 목록과 같은 통합 점수를 쓴다.
+       예전처럼 하루 최고 백분위만 보면 2건뿐인 '시계'가 489건+검색 신호의
+       '청바지'보다 위에 뜨는 모순이 생긴다. */
+    const strength = a => a.score != null ? a.score
+      : (a.percentile != null ? a.percentile : (a.lift != null ? a.lift * 10 : a.cooccurrence));
     /* ★ 2026-09-21 — 연관어 출처가 두 갈래가 됐다.
          text   같은 문서 안에서 함께 언급 (유튜브 댓글 · 커머스 리뷰)
          search 같은 검색에서 함께 찾아짐 (구글 related queries · 네이버 연관검색어)
        검색 기반 행에는 '동시 언급 문서 수'가 없어 0 이다 — 그대로 쓰면 막대가 전부 0이 된다.
        그래서 막대 길이는 언급 수가 있으면 그걸로, 없으면 섞은 점수(score)로 그린다. */
     const axWeight = a => (a.cooccurrence || 0) || (a.score || 0);
-    const basisChip = a => {
-      const b = a.basis || [];
-      if (b.length > 1) return '<span class="axSrc" title="언급·검색 양쪽에서 잡힌 연관어 — 가장 믿을 만합니다"' +
-        ' style="margin-left:6px;font-size:10px;padding:1px 5px;border-radius:8px;border:1px solid currentColor;opacity:.75">둘 다</span>';
-      if (b[0] === 'search') return '<span class="axSrc" title="검색에서만 잡힌 연관어"' +
-        ' style="margin-left:6px;font-size:10px;padding:1px 5px;border-radius:8px;border:1px solid currentColor;opacity:.55">검색</span>';
-      return '';   /* 언급 기반은 기본값이라 배지를 안 단다 — 전부 달면 시끄럽다 */
-    };
     const topTag = ALL.slice().sort((a, b) => strength(b) - strength(a))[0];
     const catTotals = cats.map(c => [c, groups[c].reduce((s, a) => s + (a.cooccurrence || 0), 0)]);
     const topCat = catTotals.slice().sort((a, b) => b[1] - a[1])[0][0];
     const newCnt = ALL.filter(a => a.change === 'new').length;
-    const band = ALL.length >= 38 ? 0 : ALL.length >= 25 ? 1 : ALL.length >= 13 ? 2 : 3;
+    const band = density >= 75 ? 0 : density >= 50 ? 1 : density >= 25 ? 2 : 3;
     const RAMP = ['#b23b3b', '#c98a1b', '#3d7fd6', '#1f9e6e'].slice(0, 4 - band);
     const BAND = [['#1f9e6e', '폭발적 확산', '여러 축에 걸쳐 연관어가 최대치에 가깝게 쌓였습니다. 소비자 언어가 이미 풍부하게 형성된 상태입니다.'],
     ['#3d7fd6', '활발한 확산', '연관어가 절반 이상 채워졌습니다. 축마다 고르게 늘고 있는지 확인해볼 때입니다.'],
@@ -1475,43 +1504,88 @@ export function trRender(id){
     const badgeHtml = ch => ch === 'new' ? '<span class="axChg up">NEW</span>' :
       ch == null ? '' : ch > 0 ? '<span class="axChg up">▲' + ch + '</span>' : ch < 0 ? '<span class="axChg">▼' + Math.abs(ch) + '</span>' :
         '<span class="axChg">–</span>';
-    /* ★ 2026-09-23 — 축마다 상위 5개만 펼쳐 두고, 나머지는 '+ 더 보기' 로 연다.
-       축당 최대 10개가 한 번에 쌓이면 어느 말이 위인지 읽히지 않았다.
-       숨기는 것은 표시뿐이고(axHide), 데이터는 그대로 둔다 — 정렬을 바꿔도 같은 규칙이 적용된다. */
+    /* 축마다 처음에는 5개, '+ 더 보기' 뒤에는 10개까지만 보여 준다.
+       11위부터는 카드 아래 화살표로 10개씩 넘겨 카드가 끝없이 길어지지 않게 한다. */
     const AX_SHOW = 5;
-    const axRowsHTML = (arr, ci, badge) => {
+    const AX_PAGE = 10;
+    const axRowsHTML = (arr, ci, badge, page = 0, expanded = false, sort = 'feature') => {
       const max = Math.max.apply(null, arr.map(axWeight)) || 1;
-      const rows = arr.map((a, ai) => {
+      const start = page * AX_PAGE;
+      const visible = page === 0 && !expanded ? AX_SHOW : AX_PAGE;
+      const rows = arr.slice(start, start + visible).map((a, offset) => {
+        const ai = start + offset;
         const pct = Math.round(axWeight(a) / max * 100);
-        return '<button class="axRow' + (ai === 0 ? ' top' : '') + (ai >= AX_SHOW ? ' axHide' : '') + '"' +
+        const change = sort === 'cooc' ? a.cooc_change
+          : (Object.prototype.hasOwnProperty.call(a, 'feature_change') ? a.feature_change : a.change);
+        return '<button class="axRow' + (ai === 0 ? ' top' : '') + '"' +
           ' data-ci="' + ci + '" data-ai="' + ai + '">' +
           '<span class="axNum">' + (ai + 1) + '</span>' +
-          '<span class="axName">' + trEsc(a.term) + basisChip(a) + '</span>' +
+          '<span class="axName">' + trEsc(assocDisplayTerm(a.term)) + '</span>' +
           '<span class="axBar"><i class="' + (ai === 0 ? 'c' : '') + '" style="width:' + pct + '%"></i></span>' +
-          (badge ? badge(a.change) : '') +
+          (badge ? badge(change) : '') +
           '</button>';
       }).join('');
-      const rest = arr.length - AX_SHOW;
-      return rows + (rest > 0
-        ? '<button type="button" class="axMoreBtn" data-ax-more="' + rest + '">+ 더 보기 (' + rest + ')</button>'
-        : '');
+      if (!expanded && page === 0 && arr.length > AX_SHOW) {
+        const more = Math.min(AX_PAGE - AX_SHOW, arr.length - AX_SHOW);
+        return rows + '<button type="button" class="axMoreBtn">+ 더 보기 (' + more + ')</button>';
+      }
+      const pages = Math.ceil(arr.length / AX_PAGE);
+      if (pages <= 1) {
+        return expanded
+          ? rows + '<button type="button" class="axCollapseBtn">− 접기</button>'
+          : rows;
+      }
+      return rows + '<div class="axPager" aria-label="연관어 순위 페이지">' +
+        '<span class="axPagerSlot">' + (page > 0
+          ? '<button type="button" class="axPageBtn" data-page-dir="prev" aria-label="이전 순위">←</button>' : '') + '</span>' +
+        (page === 0
+          ? '<button type="button" class="axCollapseBtn">− 접기</button>'
+          : '<span class="axPageNow">' + (page + 1) + ' / ' + pages + '</span>') +
+        '<span class="axPagerSlot next">' + (page + 1 < pages
+          ? '<button type="button" class="axPageBtn" data-page-dir="next" aria-label="다음 순위">→</button>' : '') + '</span>' +
+        '</div>';
     };
-    /* '더 보기' 배선 — 목록을 다시 그릴 때마다 한 번씩 부른다 */
-    const axWireMore = root => {
-      if (!root) return;
-      root.querySelectorAll('.axMoreBtn').forEach(btn => {
-        btn.addEventListener('click', ev => {
+    const renderAxList = (list, page = 0, expanded = false) => {
+      const ci = +list.dataset.ci;
+      const cat = cats[ci];
+      const arr = groups[cat] || [];
+      const last = Math.max(0, Math.ceil(arr.length / AX_PAGE) - 1);
+      const safePage = Math.min(Math.max(0, page), last);
+      list.dataset.page = String(safePage);
+      list.dataset.expanded = expanded ? '1' : '0';
+      list.innerHTML = axRowsHTML(arr, ci, badgeHtml, safePage, expanded, list.dataset.sort || 'feature');
+    };
+    const openAxRow = row => {
+      const cat = cats[+row.dataset.ci];
+      const a = groups[cat] && groups[cat][+row.dataset.ai];
+      if (!a) return;
+      const activity = (a.basis || []).indexOf('search') >= 0 && !(a.cooccurrence)
+        ? '연관검색 신호' : '언급량 ' + (a.cooccurrence || 0) + '건';
+      const stat = [a.lift != null ? 'lift ' + a.lift.toFixed(2) : '', a.pmi != null ? 'PMI ' + a.pmi.toFixed(2) : '',
+      activity].filter(Boolean).join(' · ');
+      assocOpenPop(row, cat, {
+        n: a.term, spark: a.weekly_counts || null,
+        src: [{ tag: '지표', text: stat }].concat(a.evidence || [])
+      });
+    };
+    /* 목록 자체에 한 번만 연결해 다시 그린 행과 페이지 버튼도 같은 동작을 쓴다. */
+    const axWireLists = root => {
+      root.querySelectorAll('.axList').forEach(list => {
+        list.addEventListener('click', ev => {
+          const more = ev.target.closest('.axMoreBtn');
+          const collapse = ev.target.closest('.axCollapseBtn');
+          const pageBtn = ev.target.closest('.axPageBtn');
+          const row = ev.target.closest('.axRow');
+          if (!more && !collapse && !pageBtn && !row) return;
           ev.stopPropagation();
-          const list = btn.closest('.axList'); if (!list) return;
-          const rest = btn.dataset.axMore;
-          const hidden = list.querySelectorAll('.axRow.axHide');
-          if (hidden.length) {
-            hidden.forEach(r => r.classList.remove('axHide'));
-            btn.textContent = '− 접기';
-          } else {
-            list.querySelectorAll('.axRow').forEach((r, i) => { if (i >= AX_SHOW) r.classList.add('axHide') });
-            btn.textContent = '+ 더 보기 (' + rest + ')';
+          if (more) return renderAxList(list, 0, true);
+          if (collapse) return renderAxList(list, 0, false);
+          if (pageBtn) {
+            const page = +(list.dataset.page || 0);
+            assocClosePop();
+            return renderAxList(list, page + (pageBtn.dataset.pageDir === 'next' ? 1 : -1), true);
           }
+          openAxRow(row);
         });
       });
     };
@@ -1523,14 +1597,17 @@ export function trRender(id){
       'stroke-dasharray="314.16" stroke-dashoffset="314.16"/></svg>' +
       '<span class="num"><b data-count="' + density + '">0</b><small>연관어 포화도 %</small></span></div>' +
       '<div class="vdTx">' +
-      '<h4><b>' + trEsc(kw) + '</b>' + josa(kw, '은', '는') + ' 지금 <em>' + BAND[1] + '</em> 단계입니다.</h4>' +
+      '<h4><b>' + trEsc(kw) + '</b>' + josa(kw, '은', '는') +
+      (A.window_days ? ' 최근 ' + A.window_days + '일 기준으로 ' : ' 지금 ') +
+      '<em>' + BAND[1] + '</em> 단계입니다.</h4>' +
       '<p>' + BAND[2] + '</p>' +
       '<div class="vdBand">' + ['정체', '완만', '활발', '폭발'].map((s, i) => '<div' + (i === (3 - band) ? ' class="on"' : '') +
         '><span>' + s + '</span></div>').join('') + '</div>' +
       '<div class="vdMeta">' +
       '<div><b>' + ALL.length + '건</b><span>연관어 총량</span></div>' +
       '<div><b>' + newCnt + '건</b><span>신규 연관어</span></div>' +
-      '<div><b>' + trEsc(A.data_as_of || A.as_of) + '</b><span>기준일</span></div>' +
+      '<div><b>' + (A.window_days ? '최근 ' + A.window_days + '일' : trEsc(A.data_as_of || A.as_of)) +
+      '</b><span>' + (A.window_days ? trEsc(A.as_of) + ' 기준' : '기준일') + '</span></div>' +
       '</div>' +
       '</div></div>' +
       '<div class="kpis" style="grid-template-columns:repeat(3,minmax(0,1fr))">' +
@@ -1561,14 +1638,14 @@ export function trRender(id){
           '<div class="axHead">' +
           '<span class="dot"></span><h3>' + trEsc(cat) + '</h3>' +
           '<div class="axSortToggle">' +
-          '<button class="axSortBtn on" data-sort="pmi" data-ci="' + ci + '">특징순</button>' +
+          '<button class="axSortBtn on" data-sort="feature" data-ci="' + ci + '">연관도순</button>' +
           '<button class="axSortBtn" data-sort="cooc" data-ci="' + ci + '">언급량순</button>' +
           '</div>' +
           '</div>' +
-          '<div class="axList" data-ci="' + ci + '">' + axRowsHTML(arr, ci, badgeHtml) +
+          '<div class="axList" data-ci="' + ci + '" data-sort="feature">' + axRowsHTML(arr, ci, badgeHtml) +
           '</div></div>'
       }).join('') + '</div>';
-    axWireMore(body);
+    axWireLists(body);
     /* ── 클라이언트 사이드 정렬용 데이터 저장 ── */
     window._assocGroups = groups;
     window._assocCats = cats;
@@ -1587,7 +1664,6 @@ export function trRender(id){
         const sort = btn.dataset.sort;
         const cat = window._assocCats[ci];
         const grps = window._assocGroups;
-        const badge = window._assocBadgeHtml;
         if (!cat || !grps[cat]) return;
 
         /* 토글 버튼 활성 상태 변경 (같은 카테고리 내에서만) */
@@ -1612,40 +1688,10 @@ export function trRender(id){
         /* 해당 카테고리의 axList만 다시 그리기 (페이지 초기화 없음) */
         const list = panel.querySelector('.axList');
 
-        list.innerHTML = axRowsHTML(arr, ci, badge);
-        axWireMore(panel);
-
         /* 정렬된 데이터 기준으로 groups 업데이트 (팝업에서도 맞게) */
         grps[cat] = arr;
-
-        /* 새로 그린 버튼에 팝업 핸들러 다시 연결 */
-        list.querySelectorAll('.axRow').forEach(row => {
-          row.addEventListener('click', ev => {
-            ev.stopPropagation();
-            const a2 = grps[cat][+row.dataset.ai];
-            const stat2 = [a2.lift != null ? 'lift ' + a2.lift.toFixed(2) : '', a2.pmi != null ? 'PMI ' + a2.pmi.toFixed(2) : '',
-            ((a2.basis || []).indexOf('search') >= 0 && !(a2.cooccurrence) ? '검색 연관어' : '동시 언급 ' + (a2.cooccurrence || 0) + '건')].filter(Boolean).join(' · ');
-            assocOpenPop(row, cat, {
-              n: a2.term, spark: null,
-              src: [{ tag: '지표', text: stat2 }].concat(a2.evidence || [])
-            });
-          });
-        });
-      });
-    });
-
-    /* ── 기존 axRow 클릭 → 팝업 핸들러 ── */
-    $$('#trBody .axList .axRow').forEach(btn => {
-      btn.addEventListener('click', e => {
-        e.stopPropagation();
-        const cat = cats[+btn.dataset.ci];
-        const a = groups[cat][+btn.dataset.ai];
-        const stat = [a.lift != null ? 'lift ' + a.lift.toFixed(2) : '', a.pmi != null ? 'PMI ' + a.pmi.toFixed(2) : '',
-        ((a.basis || []).indexOf('search') >= 0 && !(a.cooccurrence) ? '검색 연관어' : '동시 언급 ' + (a.cooccurrence || 0) + '건')].filter(Boolean).join(' · ');
-        assocOpenPop(btn, cat, {
-          n: a.term, spark: null,
-          src: [{ tag: '지표', text: stat }].concat(a.evidence || [])
-        });
+        list.dataset.sort = sort;
+        renderAxList(list, 0, false);
       });
     });
   }
@@ -1787,9 +1833,10 @@ export function trRender(id){
         <section class="stockPicker panelC" id="dzDashboard">
           <div class="stockPickerGrid">
             <div class="stockPickerRate"><span class="stockPickerRateLabel">현재 할인율</span>
-              <div id="stockDiscountSlot"></div></div>
+              <div id="stockDiscountSlot"></div>
+              <button type="button" class="dzSaveBtn" id="dzSaveBtn" hidden></button></div>
             <div class="stockPickerSummary" id="stockPickerSummary" aria-live="polite"></div>
-            <div class="dzWishlist"><div class="wlHead"><b>내 찜목록</b><span>클릭해서 선택 · 다시 누르면 해제</span>
+            <div class="dzWishlist"><div class="wlHead"><b>내 찜목록</b><span>클릭하거나 왼쪽 원형으로 드래그</span>
                 <span class="dzSaveError" id="dzSaveError" role="alert" hidden></span></div>
               <div class="wlBody" id="dzWishListBody"></div></div>
           </div>

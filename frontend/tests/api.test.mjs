@@ -110,13 +110,16 @@ await t('연관어 — 표가 통째로 비면 그 사실을 말한다', async (
 
 await t('연관어 — 값이 있으면 점수와 함께 돌려준다', async () => {
   fake.__setNext({ rows: [
-    { term: '새틴', facet: 'MATERIAL', cooccurrence_count: '9',
-      association_score: '2.31', confidence: '0.44', metric_date: '2026-09-01' },
+    { term: '새틴', facet: 'MATERIAL', cooccurrence_count: '9', lift: '2.31', pmi: '1.21',
+      association_percentile: '96.4', score: '96.4', basis: ['text'],
+      metric_date: '2026-09-01', metric_version: 'feedit-unified-text-v1' },
   ]});
   const res = mkRes();
   await assoc(req('/api/assoc?term=발레코어'), res);
   assert.equal(res.body.status, 'ok');
-  assert.equal(res.body.data.items[0].score, 2.31);
+  assert.equal(res.body.data.items[0].score, 96.4);
+  assert.equal(res.body.data.items[0].lift, 2.31);
+  assert.equal(res.body.data.window_days, 28);
   assert.equal(res.body.data.as_of, '2026-09-01');
 });
 
@@ -158,6 +161,18 @@ await t('★ 상품 — 스타일은 여러 개 달리는 연결 표로만 고�
   /* 없어진 단일 스타일 FK(p.style_id) 를 다시 들이지 않는다 */
   assert.ok(!/style_id/.test(last.sql), '단일 스타일 FK 를 조인하면 안 된다: ' + last.sql);
   assert.match(last.sql,/ps\.thumbnail_url/);
+});
+
+await t('★ 상품 — 큰 카테고리를 페이지 분할 전에 SQL로 거른다', async () => {
+  fake.__setNext({ rows: [] });
+  const res = mkRes();
+  await products(req('/api/products?style=고프코어&category_group=outer&limit=16'), res);
+  const last = fake.CALLS[fake.CALLS.length - 1];
+  assert.match(last.sql,/~\*/,'카테고리 정규식이 LIMIT보다 앞선 WHERE에 있어야 한다');
+  assert.match(last.sql,/NOT \(\(/,'앞서 판정되는 신발·원피스를 제외해야 한다');
+  assert.equal(last.args.at(-2),17);
+  assert.equal(last.args.at(-1),0);
+  assert.ok(last.args.some(x=>String(x).includes('아우터')));
 });
 
 // ── 진단 ───────────────────────────────────────────────

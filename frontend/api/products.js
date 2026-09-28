@@ -32,6 +32,7 @@ export default async function handler(req, res) {
   const kw = (url.searchParams.get('q') || '').trim();
   const brand = (url.searchParams.get('brand') || '').trim();
   const style = (url.searchParams.get('style') || '').trim();
+  const categoryGroup = (url.searchParams.get('category_group') || '').trim().toLowerCase();
   const limit = Math.min(200, Math.max(1, Number(url.searchParams.get('limit') || 40)));
   const offset = Math.min(1000000, Math.max(0, Number(url.searchParams.get('offset') || 0)));
   // 정렬 — 값은 모두 최신 스냅샷 한 줄에서 온다. 값이 없는 상품은 어느 정렬이든 맨 뒤.
@@ -81,6 +82,26 @@ export default async function handler(req, res) {
            AND tagged_style.term_type = 'STYLE'
            AND tagged_style.canonical_name = $${args.length}
       )`);
+  }
+  /* 스타일 페이지의 큰 카테고리는 페이지를 나누기 전에 적용한다.
+     첫 24개를 받은 뒤 브라우저에서 아우터만 남기면 1~2개씩 보이는 문제가 생긴다.
+     규칙 순서는 브라우저 itemCatKey와 동일하며, 먼저 걸리는 분류를 우선한다. */
+  const CATEGORY_PATTERNS = {
+    shoes: '신발|슈즈|스니커|운동화|부츠|워커|로퍼|모카신|샌들|슬리퍼|더비|옥스포드|힐|플랫|메리제인|첼시|shoes|sneaker|boots|loafer|sandal',
+    dress: '원피스|드레스|점프수트|셋업|jumpsuit|dress|onepiece',
+    outer: '아우터|아웃터|자켓|재킷|코트|점퍼|블루종|봄버|패딩|다운|플리스|무스탕|가디건|베스트|조끼|바람막이|파카|트렌치|블레이저|jacket|coat|outer|parka|blouson|fleece|vest|cardigan',
+    bottom: '하의|바지|팬츠|슬랙스|데님|진|청바지|스커트|치마|반바지|쇼츠|조거|레깅스|pants|denim|jeans|skirt|shorts|slacks|jogger|legging',
+    top: '상의|티셔츠|티|반팔|긴팔|맨투맨|스웨트|후디|후드|셔츠|블라우스|니트|스웨터|폴로|탑|나시|피케|tee|t-shirt|shirt|blouse|knit|sweater|hood|sweat|polo|top',
+  };
+  const categoryOrder = Object.keys(CATEGORY_PATTERNS);
+  const categoryText = `COALESCE(cs.source_category_name, '') || ' ' || COALESCE(p.canonical_name, ps.source_name, '')`;
+  if (CATEGORY_PATTERNS[categoryGroup]) {
+    args.push(CATEGORY_PATTERNS[categoryGroup]);
+    where.push(`(${categoryText}) ~* $${args.length}`);
+    for (const earlier of categoryOrder.slice(0, categoryOrder.indexOf(categoryGroup))) {
+      args.push(CATEGORY_PATTERNS[earlier]);
+      where.push(`NOT ((${categoryText}) ~* $${args.length})`);
+    }
   }
   args.push(limit + 1);
   const limitArg = args.length;
@@ -167,6 +188,7 @@ export default async function handler(req, res) {
       has_more: hasMore,
       total,
       style: style ? [style] : [],
+      category_group: CATEGORY_PATTERNS[categoryGroup] ? categoryGroup : null,
     },
     가격없음 ? { note: `${가격없음}건은 가격 기록이 아직 없습니다.` } : {},
   );

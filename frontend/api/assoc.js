@@ -1,13 +1,12 @@
 /* GET /api/assoc?term=발레코어&limit=20
  *
  * 연관어 — `analysis.term_assoc_daily` 를 읽는다.
- * 같은 날 함께 나온 정도(cooccurrence_count)와 연관 점수(association_score),
- * 신뢰도(confidence) 가 들어 있다.
+ * 최근 28일의 일별 연관어를 합쳐서 돌려준다.
  *
- * ★ 여기서도 점수를 새로 만들지 않는다.
- *   설계서 §2 는 동시출현이 아니라 **리프트(lift)** 를 쓰라고 정해 뒀는데,
- *   그 계산은 크롤러가 한다. 이 함수는 저장된 값을 그대로 옮긴다.
- *   화면과 챗봇이 같은 숫자를 말하게 하려면 계산은 한 곳에만 있어야 한다.
+ * ★ lift·PMI는 크롤러가 일별로 계산한 값의 28일 평균이다.
+ *   동시언급 수는 합하고 백분위는 기간 중 최고값을 쓴다.
+ *   Django API가 설정돼 있으면 위에서 그 응답을 그대로 중계하며,
+ *   아래 SQL은 중계가 없는 배포의 대체 경로다.
  */
 
 import { q, viaBackend } from './_lib/db.js';
@@ -30,21 +29,48 @@ export default async function handler(req, res) {
 
   const url = new URL(req.url, 'http://x');
   const term = (url.searchParams.get('term') || '').trim();
-  const limit = Math.min(100, Math.max(5, Number(url.searchParams.get('limit') || 20)));
+  const limit = Math.min(200, Math.max(5, Number(url.searchParams.get('limit') || 200)));
 
   if (!term) return empty(res, 'term 을 지정해 주세요. 예: /api/assoc?term=발레코어');
 
   const r = await q(
-    `SELECT tgt.canonical_name AS term, tgt.term_type AS facet,
-            a.cooccurrence_count, a.association_score, a.confidence, a.metric_date
-       FROM analysis.term_assoc_daily a
-       JOIN dictionary.dictionary_term src ON src.id = a.source_term_id
-       JOIN dictionary.dictionary_term tgt ON tgt.id = a.target_term_id
-      WHERE (src.canonical_name = $1 OR src.normalized_name = lower($1))
-        AND a.metric_date = (
-              SELECT max(metric_date) FROM analysis.term_assoc_daily a2
-               WHERE a2.source_term_id = a.source_term_id)
-      ORDER BY a.association_score DESC NULLS LAST, a.cooccurrence_count DESC
+    `WITH src AS (
+       SELECT id FROM dictionary.dictionary_term
+        WHERE canonical_name = $1 OR normalized_name = lower($1)
+        ORDER BY id LIMIT 1
+     ), latest AS (
+       SELECT DISTINCT ON (a.basis)
+              a.basis, a.metric_version, a.metric_date
+         FROM analysis.term_assoc_daily a
+         JOIN src ON src.id = a.source_term_id
+        ORDER BY a.basis, a.metric_date DESC, a.id DESC
+     ), rolled AS (
+       SELECT a.target_term_id, a.basis,
+              sum(a.cooccurrence_count)::bigint AS cooccurrence_count,
+              avg(a.lift) AS lift,
+              avg(a.pmi) AS pmi,
+              max(a.association_percentile) AS association_percentile,
+              max(a.metric_date) AS metric_date,
+              max(a.metric_version) AS metric_version
+         FROM analysis.term_assoc_daily a
+         JOIN src ON src.id = a.source_term_id
+         JOIN latest l ON l.basis = a.basis AND l.metric_version = a.metric_version
+        WHERE a.metric_date BETWEEN l.metric_date - 27 AND l.metric_date
+        GROUP BY a.target_term_id, a.basis
+     )
+     SELECT tgt.canonical_name AS term, tgt.term_type AS facet,
+            sum(r.cooccurrence_count)::bigint AS cooccurrence_count,
+            avg(r.lift) AS lift, avg(r.pmi) AS pmi,
+            max(r.association_percentile) AS association_percentile,
+            array_agg(DISTINCT lower(r.basis)) AS basis,
+            least(100, max(r.association_percentile)
+              + CASE WHEN count(DISTINCT r.basis) > 1 THEN 10 ELSE 0 END) AS score,
+            max(r.metric_date) AS metric_date,
+            max(r.metric_version) AS metric_version
+       FROM rolled r
+       JOIN dictionary.dictionary_term tgt ON tgt.id = r.target_term_id
+      GROUP BY r.target_term_id, tgt.canonical_name, tgt.term_type
+      ORDER BY score DESC NULLS LAST, cooccurrence_count DESC
       LIMIT $2`,
     [term, limit],
   );
@@ -66,12 +92,30 @@ export default async function handler(req, res) {
   return ok(res, {
     term,
     as_of: String(r.rows[0].metric_date).slice(0, 10),
-    items: r.rows.map((x) => ({
+    window_days: 28,
+    ranking_scope: 'cumulative',
+    metric_version: r.rows[0].metric_version || null,
+    items: r.rows.map((x, index) => ({
       term: x.term,
       facet: x.facet,
+      facet_ko: ({ITEM:'아이템',MATERIAL:'소재',COLOR:'색',DETAIL:'디테일',TPO:'TPO',STYLE:'스타일',BRAND:'브랜드',PERSON:'인물'})[x.facet] || x.facet,
       cooccurrence: Number(x.cooccurrence_count ?? 0),
-      score: x.association_score === null ? null : Number(x.association_score),
-      confidence: x.confidence === null ? null : Number(x.confidence),
+      recent_cooccurrence: Number(x.cooccurrence_count ?? 0),
+      lift: x.lift === null ? null : Number(x.lift),
+      pmi: x.pmi === null ? null : Number(x.pmi),
+      percentile: x.association_percentile === null ? null : Number(x.association_percentile),
+      score: x.score === null ? null : Number(x.score),
+      rank: index + 1,
+      feature_rank: index + 1,
+      feature_change: null,
+      cooc_rank: null,
+      cooc_change: null,
+      change: null,
+      basis: Array.isArray(x.basis) ? x.basis : [],
+      recent_bases: Array.isArray(x.basis) ? x.basis : [],
+      is_historical: false,
+      weekly_counts: [],
+      evidence: [],
     })),
   });
 }

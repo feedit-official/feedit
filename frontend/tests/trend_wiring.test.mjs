@@ -36,6 +36,8 @@ const days = (n) => { const o=[]; for(let i=n-1;i>=0;i--){ const d=new Date(); d
 
 // ── dispatch.js 가 term·field 를 넘기는지 (소스 대조) ──
 const src = fs.readFileSync(new URL('../trend/static/js/dispatch.js', import.meta.url), 'utf8');
+const apiSrc = fs.readFileSync(new URL('../../backend/apps/api/views.py', import.meta.url), 'utf8');
+const popSrc = fs.readFileSync(new URL('../trend/static/js/assoc_popover.js', import.meta.url), 'utf8');
 await t('★ 온도 차트가 term 을 넘긴다', () => {
   assert.match(src, /G_CFG\.tempMain=\{key:kw\+'temp',term:kw/);
   assert.match(src, /field:'mention'/);
@@ -45,6 +47,54 @@ await t('★ 연관어는 term, 긍부정은 직접 집계 rows 를 넘긴다', 
   assert.match(src, /G_CFG\.assocMain=\{key:kw\+'assoc',term:kw/);
   assert.match(src, /sentPie\(\$\('\[data-chart="sentMain"\]'\),\{key:kw\+'sent',rows:rows/);
   assert.match(src, /sentimentUrl\(kw,KW\.f\)/);
+});
+await t('연관어 이름 옆에 내부 검색 출처 배지를 붙이지 않는다', () => {
+  assert.doesNotMatch(src, /basisChip/);
+  assert.doesNotMatch(src, /class="axSrc"/);
+  assert.match(src, /assocDisplayTerm\(a\.term\)/);
+  assert.match(src, /\\s\*\\\(\(\?:검색\|둘\\s\*다\)\\\)\\s\*\$/);
+});
+await t('연관어는 누적 기준선과 최근 28일을 합치고 적은 문서의 순위를 보정한다', () => {
+  assert.match(apiSrc, /metric_version__startswith="feedit-l2-"/);
+  assert.match(apiSrc, /exclude\(metric_version__startswith="feedit-l2-"\)/);
+  assert.match(apiSrc, /ASSOC_WINDOW_DAYS = 28/);
+  assert.match(apiSrc, /math\.log1p\(support\)/);
+  assert.match(apiSrc, /limit", 200/);
+});
+await t('연관도순과 언급량순은 같은 축의 직전 28일 순위를 각각 비교한다', () => {
+  assert.match(apiSrc, /"feature_change": feature_change/);
+  assert.match(apiSrc, /"cooc_change": cooc_change/);
+  assert.match(apiSrc, /"recent_cooccurrence": recent_cooccurrence/);
+  assert.match(apiSrc, /"is_historical": not bool\(item\.get\("recent_bases"\)\)/);
+  assert.match(apiSrc, /"weekly_counts": weekly_counts\.get\(tid, \[\]\)/);
+  assert.match(apiSrc, /"ranking_scope": "cumulative"/);
+  assert.match(src, />연관도순<\/button>/);
+  assert.match(src, /sort === 'cooc' \? a\.cooc_change/);
+  assert.match(src, /\(b\.cooccurrence \|\| 0\) - \(a\.cooccurrence \|\| 0\)/);
+});
+await t('최다 연관어 카드도 목록과 같은 통합 점수를 쓴다', () => {
+  assert.match(src, /const strength = a => a\.score != null \? a\.score/);
+});
+await t('포화도 문구는 최근 28일로 보이고 최근 활동은 팝오버 주별 값으로 분리한다', () => {
+  assert.match(src, /const MAX_TAGS = AX_ORDER\.length \* 10/);
+  assert.match(src, /Math\.min\(10, \(groups\[c\] \|\| \[\]\)\.length\)/);
+  assert.doesNotMatch(src, /const byPmi = all\.slice\(0, 10\)/);
+  assert.match(src, /최근 ' \+ A\.window_days \+ '일 기준으로 '/);
+  assert.doesNotMatch(src, /누적 전체 기준으로/);
+  assert.match(src, /'언급량 ' \+ \(a\.cooccurrence \|\| 0\) \+ '건'/);
+  assert.match(src, /spark: a\.weekly_counts \|\| null/);
+});
+await t('연관어 카드는 5개에서 10개까지만 펼치고 이후 순위를 페이지로 넘긴다', () => {
+  assert.match(src, /const AX_SHOW = 5/);
+  assert.match(src, /const AX_PAGE = 10/);
+  assert.match(src, /data-page-dir="next"/);
+  assert.match(src, /data-page-dir="prev"/);
+  assert.match(src, /class="axCollapseBtn"/);
+  assert.match(src, /if \(pages <= 1\)[\s\S]*\? rows \+ '<button type="button" class="axCollapseBtn">− 접기<\/button>'[\s\S]*: rows;/);
+  assert.doesNotMatch(src, /axRow\.axHide/);
+});
+await t('연관어별 주차 추이가 없으면 빈 그래프 축도 숨긴다', () => {
+  assert.match(popSrc, /sparkBox\.hidden=pts\.length<=1/);
 });
 await t('그리기 전에 prime 을 부른다', () => {
   assert.match(src, /prime\(kw\)\.then/);

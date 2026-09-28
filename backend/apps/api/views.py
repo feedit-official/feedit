@@ -1084,7 +1084,7 @@ def _direct_assoc(term, limit):
 def assoc(request):
     """GET /api/assoc?term=발레코어&limit=60&days=90
 
-    items   최신 기준일의 연관어 (lift·PMI·백분위·순위·신규 여부·순위 변화·근거 문장)
+    items   최근 28일의 연관어 (일별 동시언급 합·평균 lift/PMI·최고 백분위·순위 변화·근거 문장)
     history 기준일별 연관어 수와 동시언급 문서 합 — 추이 차트
     """
     name = (request.GET.get("term") or "").strip()
@@ -1093,7 +1093,10 @@ def assoc(request):
     term = _resolve_term(name)
     if term is None:
         return _empty(_term_missing_reason(name), term=name)
-    limit = _int(request, "limit", 60, 5, 200)
+    # 화면은 축별 10개까지만 보존한 뒤 상위 5개를 펼친다.
+    # API에서 먼저 잘라 버리면 TPO처럼 행이 적은 축이나 토트백 같은 후순위
+    # 연관어가 화면의 '더 보기'에도 들어오지 못한다. 화면이 Top 5를 접어 둔다.
+    limit = _int(request, "limit", 200, 5, 200)
     days = _int(request, "days", 120, 7, 730)
 
     # ★ 2026-09-21 — 연관어 출처가 두 갈래가 됐다.
@@ -1104,40 +1107,156 @@ def assoc(request):
     #   있더라도 단위가 다르다. 비교 가능한 건 association_percentile 하나뿐이다
     #   — 각 소스 **안에서의** 상대순위라 단위가 없다.
     #
-    #   점수 = 둘 중 높은 백분위 + (양쪽에 다 잡혔으면 +10, 최대 100)
+    #   점수 = 지지 문서 수로 보정한 높은 쪽 백분위 + (양쪽에 다 잡혔으면 +10)
     #   두 소스가 같은 말을 가리키면 그게 가장 믿을 만한 연관어라는 뜻이다.
     ASSOC_BOTH_BONUS = 10
-
-    def _basis_rows(basis_value):
-        """basis 하나의 최신 기준일 행들 + 전일 순위."""
-        qs = TermAssocDaily.objects.filter(source_term=term, basis=basis_value)
-        ver = qs.order_by("-metric_date").values("metric_version").first()
-        if ver is None:
-            return [], None, None, {}
-        qs = qs.filter(metric_version=ver["metric_version"])
-        days_seen = list(qs.values_list("metric_date", flat=True)
-                         .distinct().order_by("-metric_date")[:2])
-        if not days_seen:
-            return [], None, None, {}
-        newest = days_seen[0]
-        before = days_seen[1] if len(days_seen) > 1 else None
-        got = list(
-            qs.filter(metric_date=newest).order_by(*order_clause)
-            .values("target_term_id", "target_term__canonical_name", "target_term__term_type",
-                    "cooccurrence_count", "lift", "pmi", "association_percentile",
-                    "association_rank", "is_new", "metrics")[:limit * 2]
-        )
-        ranks = {}
-        if before:
-            ranks = dict(qs.filter(metric_date=before)
-                         .values_list("target_term_id", "association_rank"))
-        return got, newest, ver["metric_version"], ranks
+    ASSOC_WINDOW_DAYS = 28
 
     sort_method = request.GET.get("sort", "pmi")
-    order_clause = ["-cooccurrence_count", "-pmi"] if sort_method == "cooc" else [Coalesce("association_rank", 999999), "-pmi", "-cooccurrence_count"]
 
-    text_rows, text_date, text_ver, text_prev = _basis_rows(TermAssocDaily.Basis.TEXT)
-    srch_rows, srch_date, srch_ver, srch_prev = _basis_rows(TermAssocDaily.Basis.SEARCH)
+    def _window_rank(rows, basis_value):
+        """28일 집계 행의 화면 순위. SEARCH와 TEXT 모두 비교 가능한 백분위를 먼저 본다."""
+        for row in rows:
+            percentile = _num(row.get("association_percentile")) or 0.0
+            support = max(0, int(row.get("cooccurrence_count") or 0))
+            # 하루 문서 1~2건에서 백분위 100을 받은 말이 28일 대표 연관어 1위로
+            # 튀지 않게 TEXT만 지지 문서 수로 완만하게 보정한다. SEARCH는 횟수가
+            # 아니라 related-query 순위라 cooccurrence=0이어도 보정하지 않는다.
+            support_weight = (min(1.0, math.log1p(support) / math.log(11))
+                              if basis_value == TermAssocDaily.Basis.TEXT else 1.0)
+            row["_rank_score"] = percentile * support_weight
+        if sort_method == "cooc":
+            rows.sort(key=lambda r: (-(r["cooccurrence_count"] or 0),
+                                     -(_num(r["pmi"]) or 0),
+                                     r["target_term__canonical_name"]))
+        else:
+            rows.sort(key=lambda r: (-r["_rank_score"],
+                                     -(_num(r["pmi"]) or 0),
+                                     -(r["cooccurrence_count"] or 0),
+                                     r["target_term__canonical_name"]))
+        for rank, row in enumerate(rows, 1):
+            row["association_rank"] = rank
+        return rows
+
+    def _basis_rows(basis_value):
+        """basis 하나의 최근 28일 집계 + 같은 방식으로 계산한 직전 28일 집계."""
+        qs = TermAssocDaily.objects.filter(source_term=term, basis=basis_value)
+        # feedit-l2는 여러 날짜의 결과를 한 번에 담은 누적 스냅샷이라 추이용
+        # 버전으로 고르면 관측일이 하루뿐이 된다. TEXT는 일별 버전을 우선하고,
+        # 일별 적재가 전혀 없는 용어만 누적 스냅샷으로 대체한다.
+        latest_row = None
+        if basis_value == TermAssocDaily.Basis.TEXT:
+            latest_row = qs.exclude(metric_version__startswith="feedit-l2-").order_by(
+                "-metric_date", "-id").values("metric_date", "metric_version").first()
+        if latest_row is None:
+            latest_row = qs.order_by("-metric_date", "-id").values(
+                "metric_date", "metric_version").first()
+        if latest_row is None:
+            return [], None, None, [], False
+        newest = latest_row["metric_date"]
+        version = latest_row["metric_version"]
+        qs = qs.filter(metric_version=version)
+
+        def aggregate(window_qs):
+            rows = list(window_qs.values(
+                "target_term_id", "target_term__canonical_name", "target_term__term_type",
+            ).annotate(
+                cooccurrence_count=Sum("cooccurrence_count"),
+                lift=Avg("lift"),
+                pmi=Avg("pmi"),
+                association_percentile=Max("association_percentile"),
+                first_seen=Min("metric_date"),
+                last_seen=Max("metric_date"),
+            ))
+            return _window_rank(rows, basis_value)
+
+        current_start = newest - timedelta(days=ASSOC_WINDOW_DAYS - 1)
+        current_qs = qs.filter(metric_date__range=(current_start, newest))
+        got = aggregate(current_qs)
+        for row in got:
+            row["_recent_cooccurrence"] = row.get("cooccurrence_count") or 0
+            row["_recent_rank_score"] = row.get("_rank_score") or 0.0
+            row["_recent_signal"] = True
+
+        # feedit-l2-v1은 문서·상품·콘텐츠 전체를 한 번에 집계한 누적 기준선이다.
+        # 일별 파이프라인으로 바뀐 뒤에도 시티보이·데님블루처럼 안정적으로 함께
+        # 나타난 용어를 잃지 않도록, TEXT에서는 가장 최근 누적 스냅샷을 합친다.
+        legacy_base = None
+        legacy = []
+        if basis_value == TermAssocDaily.Basis.TEXT:
+            legacy_base = TermAssocDaily.objects.filter(
+                source_term=term, basis=basis_value,
+                metric_version__startswith="feedit-l2-",
+            ).order_by("-metric_date", "-id").values("metric_date", "metric_version").first()
+            if legacy_base and legacy_base["metric_version"] != version:
+                legacy = list(TermAssocDaily.objects.filter(
+                    source_term=term, basis=basis_value,
+                    metric_version=legacy_base["metric_version"],
+                    metric_date=legacy_base["metric_date"],
+                ).values(
+                    "target_term_id", "target_term__canonical_name", "target_term__term_type",
+                    "cooccurrence_count", "lift", "pmi", "association_rank",
+                ))
+        def merge_legacy(window_rows):
+            if not legacy or not legacy_base:
+                return window_rows
+            legacy_total = max(1, len(legacy) - 1)
+            by_target = {row["target_term_id"]: row for row in window_rows}
+            for old in legacy:
+                old_rank = old.get("association_rank") or len(legacy)
+                old_pct = 100.0 if len(legacy) == 1 else 100.0 * (len(legacy) - old_rank) / legacy_total
+                current = by_target.get(old["target_term_id"])
+                if current is None:
+                    current = {
+                        **old,
+                        "association_percentile": old_pct,
+                        "first_seen": legacy_base["metric_date"],
+                        "last_seen": legacy_base["metric_date"],
+                        "_recent_cooccurrence": 0,
+                        "_recent_rank_score": 0.0,
+                        "_recent_signal": False,
+                        "_stable_baseline": True,
+                    }
+                    window_rows.append(current)
+                    by_target[old["target_term_id"]] = current
+                else:
+                    current["cooccurrence_count"] = max(
+                        current.get("cooccurrence_count") or 0,
+                        old.get("cooccurrence_count") or 0,
+                    )
+                    current["association_percentile"] = max(
+                        _num(current.get("association_percentile")) or 0.0, old_pct)
+                    # 누적 기준선의 PMI가 있으면 장기 특징값으로 사용한다.
+                    if old.get("pmi") is not None:
+                        current["pmi"] = old["pmi"]
+                        current["lift"] = old["lift"]
+                    current["_stable_baseline"] = True
+            return _window_rank(window_rows, basis_value)
+
+        got = merge_legacy(got)
+
+        # 검색 근거(metrics)는 집계할 수 없는 JSON이라, 창 안의 가장 최근 행을 대표로 쓴다.
+        latest_meta = {}
+        for meta_row in current_qs.order_by("-metric_date", "association_rank", "id").values(
+                "target_term_id", "metrics"):
+            latest_meta.setdefault(meta_row["target_term_id"], meta_row["metrics"] or {})
+        for row in got:
+            row["metrics"] = latest_meta.get(row["target_term_id"], {})
+            row["is_new"] = False
+
+        previous_end = current_start - timedelta(days=1)
+        previous_start = previous_end - timedelta(days=ASSOC_WINDOW_DAYS - 1)
+        previous_rows = aggregate(qs.filter(metric_date__range=(previous_start, previous_end)))
+        had_previous = bool(previous_rows)
+        for row in previous_rows:
+            row["_recent_cooccurrence"] = row.get("cooccurrence_count") or 0
+            row["_recent_rank_score"] = row.get("_rank_score") or 0.0
+            row["_recent_signal"] = True
+        previous_rows = merge_legacy(previous_rows)
+        return got[:limit * 2], newest, version, previous_rows, had_previous
+
+    text_rows, text_date, text_ver, text_prev_rows, text_had_prev = _basis_rows(TermAssocDaily.Basis.TEXT)
+    srch_rows, srch_date, srch_ver, srch_prev_rows, srch_had_prev = _basis_rows(TermAssocDaily.Basis.SEARCH)
 
     if not text_rows and not srch_rows:
         direct = _direct_assoc(term, limit)
@@ -1154,53 +1273,142 @@ def assoc(request):
                                          basis=TermAssocDaily.Basis.TEXT)
     if text_ver:
         base = base.filter(metric_version=text_ver)
-    latest = text_date or srch_date
-    prev = None
+    latest = max(d for d in (text_date, srch_date) if d is not None)
+    prev = latest - timedelta(days=ASSOC_WINDOW_DAYS) if (text_had_prev or srch_had_prev) else None
 
-    merged = {}
-    for bucket, rows_in, prev_ranks in (("text", text_rows, text_prev),
-                                        ("search", srch_rows, srch_prev)):
-        for r in rows_in:
-            tid = r["target_term_id"]
-            item = merged.setdefault(tid, {"row": r, "bases": [], "pct": {},
-                                           "prev": {}, "meta": {}})
-            item["bases"].append(bucket)
-            item["pct"][bucket] = _num(r["association_percentile"]) or 0.0
-            item["prev"][bucket] = prev_ranks.get(tid)
-            item["meta"][bucket] = r.get("metrics") or {}
-            # 언급 기반 행이 있으면 그쪽을 대표로 삼는다 (lift·PMI·근거문장이 있다)
-            if bucket == "text":
-                item["row"] = r
+    def merge_sources(text_basis, search_basis):
+        """TEXT와 SEARCH를 동일한 통합 연관 점수 구조로 합친다."""
+        result = {}
+        for bucket, rows_in in (("text", text_basis), ("search", search_basis)):
+            for row in rows_in:
+                tid = row["target_term_id"]
+                item = result.setdefault(tid, {"row": row, "bases": [], "recent_bases": [], "pct": {},
+                                               "rank_score": {}, "historical_score": {},
+                                               "stable": False, "meta": {}})
+                item["bases"].append(bucket)
+                if row.get("_recent_signal"):
+                    item["recent_bases"].append(bucket)
+                item["pct"][bucket] = _num(row["association_percentile"]) or 0.0
+                item["rank_score"][bucket] = _num(row.get("_recent_rank_score")) or 0.0
+                item["historical_score"][bucket] = _num(row.get("_rank_score")) or 0.0
+                item["stable"] = item["stable"] or bool(row.get("_stable_baseline"))
+                item["meta"][bucket] = row.get("metrics") or {}
+                # 언급 기반 행이 있으면 그쪽을 대표로 삼는다 (lift·PMI·근거문장이 있다).
+                if bucket == "text":
+                    item["row"] = row
+        return result
 
-    scored = []
-    for tid, item in merged.items():
-        both = len(item["bases"]) > 1
-        score = max(item["pct"].values() or [0.0]) + (ASSOC_BOTH_BONUS if both else 0)
-        scored.append((min(100.0, score), tid, item))
-    scored.sort(key=lambda x: -x[0])
-    scored = scored[:limit]
+    def score_merged(source):
+        ranked = []
+        for tid, item in source.items():
+            both = len(item["bases"]) > 1
+            score = max(item["historical_score"].values() or [0.0]) + (ASSOC_BOTH_BONUS if both else 0)
+            support = item["row"].get("cooccurrence_count") or 0
+            ranked.append((score, support, tid, item))
+        ranked.sort(key=lambda x: (
+            -x[0],
+            -x[1],
+            -max(x[3]["historical_score"].values() or [0.0]),
+            x[3]["row"]["target_term__canonical_name"],
+        ))
+        return ranked
 
-    rows = [item["row"] for _, _, item in scored]
-    prev_rank = {}
-    for _, tid, item in scored:
-        prev_rank[tid] = item["prev"].get("text", item["prev"].get("search"))
-    merged_by_id = {tid: (score, item) for score, tid, item in scored}
+    def facet_ranks(ranked):
+        """화면 숫자와 같은 축 내부 순위를 만든다."""
+        counts = {}
+        ranks = {}
+        for _, _, tid, item in ranked:
+            facet = item["row"]["target_term__term_type"]
+            counts[facet] = counts.get(facet, 0) + 1
+            ranks[tid] = counts[facet]
+        return ranks
+
+    def cooc_facet_ranks(source):
+        """누적 TEXT 동시 언급이 있는 행을 축 내부 언급량 순위로 만든다."""
+        buckets = {}
+        supports = {}
+        for tid, item in source.items():
+            total = (item["row"].get("cooccurrence_count") or 0) if "text" in item["bases"] else 0
+            supports[tid] = total
+            if total <= 0:
+                continue
+            row = item["row"]
+            facet = row["target_term__term_type"]
+            buckets.setdefault(facet, []).append((
+                -total,
+                -(_num(row.get("pmi")) or 0),
+                row["target_term__canonical_name"],
+                tid,
+            ))
+        ranks = {}
+        for rows_in in buckets.values():
+            rows_in.sort()
+            for rank, (_, _, _, tid) in enumerate(rows_in, 1):
+                ranks[tid] = rank
+        return ranks, supports
+
+    merged = merge_sources(text_rows, srch_rows)
+    previous_merged = merge_sources(text_prev_rows, srch_prev_rows)
+    all_scored = score_merged(merged)
+    previous_scored = score_merged(previous_merged)
+    feature_ranks = facet_ranks(all_scored)
+    previous_feature_ranks = facet_ranks(previous_scored)
+    cooc_ranks, _ = cooc_facet_ranks(merged)
+    previous_cooc_ranks, _ = cooc_facet_ranks(previous_merged)
+
+    scored = all_scored[:limit]
+    rows = [item["row"] for _, _, _, item in scored]
+    merged_by_id = {tid: (score, item) for score, _, tid, item in scored}
 
     target_ids = [r["target_term_id"] for r in rows]
     evidence = _assoc_evidence(term, target_ids)
 
+    # 팝오버의 3주 전~이번 주 그래프. 누적 순위와 별개로 최근 활동만 보여 준다.
+    # 적재 자체가 없던 주는 None, 적재는 있었지만 해당 용어가 없던 주는 0이다.
+    weekly_counts = {tid: [None, None, None, None] for tid in target_ids}
+    if text_date:
+        weekly_start = text_date - timedelta(days=27)
+        weekly_rows = list(base.filter(
+            metric_date__range=(weekly_start, text_date),
+            target_term_id__in=target_ids,
+        ).values("target_term_id", "metric_date").annotate(
+            cooc=Sum("cooccurrence_count")))
+        covered_weeks = set()
+        for metric_date in base.filter(
+                metric_date__range=(weekly_start, text_date)).values_list(
+                    "metric_date", flat=True).distinct():
+            covered_weeks.add(min(3, max(0, (metric_date - weekly_start).days // 7)))
+        for values in weekly_counts.values():
+            for week in covered_weeks:
+                values[week] = 0
+        for weekly in weekly_rows:
+            week = min(3, max(0, (weekly["metric_date"] - weekly_start).days // 7))
+            values = weekly_counts[weekly["target_term_id"]]
+            values[week] = (values[week] or 0) + (weekly["cooc"] or 0)
+
     items = []
-    for r in rows:
-        rank, before = r["association_rank"], prev_rank.get(r["target_term_id"])
-        if r["is_new"] or (prev and r["target_term_id"] not in prev_rank):
-            change = "new"
-        elif rank is not None and before is not None:
-            change = before - rank          # 양수 = 순위 상승
-        else:
-            change = None
+    for rank, r in enumerate(rows, 1):
         tid = r["target_term_id"]
         score, item = merged_by_id.get(tid, (None, {"bases": ["text"], "meta": {}}))
         bases = item["bases"]
+        feature_rank = feature_ranks.get(tid)
+        feature_before = previous_feature_ranks.get(tid)
+        if text_had_prev or srch_had_prev:
+            feature_change = ("new" if feature_before is None and not item.get("stable")
+                              else feature_before - feature_rank
+                              if feature_before is not None and feature_rank is not None else None)
+        else:
+            feature_change = None
+
+        recent_cooccurrence = (item["row"].get("_recent_cooccurrence") or 0) if "text" in bases else 0
+        cooc_rank = cooc_ranks.get(tid)
+        cooc_before = previous_cooc_ranks.get(tid)
+        if "text" not in bases or not text_had_prev or cooc_rank is None:
+            cooc_change = None
+        elif cooc_before is None:
+            cooc_change = "new"
+        else:
+            cooc_change = cooc_before - cooc_rank
         # 근거 문장은 언급 기반에만 있다. 검색만으로 잡힌 말은 빈칸이 되므로
         # 그 자리에 "어떤 검색 신호였는지" 를 대신 넣는다 — 빈 칸보다 낫다.
         proof = evidence.get(tid, [])
@@ -1221,14 +1429,22 @@ def assoc(request):
             "facet": r["target_term__term_type"],
             "facet_ko": FACET_KO.get(r["target_term__term_type"], r["target_term__term_type"]),
             "cooccurrence": r["cooccurrence_count"],
+            "recent_cooccurrence": recent_cooccurrence,
             "lift": _num(r["lift"], 4),
             "pmi": _num(r["pmi"], 4),
             "percentile": _num(r["association_percentile"], 2),
             "rank": rank,
-            "change": change,
+            "feature_rank": feature_rank,
+            "feature_change": feature_change,
+            "cooc_rank": cooc_rank,
+            "cooc_change": cooc_change,
+            "change": feature_change,
             # ★ 어느 소스에서 나온 연관어인지 — 화면은 이걸로 배지를 단다.
             #   ["text","search"] 면 두 소스가 같은 말을 가리킨 것 — 가장 믿을 만하다.
             "basis": bases,
+            "recent_bases": item.get("recent_bases", []),
+            "is_historical": not bool(item.get("recent_bases")),
+            "weekly_counts": weekly_counts.get(tid, []),
             "score": round(score, 2) if score is not None else None,
             "evidence": proof,
         })
@@ -1247,6 +1463,9 @@ def assoc(request):
         "as_of": latest.isoformat(),
         "data_as_of": _data_as_of(),
         "previous": prev.isoformat() if prev else None,
+        "window_days": ASSOC_WINDOW_DAYS,
+        "ranking_scope": "cumulative",
+        "window_start": (latest - timedelta(days=ASSOC_WINDOW_DAYS - 1)).isoformat(),
         "metric_version": text_ver or srch_ver,
         "bases": {
             "text": {"as_of": text_date.isoformat() if text_date else None,
@@ -1254,7 +1473,7 @@ def assoc(request):
             "search": {"as_of": srch_date.isoformat() if srch_date else None,
                        "metric_version": srch_ver, "count": len(srch_rows)},
         },
-        "blend_rule": "높은 쪽 백분위 + 양쪽 모두 잡힐 경우 +10 (최대 100)",
+        "blend_rule": "누적 기준선과 최근 28일을 합치고, TEXT는 지지 문서 수로 보정한 뒤 양쪽 모두 잡힐 경우 +10",
         "items": items,
         "history": history,
     })
@@ -2134,6 +2353,7 @@ def products(request):
     """
     kw = (request.GET.get("q") or "").strip()
     brand = (request.GET.get("brand") or "").strip()
+    category_group = (request.GET.get("category_group") or "").strip().lower()
     limit = _int(request, "limit", 40, 1, 200)
     offset = _int(request, "offset", 0, 0, 1_000_000)
     sel = _selection(request)
@@ -2145,6 +2365,30 @@ def products(request):
     if brand:
         qs = qs.filter(Q(product__brand__name=brand) | Q(product__brand__english_name__iexact=brand)
                        | Q(source_brand__name=brand) | Q(source_brand__brand__name=brand))
+    # 스타일 화면의 큰 분류. 페이지를 자른 뒤 브라우저에서 분류하면 한 페이지에
+    # 아우터가 1~2개만 섞여 보이므로, 반드시 여기서 먼저 거른다.
+    # 순서는 프론트 itemCatKey(ST_CAT_RULES)와 같다. 앞 분류를 제외해
+    # '원피스·스커트'처럼 두 규칙에 걸리는 이름도 브라우저와 동일하게 판정한다.
+    category_patterns = {
+        "shoes": r"신발|슈즈|스니커|운동화|부츠|워커|로퍼|모카신|샌들|슬리퍼|더비|옥스포드|힐|플랫|메리제인|첼시|shoes|sneaker|boots|loafer|sandal",
+        "dress": r"원피스|드레스|점프수트|셋업|jumpsuit|dress|onepiece",
+        "outer": r"아우터|아웃터|자켓|재킷|코트|점퍼|블루종|봄버|패딩|다운|플리스|무스탕|가디건|베스트|조끼|바람막이|파카|트렌치|블레이저|jacket|coat|outer|parka|blouson|fleece|vest|cardigan",
+        "bottom": r"하의|바지|팬츠|슬랙스|데님|진|청바지|스커트|치마|반바지|쇼츠|조거|레깅스|pants|denim|jeans|skirt|shorts|slacks|jogger|legging",
+        "top": r"상의|티셔츠|티|반팔|긴팔|맨투맨|스웨트|후디|후드|셔츠|블라우스|니트|스웨터|폴로|탑|나시|피케|tee|t-shirt|shirt|blouse|knit|sweater|hood|sweat|polo|top",
+    }
+
+    def category_match(pattern):
+        return (Q(product__category__name__iregex=pattern)
+                | Q(source_category__category__name__iregex=pattern)
+                | Q(source_category__source_category_name__iregex=pattern)
+                | Q(product__canonical_name__iregex=pattern)
+                | Q(source_name__iregex=pattern))
+
+    if category_group in category_patterns:
+        order = tuple(category_patterns)
+        qs = qs.filter(category_match(category_patterns[category_group]))
+        for earlier in order[:order.index(category_group)]:
+            qs = qs.exclude(category_match(category_patterns[earlier]))
     # 정렬 — 값은 모두 최신 스냅샷 한 줄에서 온다. 값이 없는 상품은 어느 정렬이든 맨 뒤.
     # recommend(FEEDiT 추천순): 리뷰·좋아요·판매량(로그) + 평점 + 할인율 + 이미지·가격 보유 가산점.
     # 계산식은 api/products.js(Node) 와 같게 유지한다.
@@ -2245,6 +2489,7 @@ def products(request):
         "has_more": has_more,
         "total": total,
         "style": sel["style"],
+        "category_group": category_group if category_group in category_patterns else None,
     })
 
 

@@ -16,6 +16,14 @@ t('스타일명과 페이징을 상품 API에 넘긴다',()=>{
   assert.equal(u.searchParams.get('limit'),'16');
 });
 
+t('아이템 카테고리는 페이지를 자르기 전에 상품 API로 넘긴다',()=>{
+  const u=new URL(styleProductsURL('고프코어',0,24,'recommend','outer'),'http://localhost');
+  assert.equal(u.searchParams.get('category_group'),'outer');
+  assert.equal(u.searchParams.get('sort'),'recommend');
+  const all=new URL(styleProductsURL('고프코어',0,24,'recommend','all'),'http://localhost');
+  assert.equal(all.searchParams.has('category_group'),false);
+});
+
 t('DB 상품의 이미지·브랜드·가격·링크를 카드로 옮긴다',()=>{
   const card=styleProductCard({
     id:3,product_source_id:17,image:'https://img.example/17.jpg',

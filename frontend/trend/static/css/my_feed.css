@@ -470,19 +470,40 @@
 /* 할인률 상품 선택 — 기존 지표 카드의 폭·테두리·간격을 그대로 따른다. */
 .stockPicker{margin:0 0 12px;padding:10px 14px}
 .stockPicker .ph{margin-bottom:6px}
-/* ★ 2026-09-19 — 드래그해 옮기던 칸을 걷어내고 찜 목록이 가로를 넓게 쓴다 */
+/* 할인율 원형에 선택 상품 사진을 넣고, 찜 카드도 이 원형으로 바로 끌어다 놓는다. */
 .stockPickerGrid{display:grid;
-  grid-template-columns:minmax(135px,160px) minmax(0,1fr) minmax(0,.62fr);
+  grid-template-columns:minmax(175px,200px) minmax(0,1fr) minmax(0,.62fr);
   align-items:start;gap:14px}
 .stockPickerRate{min-width:0;min-height:320px;display:flex;flex-direction:column;
-  align-items:center;justify-content:center;gap:14px;transform:translate(46px,-14px);--sc:var(--coral)}
+  align-items:center;justify-content:center;gap:10px;transform:translate(40px,-10px);--sc:var(--coral)}
 .stockPickerRateLabel{font-size:12px;color:var(--pink-2)}
-#stockDiscountSlot{width:100%;display:flex;justify-content:center}
-.stockPickerRate .dial,.stockPickerDialEmpty{width:min(100%,165px);height:auto;aspect-ratio:1}
-.stockPickerDial .trk,.stockPickerDial .val{stroke-width:8}
-.stockPickerDialEmpty{border:10px solid rgba(10,10,10,.07);border-radius:50%;
+#stockDiscountSlot{width:100%;padding:8px;display:flex;justify-content:center;border-radius:50%;
+  transition:background .2s,box-shadow .2s}
+#stockDiscountSlot.dragover{background:#fff4f0;box-shadow:0 0 0 2px var(--coral)}
+.stockPickerRate .stockPickerDial,.stockPickerDialEmpty{width:min(100%,190px);height:auto;aspect-ratio:1}
+.stockPickerDial{appearance:none;padding:0;border:0;background:transparent;font:inherit;
+  position:relative;flex:0 0 auto;cursor:pointer}
+.stockPickerDial:focus-visible{outline:2px solid var(--coral);outline-offset:5px;border-radius:50%}
+.stockPickerDial svg{position:absolute;inset:0;z-index:2;width:100%;height:100%;
+  transform:rotate(-90deg);overflow:visible;pointer-events:none}
+.stockPickerDial .trk,.stockPickerDial .val{fill:none;stroke-width:8}
+.stockPickerDial .trk{stroke:rgba(10,10,10,.07)}
+.stockPickerDial .val{stroke:var(--sc,var(--coral));stroke-linecap:round}
+.stockDialPhoto{position:absolute;inset:18px;z-index:1;border-radius:50%;overflow:hidden;
+  background:linear-gradient(145deg,#f6f4f1,#e9e5df)}
+.stockDialPhoto img{width:100%;height:100%;display:block;object-fit:cover;object-position:center top}
+.stockPicker .stockPickerDial .num{position:absolute;inset:auto auto -9px 50%;z-index:3;
+  width:max-content;min-width:86px;transform:translateX(-50%);padding:8px 14px;
+  display:flex;flex-direction:row;align-items:baseline;justify-content:center;gap:4px;
+  border-radius:999px;background:#111;color:#fff;box-shadow:0 5px 13px rgba(0,0,0,.16)}
+.stockPicker .stockPickerDial .num b{font-family:var(--num);font-size:25px;font-weight:500;
+  line-height:1;color:#fff;letter-spacing:-.04em}
+.stockPicker .stockPickerDial .num small{font-size:7px;color:rgba(255,255,255,.72);letter-spacing:.12em}
+.stockPickerDialEmpty{appearance:none;padding:0;border:10px solid rgba(10,10,10,.07);border-radius:50%;
   display:flex;align-items:center;justify-content:center;flex-direction:column;gap:4px;
-  color:var(--pink-2)}
+  background:#fff;color:var(--pink-2);font:inherit;cursor:pointer;transition:border-color .2s,color .2s,background .2s}
+.stockPickerDialEmpty:hover,.stockPickerDialEmpty:focus-visible{border-color:var(--coral);color:var(--coral);
+  background:#fff8f5;outline:none}
 .stockPickerDialEmpty b{font-family:var(--num);font-size:36px;font-weight:500;line-height:1}
 .stockPickerDialEmpty small{font-size:10px}
 .stockPicker .dzWrap{min-width:0;display:flex;flex-direction:column;gap:8px}
@@ -517,6 +538,7 @@
 .stockPicker .dzClearBtn:hover,.stockPicker .dzSaveBtn:hover{border-color:var(--coral);color:var(--coral)}
 .stockPicker .dzSaveBtn.on{color:var(--coral);border-color:var(--coral);background:#fff8f5}
 .stockPicker .dzSaveBtn:disabled{cursor:default;opacity:.6}
+.stockPickerRate>.dzSaveBtn{min-width:132px;margin-top:5px;padding:7px 13px;background:#fff}
 .stockPicker .dzSaveError{font-size:11px;line-height:1.5;color:var(--coral)}
 .stockPickerSummary{min-width:0;min-height:320px;display:flex;align-items:center;padding:0 0 0 78px}
 .stockSummaryContent{min-width:0;width:100%}
@@ -567,6 +589,7 @@
 }
 .stockPicker .wlItem:hover{background:#faf9f7;border-color:var(--pink-3)}
 .stockPicker .wlItem.on{background:#fff8f5;border-color:var(--coral)}
+.stockPicker .wlItem.dragging{opacity:.42}
 .stockPicker .wlItem:focus-visible{outline:2px solid var(--coral)}
 /* 사진은 정사각형 — 칸이 넓어져도 비율이 흔들리지 않는다 */
 .stockPicker .wlPic{width:100%;height:auto;aspect-ratio:1;flex:none;position:relative;border-radius:7px;
@@ -627,8 +650,9 @@
   .stockPriceGrid{grid-template-columns:1fr}
 }
 @media(max-width:1280px){
-  .stockPickerGrid{grid-template-columns:145px minmax(0,1fr)}
-  .stockPickerRate{min-height:290px;transform:translateX(30px)}
+  .stockPickerGrid{grid-template-columns:170px minmax(0,1fr)}
+  .stockPickerRate{min-height:290px;transform:translateX(26px)}
+  .stockPickerRate .stockPickerDial,.stockPickerDialEmpty{width:170px}
   .stockPicker .dzWishlist{height:290px;min-height:290px;max-height:290px}
   .stockPicker .dzWrap{grid-column:1/-1}
   .stockPicker .dropZone{max-width:320px}
@@ -637,9 +661,13 @@
 }
 @media(max-width:520px){
   .stockPickerGrid{grid-template-columns:110px minmax(0,1fr);gap:12px}
-  .stockPickerRate{min-height:0;justify-content:flex-start;padding-top:28px;transform:translateX(12px)}
+  .stockPickerRate{min-height:0;justify-content:flex-start;padding-top:28px;transform:translateX(14px)}
   .stockPickerSummary{padding-left:16px}
-  .stockPickerRate .dial,.stockPickerDialEmpty{width:104px}
+  .stockPickerRate .stockPickerDial,.stockPickerDialEmpty{width:104px}
+  .stockDialPhoto{inset:13px}
+  .stockPicker .stockPickerDial .num{min-width:66px;padding:6px 9px}
+  .stockPicker .stockPickerDial .num b{font-size:19px}
+  .stockPickerRate>.dzSaveBtn{min-width:104px;padding:6px 8px;font-size:10px}
   .stockPicker .wlBody{grid-template-columns:repeat(2,minmax(0,1fr))}
   .stockPicker .dzWishlist{height:320px}
 }

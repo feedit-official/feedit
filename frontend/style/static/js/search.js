@@ -621,7 +621,7 @@ function fsLoadFacetsSoon(itemsOnly=false){
 }
 
 /* ── 세부 검색 팝업 ── */
-function fsOpenPop(){
+export function fsOpenPop(){
   const pop=$('.fsPop'); if(pop){ pop.style.transform=''; pop.style.transition=''; }
   if(FS.id==='stock'){
     FS.colq['상품명']=$('#fsInput')?.value.trim()||'';

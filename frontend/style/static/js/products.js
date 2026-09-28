@@ -15,9 +15,15 @@ export const ST_RECOMMEND_NOTE=[
 ];
 export const ST_PICK_COUNT=6;   /* FEEDiT 추천순 최상단 몇 개에 'FEEDiT Pick!' 라벨을 붙일지 */
 
-export function styleProductsURL(style,offset=0,limit=ST_ITEM_PAGE_SIZE,sort='latest'){
+export function styleProductsURL(style,offset=0,limit=ST_ITEM_PAGE_SIZE,sort='latest',category='all'){
   const p=new URLSearchParams({style:String(style||''),offset:String(offset),limit:String(limit)});
   if(sort&&sort!=='latest'&&ST_SORTS.some(([k])=>k===sort))p.set('sort',sort);
+  /* 카테고리는 이미 받은 한 페이지를 브라우저에서 잘라내는 조건이 아니다.
+     서버가 먼저 거른 뒤 페이지를 나눠야, 아우터를 눌렀을 때 첫 24칸이
+     아우터로 채워지고 다음 페이지를 누를 때도 같은 조건이 유지된다. */
+  if(category&&category!=='all'&&ST_ITEM_CATS.some(([k])=>k===category)){
+    p.set('category_group',category);
+  }
   return '/api/products?'+p.toString();
 }
 
