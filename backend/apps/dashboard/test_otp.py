@@ -55,6 +55,18 @@ class DashboardOTPTests(TestCase):
         self.assertNotIn(response.content.decode(), device.recovery_code_hashes[0])
         self.assertNotIn(self.client.get("/admin-dashboard/").status_code, (302, 403))
 
+    def test_enrollment_page_embeds_server_generated_qr_and_manual_key(self):
+        response = self._password_login()
+        self.assertRedirects(response, "/admin-dashboard/otp/setup/", fetch_redirect_response=False)
+        response = self.client.get("/admin-dashboard/otp/setup/")
+        device = DashboardOTPDevice.objects.get(user=self.staff)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'class="otp-qr"')
+        self.assertContains(response, "QR이 안 읽히나요?")
+        self.assertContains(response, device.secret)
+        self.assertNotContains(response, "api.qrserver.com")
+
     def test_totp_cannot_be_replayed(self):
         self._password_login()
         device = DashboardOTPDevice.objects.get(user=self.staff)

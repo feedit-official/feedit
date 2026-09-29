@@ -13,6 +13,7 @@
   label{display:block;font-size:12px;color:var(--muted);margin:16px 0 7px}input{width:100%;padding:13px 14px;border:1px solid var(--line);border-radius:10px;background:#f7f6f3;font:inherit;letter-spacing:.08em}input:focus{outline:2px solid var(--coral);outline-offset:-1px;background:#fff}
   button,.button{display:block;width:100%;margin-top:18px;padding:13px;border:0;border-radius:10px;background:var(--ink);color:#fff;font-size:14px;font-weight:700;text-align:center;text-decoration:none;cursor:pointer}
   .secret{padding:13px;border-radius:10px;background:#f7f6f3;border:1px solid var(--line);font:600 15px/1.5 ui-monospace,monospace;word-break:break-all;user-select:all}.uri{font-size:11px;color:var(--muted);word-break:break-all;margin-top:9px}
+  .qr-wrap{display:grid;place-items:center;margin:18px auto 8px;padding:14px;width:min(100%,260px);aspect-ratio:1;background:#fff;border:1px solid var(--line);border-radius:14px}.otp-qr{display:block;width:100%;height:100%}.manual{margin-top:16px;border-top:1px solid var(--line);padding-top:14px}.manual summary{cursor:pointer;font-size:12px;color:var(--muted)}
   .codes{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:18px 0}.codes code{padding:10px;background:#f7f6f3;border:1px solid var(--line);border-radius:8px;text-align:center;font-weight:700}.warn{font-size:12px;line-height:1.65;color:#a33}.msg{margin:13px 0 0;padding:11px 13px;border-radius:9px;background:#fff1ed;color:#b34028;font-size:12px}
 </style>
 </head>
@@ -21,9 +22,9 @@
   <section class="card">
   {% if stage == "setup" %}
     <h1>인증 앱 연결</h1>
-    <p class="sub">Google Authenticator 또는 Microsoft Authenticator에서 계정 추가 → 설정 키 입력을 선택하고 아래 키를 등록하세요.</p>
-    <label>설정 키</label><div class="secret">{{ secret }}</div>
-    <details><summary class="sub" style="margin-top:12px;cursor:pointer">고급: OTP URI 보기</summary><p class="uri">{{ provisioning_uri }}</p></details>
+    <p class="sub">Google Authenticator 또는 Microsoft Authenticator에서 계정 추가 → QR 코드 스캔을 선택하고 아래 코드를 촬영하세요.</p>
+    <div class="qr-wrap">{{ qr_svg|safe }}</div>
+    <details class="manual"><summary>QR이 안 읽히나요? 설정 키로 직접 등록</summary><label>설정 키</label><div class="secret">{{ secret }}</div><details><summary class="sub" style="margin-top:12px;cursor:pointer">고급: OTP URI 보기</summary><p class="uri">{{ provisioning_uri }}</p></details></details>
     <form method="post">{% csrf_token %}<label for="token">앱에 표시된 6자리 인증번호</label><input id="token" name="token" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9 ]{6,8}" required autofocus><button type="submit">연결하고 계속</button></form>
   {% elif stage == "verify" %}
     <h1>2단계 인증</h1><p class="sub">인증 앱의 6자리 번호를 입력하세요. 휴대폰을 사용할 수 없다면 저장해 둔 복구 코드도 사용할 수 있습니다.</p>

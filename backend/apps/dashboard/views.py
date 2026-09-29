@@ -86,6 +86,7 @@ from .security import (
     otp_verified,
     password_verified,
     provisioning_uri,
+    provisioning_qr_svg,
     register_failed_attempt,
     verify_device,
 )
@@ -3596,6 +3597,7 @@ def dashboard_otp_setup(request):
         "stage": "setup",
         "secret": device.secret,
         "provisioning_uri": provisioning_uri(request.user, device.secret),
+        "qr_svg": provisioning_qr_svg(request.user, device.secret),
     })
 
 

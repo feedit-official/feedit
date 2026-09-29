@@ -10,6 +10,8 @@ import struct
 import time
 from urllib.parse import quote, urlencode
 
+import qrcode
+import qrcode.image.svg
 from django.conf import settings
 from django.core.cache import cache
 from django.db import transaction
@@ -66,6 +68,25 @@ def provisioning_uri(user, secret: str) -> str:
     label = quote(f"{issuer}:{user.get_username()}", safe="")
     query = urlencode({"secret": secret, "issuer": issuer, "digits": TOTP_DIGITS, "period": TOTP_STEP_SECONDS})
     return f"otpauth://totp/{label}?{query}"
+
+
+def provisioning_qr_svg(user, secret: str) -> str:
+    """OTP URI를 외부 서비스에 보내지 않고 스캔 가능한 SVG로 만든다."""
+
+    qr = qrcode.QRCode(
+        error_correction=qrcode.constants.ERROR_CORRECT_M,
+        box_size=8,
+        border=4,
+        image_factory=qrcode.image.svg.SvgPathFillImage,
+    )
+    qr.add_data(provisioning_uri(user, secret))
+    qr.make(fit=True)
+    image = qr.make_image(attrib={
+        "class": "otp-qr",
+        "role": "img",
+        "aria-label": "FEEDiT 관리자 OTP 등록 QR 코드",
+    })
+    return image.to_string(encoding="unicode")
 
 
 def _totp(secret: str, counter: int) -> str:

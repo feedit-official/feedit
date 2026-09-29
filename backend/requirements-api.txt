@@ -7,6 +7,7 @@ Django==6.1
 gunicorn==26.2.0
 whitenoise==6.8.2
 python-dotenv==1.2.3
+qrcode==8.2
 
 # ── RDS(PostgreSQL) ──
 #   psycopg-binary 를 같이 넣으면 서버에서 컴파일을 안 한다(gcc·libpq 불필요).
