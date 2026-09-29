@@ -79,6 +79,7 @@ from .security import (
     attempts_blocked,
     clear_attempts,
     confirm_device,
+    dashboard_operator_allowed,
     get_or_create_device,
     mark_otp_verified,
     mark_password_verified,
@@ -3460,7 +3461,7 @@ def _dashboard_auth_guard(request):
     user = getattr(request, "user", None)
     if user is None or not user.is_authenticated:
         return redirect(f"{reverse('dashboard:login')}?next={request.path}")
-    if not (user.is_staff or user.is_superuser):
+    if not dashboard_operator_allowed(user):
         return HttpResponseForbidden("운영 계정만 접근할 수 있습니다.")
     if not password_verified(request):
         return redirect(f"{reverse('dashboard:login')}?next={request.path}")
@@ -3488,9 +3489,7 @@ def dashboard_login(request):
     #   일반 계정도 앱 로그인으로 세션을 갖고 있을 수 있는데, 그 사람을
     #   대시보드로 보내면 미들웨어가 403 을 주고 다시 여기로 돌아와 반복된다.
     #   로그인 폼을 그대로 보여 줘서 운영 계정으로 다시 들어오게 한다.
-    if request.user.is_authenticated and (
-        request.user.is_staff or request.user.is_superuser
-    ):
+    if dashboard_operator_allowed(request.user):
         if not otp_required():
             return redirect("dashboard:dashboard")
         if otp_verified(request):
@@ -3529,7 +3528,7 @@ def dashboard_login(request):
                 "아이디 또는 비밀번호가 올바르지 않습니다.",
             )
 
-        elif not (user.is_staff or user.is_superuser):
+        elif not dashboard_operator_allowed(user):
             register_failed_attempt("password", attempt_identity)
             logger.warning("dashboard non-operator login rejected username=%r", username)
             messages.error(

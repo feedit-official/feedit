@@ -317,6 +317,11 @@ SECURE_HSTS_PRELOAD = os.getenv("DJANGO_HSTS_PRELOAD", "0") == "1"
 DASHBOARD_OTP_REQUIRED = os.getenv("DASHBOARD_OTP_REQUIRED", "0") == "1"
 DASHBOARD_OTP_ISSUER = os.getenv("DASHBOARD_OTP_ISSUER", "FEEDiT Admin")
 DASHBOARD_SESSION_AGE = int(os.getenv("DASHBOARD_SESSION_AGE", "1800"))
+DASHBOARD_ALLOWED_EMAILS = tuple(
+    email.strip().casefold()
+    for email in os.getenv("DASHBOARD_ALLOWED_EMAILS", "").split(",")
+    if email.strip()
+)
 
 # 켜든 말든 항상 좋은 것들 — 쿠키를 자바스크립트가 못 읽게, 크로스사이트 전송 제한.
 SESSION_COOKIE_HTTPONLY = True

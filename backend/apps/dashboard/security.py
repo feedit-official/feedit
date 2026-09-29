@@ -32,6 +32,27 @@ def otp_required() -> bool:
     return bool(getattr(settings, "DASHBOARD_OTP_REQUIRED", False))
 
 
+def dashboard_operator_allowed(user) -> bool:
+    """활성 운영 계정이며, 설정된 경우 팀 이메일 허용 목록에도 속하는지 확인한다."""
+
+    if not (
+        user
+        and user.is_authenticated
+        and user.is_active
+        and (user.is_staff or user.is_superuser)
+    ):
+        return False
+
+    allowed = {
+        str(email).strip().casefold()
+        for email in getattr(settings, "DASHBOARD_ALLOWED_EMAILS", ())
+        if str(email).strip()
+    }
+    if not allowed:
+        return True
+    return str(getattr(user, "email", "")).strip().casefold() in allowed
+
+
 def _session_matches(request, key: str) -> bool:
     user = getattr(request, "user", None)
     return bool(

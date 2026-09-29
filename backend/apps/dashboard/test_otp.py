@@ -130,3 +130,47 @@ class DashboardOTPDisabledCompatibilityTests(TestCase):
         client = Client()
         client.force_login(staff)
         self.assertNotIn(client.get("/admin-dashboard/").status_code, (302, 403))
+
+
+@override_settings(
+    DASHBOARD_OTP_REQUIRED=True,
+    DASHBOARD_ALLOWED_EMAILS=("feedit31@gmail.com", "skn31final4team@gmail.com"),
+)
+class DashboardEmailAllowlistTests(TestCase):
+    def setUp(self):
+        cache.clear()
+        user_model = get_user_model()
+        self.allowed = user_model.objects.create_user(
+            username="team-ops",
+            email="SKN31FINAL4TEAM@gmail.com",
+            password="pw-team-12345",
+            is_staff=True,
+        )
+        self.denied = user_model.objects.create_user(
+            username="outside-ops",
+            email="outside@example.com",
+            password="pw-outside-12345",
+            is_staff=True,
+        )
+
+    def test_allowed_team_email_can_reach_qr_enrollment(self):
+        response = self.client.post(
+            "/admin-dashboard/login/",
+            {"username": self.allowed.username, "password": "pw-team-12345"},
+        )
+        self.assertRedirects(response, "/admin-dashboard/otp/setup/", fetch_redirect_response=False)
+        self.assertEqual(self.client.get("/admin-dashboard/otp/setup/").status_code, 200)
+
+    def test_other_staff_email_cannot_log_in(self):
+        response = self.client.post(
+            "/admin-dashboard/login/",
+            {"username": self.denied.username, "password": "pw-outside-12345"},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "아이디 또는 비밀번호가 올바르지 않습니다.")
+        self.assertNotIn("_auth_user_id", self.client.session)
+
+    def test_existing_session_with_other_staff_email_is_forbidden(self):
+        self.client.force_login(self.denied)
+        self.assertEqual(self.client.get("/admin-dashboard/").status_code, 403)
+        self.assertEqual(self.client.get("/admin-dashboard/otp/setup/").status_code, 403)

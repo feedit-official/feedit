@@ -22,7 +22,12 @@ from django.http import HttpResponseForbidden
 from django.shortcuts import redirect
 
 from .models import DashboardOTPDevice
-from .security import otp_required, otp_verified, password_verified
+from .security import (
+    dashboard_operator_allowed,
+    otp_required,
+    otp_verified,
+    password_verified,
+)
 
 PREFIX = "/admin-dashboard/"
 LOGIN_URL = "/admin-dashboard/login/"
@@ -64,7 +69,7 @@ class DashboardStaffMiddleware:
             # 로그인은 했는데 운영 계정이 아니면 여기서 끝.
             #   ★ 로그인 화면으로 되돌리지 않는다. 이미 로그인한 사람을
             #     로그인 화면으로 보내면 무한 반복이 된다.
-            if not (user.is_staff or user.is_superuser):
+            if not dashboard_operator_allowed(user):
                 return HttpResponseForbidden(DENIED_HTML)
 
             if otp_required():

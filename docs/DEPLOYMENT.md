@@ -50,6 +50,7 @@ docker compose --env-file .env -f docker/compose.chat.yml up -d --build
 | `FEEDIT_CHAT_ORCHESTRATOR` | 모델 도구 오케스트레이션 사용 설정 |
 | `DASHBOARD_OTP_REQUIRED` | 관리자 TOTP 강제. HTTPS·마이그레이션·최초 등록 확인 후 `1` |
 | `DASHBOARD_SESSION_AGE` | OTP 완료 관리자 세션 수명(초), 기본 1800 |
+| `DASHBOARD_ALLOWED_EMAILS` | 쉼표로 구분한 관리자 팀 이메일. 설정 시 staff/superuser여도 목록 밖이면 차단 |
 | `DJANGO_SECURE_COOKIES` | 관리자 HTTPS 확인 후 `1`; 세션·CSRF 쿠키만 Secure 처리 |
 | `DJANGO_SECURE_SSL_REDIRECT` | 모든 API 클라이언트를 HTTPS로 전환한 뒤 `1`; 그전에는 `0` |
 | `DJANGO_HSTS_SECONDS` | 최초 0, 안정화 뒤 300 → 86400 → 31536000 순으로 증가 |
@@ -108,6 +109,7 @@ API는 읽기/쓰기 기능을 제공하지만 기동 명령에 `migrate`를 포
    DJANGO_SECURE_COOKIES=1
    DJANGO_SECURE_SSL_REDIRECT=0
    DJANGO_HSTS_SECONDS=0
+   DASHBOARD_ALLOWED_EMAILS=feedit31@gmail.com,skn31final4team@gmail.com
    DASHBOARD_OTP_REQUIRED=1
    DASHBOARD_SESSION_AGE=1800
    ```
