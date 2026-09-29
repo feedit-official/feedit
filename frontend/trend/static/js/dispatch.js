@@ -476,6 +476,13 @@ document.addEventListener('click',e=>{
 /* DB 에서 온 글자는 반드시 이스케이프해서 넣는다 */
 function trEsc(v){ return String(v==null?'':v).replace(/[&<>"']/g,m=>(
   {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])) }
+let RESALE_MODE='buy';
+document.addEventListener('click',e=>{
+  const b=e.target.closest&&e.target.closest('[data-resale-mode]');
+  if(!b||!['buy','sell'].includes(b.dataset.resaleMode))return;
+  RESALE_MODE=b.dataset.resaleMode;
+  if(TR_CUR==='resale')trRender('resale');
+});
 /* 검색/언급 출처는 내부 계산용이다. 예전 적재값에 꼬리표가 문자열로 남아 있어도
    사용자가 보는 연관어 이름에는 노출하지 않는다. */
 function assocDisplayTerm(v){
@@ -861,6 +868,10 @@ function editUrl(id) {
     p.set('source_id',String(FS.stockItem.id));
     return EDIT_API[id]+'?'+p.toString();
   }
+  if(id==='resale'&&FS.resaleItem){
+    p.set(FS.resaleItem.type==='product'?'product_id':'source_id',String(FS.resaleItem.id));
+    return EDIT_API[id]+'?'+p.toString();
+  }
   getFsCols().forEach(c => (FS.pick[c.ax] || []).forEach(v => p.append(c.param, v)));
   const t = fsTerm(); if (t) p.set('term', t);
   return EDIT_API[id] + '?' + p.toString();
@@ -1092,7 +1103,7 @@ export function trRender(id){
          없는 축이 칩으로만 남아, **고른 적 없는 조건**이 결과에 섞였다.
          할인률을 드나들 때는 걸린 조건을 비우고 새로 시작한다.
          (리세일 ↔ 수명주기는 축이 같으므로 조건을 들고 옮겨 다닐 수 있다.) */
-      if (from === 'stock' || to === 'stock') {
+      if (from === 'stock' || to === 'stock' || (from==='resale'&&FS.resaleItem) || (to==='resale'&&FS.resaleItem)) {
         fsReset(); fsHideSug();
         const cb2 = $('#fsChips'); if (cb2) { cb2.hidden = true; cb2.innerHTML = '' }
         const fi2 = $('#fsInput'); if (fi2) fi2.value = '';
@@ -1106,6 +1117,7 @@ export function trRender(id){
     if(useSearch&&fsDropDisallowed())fsChipsPaint();
     const fi=$('#fsInput');
     if(fi)fi.placeholder=id==='stock'?'상품명을 입력하고 Enter · 또는 찜에서 선택':
+      id==='resale'?'상품명 · 모델번호를 검색하세요 (예: 살로몬 XT-6)':
       '스타일 · 브랜드 · 카테고리 · 상품명으로 검색';
   }
   const body=$('#trBody'); if(!body)return;
@@ -1129,8 +1141,9 @@ export function trRender(id){
   if (SEARCH_TABS.indexOf(id) >= 0 && id !== 'stock' && !fsItem()) {
     body.innerHTML = trEmpty(
       '먼저 볼 대상을 고르세요',
-      '위 검색에서 카테고리나 브랜드를 좁혀 주세요.\n' +
-      '고른 것에 맞춰 지표를 불러옵니다.');
+      id==='resale'
+        ? '상품명이나 모델번호로 표준상품을 고르세요.\n세부 검색에서는 브랜드 전체 흐름도 볼 수 있습니다.'
+        : '위 검색에서 카테고리나 브랜드를 좁혀 주세요.\n고른 것에 맞춰 지표를 불러옵니다.');
     return;
   }
 
@@ -1907,85 +1920,99 @@ export function trRender(id){
      값: /api/resale → snapshot.resale_snapshot (중고·리셀 매물) ÷ 정가 */
   else if(id==='resale'){
     const D=editGate(body,editUrl('resale'),'리세일 시세를'); if(!D)return;
-    const full=fsSelectionLabel()||D.label||fsItemFull();
-    if(D.keep_pct==null){
-      body.innerHTML=unavailableHTML('‘'+full+'’ 매물 '+D.listings+'건은 있지만 정가를 알 수 없어 가치 유지율을 계산하지 못했습니다.',
-        '매물의 정가(market_metrics.regular_price) 또는 같은 상품의 판매가 스냅샷이 필요합니다.');
-      return;
-    }
-    const TB=D.temperature||{};
-    const keep=Math.round(D.keep_pct), idx=keep/100, prem=!!D.premium;
-    const RAMP=['#b23b3b','#c98a1b','#1f9e6e'].slice(0,(prem?3:idx>=.7?2:1));
+    const full=(D.product&&D.product.name)||fsSelectionLabel()||D.label||fsItemFull();
+    const hasKeep=D.keep_pct!=null, keep=hasKeep?Math.round(D.keep_pct):null;
+    const buyDelta=hasKeep?100-keep:null;
+    const dialScore=RESALE_MODE==='buy'?Math.max(0,Math.min(100,buyDelta)):Math.max(0,Math.min(100,keep||0));
+    const dialLabel=RESALE_MODE==='buy'?'정가 대비 절약 %':'정가 회수율 %';
+    const RAMP=['#b23b3b','#c98a1b','#1f9e6e'];
     const volLabel=D.volume_basis==='observed_listings'?'관측 매물':'거래량';
+    const confidence=D.confidence&&D.confidence.label||'낮음';
+    const product=D.product||null;
+    const exact=D.analysis_scope==='product'||D.analysis_scope==='platform_only';
+    const flow=D.keep_change_pp==null?null:(D.keep_change_pp<-1?'down':D.keep_change_pp>1?'up':'flat');
+    let headline='', explanation='';
+    if(hasKeep&&RESALE_MODE==='buy'){
+      headline=buyDelta>=0
+        ? '<b>'+trEsc(full)+'</b>, 지금 사면 정가보다 <em>'+Math.round(buyDelta)+'% 저렴해요.</em>'
+        : '<b>'+trEsc(full)+'</b>, 현재 정가보다 <em>'+Math.abs(Math.round(buyDelta))+'% 비싸요.</em>';
+      explanation=flow==='down'?'최근 중고 가치가 내려가고 있어 서두르지 않아도 괜찮습니다.':
+        flow==='up'?'최근 중고 가치가 오르고 있어 원하는 조건의 매물이 있다면 비교해 보세요.':
+        flow==='flat'?'최근 가격 흐름은 큰 변화 없이 유지되고 있습니다.':
+        '가격 흐름을 판단할 이전 관측이 부족해 현재 시세만 보여 드립니다.';
+    }else if(hasKeep){
+      headline='<b>'+trEsc(full)+'</b>, 지금 팔면 정가의 <em>'+keep+'%를 회수할 수 있어요.</em>';
+      explanation=flow==='down'?'최근 중고 가치가 내려가고 있어 판매를 생각한다면 시기를 늦추지 않는 편이 좋습니다.':
+        flow==='up'?'최근 중고 가치가 오르고 있어 조금 더 지켜볼 여지가 있습니다.':
+        flow==='flat'?'최근 가격 흐름은 큰 변화 없이 유지되고 있습니다.':
+        '가격 흐름을 판단할 이전 관측이 부족해 현재 시세만 보여 드립니다.';
+    }
+    const identity=product?'<section class="resaleIdentity">'+
+      '<div class="resaleIdentityImg">'+(product.image?'<img src="'+trEsc(product.image)+'" alt="" loading="lazy" referrerpolicy="no-referrer">':'<span>F</span>')+'</div>'+
+      '<div><small>'+(product.mapped===false?'플랫폼 단독 상품':'FEEDiT 표준상품')+'</small><h3>'+trEsc(product.name||full)+'</h3>'+
+      '<p>'+trEsc([product.brand,product.model_code,product.code,product.category].filter(Boolean).join(' · ')||'상품 부가정보 없음')+'</p></div>'+
+      '<div class="resaleIdentityMeta"><b>'+((D.mapping&&D.mapping.platform_count)||0)+'개 플랫폼</b><span>'+
+        trEsc((D.mapping&&D.mapping.platforms||[]).join(' · ')||'연결 플랫폼 집계 중')+'</span></div></section>':'';
+    const verdict=hasKeep?'<div class="verdict resaleVerdict" style="--sc:'+(dialScore>=60?'#1f9e6e':dialScore>=35?'#c98a1b':'#b23b3b')+'">'+
+      '<div class="dial"><svg viewBox="0 0 120 120"><circle class="trk" cx="60" cy="60" r="50"/>'+
+        '<circle class="val" cx="60" cy="60" r="50" data-ramp="'+RAMP.join(',')+'" data-score="'+dialScore+'" stroke-dasharray="314.16" stroke-dashoffset="314.16"/></svg>'+
+        '<span class="num"><b data-count="'+dialScore+'">0</b><small>'+dialLabel+'</small></span></div>'+
+      '<div class="vdTx"><h4>'+headline+'</h4><p>'+explanation+'</p><div class="vdMeta">'+
+        (D.regular_price!=null?'<div><b>'+trWon(D.regular_price)+'</b><span>정가 중앙값</span></div>':'')+
+        (D.used_price!=null?'<div><b>'+trWon(D.used_price)+'</b><span>'+(RESALE_MODE==='buy'?'예상 구매가':'예상 판매가')+'</span></div>':'')+
+        (D.keep_change_pp!=null?'<div><b>'+(D.keep_change_pp>0?'+':'')+D.keep_change_pp+'%p</b><span>직전 기간 대비</span></div>':'')+
+        '<div><b>'+D.listings+'건</b><span>'+volLabel+'</span></div></div>'+
+        (D.basis_note?'<p class="vdBasis">'+trEsc(D.basis_note)+'</p>':'')+'</div></div>':
+      '<div class="panelC resaleNoRatio"><b>현재 시세는 확인했지만 정가 대비 비율은 계산하지 않았어요.</b>'+
+        '<p>같은 상품의 정가가 연결되면 구매 절약률과 판매 회수율이 자동으로 표시됩니다.</p></div>';
+    const kpis=[];
+    if(D.volume_4w!=null)kpis.push(kpi(volLabel,Number(D.volume_4w).toLocaleString(),'건','최근 4주',1));
+    if(D.volume_change_pct!=null)kpis.push(kpi(volLabel+' 증감률',(D.volume_change_pct>0?'+':'')+Math.round(D.volume_change_pct),'%','직전 4주 대비',D.volume_change_pct>=0?1:0));
+    if(D.observed_days!=null)kpis.push(kpi('관측 기간',D.observed_days,'일','최근 '+D.days+'일 범위',1));
+    kpis.push(kpi('판단 신뢰도',confidence,'',((D.mapping&&D.mapping.source_count)||D.listings)+'개 연결 자료 기준',confidence==='낮음'?0:1));
+    const cards=(D.platform_cards||[]).map(card=>{
+      const isResale=card.market==='resale';
+      const main=isResale?(card.median_price!=null?trWon(card.median_price):'가격 집계 중'):
+        (card.sale_price!=null?trWon(card.sale_price):card.list_price!=null?trWon(card.list_price):'가격 집계 중');
+      const facts=[];
+      if(isResale&&card.listing_count!=null)facts.push('매물 '+card.listing_count+'건');
+      if(isResale&&card.min_price!=null)facts.push('최저 '+trWon(card.min_price));
+      if(!isResale&&card.discount_rate!=null)facts.push('정가 대비 '+card.discount_rate+'% 할인');
+      if(card.product_sources>1)facts.push('연결 상품 '+card.product_sources+'건');
+      return '<article class="resalePlatformCard"><div><span>'+trEsc(card.name)+'</span><em>'+(isResale?'중고·리셀':'신상품')+'</em></div>'+
+        '<b>'+main+'</b><p>'+trEsc(facts.join(' · ')||'최신 관측 가격')+'</p><small>'+trEsc(String(card.as_of||'').slice(0,10))+' 기준</small></article>';
+    }).join('');
+    const panels=[];
+    const showChart=(D.series||[]).length>=2;
+    if(showChart)panels.push('<div class="panelC"><div class="gHead"><h3>가치 변화</h3></div><div data-chart="resMain"></div>'+
+      '<div class="note"><i>◆</i>날짜별 정가 대비 중고 가치의 중앙값입니다.</div></div>');
+    if((D.grades||[]).length)panels.push('<div class="panelC"><div class="gHead"><h3>상태별 가격대</h3></div>'+
+      '<table class="mTable"><tr><th>상태</th><th>비중</th><th>시세</th></tr>'+D.grades.map(r=>'<tr><td>'+trEsc(r.label)+'</td>'+
+        '<td><span class="bar" style="display:block"><i style="width:'+Math.round(r.share_pct)+'%"></i></span></td><td class="n">'+trWon(r.price)+'</td></tr>').join('')+'</table></div>');
+    if((D.sizes||[]).length)panels.push('<div class="panelC"><div class="ph"><h3>사이즈별 시세</h3><em>자료가 있는 사이즈만</em></div>'+
+      '<table class="mTable lg"><tr><th>사이즈</th><th>정가 대비</th><th>시세</th></tr>'+D.sizes.map(z=>'<tr><td>'+trEsc(z.label)+'</td>'+
+        '<td class="n '+((z.ratio||0)>=1?'up':'dn')+'">'+(z.ratio==null?'–':'×'+z.ratio.toFixed(2))+'</td><td class="n">'+trWon(z.price)+'</td></tr>').join('')+'</table></div>');
+    if(exact&&D.spread)panels.push('<div class="panelC svSpread"><div class="svSpreadLabel">현재 매물과 최근 거래</div>'+
+      '<div class="svSpreadRow"><span>현재 최저 매물 중앙값</span><b>'+trWon(D.spread.ask)+'</b></div>'+
+      '<div class="svSpreadRow"><span>최근 거래 사례 중앙값</span><b>'+trWon(D.spread.trade)+'</b></div>'+
+      '<div class="note"><i>◆</i>동일 표준상품으로 연결된 자료만 사용하며 상태·사이즈 차이는 남아 있을 수 있습니다.</div></div>');
     body.innerHTML=
-      '<div class="verdict" style="--sc:'+(prem?'#1f9e6e':idx>=.7?'#c98a1b':'#b23b3b')+'">'+
-        '<div class="dial"><svg viewBox="0 0 120 120">'+
-          '<circle class="trk" cx="60" cy="60" r="50"/>'+
-          '<circle class="val" cx="60" cy="60" r="50" data-ramp="'+RAMP.join(',')+'" data-score="'+Math.min(100,keep)+'" '+
-            'stroke-dasharray="314.16" stroke-dashoffset="314.16"/></svg>'+
-          '<span class="num"><b data-count="'+keep+'">0</b><small>가치 유지율 %</small></span></div>'+
-        '<div class="vdTx">'+
-          '<h4><b>'+trEsc(full)+'</b>'+josa(full,'을','를')+' 지금 되팔면 <em>정가의 '+keep+'%</em>'+
-            (prem?' — <em>프리미엄</em>이 붙어 있습니다.':'를 받습니다.')+'</h4>'+
-          '<p>'+(prem
-            ? '발매가보다 비싸게 거래되는 상태입니다. 지금 사면 정가 이상을 지불하게 되고, 갖고 있다면 파는 쪽이 유리합니다.'
-            : idx>=.7
-              ? '중고 가치가 잘 버티고 있습니다. 몇 시즌 입고 되팔아도 손실이 크지 않은 구간입니다.'
-              : '가치 하락이 빠른 구간입니다. 되팔 생각이라면 지금이 마지노선에 가깝습니다.')+'</p>'+
-          '<div class="vdMeta">'+
-            '<div><b>'+trWon(D.regular_price)+'</b><span>정가 (중앙값)</span></div>'+
-            '<div><b>'+trWon(D.used_price)+'</b><span>중고 시세 (중앙값)</span></div>'+
-            '<div><b>'+(D.keep_change_pp==null?'–':(D.keep_change_pp>0?'+':'')+D.keep_change_pp+'%p')+'</b><span>전주 대비</span></div>'+
-            '<div><b>'+D.listings+'건</b><span>관측 매물</span></div>'+
-          '</div>'+
-          /* ★ 2026-09-20 스타일 태그 매물이 적어 대표 브랜드로 넓혔으면 그 기준을 밝힌다 */
-          (D.basis_note?'<p class="vdBasis" style="margin-top:10px;font-size:12px;color:var(--pink-2)">'+trEsc(D.basis_note)+'</p>':'')+
-        '</div></div>'+
-      '<div class="note" style="margin:0 0 12px"><i>◆</i>'+trEsc(String(D.as_of).slice(0,10))+' 기준 · 최근 '+D.days+'일 · '+
-        (D.platforms||[]).map(p=>trEsc(p.label)).join(' · ')+'</div>'+
-      '<div class="kpis">'+
-        kpi(volLabel,D.volume_4w==null?'–':D.volume_4w.toLocaleString(),'건','최근 4주',1)+
-        kpi(volLabel+' 증감률',D.volume_change_pct==null?'–':(D.volume_change_pct>0?'+':'')+Math.round(D.volume_change_pct),
-            D.volume_change_pct==null?'':'%','직전 4주 대비',(D.volume_change_pct||0)>=0?1:0)+
-        kpi('프리미엄 지속 기간',D.premium_days,'일',prem?('정가 이상 연속 유지'):'프리미엄 미형성',prem?1:0)+
-        kpi('리셀 지수',D.resale_index==null?'–':D.resale_index,'',D.resale_index==null?'적재된 값 없음':'최근 1주 중앙값',1)+'</div>'+
-      '<div class="trGrid">'+
-        '<div class="panelC"><div class="gHead"><h3>가치 유지율 vs 트렌드 온도</h3></div>'+
-          '<div data-chart="resMain"></div>'+
-          '<div class="note"><i>◆</i>유지율(검정)이 온도(주황)보다 먼저 꺾이면, 되팔 계획이라면 온도가 아니라 이 선을 보세요.</div></div>'+
-        '<div class="panelC"><div class="ph"><h3>사이즈별 시세 배수</h3><em>정가=1.00</em></div>'+
-          ((D.sizes||[]).length
-          ? '<table class="mTable lg"><tr><th>사이즈</th><th>배수</th><th>시세</th></tr>'+
-            D.sizes.map((z,i)=>'<tr><td>'+(i===0?'<b>'+trEsc(z.label)+'</b>':trEsc(z.label))+'</td>'+
-              '<td class="n '+((z.ratio||0)>=1?'up':'dn')+'">'+(z.ratio==null?'–':'×'+z.ratio.toFixed(2))+'</td>'+
-              '<td class="n">'+trWon(z.price)+'</td></tr>').join('')+
-            '</table><div class="note"><i>◆</i>매물이 많은 사이즈부터 보여 줍니다.</div>'
-          : unavailableHTML('매물에 사이즈 정보가 없습니다.',''))+'</div>'+
-      '</div>'+
-      '<div class="trGrid" style="margin-top:12px;align-items:start">'+
-        '<div class="panelC"><div class="gHead"><h3>상태별 가격대</h3></div>'+
-          ((D.grades||[]).length
-          ? '<table class="mTable"><tr><th>상태</th><th>비중</th><th>시세</th></tr>'+
-            D.grades.map(r=>'<tr><td>'+trEsc(r.label)+'</td>'+
-              '<td><span class="bar" style="display:block"><i style="width:'+Math.round(r.share_pct)+'%"></i></span></td>'+
-              '<td class="n">'+trWon(r.price)+'</td></tr>').join('')+'</table>'
-          : unavailableHTML('매물에 상태 등급 정보가 없습니다.',''))+'</div>'+
-        (D.spread
-          ? '<div class="panelC svSpread"><div class="svSpreadLabel">호가-체결가 스프레드</div>'+
-              '<div class="svSpreadHead">간격 <b>'+(D.spread.gap_pct==null?'–':D.spread.gap_pct+'%')+'</b></div>'+
-              '<div class="svSpreadRow"><span>최저 호가 (중앙값)</span><b>'+Math.round(D.spread.ask).toLocaleString()+'<u>원</u></b></div>'+
-              '<div class="svSpreadBar"><i style="width:100%"></i></div>'+
-              '<div class="svSpreadRow"><span>실제 체결가 (중앙값)</span><b>'+Math.round(D.spread.trade).toLocaleString()+'<u>원</u></b></div>'+
-              '<div class="svSpreadBar"><i style="width:'+Math.min(100,Math.round(D.spread.trade/D.spread.ask*100))+'%"></i></div>'+
-              '<div class="note"><i>◆</i>간격이 클수록 표면 시세 대비 실제 수요가 약할 수 있습니다.</div></div>'
-          : '<div class="panelC">'+unavailableHTML('호가·체결가가 함께 적재된 매물이 없어 스프레드를 계산하지 못했습니다.','')+'</div>')+
-      '</div>';
-    const tempRows=(TB.series||[]).map(p=>({date:p.date,temp:p.temp}));
-    G_CFG.resMain={key:full+'res',rows:trMergeRows(D.series,tempRows),
-      emptyReason:'유지율 또는 온도 시계열이 비어 있습니다.',
-      sets:[{id:'r',name:'가치 유지율 (%)',field:'keep_pct',unit:'%'}].concat(tempRows.length
-        ?[{id:'t',name:'트렌드 온도 (°)',field:'temp',unit:'°',accent:1}]:[])};
-    gMount(); trDial();
+      '<div class="resaleMode" role="group" aria-label="중고 시세 목적"><button type="button" data-resale-mode="buy" class="'+(RESALE_MODE==='buy'?'on':'')+'">사려고 해요</button>'+
+        '<button type="button" data-resale-mode="sell" class="'+(RESALE_MODE==='sell'?'on':'')+'">팔려고 해요</button></div>'+
+      identity+verdict+
+      '<div class="note resaleBasis"><i>◆</i>'+trEsc(String(D.as_of).slice(0,10))+' 기준 · 최근 '+D.days+'일 · 판단 신뢰도 '+trEsc(confidence)+
+        (product&&product.mapped===false?' · 아직 다른 플랫폼과 표준상품 매핑 전':'')+'</div>'+
+      (kpis.length?'<div class="kpis">'+kpis.join('')+'</div>':'')+
+      (cards?'<section class="resalePlatforms"><div class="gHead"><h3>플랫폼별 현재 가격</h3><p>DB에서 같은 표준상품으로 연결된 플랫폼만 표시합니다.</p></div><div class="resalePlatformGrid">'+cards+'</div></section>':'')+
+      (panels.length?'<div class="trGrid resaleEvidence">'+panels.join('')+'</div>':'');
+    delete G_CFG.resMain;
+    if(showChart){
+      G_CFG.resMain={key:full+'res',rows:D.series,
+        emptyReason:'가치 변화 시계열이 비어 있습니다.',
+        sets:[{id:'r',name:'정가 대비 중고 가치 (%)',field:'keep_pct',unit:'%'}]};
+      gMount();
+    }
+    if(hasKeep)trDial();
   }
 
   /* ══════════════ 수명주기 ══════════════

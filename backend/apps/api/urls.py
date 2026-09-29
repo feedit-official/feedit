@@ -76,6 +76,7 @@ urlpatterns = [
     path("discount", views.discount, name="discount"),   # 할인률 변화
     path("discount/facets", views.discount_facets, name="discount-facets"),
     path("resale", views.resale, name="resale"),         # 리세일 시세 지수
+    path("resale/products", views.resale_products, name="resale-products"),
     path("lifecycle", views.lifecycle, name="lifecycle"),  # 수명주기
     path("products", views.products, name="products"),
     path("price-history", views.price_history, name="price-history"),  # 찜한 상품 가격 기록

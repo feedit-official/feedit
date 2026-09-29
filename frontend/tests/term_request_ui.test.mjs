@@ -49,7 +49,7 @@ const S = await import(`${root}/style/static/js/search.js`);
 const D = await import(`${root}/trend/static/js/dispatch.js`);
 const profile = await import(`${root}/account/static/js/profile.js`);
 
-D.trRender('resale');     /* 공통 세부 검색이 쓰이는 탭 */
+D.trRender('life');       /* 리세일은 표준상품 검색, 사전 등재 요청은 사전 검색 탭에서 확인 */
 S.fsBuild();
 
 function type(word){

@@ -28,7 +28,7 @@ from __future__ import annotations
 import math
 import os
 import statistics
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import timedelta
 
 from django.db import connection
@@ -2008,34 +2008,282 @@ def _resale_price(r):
     return None
 
 
+def _resale_product_payload(product, sources):
+    """표준상품 검색·리세일 본문이 함께 쓰는 최소 상품 정보."""
+    image = next((absolute_image_url(row.thumbnail_url, row.source.code)
+                  for row in sources if row.thumbnail_url), None)
+    canonical_name = (product.canonical_name or "").strip()
+    display_name = canonical_name
+    # 초기 표준화 자료에는 상품명이 '블랙'·'화이트'처럼 속성 한 단어로 축약된 행이 있다.
+    # FK 매핑은 신뢰하되 화면 이름까지 그 축약값을 강요하지 않고, 연결된 원본 중 짧고
+    # 설명적인 이름을 보조 표시한다. 표준명 자체는 canonical_name으로 그대로 보존한다.
+    if len(canonical_name) <= 3:
+        source_names = [row.source_name.strip() for row in sources
+                        if row.source_name and len(row.source_name.strip()) > len(canonical_name)]
+        if source_names:
+            display_name = min(source_names, key=lambda value: (len(value) > 80, len(value)))
+    style_counts = Counter(row.style_no.strip() for row in sources if row.style_no and row.style_no.strip())
+    model_code = style_counts.most_common(1)[0][0] if style_counts else None
+    return {
+        "id": product.id,
+        "code": product.product_code,
+        "model_code": model_code,
+        "name": display_name,
+        "canonical_name": canonical_name,
+        "brand": product.brand.name if product.brand_id else None,
+        "category": product.category.name if product.category_id else None,
+        "image": image,
+    }
+
+
+def _resale_platform_cards(sources):
+    """동일 표준상품으로 확인된 플랫폼에 실제 값이 있을 때만 카드를 만든다.
+
+    일반 판매처와 리셀 플랫폼의 숫자는 의미가 다르므로 한 평균으로 섞지 않는다.
+    각 ProductSource의 최신 스냅샷 한 줄만 사용한다.
+    """
+    source_ids = [row.id for row in sources]
+    if not source_ids:
+        return []
+
+    retail_latest = {}
+    for row in (ProductSourceSnapshot.objects.filter(product_source_id__in=source_ids)
+                .order_by("product_source_id", "-observed_at")
+                .values("product_source_id", "observed_at", "list_price", "sale_price",
+                        "discount_rate", "stock_status")):
+        retail_latest.setdefault(row["product_source_id"], row)
+
+    resale_latest = {}
+    for row in (ResaleSnapshot.objects.filter(product_source_id__in=source_ids)
+                .order_by("product_source_id", "-observed_at")
+                .values("product_source_id", "observed_at", "listing_count", "available_count",
+                        "min_price", "max_price", "avg_price", "median_price", "lowest_ask",
+                        "highest_bid", "last_trade_price", "trade_volume", "sold_count",
+                        "market_metrics")):
+        resale_latest.setdefault(row["product_source_id"], row)
+
+    grouped = defaultdict(list)
+    for source in sources:
+        grouped[(source.source.code, source.source.name)].append(source)
+
+    cards = []
+    for (code, name), platform_sources in grouped.items():
+        retail_rows = [retail_latest[row.id] for row in platform_sources if row.id in retail_latest]
+        resale_rows = [resale_latest[row.id] for row in platform_sources if row.id in resale_latest]
+        if not retail_rows and not resale_rows:
+            continue
+
+        list_prices = [_num(row["list_price"]) for row in retail_rows if row["list_price"] is not None]
+        sale_prices = [_num(row["sale_price"]) for row in retail_rows if row["sale_price"] is not None]
+        resale_prices = [_resale_price(row) for row in resale_rows]
+        resale_prices = [value for value in resale_prices if value is not None]
+        asks = [_num(row["lowest_ask"]) for row in resale_rows if row["lowest_ask"] is not None]
+        bids = [_num(row["highest_bid"]) for row in resale_rows if row["highest_bid"] is not None]
+        trades = [_num(row["last_trade_price"]) for row in resale_rows
+                  if row["last_trade_price"] is not None]
+        observed_at = max([row["observed_at"] for row in [*retail_rows, *resale_rows]])
+
+        available = 0
+        for row in resale_rows:
+            metrics = row.get("market_metrics") or {}
+            if metrics.get("is_sold_out") is True:
+                continue
+            # USED는 ProductSource 한 행이 매물 하나다. 크림처럼 집계 스냅샷이면
+            # available_count/listing_count가 그 안의 실제 매물 수다.
+            count = row["available_count"]
+            if count is None:
+                count = row["listing_count"]
+            available += max(0, int(count)) if count is not None else 1
+
+        list_price = _median(list_prices)
+        sale_price = _median(sale_prices)
+        discount = None
+        if list_price and sale_price is not None and 0 <= sale_price <= list_price:
+            discount = round((list_price - sale_price) / list_price * 100, 1)
+        elif retail_rows:
+            rates = [_pct(row["discount_rate"]) for row in retail_rows
+                     if row["discount_rate"] is not None]
+            discount = _median(rates)
+
+        cards.append({
+            "code": code,
+            "name": name,
+            "market": "resale" if resale_rows else "retail",
+            "product_sources": len(platform_sources),
+            "list_price": _num(list_price, 0),
+            "sale_price": _num(sale_price, 0),
+            "discount_rate": _num(discount, 1),
+            "listing_count": available if resale_rows else None,
+            "median_price": _num(_median(resale_prices), 0),
+            "min_price": _num(min(resale_prices), 0) if resale_prices else None,
+            "max_price": _num(max(resale_prices), 0) if resale_prices else None,
+            "lowest_ask": _num(_median(asks), 0),
+            "highest_bid": _num(_median(bids), 0),
+            "last_trade_price": _num(_median(trades), 0),
+            "as_of": timezone.localtime(observed_at).isoformat(),
+        })
+    return sorted(cards, key=lambda row: (row["market"] != "retail", row["name"]))
+
+
+@require_GET
+def resale_products(request):
+    """GET /api/resale/products?q=에어포스 — 리세일 분석용 표준상품 검색.
+
+    표준상품(Product)을 먼저 돌려주고, 아직 표준상품에 연결되지 않은 리셀 상품은
+    `platform_only` 후보로 분리한다. 플랫폼 단독 후보를 표준상품인 것처럼 합치지 않는다.
+    """
+    query = (request.GET.get("q") or "").strip()
+    limit = _int(request, "limit", 16, 1, 40)
+    if not query:
+        return _empty("상품명이나 모델번호를 입력해 주세요.")
+
+    has_resale = Exists(
+        ResaleSnapshot.objects.filter(product_source__product_id=OuterRef("pk"))
+    )
+    products = (Product.objects.filter(status=Product.Status.ACTIVE)
+                .annotate(_has_resale=has_resale)
+                .filter(_has_resale=True)
+                .filter(
+                    Q(canonical_name__icontains=query)
+                    | Q(normalized_name__icontains=query)
+                    | Q(product_code__icontains=query)
+                    | Q(sources__source_name__icontains=query)
+                    | Q(sources__style_no__icontains=query)
+                    | Q(brand__name__icontains=query)
+                )
+                .select_related("brand", "category")
+                .distinct()
+                .order_by("canonical_name")[:limit])
+
+    product_rows = list(products)
+    product_ids = [row.id for row in product_rows]
+    sources_by_product = defaultdict(list)
+    if product_ids:
+        for source in (ProductSource.objects.filter(product_id__in=product_ids, status="ACTIVE")
+                       .select_related("source", "source_brand")):
+            sources_by_product[source.product_id].append(source)
+
+    items = []
+    for product in product_rows:
+        sources = sources_by_product[product.id]
+        platforms = []
+        counts = defaultdict(int)
+        names = {}
+        for source in sources:
+            counts[source.source.code] += 1
+            names[source.source.code] = source.source.name
+        for code, count in sorted(counts.items(), key=lambda row: (-row[1], row[0])):
+            platforms.append({"code": code, "name": names[code], "count": count})
+        payload = _resale_product_payload(product, sources)
+        payload.update({
+            "type": "product",
+            "platforms": platforms,
+            "source_count": len(sources),
+        })
+        items.append(payload)
+
+    # 표준상품 후보가 적을 때만 플랫폼 단독 리셀 상품을 보충한다.
+    # 이 후보는 선택해도 그 플랫폼 한 건만 분석하며 다른 플랫폼과 추정 결합하지 않는다.
+    remaining = max(0, limit - len(items))
+    if remaining:
+        solo = (ProductSource.objects.filter(
+                    product_id__isnull=True,
+                    status="ACTIVE",
+                    resale_snapshots__isnull=False,
+                )
+                .filter(Q(source_name__icontains=query) | Q(style_no__icontains=query)
+                        | Q(source_brand__name__icontains=query))
+                .select_related("source", "source_brand")
+                .distinct().order_by("source_name", "id")[:remaining])
+        for source in solo:
+            items.append({
+                "id": source.id,
+                "type": "platform_only",
+                "code": source.style_no,
+                "name": source.source_name or "상품명 없음",
+                "brand": source.source_brand.name if source.source_brand_id else None,
+                "category": None,
+                "image": absolute_image_url(source.thumbnail_url, source.source.code),
+                "platforms": [{"code": source.source.code, "name": source.source.name, "count": 1}],
+                "source_count": 1,
+            })
+
+    if not items:
+        return _empty(f"‘{query}’으로 찾은 중고·리셀 상품이 없습니다.")
+    return _ok({"query": query, "items": items, "count": len(items)})
+
+
 @require_GET
 def resale(request):
-    """GET /api/resale?brand=살로몬&kind=스니커즈&term=살로몬&days=90
+    """GET /api/resale?product_id=123 — 표준상품 또는 기존 조건의 중고 시세.
 
     가치 유지율 = 중고 거래가 ÷ 정가. 적재된 resale_price_ratio 가 있으면 그것을,
     없으면 market_metrics.regular_price(없으면 같은 표준상품의 최신 정가)로 나눈다.
     """
     sel = _selection(request)
-    if not any(sel.values()):
+    product_id = _int(request, "product_id", 0, 0, 2_147_483_647)
+    source_id = _int(request, "source_id", 0, 0, 2_147_483_647)
+    if not any(sel.values()) and not product_id and not source_id:
         return _no_selection()
     days = _int(request, "days", 90, 14, 365)
-    label = _selection_label(sel)
+    selected_product = None
+    selected_source = None
+    analysis_scope = "selection"
+    all_sources = None
+
+    if product_id:
+        selected_product = (Product.objects.filter(id=product_id, status=Product.Status.ACTIVE)
+                            .select_related("brand", "category").first())
+        if selected_product is None:
+            return _empty("선택한 표준상품을 찾지 못했습니다.", product_id=product_id)
+        all_sources = list(ProductSource.objects.filter(
+            product_id=selected_product.id, status="ACTIVE"
+        ).select_related("source", "source_brand", "source_category"))
+        label = selected_product.canonical_name
+        analysis_scope = "product"
+    elif source_id:
+        selected_source = (ProductSource.objects.filter(id=source_id, status="ACTIVE")
+                           .select_related("source", "source_brand", "source_category",
+                                           "product", "product__brand", "product__category")
+                           .first())
+        if selected_source is None:
+            return _empty("선택한 플랫폼 상품을 찾지 못했습니다.", source_id=source_id)
+        selected_product = selected_source.product
+        if selected_product is not None:
+            all_sources = list(ProductSource.objects.filter(
+                product_id=selected_product.id, status="ACTIVE"
+            ).select_related("source", "source_brand", "source_category"))
+            analysis_scope = "product"
+        else:
+            all_sources = [selected_source]
+            analysis_scope = "platform_only"
+        label = (selected_product.canonical_name if selected_product
+                 else selected_source.source_name or selected_source.source_product_id)
+    else:
+        label = _selection_label(sel)
     term_name = (request.GET.get("term") or "").strip() or label
-    metric_term = _selection_term(sel, term_name)
+    metric_term = _selection_term(sel, term_name) if any(sel.values()) else _resolve_term(term_name)
 
     # 리셀 매물에는 스타일·종류 태그가 안 붙어 있는 경우가 많다 →
     # 조건에 걸린 상품과 같은 표준 상품(product)으로 묶인 매물까지 함께 본다.
-    matched = _selected_sources(sel)
-    sources = ProductSource.objects.filter(
-        Q(id__in=matched.values("id"))
-        | Q(product_id__in=matched.exclude(product_id__isnull=True).values("product_id")))
+    if all_sources is not None:
+        source_ids = [row.id for row in all_sources]
+        sources = ProductSource.objects.filter(id__in=source_ids)
+    else:
+        matched = _selected_sources(sel)
+        sources = ProductSource.objects.filter(
+            Q(id__in=matched.values("id"))
+            | Q(product_id__in=matched.exclude(product_id__isnull=True).values("product_id")))
+        all_sources = list(sources.select_related(
+            "source", "source_brand", "source_category", "product"
+        )[:10000])
     resale_src = sources.filter(Q(market_type="RESALE") | Q(resale_snapshots__isnull=False)).distinct()
     ps = list(resale_src.values("id", "product_id", "source__code", "source__name")[:5000])
     basis_note = None
     # ★ 2026-09-20 — 크림 · 무신사 유즈드 매물에는 스타일 태그가 거의 없다(크림 0 · 유즈드 5건).
     #   스타일로 고르면 매물이 몇 건뿐이라, 그 스타일로 태그된 일반 판매 상품의 **대표 브랜드**
     #   매물로 넓혀 본다. 대표 브랜드와 기준을 응답에 적어 화면·챗봇이 밝힐 수 있게 한다.
-    if sel.get("style") and len(ps) < RESALE_STYLE_MIN:
+    if analysis_scope == "selection" and sel.get("style") and len(ps) < RESALE_STYLE_MIN:
         brands = _style_proxy_brands(sel["style"])
         if brands:
             proxy_sel = {**sel, "style": [], "brand": brands}
@@ -2148,12 +2396,52 @@ def resale(request):
         a, t = _median(asks), _median(trades)
         spread = {"ask": round(a), "trade": round(t), "gap_pct": round((a - t) / t * 100, 1) if t else None}
 
+    selected_payload = None
+    if selected_product is not None:
+        selected_payload = _resale_product_payload(selected_product, all_sources)
+        selected_payload["mapped"] = True
+    elif selected_source is not None:
+        selected_payload = {
+            "id": selected_source.id,
+            "code": selected_source.style_no,
+            "name": selected_source.source_name or selected_source.source_product_id,
+            "brand": selected_source.source_brand.name if selected_source.source_brand_id else None,
+            "category": (selected_source.source_category.source_category_name
+                         if selected_source.source_category_id else None),
+            "image": absolute_image_url(selected_source.thumbnail_url, selected_source.source.code),
+            "mapped": False,
+        }
+
+    # 브랜드·카테고리 전체 분석은 서로 다른 상품을 한 플랫폼 카드로 뭉치지 않는다.
+    # 플랫폼 비교는 표준상품 하나 또는 플랫폼 단독 상품 하나를 고른 경우에만 제공한다.
+    platform_cards = (_resale_platform_cards(all_sources)
+                      if analysis_scope in {"product", "platform_only"} else [])
+    observed_days = len({x["day"] for x in win})
+    platform_count = len(platform_cards)
+    if analysis_scope == "product" and platform_count >= 2 and len({x["pid"] for x in win}) >= 10 \
+            and observed_days >= 3 and ratio_now is not None:
+        confidence = {"code": "high", "label": "높음"}
+    elif ratio_now is not None and len({x["pid"] for x in win}) >= 3:
+        confidence = {"code": "medium", "label": "보통"}
+    else:
+        confidence = {"code": "low", "label": "낮음"}
+
     return _ok({
         "label": label,
+        "analysis_scope": analysis_scope,
+        "product": selected_payload,
         "selected": sel,
         "as_of": timezone.localtime(last_obs).isoformat(),
         "days": days,
+        "observed_days": observed_days,
         "listings": len({x["pid"] for x in win}),
+        "confidence": confidence,
+        "mapping": {
+            "platform_count": platform_count,
+            "platforms": [row["name"] for row in platform_cards],
+            "source_count": len(all_sources),
+        },
+        "platform_cards": platform_cards,
         "keep_pct": round(ratio_now * 100, 1) if ratio_now is not None else None,
         "keep_change_pp": round((ratio_now - ratio_prev) * 100, 1)
         if ratio_now is not None and ratio_prev is not None else None,

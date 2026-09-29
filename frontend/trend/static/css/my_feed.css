@@ -261,6 +261,18 @@
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:44%}
 .fsSug .none{padding:16px 12px;font-size:13px;color:var(--pink-2);line-height:1.7}
 .fsSug .none b{color:var(--pink-0);font-weight:500}
+.fsSug .sg.resaleProduct{align-items:stretch;padding:9px;gap:12px}
+.resaleThumb{width:52px;height:52px;flex:0 0 52px;border-radius:9px;overflow:hidden;
+  background:var(--paper);display:grid;place-items:center;color:var(--coral);font-weight:700}
+.resaleThumb img{width:100%;height:100%;object-fit:cover}
+.resaleSugTx{min-width:0;flex:1;display:flex;flex-direction:column;justify-content:center;gap:3px}
+.resaleSugTop{display:flex;align-items:center;gap:8px;min-width:0}
+.resaleSugTop b{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  font-size:13px;font-weight:600;color:var(--pink-0)}
+.resaleSugTop em{flex:0 0 auto;font-style:normal;font-family:var(--num);font-size:8px;
+  letter-spacing:.08em;padding:3px 6px;border-radius:999px;background:rgba(10,10,10,.06);color:var(--pink-2)}
+.resaleSugTx small{font-size:10.5px;color:var(--pink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.resaleSugTx small.platforms{color:var(--coral)}
 
 /* 적용된 조건 칩 */
 .fsChips{display:flex;flex-wrap:wrap;gap:7px;justify-content:center;
@@ -312,8 +324,11 @@
 .fsX:hover{background:var(--coral);color:#fff}
 .fsCols{flex:1;min-height:0;display:grid;grid-template-columns:repeat(var(--fsN,4),1fr)}
 .fsPop.is-discount .fsCols{grid-template-columns:minmax(150px, 190px) minmax(150px, 190px) minmax(150px, 190px) 1fr}
-/* 리세일 시세 지수 — 상품명이 길어 1:1:1:2 로 준다 */
-.fsPop[data-fs="resale"] .fsCols{grid-template-columns:1fr 1fr 1fr 2fr}
+/* 리세일 세부 검색은 개별상품 검색이 아니라 시장 전체 분석용 네 축이다. */
+.fsPop[data-fs="resale"] .fsCols{grid-template-columns:repeat(4,1fr)}
+.fsPop[data-fs="resale"] .fsColH{font-family:inherit;font-size:11px;letter-spacing:-.01em;
+  color:var(--pink-1);font-weight:600}
+.fsPop[data-fs="resale"] .fsApply{background:var(--pink-0)}
 .fsCol{min-height:0;display:flex;flex-direction:column;border-right:1px solid var(--pink-3)}
 .fsCol:last-child{border-right:none}
 /* 탭에서 못 쓰는 축(수명주기의 아이템명)은 칸째 접는다 — search.js fsPaintPop */
