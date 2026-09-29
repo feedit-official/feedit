@@ -37,18 +37,28 @@ export default async function handler(req, res) {
   // 재작성 전/후 어느 URL이 req.url에 남아도 같은 Django 경로로 보낸다.
   const discountFacets = url.pathname === '/api/discount/facets'
     || (kind === 'discount' && qs.get('__facets') === '1');
+  // /api/resale/products 역시 Vercel의 단일 세그먼트 함수([kind].js)가
+  // 직접 받을 수 없으므로 vercel.json에서 /api/resale로 재작성한다.
+  const resaleProducts = url.pathname === '/api/resale/products'
+    || (kind === 'resale' && qs.get('__products') === '1');
   // 동적 경로 [kind]가 쿼리에 붙을 수 있지만, 할인률 후보의 kind는 실제 종류 필터다.
   // 경로 매개변수만 제거하고 사용자가 고른 종류는 Django로 전달한다.
-  const kindValues = discountFacets ? qs.getAll('kind') : [];
+  const nestedRoute = discountFacets || resaleProducts;
+  const kindValues = nestedRoute ? qs.getAll('kind') : [];
   qs.delete('kind');
-  if (discountFacets) {
+  if (nestedRoute) {
     const routeKind = kindValues.indexOf(kind);
     if (routeKind >= 0) kindValues.splice(routeKind, 1);
     kindValues.forEach((value) => qs.append('kind', value));
   }
   qs.delete('__facets');
+  qs.delete('__products');
   const q = qs.toString();
-  const backendPath = discountFacets ? '/discount/facets' : `/${kind}`;
+  const backendPath = discountFacets
+    ? '/discount/facets'
+    : resaleProducts
+      ? '/resale/products'
+      : `/${kind}`;
   const relayed = await viaBackend(backendPath + (q ? `?${q}` : ''));
   if (!relayed) {
     return failed(
@@ -70,6 +80,8 @@ export default async function handler(req, res) {
     ? 'no-store'
     : discountFacets
       ? 's-maxage=120, stale-while-revalidate=600'
+      : resaleProducts
+        ? 's-maxage=60, stale-while-revalidate=300'
       /* 검색량은 하루 단위로만 바뀐다 — 더 길게 캐시해도 된다. */
       : kind === 'search'
         ? 's-maxage=1800, stale-while-revalidate=3600'

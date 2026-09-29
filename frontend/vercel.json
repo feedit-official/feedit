@@ -11,6 +11,10 @@
       "destination": "/api/discount?__facets=1"
     },
     {
+      "source": "/api/resale/products",
+      "destination": "/api/resale?__products=1"
+    },
+    {
       "source": "/api/salmal/cards/:id",
       "destination": "/api/salmal/cards?__card=:id"
     }
