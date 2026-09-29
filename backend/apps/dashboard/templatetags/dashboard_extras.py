@@ -5,7 +5,26 @@ import re
 
 from django import template
 
+from apps.dashboard.security import (
+    dashboard_operator_allowed,
+    dashboard_session_age,
+    otp_required,
+    otp_verified,
+)
+
 register = template.Library()
+
+
+@register.simple_tag(takes_context=True)
+def dashboard_session_seconds(context):
+    """상단바 카운트다운의 시작값을 반환한다."""
+
+    request = context.get("request")
+    if request is None or not dashboard_operator_allowed(getattr(request, "user", None)):
+        return 0
+    if otp_required() and not otp_verified(request):
+        return 0
+    return dashboard_session_age()
 
 
 # 유튜브 썸네일 파일명 → mqdefault(320x180, 약 10KB)로 낮춘다.

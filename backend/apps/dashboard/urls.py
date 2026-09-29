@@ -10,6 +10,7 @@ urlpatterns = [
     path("logout/", views.dashboard_logout, name="logout"),
     path("otp/setup/", views.dashboard_otp_setup, name="otp_setup"),
     path("otp/verify/", views.dashboard_otp_verify, name="otp_verify"),
+    path("session/ping/", views.dashboard_session_ping, name="session_ping"),
 
     path("", views.dashboard, name="dashboard"),
 

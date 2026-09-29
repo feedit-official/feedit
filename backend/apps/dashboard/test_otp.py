@@ -9,7 +9,7 @@ from apps.dashboard.models import DashboardOTPDevice
 from apps.dashboard.security import _totp, generate_recovery_codes
 
 
-@override_settings(DASHBOARD_OTP_REQUIRED=True, DASHBOARD_SESSION_AGE=1800)
+@override_settings(DASHBOARD_OTP_REQUIRED=True, DASHBOARD_SESSION_AGE=3600)
 class DashboardOTPTests(TestCase):
     def setUp(self):
         cache.clear()
@@ -119,6 +119,44 @@ class DashboardOTPTests(TestCase):
             self.client.post("/admin-dashboard/otp/verify/", {"token": "000000"})
         response = self.client.post("/admin-dashboard/otp/verify/", {"token": "000000"})
         self.assertEqual(response.status_code, 429)
+
+    def test_dashboard_session_uses_60_minute_idle_timeout_and_shows_clock(self):
+        self._password_login()
+        device = DashboardOTPDevice.objects.get(user=self.staff)
+        self.client.post(
+            "/admin-dashboard/otp/setup/",
+            {"token": self._current_token(device)},
+        )
+
+        response = self.client.get("/admin-dashboard/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'id="dashboardSessionClock"')
+        self.assertContains(response, 'data-seconds="3600"')
+        self.assertContains(response, "60:00")
+        self.assertEqual(self.client.session.get_expiry_age(), 3600)
+
+    def test_session_ping_is_post_only_and_refreshes_idle_timeout(self):
+        self._password_login()
+        device = DashboardOTPDevice.objects.get(user=self.staff)
+        self.client.post(
+            "/admin-dashboard/otp/setup/",
+            {"token": self._current_token(device)},
+        )
+
+        session = self.client.session
+        session.set_expiry(120)
+        session.save()
+
+        self.assertEqual(self.client.get("/admin-dashboard/session/ping/").status_code, 405)
+        session = self.client.session
+        session.set_expiry(120)
+        session.save()
+        response = self.client.post("/admin-dashboard/session/ping/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"remaining_seconds": 3600})
+        self.assertEqual(self.client.session.get_expiry_age(), 3600)
 
 
 class DashboardOTPDisabledCompatibilityTests(TestCase):

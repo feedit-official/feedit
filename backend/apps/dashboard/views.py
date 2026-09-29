@@ -72,6 +72,7 @@ from decimal import Decimal
 from django.conf import settings
 from django.utils import timezone
 from django.views.decorators.cache import never_cache
+from django.views.decorators.http import require_POST
 from .services.dashboard_service import get_dashboard_context, source_freshness
 from .services.data_quality import data_quality_context
 from .security import (
@@ -89,6 +90,7 @@ from .security import (
     provisioning_uri,
     provisioning_qr_svg,
     register_failed_attempt,
+    touch_dashboard_session,
     verify_device,
 )
 
@@ -3643,6 +3645,20 @@ def dashboard_logout(request):
 
     logout(request)
     return redirect("dashboard:login")
+
+
+@never_cache
+@require_POST
+def dashboard_session_ping(request):
+    """활성 관리자 탭의 유휴 세션을 저빈도로 연장한다.
+
+    권한·비밀번호·OTP 검사는 이 URL에도 적용되는 DashboardStaffMiddleware가
+    먼저 수행한다. 응답에는 상단 카운트다운을 다시 맞출 초만 내려준다.
+    """
+
+    return JsonResponse({
+        "remaining_seconds": touch_dashboard_session(request),
+    })
 
 
 # ============================================================

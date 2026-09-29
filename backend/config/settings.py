@@ -316,7 +316,7 @@ SECURE_HSTS_PRELOAD = os.getenv("DJANGO_HSTS_PRELOAD", "0") == "1"
 # HTTPS와 OTP 테이블 마이그레이션을 확인한 뒤 운영 .env에 1을 넣는다.
 DASHBOARD_OTP_REQUIRED = os.getenv("DASHBOARD_OTP_REQUIRED", "0") == "1"
 DASHBOARD_OTP_ISSUER = os.getenv("DASHBOARD_OTP_ISSUER", "FEEDiT Admin")
-DASHBOARD_SESSION_AGE = int(os.getenv("DASHBOARD_SESSION_AGE", "1800"))
+DASHBOARD_SESSION_AGE = int(os.getenv("DASHBOARD_SESSION_AGE", "3600"))
 DASHBOARD_ALLOWED_EMAILS = tuple(
     email.strip().casefold()
     for email in os.getenv("DASHBOARD_ALLOWED_EMAILS", "").split(",")

@@ -70,14 +70,29 @@ def otp_verified(request) -> bool:
     return _session_matches(request, OTP_SESSION_KEY)
 
 
+def dashboard_session_age() -> int:
+    """관리자 유휴 세션 수명(초)을 안전한 양수로 반환한다."""
+
+    return max(60, int(getattr(settings, "DASHBOARD_SESSION_AGE", 3600)))
+
+
+def touch_dashboard_session(request) -> int:
+    """현재 관리자 활동을 기준으로 세션 만료 시각을 다시 잡는다."""
+
+    age = dashboard_session_age()
+    request.session.set_expiry(age)
+    return age
+
+
 def mark_password_verified(request) -> None:
     request.session[PASSWORD_SESSION_KEY] = str(request.user.pk)
     request.session.pop(OTP_SESSION_KEY, None)
+    touch_dashboard_session(request)
 
 
 def mark_otp_verified(request) -> None:
     request.session[OTP_SESSION_KEY] = str(request.user.pk)
-    request.session.set_expiry(getattr(settings, "DASHBOARD_SESSION_AGE", 1800))
+    touch_dashboard_session(request)
 
 
 def generate_secret() -> str:

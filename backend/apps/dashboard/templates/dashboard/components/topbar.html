@@ -1,4 +1,5 @@
-{% load static %}
+{% load static dashboard_extras %}
+{% dashboard_session_seconds as session_seconds %}
 {% with url_name=request.resolver_match.url_name %}
 <div class="top">
   <div class="topIn">
@@ -28,6 +29,19 @@
     <div class="live">
       SYSTEM LIVE <div class="dot on"></div>
       {% if request.user.is_authenticated %}
+      {% if session_seconds %}
+      <div
+        class="session-clock"
+        id="dashboardSessionClock"
+        data-seconds="{{ session_seconds }}"
+        data-ping-url="{% url 'dashboard:session_ping' %}"
+        data-login-url="{% url 'dashboard:login' %}"
+        title="마지막 활동 후 자동 로그아웃까지 남은 시간"
+      >
+        <span>SESSION</span>
+        <b aria-live="off">60:00</b>
+      </div>
+      {% endif %}
       <span style="margin-left: 15px; color: var(--tx2); text-transform: none;">{{ request.user.username }} 님</span>
       <a href="{% url 'dashboard:logout' %}" style="margin-left: 10px; color: var(--tx2); text-decoration: none;">로그아웃</a>
       {% endif %}
@@ -79,4 +93,142 @@
   .tabs .btn { padding: 8px 15px; border-radius: 9px; font-size: 13px; color: var(--tx2); transition: .25s var(--ease); text-decoration: none; border: none; background: transparent; }
   .tabs .btn:hover { background: rgba(10,10,10,.05); }
   .tabs .btn.on { background: var(--ink); color: #f1efea; }
+  .session-clock {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: 6px;
+    padding: 5px 8px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: rgba(255,255,255,.56);
+    color: var(--tx3);
+    white-space: nowrap;
+    letter-spacing: .11em;
+  }
+  .session-clock b {
+    min-width: 34px;
+    color: var(--tx2);
+    font: 600 10px/1 var(--num);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: .04em;
+    text-align: right;
+  }
+  .session-clock.is-warning { border-color: rgba(201,138,27,.35); }
+  .session-clock.is-warning b { color: var(--warn); }
+  .session-clock.is-danger { border-color: rgba(178,59,59,.35); }
+  .session-clock.is-danger b { color: var(--bad); }
 </style>
+
+{% if session_seconds %}
+<script>
+(() => {
+  const clock = document.getElementById('dashboardSessionClock');
+  if (!clock || clock.dataset.ready === '1') return;
+  clock.dataset.ready = '1';
+
+  const value = clock.querySelector('b');
+  const sessionSeconds = Number.parseInt(clock.dataset.seconds, 10) || 3600;
+  const storageKey = 'feedit.dashboard.sessionPingAt';
+  const readStoredPingAt = () => {
+    try {
+      return Number.parseInt(window.sessionStorage.getItem(storageKey), 10);
+    } catch (error) {
+      return Number.NaN;
+    }
+  };
+  const storePingAt = (timestamp) => {
+    try {
+      window.sessionStorage.setItem(storageKey, String(timestamp));
+    } catch (error) {
+      // 저장소가 차단된 브라우저에서도 세션 heartbeat 자체는 계속 동작한다.
+    }
+  };
+  const storedPingAt = readStoredPingAt();
+  let deadline = Date.now() + sessionSeconds * 1000;
+  let lastPingAt = Number.isFinite(storedPingAt) ? storedPingAt : 0;
+  let activitySincePing = true;
+  let pinging = false;
+  let expired = false;
+
+  const csrfToken = () => {
+    const item = document.cookie.split('; ').find((cookie) => cookie.startsWith('csrftoken='));
+    return item ? decodeURIComponent(item.slice('csrftoken='.length)) : '';
+  };
+
+  const goToLogin = () => {
+    if (expired) return;
+    expired = true;
+    const next = `${window.location.pathname}${window.location.search}`;
+    window.location.assign(`${clock.dataset.loginUrl}?next=${encodeURIComponent(next)}`);
+  };
+
+  const render = () => {
+    const remaining = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+    const minutes = Math.floor(remaining / 60);
+    const seconds = String(remaining % 60).padStart(2, '0');
+    value.textContent = `${minutes}:${seconds}`;
+    clock.classList.toggle('is-warning', remaining > 60 && remaining <= 300);
+    clock.classList.toggle('is-danger', remaining <= 60);
+    if (remaining === 0) goToLogin();
+  };
+
+  const ping = async () => {
+    if (pinging || expired || !activitySincePing) return;
+    pinging = true;
+    activitySincePing = false;
+    try {
+      const response = await fetch(clock.dataset.pingUrl, {
+        method: 'POST',
+        credentials: 'same-origin',
+        cache: 'no-store',
+        headers: {
+          'X-CSRFToken': csrfToken(),
+          'X-Requested-With': 'XMLHttpRequest',
+        },
+      });
+      if (response.redirected && response.url.includes('/admin-dashboard/login/')) {
+        goToLogin();
+        return;
+      }
+      if (response.status === 401) {
+        goToLogin();
+        return;
+      }
+      if (!response.ok) throw new Error(`session ping failed: ${response.status}`);
+      const payload = await response.json();
+      const remaining = Number.parseInt(payload.remaining_seconds, 10) || sessionSeconds;
+      lastPingAt = Date.now();
+      storePingAt(lastPingAt);
+      deadline = lastPingAt + remaining * 1000;
+      render();
+    } catch (error) {
+      activitySincePing = true;
+      console.debug('[dashboard] session heartbeat deferred', error);
+    } finally {
+      pinging = false;
+    }
+  };
+
+  const noteActivity = (event) => {
+    if (event && event.isTrusted === false) return;
+    activitySincePing = true;
+    deadline = Date.now() + sessionSeconds * 1000;
+    render();
+    if (Date.now() - lastPingAt >= 55000) ping();
+  };
+
+  ['pointerdown', 'keydown', 'input', 'touchstart'].forEach((name) => {
+    document.addEventListener(name, noteActivity, { passive: true, capture: true });
+  });
+  document.addEventListener('scroll', noteActivity, { passive: true, capture: true });
+
+  render();
+  if (Date.now() - lastPingAt >= 55000) ping();
+  window.setInterval(render, 1000);
+  window.setInterval(() => {
+    if (activitySincePing && Date.now() - lastPingAt >= 55000) ping();
+  }, 15000);
+})();
+</script>
+{% endif %}
