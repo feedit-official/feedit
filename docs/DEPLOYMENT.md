@@ -50,7 +50,8 @@ docker compose --env-file .env -f docker/compose.chat.yml up -d --build
 | `FEEDIT_CHAT_ORCHESTRATOR` | 모델 도구 오케스트레이션 사용 설정 |
 | `DASHBOARD_OTP_REQUIRED` | 관리자 TOTP 강제. HTTPS·마이그레이션·최초 등록 확인 후 `1` |
 | `DASHBOARD_SESSION_AGE` | OTP 완료 관리자 세션 수명(초), 기본 1800 |
-| `DJANGO_SECURE_COOKIES` | HTTPS 확인 후 `1`; 보안 쿠키와 HTTPS 강제 |
+| `DJANGO_SECURE_COOKIES` | 관리자 HTTPS 확인 후 `1`; 세션·CSRF 쿠키만 Secure 처리 |
+| `DJANGO_SECURE_SSL_REDIRECT` | 모든 API 클라이언트를 HTTPS로 전환한 뒤 `1`; 그전에는 `0` |
 | `DJANGO_HSTS_SECONDS` | 최초 0, 안정화 뒤 300 → 86400 → 31536000 순으로 증가 |
 
 `FEEDIT_PUBLIC_BETA`의 코드 기본값은 1입니다. 공유 토큰·플랜 정책이 비베타 모드와 달라집니다. 알파 계정(`FEEDIT_ALPHA_MODE`, `FEEDIT_ALPHA_UNTIL`, `FEEDIT_ALPHA_CHAT_QUOTA`)과 별도 정책이므로 각각 확인합니다. 화면의 사용량 차감만으로 서버 비용 제한이 강제된다고 간주하지 않습니다.
@@ -105,6 +106,7 @@ API는 읽기/쓰기 기능을 제공하지만 기동 명령에 `migrate`를 포
 
    ```dotenv
    DJANGO_SECURE_COOKIES=1
+   DJANGO_SECURE_SSL_REDIRECT=0
    DJANGO_HSTS_SECONDS=0
    DASHBOARD_OTP_REQUIRED=1
    DASHBOARD_SESSION_AGE=1800

@@ -299,10 +299,12 @@ if os.getenv("DJANGO_BEHIND_PROXY", "False").lower() == "true":
 #   TLS 를 붙인 다음(보안 가이드 2번) 서버 .env 에 한 줄만 넣으면 켜진다:
 #       DJANGO_SECURE_COOKIES=1
 #   코드를 다시 고칠 필요가 없다.
-if os.getenv("DJANGO_SECURE_COOKIES", "0") == "1":
-    SESSION_COOKIE_SECURE = True
-    CSRF_COOKIE_SECURE = True
-    SECURE_SSL_REDIRECT = True
+# Secure 쿠키와 전체 HTTP→HTTPS 강제는 별도 스위치다. Vercel의
+# BACKEND_API_URL이 아직 HTTP인 단계에서 둘을 같이 켜면 사용자 API가
+# 301을 반환하고 인증 헤더가 리다이렉트에서 유실될 수 있다.
+SESSION_COOKIE_SECURE = os.getenv("DJANGO_SECURE_COOKIES", "0") == "1"
+CSRF_COOKIE_SECURE = SESSION_COOKIE_SECURE
+SECURE_SSL_REDIRECT = os.getenv("DJANGO_SECURE_SSL_REDIRECT", "0") == "1"
 
 # HTTPS가 실제로 확인되기 전 1년 HSTS/preload를 켜면 장애 복구가 어렵다.
 # 처음에는 0, 안정화 뒤 300 → 86400 → 31536000 순으로 늘린다.
