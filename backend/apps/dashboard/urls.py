@@ -1,5 +1,5 @@
 from django.urls import path
-from . import service_views, views
+from . import dictionary_views, operations_views, service_views, views
 
 
 app_name = "dashboard"
@@ -29,21 +29,34 @@ urlpatterns = [
     path("normalization/products/", views.normalized_products, name="normalized_products"),
     path("normalization/failures/", views.normalization_failures, name="normalization_failures"),
     path("normalization/quality/", views.data_quality, name="data_quality"),
+    path("normalization/pipeline/", operations_views.pipeline_overview, name="pipeline_overview"),
 
     # 서비스 운영 — 홈페이지 피드백 · 살!말? 신고 처리 (2026-09-27)
     path("service/feedback/", service_views.feedback_list, name="feedback_list"),
     path("service/feedback/<int:pk>/", service_views.feedback_update, name="feedback_update"),
     path("service/reports/", service_views.report_list, name="report_list"),
     path("service/reports/<int:pk>/", service_views.report_update, name="report_update"),
+    path("service/users/", operations_views.service_users, name="service_users"),
+    path("service/events/", operations_views.service_events, name="service_events"),
+    path("service/votes/", operations_views.service_votes, name="service_votes"),
+    path("service/comments/", operations_views.service_comments, name="service_comments"),
 
-    path("dictionary/terms/", views.dictionary_terms, name="dictionary_terms"),
-    path("dictionary/candidates/", views.dictionary_candidates, name="dictionary_candidates"),
-    path("dictionary/candidates/<int:pk>/", views.dictionary_candidate_detail, name="dictionary_candidate_detail"),
-        path(
+    path("database/", operations_views.database_overview, name="database_overview"),
+    path("database/query/", operations_views.database_query, name="database_query"),
+
+    path("dictionary/", dictionary_views.dictionary_overview, name="dictionary_overview"),
+    path("dictionary/terms/", dictionary_views.dictionary_terms, name="dictionary_terms"),
+    path("dictionary/terms/<int:pk>/", dictionary_views.dictionary_term_detail, name="dictionary_term_detail"),
+    path("dictionary/candidates/", dictionary_views.dictionary_candidates, name="dictionary_candidates"),
+    path("dictionary/candidates/<int:pk>/", dictionary_views.dictionary_candidate_detail, name="dictionary_candidate_detail"),
+    path("dictionary/candidates/<int:pk>/review/", dictionary_views.dictionary_candidate_review, name="dictionary_candidate_review"),
+    path("dictionary/quality/", dictionary_views.dictionary_quality, name="dictionary_quality"),
+    path(
         "dictionary/brands/",
-        views.brand_sources,
+        dictionary_views.brand_sources,
         name="brand_sources",
     ),
+    path("dictionary/brands/search/", dictionary_views.brand_search, name="brand_search"),
 
     path(
         "dictionary/brands/<int:source_id>/map/",
@@ -92,6 +105,13 @@ urlpatterns = [
     path("normalized/musinsa-used/", views.normalized_musinsa_used, name="normalized_musinsa_used"),
     path("normalized/youtube/", views.normalized_youtube, name="normalized_youtube"),
     path("normalized/naver/", views.normalized_naver, name="normalized_naver"),
+
+    # ---------- 분석 텍스트 ----------
+    path("text/youtube/", views.text_youtube, name="text_youtube"),
+    path("text/musinsa/", views.text_musinsa, name="text_musinsa"),
+    path("text/zigzag/", views.text_zigzag, name="text_zigzag"),
+    path("text/ably/", views.text_ably, name="text_ably"),
+    path("text/naver/", views.text_naver, name="text_naver"),
 
     # ---------- 데이터 분석 ----------
     path("analytics/term-metrics/", views.term_metrics, name="term_metrics"),

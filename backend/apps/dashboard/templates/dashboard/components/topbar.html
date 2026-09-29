@@ -8,19 +8,21 @@
     </a>
     
     <div class="tabs">
-      <a href="{% url 'dashboard:platform_status' %}" class="btn {% if url_name in 'platform_status,collection_targets,run_crawl,collection_runs,crawl_rules,robots_check' %}on{% endif %}">수집</a>
+      <a href="{% url 'dashboard:platform_status' %}" class="btn {% if url_name == 'platform_status' or url_name == 'collection_targets' or url_name == 'run_crawl' or url_name == 'collection_runs' or url_name == 'crawl_rules' or url_name == 'robots_check' %}on{% endif %}">수집</a>
       
       <a href="{% url 'dashboard:raw_documents' %}" class="btn {% if url_name == 'raw_documents' %}on{% endif %}">원본데이터</a>
       
-      <a href="{% url 'dashboard:normalized_products' %}" class="btn {% if url_name in 'normalized_products,normalization_failures,data_quality,normalized_musinsa,normalized_zigzag,normalized_ably,normalized_kream,normalized_musinsa_used,normalized_youtube,normalized_naver' %}on{% endif %}">정규화데이터</a>
+      <a href="{% url 'dashboard:pipeline_overview' %}" class="btn {% if url_name == 'pipeline_overview' or url_name == 'normalized_products' or url_name == 'normalization_failures' or url_name == 'data_quality' or url_name == 'normalized_musinsa' or url_name == 'normalized_zigzag' or url_name == 'normalized_ably' or url_name == 'normalized_kream' or url_name == 'normalized_musinsa_used' or url_name == 'normalized_youtube' or url_name == 'normalized_naver' or url_name == 'text_youtube' or url_name == 'text_musinsa' or url_name == 'text_zigzag' or url_name == 'text_ably' or url_name == 'text_naver' %}on{% endif %}">정규화데이터</a>
       
-      <a href="{% url 'dashboard:trend_metrics' %}" class="btn {% if url_name in 'trend_metrics,term_metrics,product_metrics,product_snapshot' %}on{% endif %}">데이터분석</a>
+      <a href="{% url 'dashboard:trend_metrics' %}" class="btn {% if url_name == 'trend_metrics' or url_name == 'term_metrics' or url_name == 'product_metrics' or url_name == 'product_snapshot' %}on{% endif %}">데이터분석</a>
       
-      <a href="{% url 'dashboard:feedback_list' %}" class="btn {% if url_name in 'feedback_list,report_list' %}on{% endif %}">서비스</a>
+      <a href="{% url 'dashboard:service_users' %}" class="btn {% if url_name == 'feedback_list' or url_name == 'report_list' or url_name == 'service_users' or url_name == 'service_events' or url_name == 'service_votes' or url_name == 'service_comments' %}on{% endif %}">서비스</a>
 
-      <a href="{% url 'dashboard:system_status' %}" class="btn {% if url_name in 'system_status,jobs,system_api,system_aws,system_celery' %}on{% endif %}">시스템</a>
+      <a href="{% url 'dashboard:database_overview' %}" class="btn {% if url_name == 'database_overview' or url_name == 'database_query' %}on{% endif %}">데이터베이스</a>
+
+      <a href="{% url 'dashboard:system_status' %}" class="btn {% if url_name == 'system_status' or url_name == 'jobs' or url_name == 'system_api' or url_name == 'system_aws' or url_name == 'system_celery' %}on{% endif %}">시스템</a>
       
-      <a href="{% url 'dashboard:dictionary_terms' %}" class="btn {% if url_name in 'dictionary_terms,dictionary_candidates,dictionary_candidate_detail,brand_sources' %}on{% endif %}">사전</a>
+      <a href="{% url 'dashboard:dictionary_overview' %}" class="btn {% if url_name == 'dictionary_overview' or url_name == 'dictionary_terms' or url_name == 'dictionary_term_detail' or url_name == 'dictionary_candidates' or url_name == 'dictionary_candidate_detail' or url_name == 'dictionary_candidate_review' or url_name == 'dictionary_quality' or url_name == 'brand_sources' or url_name == 'brand_search' or url_name == 'brands' or url_name == 'categories' or url_name == 'products' %}on{% endif %}">사전</a>
     </div>
     
     <div class="live">

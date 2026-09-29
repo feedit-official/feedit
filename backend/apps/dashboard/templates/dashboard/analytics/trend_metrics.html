@@ -78,13 +78,13 @@
 
 <div class="an-grid">
     <div class="an-panel">
-        <h3 class="an-title">트렌드 점수 상위</h3>
+        <h3 class="an-title">트렌드 온도 상위</h3>
         <ul class="an-bars">
             {% for row in top_trend %}
             <li>
                 <span class="an-bar-name" title="{{ row.term.canonical_name }}">{{ row.term.canonical_name }}</span>
                 <span class="an-bar-track"><i style="width: {{ row.pct }}%;"></i></span>
-                <span class="an-bar-val">{{ row.trend_score|floatformat:2 }}</span>
+                <span class="an-bar-val">{{ row.trend_temperature|floatformat:2 }}</span>
             </li>
             {% endfor %}
         </ul>
@@ -119,7 +119,7 @@
 <table class="nz-table">
     <colgroup><col><col><col style="width:110px"><col style="width:100px"><col style="width:100px"></colgroup>
     <thead>
-        <tr><th>기준 용어</th><th>연관 용어</th><th class="ta-r">동시 언급</th><th class="ta-r">연관도</th><th class="ta-r">신뢰도</th></tr>
+        <tr><th>기준 용어</th><th>연관 용어</th><th class="ta-r">동시 언급</th><th class="ta-r">PMI</th><th class="ta-r">Lift</th></tr>
     </thead>
     <tbody>
         {% for row in top_assoc %}
@@ -127,8 +127,8 @@
             <td><strong class="nz-name">{{ row.source_term.canonical_name }}</strong></td>
             <td>{{ row.target_term.canonical_name }}</td>
             <td class="ta-r mono">{{ row.cooccurrence_count|intcomma }}</td>
-            <td class="ta-r mono">{{ row.association_score|floatformat:3 }}</td>
-            <td class="ta-r mono">{{ row.confidence|floatformat:3 }}</td>
+            <td class="ta-r mono">{{ row.pmi|floatformat:3 }}</td>
+            <td class="ta-r mono">{{ row.lift|floatformat:3 }}</td>
         </tr>
         {% endfor %}
     </tbody>

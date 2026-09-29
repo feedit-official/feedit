@@ -37,6 +37,7 @@ from __future__ import annotations
 from django.contrib import messages
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required
+from django.core.cache import cache
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.db import transaction
 from django.db.models import (
@@ -67,6 +68,7 @@ import time
 import traceback
 from datetime import datetime, timezone as dt_timezone
 from datetime import timedelta
+from decimal import Decimal
 from django.conf import settings
 from django.utils import timezone
 from .services.dashboard_service import get_dashboard_context, source_freshness
@@ -532,11 +534,13 @@ def collection_runs(request):
 SOURCE_ORDER = [
     "musinsa",
     "zigzag",
-    "ably",
+    "ABLY",
     "musinsa_used",
     "kream",
     "YOUTUBE",
     "naver",
+    "NAVER_SEARCH",
+    "GOOGLE_SEARCH",
 ]
 
 SOURCE_LABELS = {
@@ -544,10 +548,13 @@ SOURCE_LABELS = {
     "musinsa_used": "무신사 USED",
     "zigzag": "지그재그",
     "ably": "에이블리",
+    "ABLY": "에이블리",
     "kream": "크림",
     "YOUTUBE": "유튜브",
     "youtube": "유튜브",
-    "naver": "네이버",
+    "naver": "네이버 블로그",
+    "NAVER_SEARCH": "네이버 검색",
+    "GOOGLE_SEARCH": "구글 검색",
 }
 
 
@@ -595,7 +602,13 @@ def _ordered_sources():
 
 @login_required(login_url="/admin-dashboard/login/")
 def raw_documents(request):
-    sources = _ordered_sources()
+    raw_counts = _group_count(RawDocument.objects.all())
+    sources = []
+    for source in _ordered_sources():
+        count = raw_counts.get(source.id, {}).get("n", 0)
+        if count:
+            source.raw_count = count
+            sources.append(source)
     selected_source = request.GET.get("source", "")
 
     docs_qs = (
@@ -1126,7 +1139,6 @@ def products(request):
     queryset = (
         Product.objects
         .select_related("brand", "category")
-        .defer("item_term")
         .annotate(source_n=Count("sources"))
         .order_by("-source_n", "canonical_name")
     )
@@ -1141,6 +1153,12 @@ def products(request):
     paginator = Paginator(queryset, 40)
     page_obj = paginator.get_page(request.GET.get("page"))
 
+    source_agg = ProductSource.objects.aggregate(
+        total=Count("id"),
+        mapped=Count("id", filter=Q(product__isnull=False)),
+        unmapped=Count("id", filter=Q(product__isnull=True)),
+    )
+
     context = {
         "page_title": "상품",
         "page_description": (
@@ -1148,13 +1166,9 @@ def products(request):
         ),
         "summary": {
             "total": Product.objects.count(),
-            "product_source": ProductSource.objects.count(),
-            "mapped": ProductSource.objects.filter(
-                product__isnull=False
-            ).count(),
-            "unmapped": ProductSource.objects.filter(
-                product__isnull=True
-            ).count(),
+            "product_source": source_agg["total"],
+            "mapped": source_agg["mapped"],
+            "unmapped": source_agg["unmapped"],
         },
         "page_obj": page_obj,
         "rows": page_obj.object_list,
@@ -1871,6 +1885,7 @@ def _platform_content_page(request, source, title, description, reset_url):
     """콘텐츠(ContentItem) 기반 정규화 페이지."""
 
     selected_content_type = request.GET.get("content_type", "").strip()
+    selected_format = request.GET.get("content_format", "").strip()
     selected_order = request.GET.get("order", "recent").strip()
     q = request.GET.get("q", "").strip()
 
@@ -1898,6 +1913,12 @@ def _platform_content_page(request, source, title, description, reset_url):
     if selected_content_type:
         queryset = queryset.filter(content_type=selected_content_type)
 
+    format_values = {value for value, _ in ContentItem.ContentFormat.choices}
+    if selected_format not in format_values:
+        selected_format = ""
+    if selected_format:
+        queryset = queryset.filter(content_format=selected_format)
+
     if q:
         queryset = queryset.filter(
             Q(title__icontains=q)
@@ -1912,18 +1933,31 @@ def _platform_content_page(request, source, title, description, reset_url):
     _attach_latest_content_snapshot(rows)
 
     docs = RawDocument.objects.filter(source=source)
+    docs_agg = docs.aggregate(
+        total=Count("id"),
+        success=Count("id", filter=Q(normalization_status="SUCCESS")),
+        failed=Count("id", filter=Q(normalization_status="FAILED")),
+    )
     total_rows = base.count()
+    profile_count = ContentProfile.objects.filter(source=source).count()
+    snapshot_count = ContentSnapshot.objects.filter(content_item__source=source).count()
+    text_stats = TextDocument.objects.filter(source=source).aggregate(
+        total=Count("id"),
+        comments=Count("id", filter=Q(document_type="COMMENT")),
+        transcripts=Count("id", filter=Q(document_type="TRANSCRIPT")),
+        analyzed=Count("id", filter=Q(analysis_status="DONE")),
+    )
 
     cards = [
         {
             "label": "원본 문서",
-            "value": docs.count(),
+            "value": docs_agg["total"],
             "caption": "RawDocument",
             "tone": "",
         },
         {
             "label": "정규화 성공",
-            "value": docs.filter(normalization_status="SUCCESS").count(),
+            "value": docs_agg["success"],
             "caption": "SUCCESS",
             "tone": "ok",
         },
@@ -1935,21 +1969,19 @@ def _platform_content_page(request, source, title, description, reset_url):
         },
         {
             "label": "채널/프로필",
-            "value": ContentProfile.objects.filter(source=source).count(),
+            "value": profile_count,
             "caption": "ContentProfile",
             "tone": "",
         },
         {
             "label": "스냅샷",
-            "value": ContentSnapshot.objects.filter(
-                content_item__source=source
-            ).count(),
+            "value": snapshot_count,
             "caption": "ContentSnapshot",
             "tone": "",
         },
         {
             "label": "분석 문서",
-            "value": TextDocument.objects.filter(source=source).count(),
+            "value": text_stats["total"],
             "caption": "TextDocument",
             "tone": "",
         },
@@ -1977,7 +2009,9 @@ def _platform_content_page(request, source, title, description, reset_url):
             "적재되지 않았습니다."
         ),
         "content_types": content_types,
+        "format_choices": ContentItem.ContentFormat.choices,
         "selected_content_type": selected_content_type,
+        "selected_format": selected_format,
         "selected_order": selected_order,
         "search_query": q,
         "reset_url": reset_url,
@@ -1989,6 +2023,299 @@ def _platform_content_page(request, source, title, description, reset_url):
         request,
         "dashboard/normalization/platform.html",
         context,
+    )
+
+
+TEXT_DOC_LABELS = {
+    "COMMENT": "댓글",
+    "REVIEW": "리뷰",
+    "ARTICLE": "본문",
+    "TRANSCRIPT": "자막",
+    "DESCRIPTION": "설명",
+}
+
+TEXT_SOURCE_PLANS = {
+    "YOUTUBE": {
+        "types": ["COMMENT", "TRANSCRIPT"],
+        "raw_type": "COMMENT",
+        "empty": "댓글·자막이 아직 TextDocument에 적재되지 않았습니다.",
+    },
+    "MUSINSA": {
+        "types": ["REVIEW"],
+        "raw_type": "REVIEW",
+        "empty": "무신사 상품 리뷰를 수집하면 여기에 표시됩니다.",
+    },
+    "ZIGZAG": {
+        "types": ["REVIEW"],
+        "raw_type": "REVIEW",
+        "empty": "지그재그 상품 리뷰를 수집하면 여기에 표시됩니다.",
+    },
+    "ABLY": {
+        "types": ["REVIEW"],
+        "raw_type": "REVIEW",
+        "empty": "에이블리 상품 리뷰를 수집하면 여기에 표시됩니다.",
+    },
+    "NAVER": {
+        "types": ["ARTICLE"],
+        "raw_type": "POST",
+        "empty": "네이버 블로그 본문을 수집하면 여기에 표시됩니다.",
+    },
+}
+
+
+def _text_page(request, codes, title, description, url_name):
+    """플랫폼별 댓글·리뷰·본문 등 분석 텍스트를 조회한다."""
+
+    source = _find_source(*codes)
+    reset_url = reverse(f"dashboard:{url_name}")
+
+    if source is None:
+        return render(
+            request,
+            "dashboard/normalization/text.html",
+            {
+                "page_title": title,
+                "page_description": description,
+                "mode": "none",
+                "blank_reason": "이 플랫폼의 Source가 아직 등록되지 않았습니다.",
+            },
+        )
+
+    plan = TEXT_SOURCE_PLANS.get(source.code.upper(), {})
+    doc_types = plan.get("types") or list(TEXT_DOC_LABELS)
+    selected_type = request.GET.get("doc_type", "").strip()
+    selected_status = request.GET.get("status", "").strip()
+    selected_order = request.GET.get("order", "recent").strip()
+    search_query = request.GET.get("q", "").strip()
+
+    if selected_type not in doc_types:
+        selected_type = ""
+    status_values = {value for value, _ in TextDocument.AnalysisStatus.choices}
+    if selected_status not in status_values:
+        selected_status = ""
+
+    base = TextDocument.objects.filter(
+        source=source,
+        document_type__in=doc_types,
+    )
+    queryset = (
+        base.select_related(
+            "content_item",
+            "content_item__profile",
+            "product_source",
+            "product_source__product",
+        )
+        .prefetch_related("term_mentions__term")
+    )
+
+    if selected_type:
+        queryset = queryset.filter(document_type=selected_type)
+    if selected_status:
+        queryset = queryset.filter(analysis_status=selected_status)
+    if search_query:
+        queryset = queryset.filter(
+            Q(body__icontains=search_query)
+            | Q(external_id__icontains=search_query)
+            | Q(content_item__title__icontains=search_query)
+            | Q(product_source__source_name__icontains=search_query)
+            | Q(product_source__source_product_id__icontains=search_query)
+        )
+
+    if selected_order == "id_asc":
+        queryset = queryset.order_by("id")
+    elif selected_order == "id_desc":
+        queryset = queryset.order_by("-id")
+    else:
+        selected_order = "recent"
+        queryset = queryset.order_by("-created_at", "-id")
+
+    paginator = Paginator(queryset, 20)
+    page_obj = paginator.get_page(request.GET.get("page"))
+    rows = list(page_obj.object_list)
+    for row in rows:
+        row.mentions = list(row.term_mentions.all())
+        row.sentiment_counts = {"positive": 0, "neutral": 0, "negative": 0}
+        for mention in row.mentions:
+            score = mention.sentiment_score
+            if score is None:
+                mention.sentiment_label = "미분석"
+                mention.sentiment_tone = "unknown"
+            elif score > Decimal("0.5"):
+                mention.sentiment_label = "긍정"
+                mention.sentiment_tone = "positive"
+                row.sentiment_counts["positive"] += 1
+            elif score < Decimal("0.5"):
+                mention.sentiment_label = "부정"
+                mention.sentiment_tone = "negative"
+                row.sentiment_counts["negative"] += 1
+            else:
+                mention.sentiment_label = "중립"
+                mention.sentiment_tone = "neutral"
+                row.sentiment_counts["neutral"] += 1
+        row.sentiment_total = sum(row.sentiment_counts.values())
+        metadata = row.analysis_metadata if isinstance(row.analysis_metadata, dict) else {}
+        candidates = metadata.get("candidates") or []
+        seen = set()
+        row.candidate_keywords = []
+        for candidate in candidates:
+            if not isinstance(candidate, dict):
+                continue
+            keyword = str(
+                candidate.get("term")
+                or candidate.get("surface")
+                or candidate.get("span")
+                or ""
+            ).strip()
+            if not keyword:
+                continue
+            kind = str(candidate.get("guess") or candidate.get("type") or "").strip()
+            key = (keyword.casefold(), kind.casefold())
+            if key in seen:
+                continue
+            seen.add(key)
+            row.candidate_keywords.append({"keyword": keyword, "kind": kind})
+
+        analysis = metadata.get("analysis") if isinstance(metadata.get("analysis"), dict) else {}
+        row.analysis_summary = {
+            "intent": metadata.get("intent"),
+            "target": metadata.get("target"),
+            "model": analysis.get("model"),
+            "version": analysis.get("pipeline_version") or row.analysis_version,
+        }
+
+    total_rows = base.count()
+    analyzed = base.filter(
+        analysis_status=TextDocument.AnalysisStatus.DONE
+    ).count()
+    by_type = {
+        row["document_type"]: row["n"]
+        for row in base.values("document_type").annotate(n=Count("id"))
+    }
+
+    raw_type = plan.get("raw_type")
+    raw_pending = 0
+    if raw_type:
+        raw_pending = RawDocument.objects.filter(
+            source=source,
+            document_type__iexact=raw_type,
+        ).count()
+
+    cards = [
+        {
+            "label": "텍스트 문서",
+            "value": total_rows,
+            "caption": "TextDocument",
+            "tone": "",
+        },
+        {
+            "label": "분석 완료",
+            "value": analyzed,
+            "caption": (
+                f"{100 * analyzed / total_rows:.0f}%" if total_rows else "0%"
+            ),
+            "tone": "ok" if total_rows and analyzed == total_rows else "warn",
+        },
+        {
+            "label": "원본 문서",
+            "value": raw_pending,
+            "caption": f"RawDocument · {raw_type or '-'}",
+            "tone": "",
+        },
+    ]
+    cards.extend(
+        {
+            "label": TEXT_DOC_LABELS.get(code, code),
+            "value": by_type.get(code, 0),
+            "caption": code,
+            "tone": "",
+        }
+        for code in doc_types
+    )
+
+    return render(
+        request,
+        "dashboard/normalization/text.html",
+        {
+            "page_title": title,
+            "page_description": description,
+            "mode": "text",
+            "source": source,
+            "cards": cards,
+            "rows": rows,
+            "page_obj": page_obj,
+            "filtered_count": paginator.count,
+            "total_rows": total_rows,
+            "doc_types": [
+                (code, TEXT_DOC_LABELS.get(code, code)) for code in doc_types
+            ],
+            "status_choices": TextDocument.AnalysisStatus.choices,
+            "selected_type": selected_type,
+            "selected_status": selected_status,
+            "selected_order": selected_order,
+            "search_query": search_query,
+            "reset_url": reset_url,
+            "blank_reason": plan.get(
+                "empty",
+                "이 플랫폼의 텍스트 문서가 아직 적재되지 않았습니다.",
+            ),
+            "raw_pending": raw_pending,
+            "qs": _qs_without_page(request),
+        },
+    )
+
+
+@login_required(login_url="/admin-dashboard/login/")
+def text_youtube(request):
+    return _text_page(
+        request,
+        ["YOUTUBE", "youtube"],
+        "유튜브 댓글·자막",
+        "영상에 달린 댓글과 분석용 자막을 조회합니다.",
+        "text_youtube",
+    )
+
+
+@login_required(login_url="/admin-dashboard/login/")
+def text_musinsa(request):
+    return _text_page(
+        request,
+        ["musinsa", "MUSINSA"],
+        "무신사 상품 리뷰",
+        "무신사 상품에 달린 리뷰와 분석 결과를 조회합니다.",
+        "text_musinsa",
+    )
+
+
+@login_required(login_url="/admin-dashboard/login/")
+def text_zigzag(request):
+    return _text_page(
+        request,
+        ["zigzag", "ZIGZAG"],
+        "지그재그 상품 리뷰",
+        "지그재그 상품에 달린 리뷰와 분석 결과를 조회합니다.",
+        "text_zigzag",
+    )
+
+
+@login_required(login_url="/admin-dashboard/login/")
+def text_ably(request):
+    return _text_page(
+        request,
+        ["ABLY", "ably"],
+        "에이블리 상품 리뷰",
+        "에이블리 상품에 달린 리뷰와 분석 결과를 조회합니다.",
+        "text_ably",
+    )
+
+
+@login_required(login_url="/admin-dashboard/login/")
+def text_naver(request):
+    return _text_page(
+        request,
+        ["naver", "NAVER"],
+        "네이버 블로그 본문",
+        "수집된 네이버 블로그 본문과 분석 결과를 조회합니다.",
+        "text_naver",
     )
 
 
@@ -2142,6 +2469,7 @@ def trend_metrics(request):
 
     latest_date = (
         TermMetricDaily.objects
+        .filter(source__isnull=True)
         .order_by("-metric_date")
         .values_list("metric_date", flat=True)
         .first()
@@ -2153,12 +2481,15 @@ def trend_metrics(request):
     top_assoc = []
 
     if latest_date is not None:
-        day = TermMetricDaily.objects.filter(metric_date=latest_date)
+        day = TermMetricDaily.objects.filter(
+            metric_date=latest_date,
+            source__isnull=True,
+        )
 
         top_trend = list(
             day.select_related("term")
-            .exclude(trend_score__isnull=True)
-            .order_by("-trend_score")[:12]
+            .exclude(trend_temperature__isnull=True)
+            .order_by("-trend_temperature")[:12]
         )
         top_mention = list(
             day.select_related("term")
@@ -2166,11 +2497,11 @@ def trend_metrics(request):
         )
 
         max_trend = max(
-            [float(r.trend_score or 0) for r in top_trend] or [0]
+            [float(r.trend_temperature or 0) for r in top_trend] or [0]
         )
         for row in top_trend:
             row.pct = (
-                round(float(row.trend_score or 0) / max_trend * 100, 1)
+                round(float(row.trend_temperature or 0) / max_trend * 100, 1)
                 if max_trend else 0
             )
 
@@ -2199,7 +2530,7 @@ def trend_metrics(request):
     context = {
         "page_title": "트렌드 지표",
         "page_description": (
-            "사전 용어의 일자별 언급량과 트렌드 점수를 확인합니다."
+            "사전 용어의 일자별 언급량과 트렌드 온도를 확인합니다."
         ),
         "summary": summary,
         "latest_date": latest_date,
@@ -2282,7 +2613,8 @@ def term_metrics(request):
 
     if selected_date:
         queryset = queryset.filter(
-            daily_metrics__metric_date=selected_date
+            daily_metrics__metric_date=selected_date,
+            daily_metrics__source__isnull=True,
         ).distinct()
 
     paginator = Paginator(queryset, 40)
@@ -2294,7 +2626,8 @@ def term_metrics(request):
     metric_map = {}
     if rows:
         metric_qs = TermMetricDaily.objects.filter(
-            term_id__in=[r.id for r in rows]
+            term_id__in=[r.id for r in rows],
+            source__isnull=True,
         )
         if selected_date:
             metric_qs = metric_qs.filter(metric_date=selected_date)
@@ -2307,12 +2640,15 @@ def term_metrics(request):
         row.metric_date = metric.metric_date if metric else None
         row.mention_count = metric.mention_count if metric else None
         row.document_count = metric.document_count if metric else None
-        row.source_count = metric.source_count if metric else None
-        row.growth_rate = metric.growth_rate if metric else None
-        row.trend_score = metric.trend_score if metric else None
+        row.content_count = metric.content_count if metric else None
+        row.momentum = metric.momentum if metric else None
+        row.trend_temperature = (
+            metric.trend_temperature if metric else None
+        )
 
     dates = (
         TermMetricDaily.objects
+        .filter(source__isnull=True)
         .values_list("metric_date", flat=True)
         .distinct()
         .order_by("-metric_date")[:30]
@@ -2321,7 +2657,8 @@ def term_metrics(request):
     context = {
         "page_title": "용어별 지표",
         "page_description": (
-            "사전 용어별 언급량·문서수·트렌드 점수를 조회합니다."
+            "사전 용어별 언급량·문서 수·콘텐츠 수·모멘텀·"
+            "트렌드 온도를 조회합니다."
         ),
         "summary": _analytics_summary(),
         "term_types": [c[0] for c in DictionaryTerm.TermType.choices],
@@ -2781,6 +3118,7 @@ def map_brand_source(
 
     _sync_brand_source_count(old_brand)
     _sync_brand_source_count(brand)
+    cache.delete("dashboard:dictionary:snapshot:v3")
 
     messages.success(
         request,
@@ -2979,6 +3317,7 @@ def create_brand_from_source(
 
     _sync_brand_source_count(old_brand)
     _sync_brand_source_count(brand)
+    cache.delete("dashboard:dictionary:snapshot:v3")
 
     category_name = category.name if category else "미지정"
 
@@ -3028,6 +3367,7 @@ def unmap_brand_source(
     )
 
     _sync_brand_source_count(old_brand)
+    cache.delete("dashboard:dictionary:snapshot:v3")
 
     messages.success(
         request,
@@ -3074,6 +3414,7 @@ def exclude_brand_source(
     )
 
     _sync_brand_source_count(old_brand)
+    cache.delete("dashboard:dictionary:snapshot:v3")
 
     messages.success(
         request,

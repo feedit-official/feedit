@@ -71,6 +71,8 @@ services:
 
     environment:
       DJANGO_DEBUG: "False"
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
       # ★ 앞단(nginx)이 있을 때만 켠다. 앞단 없이 켜면 머리글을 위조당한다.
       DJANGO_BEHIND_PROXY: "true"
       # ★ .env 값을 쓴다. 여기에 주소를 박아 두면 env_file 값을 덮어써서
