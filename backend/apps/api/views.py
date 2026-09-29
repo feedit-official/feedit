@@ -32,8 +32,8 @@ from collections import Counter, defaultdict
 from datetime import timedelta
 
 from django.db import connection
-from django.db.models import Avg, Case, Count, Exists, F, FloatField, IntegerField, Max, Min, OuterRef, Q, Subquery, Sum, Value, When
-from django.db.models.functions import Cast, Coalesce, Ln
+from django.db.models import Avg, Case, Count, Exists, F, FloatField, IntegerField, Max, Min, OuterRef, Q, Subquery, Sum, Value, When, Window
+from django.db.models.functions import Cast, Coalesce, Ln, RowNumber, TruncDate
 from django.http import JsonResponse
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
@@ -2008,10 +2008,41 @@ def _resale_price(r):
     return None
 
 
+def _resale_source_images(sources):
+    """연결 상품의 이미지 후보를 브라우저 성공 가능성이 높은 순서로 돌려준다.
+
+    예전 구현은 ``thumbnail_url`` 자체가 비어 있지 않은 첫 행을 고른 뒤
+    ``absolute_image_url`` 변환이 실패해도 그대로 ``None``을 확정했다. 그래서 같은
+    표준상품의 두 번째·세 번째 소스에 정상 이미지가 있어도 화면에는 빠졌다.
+
+    KREAM의 오래된 CDN 주소는 문자열은 정상이어도 원격에서 만료된 경우가 있어,
+    동일 상품의 무신사·USED 이미지를 먼저 쓰고 나머지는 브라우저 폴백 후보로 준다.
+    """
+    source_priority = {"MUSINSA": 0, "MUSINSA_USED": 1, "ZIGZAG": 2,
+                       "ABLY": 3, "KREAM": 9}
+    ordered = sorted(
+        sources,
+        key=lambda row: (not bool(row.thumbnail_url),
+                         source_priority.get(str(row.source.code or "").upper(), 5),
+                         row.market_type == ProductSource.MarketType.RESALE, row.id),
+    )
+    images = []
+    for source in ordered:
+        image = absolute_image_url(source.thumbnail_url, source.source.code)
+        if image and image not in images:
+            images.append(image)
+    return images
+
+
+def _resale_source_image(sources):
+    images = _resale_source_images(sources)
+    return images[0] if images else None
+
+
 def _resale_product_payload(product, sources):
     """표준상품 검색·리세일 본문이 함께 쓰는 최소 상품 정보."""
-    image = next((absolute_image_url(row.thumbnail_url, row.source.code)
-                  for row in sources if row.thumbnail_url), None)
+    images = _resale_source_images(sources)
+    image = images[0] if images else None
     canonical_name = (product.canonical_name or "").strip()
     display_name = canonical_name
     # 초기 표준화 자료에는 상품명이 '블랙'·'화이트'처럼 속성 한 단어로 축약된 행이 있다.
@@ -2033,7 +2064,132 @@ def _resale_product_payload(product, sources):
         "brand": product.brand.name if product.brand_id else None,
         "category": product.category.name if product.category_id else None,
         "image": image,
+        "images": images,
     }
+
+
+def _resale_listing_count(row):
+    """스냅샷 한 건에서 실제로 관측된 판매 매물 수와 완전성 여부를 읽는다.
+
+    USED는 한 ProductSource가 매물 한 건이라 listing_count/available_count가 채워진다.
+    KREAM은 그 칸이 비어 있고 ``market_metrics.sample_asks[].quantity``에 가격·사이즈별
+    판매 호가 수가 들어간다. asks_complete가 거짓이면 전체가 아니라 관측 하한이므로
+    partial=True를 함께 돌려 화면이 `건+`로 구분하게 한다.
+    """
+    for key in ("available_count", "listing_count", "available", "listings"):
+        value = row.get(key)
+        if value is not None:
+            return max(0, int(value)), False
+
+    metrics = row.get("market_metrics") or {}
+    coverage = metrics.get("coverage") or {}
+    asks = metrics.get("sample_asks") or []
+    quantities = []
+    for ask in asks:
+        if not isinstance(ask, dict) or ask.get("quantity") is None:
+            continue
+        try:
+            quantities.append(max(0, int(ask["quantity"])))
+        except (TypeError, ValueError):
+            continue
+    if quantities:
+        return sum(quantities), coverage.get("asks_complete") is not True
+
+    listings = metrics.get("sample_listings") or []
+    if listings:
+        ids = {str(item.get("inventory_item_id")) for item in listings
+               if isinstance(item, dict) and item.get("inventory_item_id") is not None}
+        count = len(ids) or len(listings)
+        return count, coverage.get("listings_complete") is not True
+
+    stats = metrics.get("sample_statistics") or {}
+    sample_count = stats.get("listing_sample_count")
+    if sample_count is not None:
+        return max(0, int(sample_count)), coverage.get("listings_complete") is not True
+    return None, False
+
+
+def _resale_recommendations(all_sources, latest_by_source, limit=15):
+    """브랜드·카테고리 시장 분석 아래에서 5장씩 순환할 실제 중고 매물 후보.
+
+    ProductSource와 최신 ResaleSnapshot이 모두 있는 행만 사용한다. 표준상품으로
+    묶인 여러 매물은 한 장으로 줄이고, 이미지가 없는 USED 매물은 같은 표준상품의
+    다른 플랫폼 이미지로 보완한다. 가격이나 이미지를 추정해서 만들지는 않는다.
+    """
+    by_product = defaultdict(list)
+    for source in all_sources:
+        if source.product_id:
+            by_product[source.product_id].append(source)
+
+    image_by_product = {
+        product_id: _resale_source_image(sources)
+        for product_id, sources in by_product.items()
+    }
+    candidates = []
+    for source in all_sources:
+        latest = latest_by_source.get(source.id)
+        if latest is None or source.market_type != ProductSource.MarketType.RESALE:
+            continue
+        image = (absolute_image_url(source.thumbnail_url, source.source.code)
+                 or image_by_product.get(source.product_id))
+        product = source.product if source.product_id else None
+        brand = None
+        if product and product.brand_id:
+            brand = product.brand.name
+        elif source.source_brand_id:
+            brand = source.source_brand.name
+        listing_count, listing_count_partial = _resale_listing_count(latest)
+        candidates.append({
+            "source_id": source.id,
+            "product_id": source.product_id,
+            "name": (source.source_name or (product.canonical_name if product else None)
+                     or source.source_product_id),
+            "brand": brand,
+            "model_code": source.style_no,
+            "image": image,
+            "platform": source.source.name,
+            "platform_code": source.source.code,
+            "price": _num(latest.get("price"), 0),
+            "listing_count": listing_count,
+            "listing_count_partial": listing_count_partial,
+            "observed_at": latest["day"].isoformat(),
+        })
+
+    # USED는 ProductSource 한 행이 실제 매물 한 건이다. 표준상품 카드 하나로 줄이기 전에
+    # 같은 표준상품·플랫폼의 여러 행을 합치지 않으면 언제나 대표 행의 1건만 보인다.
+    # KREAM도 같은 플랫폼 묶음 안에서는 JSONB 호가 수량을 합산한다.
+    grouped_candidates = defaultdict(list)
+    for row in candidates:
+        key = (("product", row["product_id"], row["platform_code"])
+               if row["product_id"] else ("source", row["source_id"], row["platform_code"]))
+        grouped_candidates[key].append(row)
+
+    candidates = []
+    for rows in grouped_candidates.values():
+        base = min(rows, key=lambda row: (not bool(row["image"]), row["name"] or ""))
+        known_counts = [row["listing_count"] for row in rows if row["listing_count"] is not None]
+        prices = [row["price"] for row in rows if row["price"] is not None]
+        base = {**base,
+                "listing_count": sum(known_counts) if known_counts else None,
+                "listing_count_partial": any(row["listing_count_partial"] for row in rows
+                                             if row["listing_count"] is not None),
+                "price": _num(_median(prices), 0),
+                "observed_at": max(row["observed_at"] for row in rows)}
+        candidates.append(base)
+
+    # 표준상품은 플랫폼이 달라도 한 장만 보여 준다. 아직 매핑 전인 행은 source 단위다.
+    candidates.sort(key=lambda row: (not bool(row["image"]), -(row["listing_count"] or 0),
+                                     row["name"] or ""))
+    result, seen = [], set()
+    for row in candidates:
+        key = ("product", row["product_id"]) if row["product_id"] else ("source", row["source_id"])
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(row)
+        if len(result) >= limit:
+            break
+    return result
 
 
 def _resale_platform_cards(sources):
@@ -2083,17 +2239,17 @@ def _resale_platform_cards(sources):
                   if row["last_trade_price"] is not None]
         observed_at = max([row["observed_at"] for row in [*retail_rows, *resale_rows]])
 
-        available = 0
+        available_values = []
+        listing_count_partial = False
         for row in resale_rows:
             metrics = row.get("market_metrics") or {}
             if metrics.get("is_sold_out") is True:
                 continue
-            # USED는 ProductSource 한 행이 매물 하나다. 크림처럼 집계 스냅샷이면
-            # available_count/listing_count가 그 안의 실제 매물 수다.
-            count = row["available_count"]
-            if count is None:
-                count = row["listing_count"]
-            available += max(0, int(count)) if count is not None else 1
+            count, partial = _resale_listing_count(row)
+            if count is not None:
+                available_values.append(count)
+                listing_count_partial = listing_count_partial or partial
+        available = sum(available_values) if available_values else None
 
         list_price = _median(list_prices)
         sale_price = _median(sale_prices)
@@ -2114,6 +2270,7 @@ def _resale_platform_cards(sources):
             "sale_price": _num(sale_price, 0),
             "discount_rate": _num(discount, 1),
             "listing_count": available if resale_rows else None,
+            "listing_count_partial": listing_count_partial if available is not None else False,
             "median_price": _num(_median(resale_prices), 0),
             "min_price": _num(min(resale_prices), 0) if resale_prices else None,
             "max_price": _num(max(resale_prices), 0) if resale_prices else None,
@@ -2127,23 +2284,34 @@ def _resale_platform_cards(sources):
 
 @require_GET
 def resale_products(request):
-    """GET /api/resale/products?q=에어포스 — 리세일 분석용 표준상품 검색.
+    """GET /api/resale/products?q=에어포스&kind=쇼츠 — 리세일 상품 검색.
 
     표준상품(Product)을 먼저 돌려주고, 아직 표준상품에 연결되지 않은 리셀 상품은
-    `platform_only` 후보로 분리한다. 플랫폼 단독 후보를 표준상품인 것처럼 합치지 않는다.
+    `platform_only` 후보로 분리한다. 검색어가 없어도 브랜드·카테고리·스타일 조건에
+    맞는 상품을 보여 줘 세부 검색의 마지막 칸이 비어 있지 않게 한다.
+
+    플랫폼 단독 후보를 표준상품인 것처럼 합치지 않는다.
     """
     query = (request.GET.get("q") or "").strip()
     limit = _int(request, "limit", 16, 1, 40)
-    if not query:
-        return _empty("상품명이나 모델번호를 입력해 주세요.")
+    sel = _selection(request)
+    has_selection = any(sel.values())
 
     has_resale = Exists(
         ResaleSnapshot.objects.filter(product_source__product_id=OuterRef("pk"))
     )
+    latest_resale = (ResaleSnapshot.objects
+                     .filter(product_source__product_id=OuterRef("pk"))
+                     .order_by("-observed_at").values("observed_at")[:1])
     products = (Product.objects.filter(status=Product.Status.ACTIVE)
-                .annotate(_has_resale=has_resale)
-                .filter(_has_resale=True)
-                .filter(
+                .annotate(_has_resale=has_resale, _last_resale=Subquery(latest_resale))
+                .filter(_has_resale=True))
+    if has_selection:
+        matched_products = (_selected_sources(sel).exclude(product_id__isnull=True)
+                            .values("product_id"))
+        products = products.filter(id__in=matched_products)
+    if query:
+        products = products.filter(
                     Q(canonical_name__icontains=query)
                     | Q(normalized_name__icontains=query)
                     | Q(product_code__icontains=query)
@@ -2151,9 +2319,8 @@ def resale_products(request):
                     | Q(sources__style_no__icontains=query)
                     | Q(brand__name__icontains=query)
                 )
-                .select_related("brand", "category")
-                .distinct()
-                .order_by("canonical_name")[:limit])
+    products = (products.select_related("brand", "category")
+                .distinct().order_by("-_last_resale", "canonical_name")[:limit])
 
     product_rows = list(products)
     product_ids = [row.id for row in product_rows]
@@ -2186,16 +2353,21 @@ def resale_products(request):
     # 이 후보는 선택해도 그 플랫폼 한 건만 분석하며 다른 플랫폼과 추정 결합하지 않는다.
     remaining = max(0, limit - len(items))
     if remaining:
-        solo = (ProductSource.objects.filter(
+        solo = ProductSource.objects.filter(
                     product_id__isnull=True,
                     status="ACTIVE",
                     resale_snapshots__isnull=False,
                 )
-                .filter(Q(source_name__icontains=query) | Q(style_no__icontains=query)
-                        | Q(source_brand__name__icontains=query))
-                .select_related("source", "source_brand")
-                .distinct().order_by("source_name", "id")[:remaining])
+        if has_selection:
+            solo = _apply(solo, sel)
+        if query:
+            solo = solo.filter(Q(source_name__icontains=query) | Q(style_no__icontains=query)
+                               | Q(source_brand__name__icontains=query))
+        solo = (solo.select_related("source", "source_brand")
+                .annotate(_last_resale=Max("resale_snapshots__observed_at"))
+                .order_by("-_last_resale", "source_name", "id")[:remaining])
         for source in solo:
+            image = absolute_image_url(source.thumbnail_url, source.source.code)
             items.append({
                 "id": source.id,
                 "type": "platform_only",
@@ -2203,14 +2375,16 @@ def resale_products(request):
                 "name": source.source_name or "상품명 없음",
                 "brand": source.source_brand.name if source.source_brand_id else None,
                 "category": None,
-                "image": absolute_image_url(source.thumbnail_url, source.source.code),
+                "image": image,
+                "images": [image] if image else [],
                 "platforms": [{"code": source.source.code, "name": source.source.name, "count": 1}],
                 "source_count": 1,
             })
 
     if not items:
-        return _empty(f"‘{query}’으로 찾은 중고·리셀 상품이 없습니다.")
-    return _ok({"query": query, "items": items, "count": len(items)})
+        target = f"‘{query}’" if query else _selection_label(sel) or "현재 조건"
+        return _empty(f"{target}으로 찾은 중고·리셀 상품이 없습니다.")
+    return _ok({"query": query, "selection": sel, "items": items, "count": len(items)})
 
 
 @require_GET
@@ -2261,6 +2435,13 @@ def resale(request):
                  else selected_source.source_name or selected_source.source_product_id)
     else:
         label = _selection_label(sel)
+        active_axes = [axis for axis, values in sel.items() if values]
+        if active_axes == ["brand"]:
+            analysis_scope = "brand"
+        elif active_axes == ["kind"]:
+            analysis_scope = "category"
+        elif active_axes == ["style"]:
+            analysis_scope = "style"
     term_name = (request.GET.get("term") or "").strip() or label
     metric_term = _selection_term(sel, term_name) if any(sel.values()) else _resolve_term(term_name)
 
@@ -2274,16 +2455,17 @@ def resale(request):
         sources = ProductSource.objects.filter(
             Q(id__in=matched.values("id"))
             | Q(product_id__in=matched.exclude(product_id__isnull=True).values("product_id")))
-        all_sources = list(sources.select_related(
-            "source", "source_brand", "source_category", "product"
-        )[:10000])
+        # 여기서 일반 판매 소스까지 1만 행을 먼저 materialize하면 큰 브랜드는
+        # 리세일 스냅샷을 읽기 전부터 수 초를 쓴다. 아래에서 실제 스냅샷이 확인된
+        # source id를 확정한 뒤 필요한 행만 가져온다.
+        all_sources = None
     resale_src = sources.filter(Q(market_type="RESALE") | Q(resale_snapshots__isnull=False)).distinct()
     ps = list(resale_src.values("id", "product_id", "source__code", "source__name")[:5000])
     basis_note = None
     # ★ 2026-09-20 — 크림 · 무신사 유즈드 매물에는 스타일 태그가 거의 없다(크림 0 · 유즈드 5건).
     #   스타일로 고르면 매물이 몇 건뿐이라, 그 스타일로 태그된 일반 판매 상품의 **대표 브랜드**
     #   매물로 넓혀 본다. 대표 브랜드와 기준을 응답에 적어 화면·챗봇이 밝힐 수 있게 한다.
-    if analysis_scope == "selection" and sel.get("style") and len(ps) < RESALE_STYLE_MIN:
+    if analysis_scope in {"selection", "style"} and sel.get("style") and len(ps) < RESALE_STYLE_MIN:
         brands = _style_proxy_brands(sel["style"])
         if brands:
             proxy_sel = {**sel, "style": [], "brand": brands}
@@ -2297,6 +2479,9 @@ def resale(request):
     if not ps:
         return _empty(f"‘{label}’ 조건에 맞는 리셀·중고 매물이 없습니다.", label=label)
     ps_by_id = {p["id"]: p for p in ps}
+    broad_scope = analysis_scope in {"brand", "category", "style", "selection"}
+    if all_sources is None:
+        all_sources = []
 
     snaps = ResaleSnapshot.objects.filter(product_source_id__in=list(ps_by_id))
     last_obs = snaps.aggregate(d=Max("observed_at"))["d"]
@@ -2304,28 +2489,54 @@ def resale(request):
         return _empty(f"‘{label}’ 매물 {len(ps)}개에 시세 스냅샷이 아직 없습니다.", label=label)
     since = last_obs - timedelta(days=max(days, 56))
 
-    # 정가 후보 — 같은 표준상품의 일반 판매 최신 정가
+    # 신상품 기준가 — 같은 표준상품을 판매하는 각 일반 판매처의 최신 할인가를
+    # 먼저 쓰고, 할인가가 없을 때만 표기 정가를 쓴 뒤 상품별 중앙값을 낸다.
+    # 한 판매처 한 행이나 MSRP를 대표값처럼 쓰지 않는다.
     product_ids = {p["product_id"] for p in ps if p["product_id"]}
     retail_price = {}
     if product_ids:
+        retail_price_rows = defaultdict(list)
         for r in (ProductSourceSnapshot.objects
-                  .filter(product_source__product_id__in=product_ids, list_price__isnull=False)
+                  .filter(product_source__product_id__in=product_ids)
                   .exclude(product_source__market_type="RESALE")
-                  .order_by("product_source__product_id", "-observed_at")
-                  .values("product_source__product_id", "list_price")):
-            retail_price.setdefault(r["product_source__product_id"], _num(r["list_price"]))
+                  .filter(Q(sale_price__isnull=False) | Q(list_price__isnull=False))
+                  .order_by("product_source_id", "-observed_at")
+                  .distinct("product_source_id")
+                  .values("product_source__product_id", "sale_price", "list_price")):
+            price = _num(r["sale_price"]) or _num(r["list_price"])
+            if price is not None:
+                retail_price_rows[r["product_source__product_id"]].append(price)
+        retail_price = {product_id: _median(prices)
+                        for product_id, prices in retail_price_rows.items()}
 
-    rows = list(snaps.filter(observed_at__gte=since).order_by("observed_at").values(
+    row_fields = [
         "product_source_id", "observed_at", "listing_count", "available_count", "min_price",
         "max_price", "avg_price", "median_price", "sold_count", "lowest_ask", "highest_bid",
         "last_trade_price", "trade_volume", "resale_price_ratio", "resale_index",
-        "market_metrics")[:60000])
+    ]
+    snapshot_rows = snaps.filter(observed_at__gte=since)
+    if broad_scope:
+        # 브랜드·카테고리는 동일 매물이 하루에 여러 번 수집되어도 마지막 관측 한 건만
+        # 대표로 쓴다. 같은 매물을 수집 횟수만큼 과대 가중하지 않고 전송량도 줄인다.
+        snapshot_rows = (snapshot_rows.annotate(
+            snapshot_day=TruncDate("observed_at"),
+            daily_rank=Window(
+                expression=RowNumber(),
+                partition_by=[F("product_source_id"), TruncDate("observed_at")],
+                order_by=F("observed_at").desc(),
+            ),
+        ).filter(daily_rank=1).order_by("product_source_id", "observed_at"))
+    else:
+        snapshot_rows = snapshot_rows.order_by("observed_at")
+        row_fields.append("market_metrics")
+    rows = list(snapshot_rows.values(*row_fields)[:60000])
 
     recs = []
     for r in rows:
-        mm = r["market_metrics"] or {}
+        mm = r.get("market_metrics") or {}
         price = _resale_price(r)
-        regular = _num(mm.get("regular_price")) or retail_price.get(ps_by_id[r["product_source_id"]]["product_id"])
+        regular = (retail_price.get(ps_by_id[r["product_source_id"]]["product_id"])
+                   or _num(mm.get("regular_price")))
         ratio = _num(r["resale_price_ratio"])
         if ratio is None and price and regular:
             ratio = price / regular
@@ -2338,10 +2549,76 @@ def resale(request):
             "trade": _num(r["last_trade_price"]),
             "volume": r["trade_volume"] if r["trade_volume"] is not None else r["sold_count"],
             "listings": r["listing_count"],
+            "available_count": r["available_count"],
+            "market_metrics": mm,
             "size": mm.get("size"), "grade": mm.get("condition_grade") or mm.get("condition_grade_raw"),
             "sold_out": mm.get("is_sold_out"),
             "platform": ps_by_id[r["product_source_id"]]["source__name"],
         })
+
+    latest_by_source = {}
+    for record in recs:
+        latest_by_source[record["pid"]] = record
+
+    recommendation_sources = all_sources
+    if broad_scope:
+        # 추천 5장을 위해 5천 ProductSource 전체 모델을 읽지 않는다. 최신 관측 중
+        # 매물 수가 많은 후보 40개만 상세 정보와 이미지를 읽는다.
+        candidate_ids = [source_id for source_id, _ in sorted(
+            latest_by_source.items(),
+            key=lambda item: (-(item[1].get("listings") or 1), item[1]["day"], -item[0]),
+        )[:40]]
+        recommendation_sources = list(ProductSource.objects.filter(id__in=candidate_ids).select_related(
+            "source", "source_brand", "source_category", "product", "product__brand"
+        ))
+        # 추천 카드는 표준상품 하나를 대표하므로 후보 한 행만 읽으면 USED가 항상 1건으로
+        # 보인다. 후보 표준상품에 연결된 리세일 ProductSource를 모두 가져와 플랫폼별
+        # 현재 매물 수를 합칠 수 있게 한다. 플랫폼 단독 후보는 기존 source 단위로 유지한다.
+        recommendation_product_ids = {row.product_id for row in recommendation_sources
+                                      if row.product_id}
+        if recommendation_product_ids:
+            mapped_resale_sources = list(ProductSource.objects.filter(
+                product_id__in=recommendation_product_ids,
+                status=ProductSource.Status.ACTIVE,
+                market_type=ProductSource.MarketType.RESALE,
+            ).select_related(
+                "source", "source_brand", "source_category", "product", "product__brand"
+            ))
+            platform_only_sources = [row for row in recommendation_sources if not row.product_id]
+            recommendation_sources = mapped_resale_sources + platform_only_sources
+        # 브랜드·카테고리 시계열은 전송량 때문에 JSONB를 제외하지만 추천 카드 40건은
+        # KREAM의 sample_asks 수량과 USED 연결 매물 수가 필요하다. 후보 표준상품에
+        # 연결된 리세일 source의 최신 스냅샷만 다시 읽는다.
+        recommendation_source_ids = [row.id for row in recommendation_sources]
+        candidate_latest = {}
+        for row in (ResaleSnapshot.objects.filter(product_source_id__in=recommendation_source_ids)
+                    .order_by("product_source_id", "-observed_at")
+                    .distinct("product_source_id")
+                    .values("product_source_id", "observed_at", "listing_count", "available_count",
+                            "min_price", "max_price", "avg_price", "median_price", "lowest_ask",
+                            "last_trade_price", "market_metrics")):
+            candidate_latest.setdefault(row["product_source_id"], row)
+        for source_id, row in candidate_latest.items():
+            record = latest_by_source.get(source_id)
+            if record is None:
+                record = {
+                    "pid": source_id,
+                    "day": timezone.localtime(row["observed_at"]).date(),
+                    "price": _resale_price(row),
+                }
+                latest_by_source[source_id] = record
+            record["listing_count"] = row["listing_count"]
+            record["available_count"] = row["available_count"]
+            record["market_metrics"] = row["market_metrics"] or {}
+        donors = list(ProductSource.objects.filter(
+            product_id__in=recommendation_product_ids,
+            thumbnail_url__isnull=False,
+        ).exclude(thumbnail_url="").order_by("product_id", "id")
+          .distinct("product_id").select_related(
+              "source", "source_brand", "source_category", "product", "product__brand"
+          ))
+        have_source_ids = {row.id for row in recommendation_sources}
+        recommendation_sources += [row for row in donors if row.id not in have_source_ids]
 
     last_day = timezone.localtime(last_obs).date()
     win = [x for x in recs if x["day"] > last_day - timedelta(days=days)]
@@ -2387,6 +2664,16 @@ def resale(request):
         out = [{"label": k, "count": len(v), "share_pct": round(len(v) / total * 100, 1),
                 "ratio": _num(_median([y["ratio"] for y in v]), 3),
                 "price": _num(_median([y["price"] for y in v]), 0)} for k, v in g.items()]
+        if key == "grade":
+            grade_order = {
+                "S+": 0, "S": 1, "A+": 2, "A": 3, "B+": 4, "B": 5,
+                "C+": 6, "C": 7, "D": 8,
+                "새상품": 0, "미사용": 1, "최상": 2, "상": 3, "중": 5, "하": 7,
+            }
+            def grade_rank(row):
+                normalized = str(row["label"]).upper().replace("급", "").replace(" ", "")
+                return grade_order.get(normalized, 99), -row["count"], normalized
+            return sorted(out, key=grade_rank)[:12]
         return sorted(out, key=lambda o: -o["count"])[:12]
 
     asks = [x["ask"] for x in win if x["ask"]]
@@ -2416,6 +2703,16 @@ def resale(request):
     # 플랫폼 비교는 표준상품 하나 또는 플랫폼 단독 상품 하나를 고른 경우에만 제공한다.
     platform_cards = (_resale_platform_cards(all_sources)
                       if analysis_scope in {"product", "platform_only"} else [])
+    current_listing_values = [row["listing_count"] for row in platform_cards
+                              if row["market"] == "resale" and row["listing_count"] is not None]
+    current_listing_count = (sum(current_listing_values)
+                             if current_listing_values else None)
+    current_listing_count_partial = any(
+        row["listing_count_partial"] for row in platform_cards
+        if row["market"] == "resale" and row["listing_count"] is not None
+    )
+    recommendations = (_resale_recommendations(recommendation_sources, latest_by_source)
+                       if analysis_scope in {"brand", "category", "style", "selection"} else [])
     observed_days = len({x["day"] for x in win})
     platform_count = len(platform_cards)
     if analysis_scope == "product" and platform_count >= 2 and len({x["pid"] for x in win}) >= 10 \
@@ -2425,6 +2722,39 @@ def resale(request):
         confidence = {"code": "medium", "label": "보통"}
     else:
         confidence = {"code": "low", "label": "낮음"}
+
+    grouped_platforms = group("platform")
+    keep_pct = round(ratio_now * 100, 1) if ratio_now is not None else None
+    volume_change_pct = (round((vol_now - vol_prev) / vol_prev * 100, 1)
+                         if vol_prev else None)
+    has_trade_volume = vol_basis != "observed_listings"
+    md_signals = [
+        {
+            "label": "가격 방어율",
+            "value": f"{keep_pct:g}%" if keep_pct is not None else "측정 전",
+            "tone": ("positive" if keep_pct is not None and keep_pct >= 70
+                     else "neutral" if keep_pct is not None and keep_pct >= 45 else "caution"),
+            "description": ("관측 중고가의 정가 대비 중앙값입니다."
+                            if keep_pct is not None else "정가와 중고가가 함께 연결되면 계산됩니다."),
+        },
+        {
+            "label": "거래량 증감률",
+            "value": (f"{volume_change_pct:+g}%" if has_trade_volume and volume_change_pct is not None
+                      else "측정 전"),
+            "tone": ("positive" if has_trade_volume and volume_change_pct is not None
+                     and volume_change_pct > 0 else "neutral"),
+            "description": ("최근 4주 중고거래량을 직전 4주와 비교했습니다."
+                            if has_trade_volume and volume_change_pct is not None
+                            else "실제 거래량이 두 기간에 쌓이면 증감률을 계산합니다."),
+        },
+        {
+            "label": "프리미엄 지속 기간",
+            "value": f"{prem_days}일" if ratio_now is not None else "측정 전",
+            "tone": "positive" if prem_days > 0 else "neutral",
+            "description": ("정가보다 중고가가 높았던 최근 연속 기간입니다."
+                            if ratio_now is not None else "정가 대비 중고가 시계열이 쌓이면 계산됩니다."),
+        },
+    ]
 
     return _ok({
         "label": label,
@@ -2439,10 +2769,14 @@ def resale(request):
         "mapping": {
             "platform_count": platform_count,
             "platforms": [row["name"] for row in platform_cards],
-            "source_count": len(all_sources),
+            "source_count": len(ps) if broad_scope else len(all_sources),
         },
         "platform_cards": platform_cards,
-        "keep_pct": round(ratio_now * 100, 1) if ratio_now is not None else None,
+        "current_listing_count": current_listing_count,
+        "current_listing_count_partial": current_listing_count_partial,
+        "recommendations": recommendations,
+        "md_signals": md_signals,
+        "keep_pct": keep_pct,
         "keep_change_pp": round((ratio_now - ratio_prev) * 100, 1)
         if ratio_now is not None and ratio_prev is not None else None,
         "premium": (ratio_now or 0) >= 1,
@@ -2451,11 +2785,11 @@ def resale(request):
         "regular_price": _num(_median([x["regular"] for x in (wk or win)]), 0),
         "resale_index": _num(_median([x["index"] for x in (wk or win)]), 3),
         "volume_4w": vol_now,
-        "volume_change_pct": round((vol_now - vol_prev) / vol_prev * 100, 1) if vol_prev else None,
+        "volume_change_pct": volume_change_pct,
         "volume_basis": vol_basis,
         "sizes": group("size"),
         "grades": group("grade"),
-        "platforms": group("platform"),
+        "platforms": grouped_platforms,
         "spread": spread,
         "basis_note": basis_note,
         "series": series,

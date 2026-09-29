@@ -260,7 +260,7 @@ function collBuild(){ phoneBuild('collStage','collCap') }
 const ANZ_SIDE=[
   {ic:'◧',t:'내 피드'},{ic:'◔',t:'금주의 리포트'},{ic:'♡',t:'찜한 키워드'},
   {ic:'◉',t:'언급량 · 온도'},{ic:'✳',t:'연관어'},{ic:'⇅',t:'긍부정'},
-  {ic:'▤',t:'할인률 변화'},{ic:'◇',t:'리세일 시세 지수'},{ic:'◠',t:'수명주기'}
+  {ic:'▤',t:'할인률 변화'},{ic:'◇',t:'리세일 지수'},{ic:'◠',t:'수명주기'}
 ];
 const K=(l,v,u,d,up)=>'<div class="zk"><span>'+l+'</span><b>'+v+(u?'<u>'+u+'</u>':'')+
   '</b><em class="'+(up?'up':'dn')+'">'+d+'</em></div>';

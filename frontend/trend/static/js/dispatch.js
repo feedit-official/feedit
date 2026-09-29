@@ -2,7 +2,7 @@ import { $, $$, HAS_A, aAnimate, aSpring, aStagger, aUtils } from '../../../core
 import { WK, feedSmPicks, feedSmLoad } from './my_feed.js';
 import { STYLES } from '../../../home/static/js/chat.js';
 import { SIMG } from '../../../style/static/js/style_page.js';
-import { FS, getFsCols, fsBuild, fsChipsPaint, fsDropDisallowed, fsHideSug, fsLoadDictionary, fsOpenPop, fsReset, fsPaintPop, fsStockSelect, fsStockClear } from '../../../style/static/js/search.js';
+import { FS, getFsCols, fsBuild, fsChipsPaint, fsDropDisallowed, fsHideSug, fsLoadDictionary, fsOpenPop, fsReset, fsPaintPop, fsStockSelect, fsStockClear, fsResaleSelect } from '../../../style/static/js/search.js';
 import { G_CFG, KW, fsItem, fsItemFull, fsSelectionLabel, gMount, josa, trEmpty, trFillBars, trToast } from './render_helpers.js';
 import { ME, bioPaint } from '../../../account/static/js/profile.js';
 import { S_EDIT, S_FEED, TR_META } from './nav_meta.js';
@@ -476,8 +476,28 @@ document.addEventListener('click',e=>{
 /* DB 에서 온 글자는 반드시 이스케이프해서 넣는다 */
 function trEsc(v){ return String(v==null?'':v).replace(/[&<>"']/g,m=>(
   {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])) }
-let RESALE_MODE='buy';
+let RESALE_MODE='buy', RESALE_REC_OFFSET=0, RESALE_REC_KEY='';
+document.addEventListener('error',e=>{
+  if(e.target&&e.target.matches&&e.target.matches('.resaleIdentityImg img,.resaleRecImg img')){
+    e.target.parentElement?.classList.add('imageError');
+  }
+},true);
 document.addEventListener('click',e=>{
+  const more=e.target.closest&&e.target.closest('[data-resale-more]');
+  if(more){
+    RESALE_REC_OFFSET+=5;
+    if(TR_CUR==='resale')trRender('resale');
+    return;
+  }
+  const rec=e.target.closest&&e.target.closest('[data-resale-rec-id]');
+  if(rec){
+    fsResaleSelect({id:Number(rec.dataset.resaleRecId),type:rec.dataset.resaleRecType,
+      name:rec.dataset.resaleRecName,brand:rec.dataset.resaleRecBrand||'',
+      image:rec.dataset.resaleRecImage||'',model_code:rec.dataset.resaleRecCode||'',platforms:[]});
+    fsChipsPaint();
+    if(TR_CUR==='resale')trRender('resale');
+    return;
+  }
   const b=e.target.closest&&e.target.closest('[data-resale-mode]');
   if(!b||!['buy','sell'].includes(b.dataset.resaleMode))return;
   RESALE_MODE=b.dataset.resaleMode;
@@ -1147,7 +1167,7 @@ export function trRender(id){
     return;
   }
 
-  const kpi=(l,v,u,d,up)=>'<div class="kpi"><span>'+l+'</span><b>'+v+(u?'<u>'+u+'</u>':'')+
+  const kpi=(l,v,u,d,up,attrs='')=>'<div class="kpi"'+attrs+'><span>'+l+'</span><b>'+v+(u?'<u>'+u+'</u>':'')+
     '</b><div class="dl '+(up?'up':'dn')+'">'+d+'</div></div>';
 
   /* ══════════════ 내 피드 — 취향 펄스 & 살!말? 큐레이션 ══════════════
@@ -1923,16 +1943,26 @@ export function trRender(id){
     const full=(D.product&&D.product.name)||fsSelectionLabel()||D.label||fsItemFull();
     const hasKeep=D.keep_pct!=null, keep=hasKeep?Math.round(D.keep_pct):null;
     const buyDelta=hasKeep?100-keep:null;
-    const dialScore=RESALE_MODE==='buy'?Math.max(0,Math.min(100,buyDelta)):Math.max(0,Math.min(100,keep||0));
-    const dialLabel=RESALE_MODE==='buy'?'정가 대비 절약 %':'정가 회수율 %';
     const RAMP=['#b23b3b','#c98a1b','#1f9e6e'];
-    const volLabel=D.volume_basis==='observed_listings'?'관측 매물':'거래량';
     const confidence=D.confidence&&D.confidence.label||'낮음';
     const product=D.product||null;
     const exact=D.analysis_scope==='product'||D.analysis_scope==='platform_only';
+    const resalePlatformCards=(D.platform_cards||[]).filter(card=>card.market==='resale');
+    const noCurrentListings=exact&&resalePlatformCards.length>0&&resalePlatformCards.every(card=>
+      card.listing_count===0||(card.listing_count==null&&card.median_price==null));
+    const currentListingCount=exact&&D.current_listing_count!=null?Number(D.current_listing_count):null;
+    const currentListingLabel=currentListingCount==null?'–':currentListingCount.toLocaleString()+(D.current_listing_count_partial?'+':'');
+    const scopeLabel={brand:'브랜드',category:'카테고리',style:'스타일',selection:'조건'}[D.analysis_scope]||'상품';
+    const dialScore=exact&&RESALE_MODE==='buy'?Math.max(0,Math.min(100,buyDelta)):Math.max(0,Math.min(100,keep||0));
+    const dialLabel=exact?(RESALE_MODE==='buy'?'정가 대비 절약 %':'정가 회수율 %'):'가치 유지율 %';
     const flow=D.keep_change_pp==null?null:(D.keep_change_pp<-1?'down':D.keep_change_pp>1?'up':'flat');
     let headline='', explanation='';
-    if(hasKeep&&RESALE_MODE==='buy'){
+    if(hasKeep&&!exact){
+      headline='<b>'+trEsc(full)+'</b> '+scopeLabel+'의 중고 가치는 정가 대비 <em>'+keep+'%</em> 수준이에요.';
+      explanation=flow==='down'?'최근 가치 유지율이 내려가는 구간입니다. 매입·재고 판단은 보수적으로 확인하세요.':
+        flow==='up'?'최근 가치 유지율이 오르는 구간입니다. 수요와 매물 증가가 함께 나타나는지 확인하세요.':
+        flow==='flat'?'최근 가치 유지율은 큰 변화 없이 유지되고 있습니다.':'현재 시장 수준은 확인되지만 이전 기간 비교 자료가 부족합니다.';
+    }else if(hasKeep&&RESALE_MODE==='buy'){
       headline=buyDelta>=0
         ? '<b>'+trEsc(full)+'</b>, 지금 사면 정가보다 <em>'+Math.round(buyDelta)+'% 저렴해요.</em>'
         : '<b>'+trEsc(full)+'</b>, 현재 정가보다 <em>'+Math.abs(Math.round(buyDelta))+'% 비싸요.</em>';
@@ -1948,44 +1978,68 @@ export function trRender(id){
         '가격 흐름을 판단할 이전 관측이 부족해 현재 시세만 보여 드립니다.';
     }
     const identity=product?'<section class="resaleIdentity">'+
-      '<div class="resaleIdentityImg">'+(product.image?'<img src="'+trEsc(product.image)+'" alt="" loading="lazy" referrerpolicy="no-referrer">':'<span>F</span>')+'</div>'+
+      '<div class="resaleIdentityImg"><span>F</span>'+(product.image?'<img src="'+trEsc(product.image)+'" alt="" loading="lazy" referrerpolicy="no-referrer">':'')+'</div>'+
       '<div><small>'+(product.mapped===false?'플랫폼 단독 상품':'FEEDiT 표준상품')+'</small><h3>'+trEsc(product.name||full)+'</h3>'+
       '<p>'+trEsc([product.brand,product.model_code,product.code,product.category].filter(Boolean).join(' · ')||'상품 부가정보 없음')+'</p></div>'+
       '<div class="resaleIdentityMeta"><b>'+((D.mapping&&D.mapping.platform_count)||0)+'개 플랫폼</b><span>'+
         trEsc((D.mapping&&D.mapping.platforms||[]).join(' · ')||'연결 플랫폼 집계 중')+'</span></div></section>':'';
-    const verdict=hasKeep?'<div class="verdict resaleVerdict" style="--sc:'+(dialScore>=60?'#1f9e6e':dialScore>=35?'#c98a1b':'#b23b3b')+'">'+
+    const verdict=noCurrentListings?'<div class="panelC resaleNoRatio"><b>현재 판매 중인 중고 매물이 없어요.</b>'+
+      '<p>새 매물이 확인되면 현재 시세와 정가 대비 비율을 함께 보여 드릴게요.</p></div>':
+      hasKeep?'<div class="verdict resaleVerdict" style="--sc:'+(dialScore>=60?'#1f9e6e':dialScore>=35?'#c98a1b':'#b23b3b')+'">'+
       '<div class="dial"><svg viewBox="0 0 120 120"><circle class="trk" cx="60" cy="60" r="50"/>'+
         '<circle class="val" cx="60" cy="60" r="50" data-ramp="'+RAMP.join(',')+'" data-score="'+dialScore+'" stroke-dasharray="314.16" stroke-dashoffset="314.16"/></svg>'+
         '<span class="num"><b data-count="'+dialScore+'">0</b><small>'+dialLabel+'</small></span></div>'+
-      '<div class="vdTx"><h4>'+headline+'</h4><p>'+explanation+'</p><div class="vdMeta">'+
-        (D.regular_price!=null?'<div><b>'+trWon(D.regular_price)+'</b><span>정가 중앙값</span></div>':'')+
-        (D.used_price!=null?'<div><b>'+trWon(D.used_price)+'</b><span>'+(RESALE_MODE==='buy'?'예상 구매가':'예상 판매가')+'</span></div>':'')+
-        (D.keep_change_pp!=null?'<div><b>'+(D.keep_change_pp>0?'+':'')+D.keep_change_pp+'%p</b><span>직전 기간 대비</span></div>':'')+
-        '<div><b>'+D.listings+'건</b><span>'+volLabel+'</span></div></div>'+
+      '<div class="vdTx"><h4>'+headline+'</h4><p>'+explanation+'</p>'+
         (D.basis_note?'<p class="vdBasis">'+trEsc(D.basis_note)+'</p>':'')+'</div></div>':
       '<div class="panelC resaleNoRatio"><b>현재 시세는 확인했지만 정가 대비 비율은 계산하지 않았어요.</b>'+
         '<p>같은 상품의 정가가 연결되면 구매 절약률과 판매 회수율이 자동으로 표시됩니다.</p></div>';
-    const kpis=[];
-    if(D.volume_4w!=null)kpis.push(kpi(volLabel,Number(D.volume_4w).toLocaleString(),'건','최근 4주',1));
-    if(D.volume_change_pct!=null)kpis.push(kpi(volLabel+' 증감률',(D.volume_change_pct>0?'+':'')+Math.round(D.volume_change_pct),'%','직전 4주 대비',D.volume_change_pct>=0?1:0));
-    if(D.observed_days!=null)kpis.push(kpi('관측 기간',D.observed_days,'일','최근 '+D.days+'일 범위',1));
-    kpis.push(kpi('판단 신뢰도',confidence,'',((D.mapping&&D.mapping.source_count)||D.listings)+'개 연결 자료 기준',confidence==='낮음'?0:1));
+    const hasTradeVolume=D.volume_basis!=='observed_listings';
+    const kpis=[
+      kpi('정가',D.regular_price==null?'–':trWon(D.regular_price),'','현재 할인 판매가 중앙값',D.regular_price!=null),
+      kpi('중고가',noCurrentListings||D.used_price==null?'–':trWon(D.used_price),'','최근 관측 중고가 중앙값',!noCurrentListings&&D.used_price!=null),
+      kpi('현재 매물 수',currentListingLabel,currentListingCount==null?'':'건',currentListingCount==null?'현재 수량 미적재':'최신 판매 매물 기준',currentListingCount>0,
+        ' data-current-listings="'+(currentListingCount==null?'':currentListingCount)+'"'),
+      kpi('4주간 중고거래량',hasTradeVolume&&D.volume_4w!=null?Number(D.volume_4w).toLocaleString():'측정 전',hasTradeVolume&&D.volume_4w!=null?'건':'',
+        hasTradeVolume?'최근 4주 실제 거래 기준':'실거래량 미적재',hasTradeVolume&&D.volume_4w!=null),
+    ];
     const cards=(D.platform_cards||[]).map(card=>{
       const isResale=card.market==='resale';
-      const main=isResale?(card.median_price!=null?trWon(card.median_price):'가격 집계 중'):
+      const noListing=isResale&&card.listing_count===0;
+      const main=noListing?'현재 판매 중인 중고 매물이 없어요':isResale?(card.median_price!=null?trWon(card.median_price):'가격 집계 중'):
         (card.sale_price!=null?trWon(card.sale_price):card.list_price!=null?trWon(card.list_price):'가격 집계 중');
       const facts=[];
-      if(isResale&&card.listing_count!=null)facts.push('매물 '+card.listing_count+'건');
+      if(noListing)facts.push('새 매물이 등록되면 시세를 다시 확인할 수 있어요');
+      else if(isResale&&card.listing_count!=null)facts.push('매물 '+card.listing_count+'건'+(card.listing_count_partial?'+':''));
       if(isResale&&card.min_price!=null)facts.push('최저 '+trWon(card.min_price));
       if(!isResale&&card.discount_rate!=null)facts.push('정가 대비 '+card.discount_rate+'% 할인');
       if(card.product_sources>1)facts.push('연결 상품 '+card.product_sources+'건');
       return '<article class="resalePlatformCard"><div><span>'+trEsc(card.name)+'</span><em>'+(isResale?'중고·리셀':'신상품')+'</em></div>'+
         '<b>'+main+'</b><p>'+trEsc(facts.join(' · ')||'최신 관측 가격')+'</p><small>'+trEsc(String(card.as_of||'').slice(0,10))+' 기준</small></article>';
     }).join('');
+    const recommendationPool=D.recommendations||[];
+    const recommendationKey=[D.analysis_scope,full,recommendationPool.map(item=>item.source_id).join(',')].join('|');
+    if(RESALE_REC_KEY!==recommendationKey){ RESALE_REC_KEY=recommendationKey; RESALE_REC_OFFSET=0; }
+    const recommendationSlice=recommendationPool.length<=5?recommendationPool:
+      Array.from({length:5},(_,index)=>recommendationPool[(RESALE_REC_OFFSET+index)%recommendationPool.length]);
+    const recommendations=recommendationSlice.map(rec=>{
+      const type=rec.product_id?'product':'platform_only', id=rec.product_id||rec.source_id;
+      const noListing=rec.listing_count===0;
+      const facts=[rec.platform,noListing?'현재 판매 중인 매물 없음':rec.listing_count!=null?'관측 매물 '+rec.listing_count+'건'+(rec.listing_count_partial?'+':''):'',rec.model_code].filter(Boolean).join(' · ');
+      return '<button type="button" class="resaleRecCard" data-resale-rec-id="'+trEsc(id)+'" data-resale-rec-type="'+type+'"'+
+        ' data-resale-rec-name="'+trEsc(rec.name)+'" data-resale-rec-brand="'+trEsc(rec.brand||'')+'" data-resale-rec-code="'+trEsc(rec.model_code||'')+'" data-resale-rec-image="'+trEsc(rec.image||'')+'">'+
+        '<span class="resaleRecImg"><i>F</i>'+(rec.image?'<img src="'+trEsc(rec.image)+'" alt="" loading="lazy" referrerpolicy="no-referrer">':'')+'</span>'+
+        '<span class="resaleRecTx"><small>'+trEsc(rec.brand||scopeLabel+' 추천')+'</small><b>'+trEsc(rec.name)+'</b><em>'+trEsc(facts)+'</em>'+
+        '<strong>'+(noListing?'현재 판매 중인 중고 매물이 없어요':rec.price!=null?trWon(rec.price):'가격 집계 중')+'</strong></span></button>';
+    }).join('');
+    const mdSignals=(D.md_signals||[]).slice(0,3).map(signal=>'<article class="resaleMdCard '+trEsc(signal.tone||'neutral')+'"><small>'+trEsc(signal.label)+'</small>'+
+      '<b>'+trEsc(signal.value)+'</b><p>'+trEsc(signal.description)+'</p></article>').join('');
     const panels=[];
-    const showChart=(D.series||[]).length>=2;
-    if(showChart)panels.push('<div class="panelC"><div class="gHead"><h3>가치 변화</h3></div><div data-chart="resMain"></div>'+
+    const resaleSeries=Array.isArray(D.series)?D.series:[];
+    panels.push('<div class="panelC"><div class="gHead"><h3>가치 변화</h3></div><div data-chart="resMain"></div>'+
       '<div class="note"><i>◆</i>날짜별 정가 대비 중고 가치의 중앙값입니다.</div></div>');
+    const temperatureRows=D.temperature&&Array.isArray(D.temperature.series)?D.temperature.series:[];
+    panels.push('<div class="panelC"><div class="gHead"><h3>가치 유지율 vs 트렌드 온도</h3></div><div data-chart="resValueTrend"></div>'+
+      '<div class="note"><i>◆</i>가치가 먼저 움직이는지, 관심 온도가 먼저 움직이는지 함께 봅니다.</div></div>');
     if((D.grades||[]).length)panels.push('<div class="panelC"><div class="gHead"><h3>상태별 가격대</h3></div>'+
       '<table class="mTable"><tr><th>상태</th><th>비중</th><th>시세</th></tr>'+D.grades.map(r=>'<tr><td>'+trEsc(r.label)+'</td>'+
         '<td><span class="bar" style="display:block"><i style="width:'+Math.round(r.share_pct)+'%"></i></span></td><td class="n">'+trWon(r.price)+'</td></tr>').join('')+'</table></div>');
@@ -1997,21 +2051,26 @@ export function trRender(id){
       '<div class="svSpreadRow"><span>최근 거래 사례 중앙값</span><b>'+trWon(D.spread.trade)+'</b></div>'+
       '<div class="note"><i>◆</i>동일 표준상품으로 연결된 자료만 사용하며 상태·사이즈 차이는 남아 있을 수 있습니다.</div></div>');
     body.innerHTML=
-      '<div class="resaleMode" role="group" aria-label="중고 시세 목적"><button type="button" data-resale-mode="buy" class="'+(RESALE_MODE==='buy'?'on':'')+'">사려고 해요</button>'+
-        '<button type="button" data-resale-mode="sell" class="'+(RESALE_MODE==='sell'?'on':'')+'">팔려고 해요</button></div>'+
+      (exact?'<div class="resaleMode" role="group" aria-label="리세일 지수 목적"><button type="button" data-resale-mode="buy" class="'+(RESALE_MODE==='buy'?'on':'')+'">사려고 해요</button>'+
+        '<button type="button" data-resale-mode="sell" class="'+(RESALE_MODE==='sell'?'on':'')+'">팔려고 해요</button></div>':'')+
       identity+verdict+
       '<div class="note resaleBasis"><i>◆</i>'+trEsc(String(D.as_of).slice(0,10))+' 기준 · 최근 '+D.days+'일 · 판단 신뢰도 '+trEsc(confidence)+
         (product&&product.mapped===false?' · 아직 다른 플랫폼과 표준상품 매핑 전':'')+'</div>'+
       (kpis.length?'<div class="kpis">'+kpis.join('')+'</div>':'')+
       (cards?'<section class="resalePlatforms"><div class="gHead"><h3>플랫폼별 현재 가격</h3><p>DB에서 같은 표준상품으로 연결된 플랫폼만 표시합니다.</p></div><div class="resalePlatformGrid">'+cards+'</div></section>':'')+
+      (recommendations?'<section class="resaleRecommendations"><div class="gHead"><div><h3>'+trEsc(full)+' 중고 추천 상품</h3><p>USED·크림에서 실제 관측된 상품을 5개씩 보여 줍니다.</p></div>'+
+        (recommendationPool.length>5?'<button type="button" class="resaleMore" data-resale-more>다른 상품 보기 <span>↻</span></button>':'')+'</div><div class="resaleRecGrid">'+recommendations+'</div></section>':'')+
+      (mdSignals?'<section class="resaleMd"><div class="gHead"><div><h3>리세일 시장 한눈에 보기</h3><p>가격 방어율·거래량 변화·정가 프리미엄이 얼마나 이어졌는지 보여 드립니다.</p></div></div><div class="resaleMdGrid">'+mdSignals+'</div></section>':'')+
       (panels.length?'<div class="trGrid resaleEvidence">'+panels.join('')+'</div>':'');
     delete G_CFG.resMain;
-    if(showChart){
-      G_CFG.resMain={key:full+'res',rows:D.series,
-        emptyReason:'가치 변화 시계열이 비어 있습니다.',
-        sets:[{id:'r',name:'정가 대비 중고 가치 (%)',field:'keep_pct',unit:'%'}]};
-      gMount();
-    }
+    delete G_CFG.resValueTrend;
+    G_CFG.resMain={key:full+'res',rows:resaleSeries,
+      emptyReason:'가치 변화를 그릴 만큼 날짜별 관측이 쌓이지 않았습니다.',
+      sets:[{id:'r',name:'정가 대비 중고 가치 (%)',field:'keep_pct',unit:'%'}]};
+    G_CFG.resValueTrend={key:full+'res-compare',rows:resaleSeries,min:0,max:100,
+      sets:[{id:'r',name:'가치 유지율',field:'keep_pct',unit:'%'},
+        {id:'t',name:'트렌드 온도',field:'temp',unit:'°',rows:temperatureRows}]};
+    gMount();
     if(hasKeep)trDial();
   }
 

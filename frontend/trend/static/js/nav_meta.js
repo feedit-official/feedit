@@ -7,7 +7,7 @@ export const S_FEED=[{id:'myfeed',ic:'◧',t:'내 피드'},{id:'report',ic:'◔'
    .sItem[data-tr="resale"] .ic 에서만 font-size 를 키운다), 수명주기=∞(정점 없이 계속 도는 순환) */
 export const S_EDIT=[{id:'temp',ic:'℃',t:'언급량 · 온도'},{id:'assoc',ic:'◎',t:'연관어'},
               {id:'sentiment',ic:'⇅',t:'긍부정'},{id:'stock',ic:'%',t:'할인률 변화'},
-              {id:'resale',ic:'±',t:'중고 시세'},{id:'life',ic:'∞',t:'수명주기'}];
+              {id:'resale',ic:'±',t:'리세일 지수'},{id:'life',ic:'∞',t:'수명주기'}];
 export const TR_META={
   myfeed   :['내 피드','취향 벡터와 최근 행동을 합쳐 오늘 볼 만한 것만 골랐습니다. 왜 골랐는지는 카드마다 한 줄로 붙습니다.'],
   report   :['금주의 리포트',''],
@@ -17,6 +17,6 @@ export const TR_META={
   assoc    :['연관어','무엇과 함께 불리는지 다섯 축으로 나눠 봅니다.'],
   sentiment:['긍부정','감성이 아니라 구매 의향으로 판정합니다.'],
   stock    :['할인률 변화','언제 더 싸지는지, 언제 사라지는지 봅니다.'],
-  resale   :['중고 시세','지금 사거나 팔 때 얼마가 적당한지 봅니다.'],
+  resale   :['리세일 지수','지금 사거나 팔 때 얼마가 적당한지 봅니다.'],
   life     :['수명주기','정점을 지났는지, 얼마나 남았는지 봅니다.']
 };

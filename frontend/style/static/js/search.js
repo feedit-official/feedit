@@ -268,10 +268,11 @@ export function fsExact(q){
    opts  : /api/facets 가 준 축별 후보 (없으면 로컬 FTREE 로 떨어진다)
    colq  : 칸마다의 찾기 입력 (브랜드가 수천 개라 칸 안에서도 찾아야 한다)
    ══════════════════════════════════════════════════════ */
-export var FS={pick:{},stockItem:null,resaleItem:null,opts:null,narrowed:false,note:'',err:'',matched:null,
+export var FS={pick:{},stockItem:null,resaleItem:null,resaleModalItems:[],resaleModalLoading:false,
+               opts:null,narrowed:false,note:'',err:'',matched:null,
                loading:false,colq:{},sug:[],cur:-1,open:false,id:null};
 
-export function fsReset(){ FS.pick={}; FS.stockItem=null; FS.resaleItem=null; FS.colq={} }
+export function fsReset(){ FS.pick={}; FS.stockItem=null; FS.resaleItem=null; FS.resaleModalItems=[]; FS.colq={} }
 export function fsPickedOf(ax){ return FS.pick[ax]||[] }
 export function fsHas(ax,v){ return fsPickedOf(ax).indexOf(v)>=0 }
 export function fsStockSelect(item){
@@ -289,8 +290,10 @@ export function fsStockClear(){
 export function fsResaleSelect(item){
   const id=Number(item&&item.id), type=item&&item.type;
   if(!Number.isSafeInteger(id)||id<=0||!['product','platform_only'].includes(type))return false;
+  FS.pick={};
   FS.resaleItem={id,type,label:item.name||item.label||'',brand:item.brand||'',
     code:item.code||'',modelCode:item.model_code||'',image:item.image||'',platforms:Array.isArray(item.platforms)?item.platforms:[],
+    images:Array.isArray(item.images)?item.images.filter(Boolean):[],
     sourceCount:Number(item.source_count)||0};
   FS.pick['아이템명']=[FS.resaleItem.label];
   return true;
@@ -307,7 +310,12 @@ export function fsResaleClear(){
 export function fsToggle(ax,v){
   if(FS.id==='stock'&&ax==='상품명'){ fsStockClear(); return false; }
   if(FS.id==='stock')fsStockClear();
-  if(FS.id==='resale')fsResaleClear();
+  if(FS.id==='resale'){
+    const hadItem=!!FS.resaleItem;
+    fsResaleClear();
+    /* 개별 상품에서 시장 조건으로 전환할 때만 이전 상품명이 검색어로 남지 않게 한다. */
+    if(hadItem)delete FS.colq['아이템명'];
+  }
   if(fsHas(ax,v)){ delete FS.pick[ax]; return false }
   FS.pick[ax]=[v];
   return true;
@@ -325,7 +333,7 @@ export function fsCount(){ let n=0; for(const k in FS.pick)n+=FS.pick[k].length;
 
 const FS_Q=[
   ['고프코어 테크 셸','할인률 언제부터 올랐어?'],
-  ['살로몬 XT-6','리세일 시세 아직 버텨?'],
+  ['살로몬 XT-6','리세일 지수 아직 버텨?'],
   ['새틴','수명주기 어디쯤이야?'],
   ['스투시 후디','지금 사도 되는 시점이야?'],
   ['삼바','정점 지났어?']
@@ -395,8 +403,27 @@ function fsPaintSug(){
   box.hidden=false;
 }
 let fsResaleT=null, fsResaleAbort=null, fsResaleSeq=0;
+let fsResaleModalT=null, fsResaleModalAbort=null, fsResaleModalSeq=0;
 function fsResalePlatforms(item){
   return (item.platforms||[]).map(p=>p.name+(p.count>1?' '+p.count+'건':'')).join(' · ');
+}
+function fsResaleImageHTML(item){
+  const images=(Array.isArray(item.images)?item.images:[]).filter(Boolean);
+  if(item.image&&!images.includes(item.image))images.unshift(item.image);
+  if(!images.length)return '';
+  const fallbacks=encodeURIComponent(JSON.stringify(images.slice(1)));
+  return '<img src="'+fsEsc(images[0])+'" data-image-fallbacks="'+fsEsc(fallbacks)+'" loading="lazy" referrerpolicy="no-referrer" alt="">';
+}
+function fsResaleImageFallback(img){
+  let images=[];
+  try{ images=JSON.parse(decodeURIComponent(img.dataset.imageFallbacks||'')); }catch(e){}
+  const next=images.shift();
+  if(next){
+    img.dataset.imageFallbacks=encodeURIComponent(JSON.stringify(images));
+    img.src=next;
+    return;
+  }
+  img.closest('.resaleThumb,.fsOptThumb')?.classList.add('imageError');
 }
 function fsPaintResaleSug(items,q){
   const box=$('#fsSug'); if(!box)return;
@@ -409,7 +436,7 @@ function fsPaintResaleSug(items,q){
   box.innerHTML=FS.sug.map((o,k)=>{
     const platform=fsResalePlatforms(o);
     return '<button class="sg resaleProduct" data-k="'+k+'" type="button">'+
-      '<span class="resaleThumb">'+(o.image?'<img src="'+fsEsc(o.image)+'" loading="lazy" alt="">':'<i>F</i>')+'</span>'+
+      '<span class="resaleThumb"><i>F</i>'+fsResaleImageHTML(o)+'</span>'+
       '<span class="resaleSugTx"><span class="resaleSugTop"><b>'+fsEsc(o.name||'상품명 없음')+'</b>'+
         '<em>'+(o.type==='product'?'표준상품':'플랫폼 단독')+'</em></span>'+
         '<small>'+fsEsc([o.brand,o.model_code,o.code].filter(Boolean).join(' · ')||'상품 정보 없음')+'</small>'+
@@ -437,6 +464,36 @@ function fsLoadResaleSug(){
       FS.sug=[]; FS.cur=-1;
       if(box){ box.innerHTML='<div class="none">상품 검색에 연결하지 못했습니다.<br>잠시 뒤 다시 시도해 주세요.</div>'; box.hidden=false; }
     }finally{ if(fsResaleAbort===controller)fsResaleAbort=null; }
+  },220);
+}
+function fsLoadResaleModalProducts(){
+  const q=(FS.colq['아이템명']||'').trim();
+  clearTimeout(fsResaleModalT);
+  if(fsResaleModalAbort){ fsResaleModalAbort.abort(); fsResaleModalAbort=null; }
+  const my=++fsResaleModalSeq;
+  FS.resaleModalLoading=true; fsPaintPop();
+  fsResaleModalT=setTimeout(async()=>{
+    const controller=new AbortController(); fsResaleModalAbort=controller;
+    try{
+      const p=new URLSearchParams();
+      if(q)p.set('q',q);
+      getFsCols().forEach(c=>{
+        if(c.ax==='아이템명')return;
+        fsPickedOf(c.ax).forEach(value=>p.append(c.param,value));
+      });
+      p.set('limit','24');
+      const r=await fetch('/api/resale/products?'+p.toString(),{signal:controller.signal});
+      if(!r.ok)throw new Error('HTTP '+r.status);
+      const j=await r.json(); if(my!==fsResaleModalSeq)return;
+      FS.resaleModalItems=j&&j.status==='ok'&&j.data&&Array.isArray(j.data.items)?j.data.items:[];
+    }catch(e){
+      if(e&&e.name==='AbortError')return;
+      if(my!==fsResaleModalSeq)return;
+      FS.resaleModalItems=[];
+    }finally{
+      if(my===fsResaleModalSeq){ FS.resaleModalLoading=false; fsPaintPop(); }
+      if(fsResaleModalAbort===controller)fsResaleModalAbort=null;
+    }
   },220);
 }
 function fsPickResale(item){
@@ -697,11 +754,13 @@ export function fsOpenPop(){
     FS.colq['상품명']=$('#fsInput')?.value.trim()||'';
     fsStockFullReady=false;
   }
+  if(FS.id==='resale'&&FS.resaleItem)FS.colq['아이템명']=FS.resaleItem.label;
   if(FS.id!=='stock')fsItemSig=null;
   FS.open=true; $('#fsPopBg').classList.add('on'); $('#fsMore').classList.add('on');
   /* ★ 2026-09-27 (USABILITY-002) — 닫혀 있을 때는 inert 라 Tab 이 보이지 않는 칸으로 들어가지 않는다 */
   $('#fsPopBg').removeAttribute('inert');
   fsPaintPop(); fsLoadFacets();
+  if(FS.id==='resale')fsLoadResaleModalProducts();
 }
 function fsClosePop(){
   FS.open=false;
@@ -729,11 +788,24 @@ export function fsStockScrollMore(host){
    조건 없이 내려오는 이름은 상품의 대표 이름(canonical_name)이라
    실제 상품명으로 읽히지 않는다(‘청’ · ‘반소매 티셔츠 M’). */
 function fsItemLocked(ax){
-  if(FS.id==='stock'||ax!=='아이템명')return false;
+  if(FS.id==='stock'||FS.id==='resale'||ax!=='아이템명')return false;
   return !['스타일','종류','브랜드'].some(a=>(FS.pick[a]||[]).length);
 }
 function fsColHTML(col){
   const ax=col.ax;
+  if(FS.id==='resale'&&ax==='아이템명'){
+    const q=(FS.colq[ax]||'').trim();
+    if(FS.resaleModalLoading)return '<div class="hint">개별 상품을 찾는 중입니다...</div>';
+    if(!FS.resaleModalItems.length)return '<div class="hint">'+(q?'‘'+fsEsc(q)+'’으로 찾은 중고상품이 없습니다.':'이 조건에 연결된 중고상품이 없습니다.')+'</div>';
+    return FS.resaleModalItems.map((o,k)=>{
+      const on=!!(FS.resaleItem&&FS.resaleItem.id===Number(o.id)&&FS.resaleItem.type===o.type);
+      const platform=fsResalePlatforms(o);
+      return '<button type="button" data-resale-modal="'+k+'" class="fsOpt fsResaleOpt'+(on?' on':'')+'" aria-pressed="'+(on?'true':'false')+'">'+
+        '<span class="fsOptThumb">'+fsResaleImageHTML(o)+'<i>F</i></span>'+
+        '<span class="fsOptTx"><b>'+fsEsc(o.name||'상품명 없음')+'</b><small>'+fsEsc([o.brand,o.model_code,o.code].filter(Boolean).join(' · ')||'상품 정보 없음')+'</small>'+
+        (platform?'<small class="platforms">'+fsEsc(platform)+'</small>':'')+'</span></button>';
+    }).join('');
+  }
   if(fsItemLocked(ax))
     return '<div class="hint">스타일 · 종류 · 브랜드 중 하나를 먼저 고르면<br>'+
       '그 조건에 실제로 있는 상품명이 나옵니다.</div>';
@@ -793,13 +865,13 @@ export function fsPaintPop(){
     pop.dataset.fs = FS.id||'';
   }
   const popTitle=$('.fsPopHead h3'), popLead=$('#fsPopLead'), apply=$('#fsApply');
-  if(popTitle)popTitle.textContent=FS.id==='resale'?'시장 전체 분석':'세부 검색';
+  if(popTitle)popTitle.textContent='세부 검색';
   if(popLead){
     popLead.hidden=FS.id!=='resale';
     popLead.textContent=FS.id==='resale'
-      ? '개별 상품은 위 검색창에서 고르고, 여기서는 브랜드·카테고리·스타일 시장 전체를 살펴봅니다.' : '';
+      ? '상품명·모델번호로 개별 상품을 고르거나, 브랜드·카테고리·스타일로 시장 범위를 좁혀 보세요.' : '';
   }
-  if(apply)apply.firstChild.textContent=FS.id==='resale'?'이 시장 분석 ':'이 조건으로 분석 ';
+  if(apply)apply.firstChild.textContent='이 조건으로 분석 ';
   $$('.fsCol').forEach(col => col.hidden = true);
   getFsCols().forEach((c,lv)=>{
     const col=$('.fsCol[data-lv="'+lv+'"]'), ok=fsAxOk(c.ax);
@@ -832,7 +904,7 @@ export function fsPaintPop(){
         ? fsStockNameHTML()
         : '<span class="ph2">상품명 칸에서 볼 상품을 고르세요. 위 세 칸은 후보를 좁히는 데만 쓰입니다.</span>';
     }else if(FS.id==='resale'&&FS.resaleItem){
-      picked.innerHTML=fsResaleNameHTML()+'<span class="ph2">시장 조건을 고르면 개별 상품 선택 대신 시장 전체 분석으로 전환됩니다.</span>';
+      picked.innerHTML=fsResaleNameHTML()+'<span class="ph2">개별 상품을 분석합니다. 다른 조건을 고르면 브랜드·카테고리 시장 분석으로 전환됩니다.</span>';
     }else{
       const chips=fsChipList();
       picked.innerHTML=chips.length
@@ -847,7 +919,7 @@ export function fsPaintPop(){
    진짜로 좁혀진 건지, 서버를 못 봐서 박아 둔 목록인지 그대로 적는다. */
 function fsPaintState(){
   const el=$('#fsState'); if(!el)return;
-  if(FS.loading){ el.className='fsState load'; el.textContent=FS.id==='resale'?'시장 자료를 묶는 중…':'후보를 세는 중…'; return }
+  if(FS.loading){ el.className='fsState load'; el.textContent='후보를 세는 중…'; return }
   if(FS.err){ el.className='fsState warn'; el.textContent=FS.err; return }
   if(FS.opts&&FS.narrowed){
     el.className='fsState';
@@ -1009,6 +1081,9 @@ export function fsBuild(){
     if(FS.id==='resale')fsPickResale(FS.sug[+b.dataset.k]);
     else fsPick(FS.sug[+b.dataset.k]);
   });
+  $('#fsSug').addEventListener('error',e=>{
+    if(e.target&&e.target.matches&&e.target.matches('.resaleThumb img'))fsResaleImageFallback(e.target);
+  },true);
   $('#fsClear').addEventListener('click',()=>{
     inp.value=''; bar.classList.remove('typing'); $('#fsClear').hidden=true; fsHideSug(); inp.focus();
   });
@@ -1030,6 +1105,15 @@ export function fsBuild(){
   const cols=$('.fsCols');
   if(cols){
     cols.addEventListener('click',e=>{
+      const resaleButton=e.target.closest('button[data-resale-modal]');
+      if(resaleButton&&FS.id==='resale'){
+        e.stopPropagation();
+        const item=FS.resaleModalItems[Number(resaleButton.dataset.resaleModal)];
+        if(item&&FS.resaleItem&&FS.resaleItem.id===Number(item.id)&&FS.resaleItem.type===item.type)fsResaleClear();
+        else fsResaleSelect(item);
+        fsPaintPop();
+        return;
+      }
       const b=e.target.closest('button[data-fv]'); if(!b)return;
       e.stopPropagation();
       if(FS.id==='stock'&&b.dataset.ax==='상품명'){
@@ -1039,6 +1123,7 @@ export function fsBuild(){
       }else fsToggle(b.dataset.ax,b.dataset.fv);
       fsPaintPop();                 /* 누른 티는 즉시 */
       fsLoadFacetsSoon();           /* 다른 칸은 잠시 뒤 서버가 좁혀 준다 */
+      if(FS.id==='resale')fsLoadResaleModalProducts();
     });
     /* 상품명 칸을 끝까지 내리면 다음 묶음을 이어 받는다 (더보기 버튼 대신) */
     cols.addEventListener('scroll',e=>{
@@ -1053,11 +1138,19 @@ export function fsBuild(){
       if(lv<0)return;
       const host=$('#fsC'+lv); if(host)host.innerHTML=fsColHTML(getFsCols()[lv]);
       if(FS.id==='stock'&&q.dataset.ax==='상품명'&&!e.isComposing)fsLoadFacetsSoon(true);
+      if(FS.id==='resale'&&q.dataset.ax==='아이템명'&&!e.isComposing)fsLoadResaleModalProducts();
     });
     cols.addEventListener('compositionend',e=>{
       const q=e.target.closest('input[data-ax="상품명"]');
       if(FS.id==='stock'&&q)fsLoadFacetsSoon(true);
+      const resaleQ=e.target.closest('input[data-ax="아이템명"]');
+      if(FS.id==='resale'&&resaleQ)fsLoadResaleModalProducts();
     });
+    cols.addEventListener('error',e=>{
+      if(e.target&&e.target.matches&&e.target.matches('.fsOptThumb img')){
+        fsResaleImageFallback(e.target);
+      }
+    },true);
   }
   $('#fsPicked').addEventListener('click',e=>{
     if(e.target.closest('[data-stock-drop]')){ fsStockClear(); fsPaintPop(); return }
@@ -1069,6 +1162,7 @@ export function fsBuild(){
     fsReset();
     $$('.fsCols input[data-ax]').forEach(i=>{ i.value='' });
     fsPaintPop(); fsLoadFacets();
+    if(FS.id==='resale')fsLoadResaleModalProducts();
   });
   $('#fsApply').addEventListener('click',fsApply);
   $('#fsPopX').addEventListener('click',fsClosePop);
