@@ -59,7 +59,7 @@ from django.shortcuts import (
 )
 from django.urls import reverse
 from django.core.paginator import Paginator
-from django.http import Http404, JsonResponse, HttpResponse
+from django.http import Http404, JsonResponse, HttpResponse, HttpResponseForbidden
 import boto3
 import json
 import logging
@@ -71,8 +71,24 @@ from datetime import timedelta
 from decimal import Decimal
 from django.conf import settings
 from django.utils import timezone
+from django.views.decorators.cache import never_cache
 from .services.dashboard_service import get_dashboard_context, source_freshness
 from .services.data_quality import data_quality_context
+from .security import (
+    NEXT_SESSION_KEY,
+    attempts_blocked,
+    clear_attempts,
+    confirm_device,
+    get_or_create_device,
+    mark_otp_verified,
+    mark_password_verified,
+    otp_required,
+    otp_verified,
+    password_verified,
+    provisioning_uri,
+    register_failed_attempt,
+    verify_device,
+)
 
 logger = logging.getLogger(__name__)
 from apps.core.models import (
@@ -3429,6 +3445,41 @@ def exclude_brand_source(
 # ============================================================
 
 
+def _safe_dashboard_next(request, value):
+    if value and url_has_allowed_host_and_scheme(
+        value,
+        allowed_hosts={request.get_host()},
+        require_https=request.is_secure(),
+    ):
+        return value
+    return ""
+
+
+def _dashboard_auth_guard(request):
+    user = getattr(request, "user", None)
+    if user is None or not user.is_authenticated:
+        return redirect(f"{reverse('dashboard:login')}?next={request.path}")
+    if not (user.is_staff or user.is_superuser):
+        return HttpResponseForbidden("운영 계정만 접근할 수 있습니다.")
+    if not password_verified(request):
+        return redirect(f"{reverse('dashboard:login')}?next={request.path}")
+    return None
+
+
+def _otp_destination(request):
+    device = get_or_create_device(request.user)
+    return "dashboard:otp_verify" if device.confirmed else "dashboard:otp_setup"
+
+
+def _finish_dashboard_login(request):
+    next_url = _safe_dashboard_next(
+        request,
+        request.session.pop(NEXT_SESSION_KEY, ""),
+    )
+    return redirect(next_url or "dashboard:dashboard")
+
+
+@never_cache
 def dashboard_login(request):
     """관리자 대시보드 로그인."""
 
@@ -3439,11 +3490,29 @@ def dashboard_login(request):
     if request.user.is_authenticated and (
         request.user.is_staff or request.user.is_superuser
     ):
-        return redirect("dashboard:dashboard")
+        if not otp_required():
+            return redirect("dashboard:dashboard")
+        if otp_verified(request):
+            return redirect("dashboard:dashboard")
+        if password_verified(request):
+            return redirect(_otp_destination(request))
 
     if request.method == "POST":
         username = request.POST.get("username", "").strip()
         password = request.POST.get("password", "")
+        attempt_identity = username.casefold() or "<empty>"
+
+        if attempts_blocked("password", attempt_identity):
+            messages.error(
+                request,
+                "로그인 시도가 너무 많습니다. 5분 후 다시 시도해 주세요.",
+            )
+            return render(
+                request,
+                "dashboard/login.html",
+                {"next": request.POST.get("next", ""), "username": username},
+                status=429,
+            )
 
         user = authenticate(
             request,
@@ -3452,41 +3521,120 @@ def dashboard_login(request):
         )
 
         if user is None:
+            register_failed_attempt("password", attempt_identity)
+            logger.warning("dashboard password login failed username=%r", username)
             messages.error(
                 request,
                 "아이디 또는 비밀번호가 올바르지 않습니다.",
             )
 
         elif not (user.is_staff or user.is_superuser):
+            register_failed_attempt("password", attempt_identity)
+            logger.warning("dashboard non-operator login rejected username=%r", username)
             messages.error(
                 request,
-                "관리자 권한이 없는 계정입니다.",
+                "아이디 또는 비밀번호가 올바르지 않습니다.",
             )
 
         else:
+            clear_attempts("password", attempt_identity)
             login(request, user)
+            mark_password_verified(request)
 
             next_url = (
                 request.GET.get("next")
                 or request.POST.get("next")
             )
 
-            # ★ "/" 로 시작하는지만 보면 "//evil.com" 이 통과한다(프로토콜 상대 URL).
-            #   호스트까지 확인해 우리 사이트 안쪽인 주소만 따라간다.
-            if next_url and url_has_allowed_host_and_scheme(
-                next_url,
-                allowed_hosts={request.get_host()},
-                require_https=request.is_secure(),
-            ):
-                return redirect(next_url)
+            request.session[NEXT_SESSION_KEY] = _safe_dashboard_next(request, next_url)
+            logger.info("dashboard password verified user_id=%s", user.pk)
 
-            return redirect("dashboard:dashboard")
+            if otp_required():
+                return redirect(_otp_destination(request))
+            return _finish_dashboard_login(request)
 
     return render(
         request,
         "dashboard/login.html",
-        {"next": request.GET.get("next", "")},
+        {"next": request.GET.get("next", ""), "username": ""},
     )
+
+
+@never_cache
+def dashboard_otp_setup(request):
+    """인증 앱에 개인 TOTP 비밀키를 연결한다."""
+
+    blocked = _dashboard_auth_guard(request)
+    if blocked:
+        return blocked
+
+    device = get_or_create_device(request.user)
+    if device.confirmed:
+        if otp_required() and not otp_verified(request):
+            return redirect("dashboard:otp_verify")
+        return _finish_dashboard_login(request)
+
+    attempt_identity = str(request.user.pk)
+    if request.method == "POST":
+        if attempts_blocked("otp-setup", attempt_identity):
+            messages.error(request, "인증번호 시도가 너무 많습니다. 5분 후 다시 시도해 주세요.")
+        else:
+            recovery_codes = confirm_device(request.user, request.POST.get("token", ""))
+            if recovery_codes:
+                clear_attempts("otp-setup", attempt_identity)
+                mark_otp_verified(request)
+                logger.info("dashboard otp enrolled user_id=%s", request.user.pk)
+                return render(request, "dashboard/otp.html", {
+                    "stage": "recovery",
+                    "recovery_codes": recovery_codes,
+                })
+            register_failed_attempt("otp-setup", attempt_identity)
+            logger.warning("dashboard otp enrollment failed user_id=%s", request.user.pk)
+            messages.error(request, "인증번호가 올바르지 않습니다. 휴대폰 시간을 확인해 주세요.")
+
+    return render(request, "dashboard/otp.html", {
+        "stage": "setup",
+        "secret": device.secret,
+        "provisioning_uri": provisioning_uri(request.user, device.secret),
+    })
+
+
+@never_cache
+def dashboard_otp_verify(request):
+    """비밀번호 확인 뒤 TOTP 또는 일회성 복구 코드를 검증한다."""
+
+    blocked = _dashboard_auth_guard(request)
+    if blocked:
+        return blocked
+    if otp_verified(request):
+        return _finish_dashboard_login(request)
+
+    device = get_or_create_device(request.user)
+    if not device.confirmed:
+        return redirect("dashboard:otp_setup")
+
+    attempt_identity = str(request.user.pk)
+    if request.method == "POST":
+        if attempts_blocked("otp", attempt_identity):
+            messages.error(request, "인증번호 시도가 너무 많습니다. 5분 후 다시 시도해 주세요.")
+            return render(request, "dashboard/otp.html", {"stage": "verify"}, status=429)
+        ok, used_recovery = verify_device(request.user, request.POST.get("token", ""))
+        if ok:
+            clear_attempts("otp", attempt_identity)
+            mark_otp_verified(request)
+            logger.info(
+                "dashboard otp verified user_id=%s recovery=%s",
+                request.user.pk,
+                used_recovery,
+            )
+            if used_recovery:
+                messages.warning(request, "복구 코드 하나를 사용했습니다. 사용한 코드는 다시 쓸 수 없습니다.")
+            return _finish_dashboard_login(request)
+        register_failed_attempt("otp", attempt_identity)
+        logger.warning("dashboard otp verification failed user_id=%s", request.user.pk)
+        messages.error(request, "인증번호 또는 복구 코드가 올바르지 않습니다.")
+
+    return render(request, "dashboard/otp.html", {"stage": "verify"})
 
 
 def dashboard_logout(request):

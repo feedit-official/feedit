@@ -48,12 +48,21 @@ docker compose --env-file .env -f docker/compose.chat.yml up -d --build
 | `FEEDIT_BACKEND_API` | 기본 `http://feedit-api:8000/api` |
 | `FEEDIT_PUBLIC_BETA`, `FEEDIT_CHAT_TOKEN` | 베타와 토큰 검사 정책을 함께 확인 |
 | `FEEDIT_CHAT_ORCHESTRATOR` | 모델 도구 오케스트레이션 사용 설정 |
+| `DASHBOARD_OTP_REQUIRED` | 관리자 TOTP 강제. HTTPS·마이그레이션·최초 등록 확인 후 `1` |
+| `DASHBOARD_SESSION_AGE` | OTP 완료 관리자 세션 수명(초), 기본 1800 |
+| `DJANGO_SECURE_COOKIES` | HTTPS 확인 후 `1`; 보안 쿠키와 HTTPS 강제 |
+| `DJANGO_HSTS_SECONDS` | 최초 0, 안정화 뒤 300 → 86400 → 31536000 순으로 증가 |
 
 `FEEDIT_PUBLIC_BETA`의 코드 기본값은 1입니다. 공유 토큰·플랜 정책이 비베타 모드와 달라집니다. 알파 계정(`FEEDIT_ALPHA_MODE`, `FEEDIT_ALPHA_UNTIL`, `FEEDIT_ALPHA_CHAT_QUOTA`)과 별도 정책이므로 각각 확인합니다. 화면의 사용량 차감만으로 서버 비용 제한이 강제된다고 간주하지 않습니다.
 
 ## 프록시와 DB 변경
 
 `docker/nginx-feedit-api.conf`, `docker/nginx-feedit-chat.conf`를 실제 nginx 서버 블록에 맞게 적용하고 설정 검사를 거칩니다. 기존 nginx가 있으면 Caddy standalone 프로필을 동시에 올리지 않습니다.
+
+관리자 화면을 공개할 때는 `docker/nginx-feedit-admin.conf`의 요청·연결 제한도
+같이 적용합니다. 해당 예시의 `limit_*_zone`은 `http {}` 안, `location`은 실제
+HTTPS `server {}` 안에 둡니다. 포트는 추측하지 않고 운영 서버의 `docker ps`와
+`nginx -T` 결과를 기준으로 맞춥니다.
 
 API는 읽기/쓰기 기능을 제공하지만 기동 명령에 `migrate`를 포함하지 않습니다. 스키마 변경은 백업·마이그레이션 계획을 검토한 별도 작업입니다. Redis는 현재 큐 용도이며 저장 비활성화·64 MB·noeviction 설정입니다. 큐 내구성과 용량을 운영 수준에 맞게 점검해야 합니다.
 
@@ -64,5 +73,53 @@ API는 읽기/쓰기 기능을 제공하지만 기동 명령에 `migrate`를 포
 3. `/api/health`, `/api/v1/health`와 실제 로그인·조회·채팅 확인. HTTP 200만으로 실데이터/모델 연결을 단정하지 않음.
 4. worker에서 분석·수집 작업의 마지막 성공과 오류 확인.
 5. 배포 버전·마이그레이션 적용 내역·환경 변경 항목 기록. 비밀값은 기록하지 않음.
+
+## 관리자 HTTPS와 OTP 안전 적용 순서
+
+관리자 페이지는 아래 순서를 바꾸지 않습니다. OTP 플래그를 먼저 켜면 테이블이
+없거나 인증 앱을 등록하지 못한 상태에서 운영자가 잠길 수 있습니다.
+
+1. DuckDNS가 현재 EC2 IP를 가리키는지, 80·443 보안 그룹과 nginx의 기존
+   `server_name`을 읽기 전용으로 확인합니다.
+   Django 호스트 포트(현재 8001)와 PostgreSQL 5432는 인터넷에 열지 않습니다.
+   SSM만 사용한다면 SSH 22도 팀의 기존 접속 여부를 확인한 뒤 제거합니다.
+2. Let's Encrypt 인증서를 발급하고 HTTPS 접속을 먼저 확인합니다. 이때 HSTS는
+   `0`으로 둡니다.
+3. API 이미지만 빌드합니다. `docker compose ... up -d --build`로 worker·beat를
+   함께 재생성하지 않습니다.
+4. 다음 명령으로 OTP 마이그레이션 계획을 확인한 뒤 새 테이블 하나만 적용합니다.
+
+   ```bash
+   sudo docker compose --env-file .env -f docker/compose.api.yml build api
+   sudo docker compose --env-file .env -f docker/compose.api.yml run --rm api \
+     python manage.py migrate dashboard --plan
+   sudo docker compose --env-file .env -f docker/compose.api.yml run --rm api \
+     python manage.py migrate dashboard
+   sudo docker compose --env-file .env -f docker/compose.api.yml up -d --no-deps api
+   ```
+
+5. `DASHBOARD_OTP_REQUIRED=0` 상태에서 관리자 비밀번호로 다시 로그인한 후
+   `/admin-dashboard/otp/setup/`에서 각 관리자 인증 앱을 등록하고 복구 코드를
+   개인별로 안전하게 보관합니다.
+6. 등록을 확인한 뒤 `.env`에 아래 값을 반영하고 API만 다시 생성합니다.
+
+   ```dotenv
+   DJANGO_SECURE_COOKIES=1
+   DJANGO_HSTS_SECONDS=0
+   DASHBOARD_OTP_REQUIRED=1
+   DASHBOARD_SESSION_AGE=1800
+   ```
+
+7. 일반 회원·비밀번호만 입력한 관리자·잘못된 OTP가 차단되고 정상 OTP만
+   통과하는지 확인합니다. 사용자 로그인·찜·검색 API도 함께 점검합니다.
+8. 안정화 후 `DJANGO_HSTS_SECONDS`를 단계적으로 늘립니다. 처음부터 preload를
+   켜지 않습니다.
+
+인증 앱과 복구 코드를 모두 잃은 운영 계정은 EC2 안에서만 다음 명령으로
+초기화합니다. 실행 후 그 계정은 다시 비밀번호와 새 인증 앱으로 연결해야 합니다.
+
+```bash
+sudo docker exec feedit-api python manage.py reset_dashboard_otp <관리자아이디>
+```
 
 `docker/compose.prod.yml`은 SSM·Caddy 등을 함께 올리는 대체/이전 구성입니다. 현재 EC2 분리 구성의 기본 진입점으로 사용하지 않습니다.

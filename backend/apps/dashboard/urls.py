@@ -8,6 +8,8 @@ app_name = "dashboard"
 urlpatterns = [
     path("login/", views.dashboard_login, name="login"),
     path("logout/", views.dashboard_logout, name="logout"),
+    path("otp/setup/", views.dashboard_otp_setup, name="otp_setup"),
+    path("otp/verify/", views.dashboard_otp_verify, name="otp_verify"),
 
     path("", views.dashboard, name="dashboard"),
 

@@ -303,9 +303,18 @@ if os.getenv("DJANGO_SECURE_COOKIES", "0") == "1":
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
     SECURE_SSL_REDIRECT = True
-    SECURE_HSTS_SECONDS = 31536000
-    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
-    SECURE_HSTS_PRELOAD = True
+
+# HTTPS가 실제로 확인되기 전 1년 HSTS/preload를 켜면 장애 복구가 어렵다.
+# 처음에는 0, 안정화 뒤 300 → 86400 → 31536000 순으로 늘린다.
+SECURE_HSTS_SECONDS = int(os.getenv("DJANGO_HSTS_SECONDS", "0"))
+SECURE_HSTS_INCLUDE_SUBDOMAINS = os.getenv("DJANGO_HSTS_INCLUDE_SUBDOMAINS", "0") == "1"
+SECURE_HSTS_PRELOAD = os.getenv("DJANGO_HSTS_PRELOAD", "0") == "1"
+
+# 관리자 OTP는 배포 직후 잠금 사고를 막기 위해 명시적으로 켠다.
+# HTTPS와 OTP 테이블 마이그레이션을 확인한 뒤 운영 .env에 1을 넣는다.
+DASHBOARD_OTP_REQUIRED = os.getenv("DASHBOARD_OTP_REQUIRED", "0") == "1"
+DASHBOARD_OTP_ISSUER = os.getenv("DASHBOARD_OTP_ISSUER", "FEEDiT Admin")
+DASHBOARD_SESSION_AGE = int(os.getenv("DASHBOARD_SESSION_AGE", "1800"))
 
 # 켜든 말든 항상 좋은 것들 — 쿠키를 자바스크립트가 못 읽게, 크로스사이트 전송 제한.
 SESSION_COOKIE_HTTPONLY = True

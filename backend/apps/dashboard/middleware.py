@@ -19,11 +19,22 @@ from __future__ import annotations
 
 from django.contrib.auth.views import redirect_to_login
 from django.http import HttpResponseForbidden
+from django.shortcuts import redirect
+
+from .models import DashboardOTPDevice
+from .security import otp_required, otp_verified, password_verified
 
 PREFIX = "/admin-dashboard/"
 LOGIN_URL = "/admin-dashboard/login/"
 # 로그인·로그아웃은 막으면 안 된다. 막으면 운영자가 들어올 길이 없어진다.
-EXEMPT = frozenset({LOGIN_URL, "/admin-dashboard/logout/"})
+OTP_SETUP_URL = "/admin-dashboard/otp/setup/"
+OTP_VERIFY_URL = "/admin-dashboard/otp/verify/"
+EXEMPT = frozenset({
+    LOGIN_URL,
+    "/admin-dashboard/logout/",
+    OTP_SETUP_URL,
+    OTP_VERIFY_URL,
+})
 
 DENIED_HTML = (
     "<!doctype html><meta charset='utf-8'>"
@@ -55,5 +66,17 @@ class DashboardStaffMiddleware:
             #     로그인 화면으로 보내면 무한 반복이 된다.
             if not (user.is_staff or user.is_superuser):
                 return HttpResponseForbidden(DENIED_HTML)
+
+            if otp_required():
+                # 일반 앱 세션만 가진 운영 계정도 비밀번호를 다시 확인해야 한다.
+                if not password_verified(request):
+                    return redirect_to_login(request.get_full_path(), LOGIN_URL)
+
+                if not otp_verified(request):
+                    has_device = DashboardOTPDevice.objects.filter(
+                        user=user,
+                        confirmed=True,
+                    ).exists()
+                    return redirect(OTP_VERIFY_URL if has_device else OTP_SETUP_URL)
 
         return self.get_response(request)
