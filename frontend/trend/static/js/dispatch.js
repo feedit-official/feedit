@@ -827,8 +827,10 @@ function wkRange(now=new Date()){
   const mon=new Date(now); mon.setDate(now.getDate()-((now.getDay()+6)%7));
   const sun=new Date(mon); sun.setDate(mon.getDate()+6);
   const md=d=>(d.getMonth()+1)+'/'+d.getDate();
-  const wn=Math.floor((mon.getDate()-1)/7)+1;
-  return [mon.getFullYear()+'.'+String(mon.getMonth()+1).padStart(2,'0'),'W'+wn+' · '+md(mon)+' – '+md(sun)];
+  /* ★ 2026-10-01 — 월·주차는 월요일이 아니라 그 주가 끝나는 일요일 기준으로 센다.
+     월요일 기준이면 달이 넘어가는 주(9/28~10/4)가 '2026.09 · W4' 로 찍혔다. */
+  const wn=Math.ceil(sun.getDate()/7);
+  return [sun.getFullYear()+'.'+String(sun.getMonth()+1).padStart(2,'0'),'W'+wn+' · '+md(mon)+' – '+md(sun)];
 }
 /* 히어로 3칸 — 트렌드 온도 · 지난주 대비 · 수명주기 단계 */
 function wkLedgerHTML(s){
