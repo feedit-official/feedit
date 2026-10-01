@@ -609,6 +609,9 @@ class Handler(BaseHTTPRequestHandler):
                     # 뽑는다 — 같은 옷을 다시 입혀 봐도 다른 컷이 나온다.
                     # 앞선 결과의 pose 를 그대로 보내면 같은 자세로 다시 낸다.
                     pose=str(req.get("pose") or "") or None,
+                    # 생성 엔진 (2026-10-01) — sunburst(기본, 화질) · flare(빠르게).
+                    # 모르는 이름이나 빈 값은 기본 엔진으로 간다(vton.engine_of).
+                    engine=str(req.get("engine") or "") or None,
                 )
             except (ValueError, RuntimeError) as exc:
                 return self._json(400, {"ok": False, "error": type(exc).__name__,

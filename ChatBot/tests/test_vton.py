@@ -105,13 +105,77 @@ class VirtualFittingTests(unittest.TestCase):
         post.return_value = Mock(status_code=200)
         post.return_value.json.return_value = {"data": [{"b64_json": "result"}]}
 
+        # ★ 2026-10-01 — 상의 옵션은 상의가 있을 때만 실린다(vton.SLOT_OF). 예전 시험은
+        #   아우터 한 장에 top_closed 를 실었는데, 이제는 그 조합이 빠지는 것이 맞다.
         result = vton.generate(
             model_id="woman",
-            items=[{"image": "data:image/png;base64,eA==", "category": "아우터"}],
+            items=[{"image": "data:image/png;base64,eA==", "category": "아우터"},
+                   {"image": "data:image/png;base64,eQ==", "category": "상의"}],
             options={"outer_layered": True, "top_closed": True},
         )
 
         self.assertEqual(result["options"], ["outer_layered", "top_closed"])
+
+
+class EngineAndFitOptionTests(unittest.TestCase):
+    """생성 엔진 고르기 · 열기/여미기 기본값 · 핏 세 칸 (2026-10-01)."""
+
+    def _post(self, post):
+        post.return_value = Mock(status_code=200)
+        post.return_value.json.return_value = {"data": [{"b64_json": "result"}]}
+
+    @patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"})
+    @patch("app.vton.requests.post")
+    def test_flare_is_sent_when_chosen(self, post):
+        self._post(post)
+        result = vton.generate(model_id="woman", engine="flare",
+                               items=[{"image": "data:image/png;base64,eA==", "category": "상의"}])
+        sent = post.call_args.kwargs["data"]
+        self.assertEqual(sent["model"], "gpt-image-2.5-flare")
+        # 해상도·품질은 엔진과 상관없이 같다 (두 모델의 한도가 같다)
+        self.assertEqual((sent["size"], sent["quality"]), (vton.SIZE, vton.QUALITY))
+        self.assertEqual((result["engine"], result["model"]), ("flare", "gpt-image-2.5-flare"))
+        self.assertIsInstance(result["elapsed_ms"], int)
+
+    @patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"})
+    @patch("app.vton.requests.post")
+    def test_default_and_unknown_engine_is_sunburst(self, post):
+        self._post(post)
+        for engine in (None, "", "turbo"):
+            with self.subTest(engine=engine):
+                result = vton.generate(model_id="woman", engine=engine, items=[
+                    {"image": "data:image/png;base64,eA==", "category": "상의"}])
+                self.assertEqual(post.call_args.kwargs["data"]["model"], "gpt-image-2.5-sunburst")
+                self.assertEqual(result["engine"], "sunburst")
+
+    def test_default_open_lines_only_for_garments_in_the_outfit(self):
+        # 화면 기본값(아무것도 안 만짐) — 아우터·상의 모두 '열어 입기'
+        default = {"outer_open": True, "top_open": True}
+        pants_only = vton.prompt(["하의"], default)
+        self.assertNotIn(vton.OPTION_LINES["outer_open"], pants_only)
+        self.assertNotIn(vton.OPTION_LINES["top_open"], pants_only)
+        self.assertEqual(pants_only, vton.prompt(["하의"]))     # 예전 프롬프트 그대로
+        both = vton.prompt(["상의", "아우터"], default)
+        self.assertIn(vton.OPTION_LINES["outer_open"], both)
+        self.assertIn(vton.OPTION_LINES["top_open"], both)
+        # 칸을 모르는 사진이 있으면 그 사진이 상의일 수 있다 — 조건부 문장이라 붙인다
+        self.assertIn(vton.OPTION_LINES["top_open"], vton.prompt(["자동 분류"], default))
+
+    def test_open_lines_never_ask_for_a_new_opening(self):
+        # 기본이 '열어 입기' 다 — 여밈 없는 옷에 트임을 만들라는 지시가 되면 안 된다
+        self.assertIn("앞여밈이 없는 상의는 그대로", vton.OPTION_LINES["top_open"])
+        self.assertIn("앞여밈이 없는 아우터는 그대로", vton.OPTION_LINES["outer_open"])
+
+    def test_fit_lines_and_conflict(self):
+        regular = vton.prompt(["상의"], {"top_open": True})
+        self.assertIn("봉제선과 실루엣을 정확히 보존", regular)   # 정핏 = 상품 핏 그대로
+        over = vton.prompt(["상의"], {"top_open": True, "fit_over": True})
+        self.assertIn(vton.OPTION_LINES["fit_over"], over)
+        # 핏을 골랐으면 '실루엣 보존' 과 맞서지 않게 그 말을 뺀다
+        self.assertNotIn("봉제선과 실루엣을 정확히 보존", over)
+        both = vton.prompt(["상의"], {"fit_over": True, "fit_slim": True})
+        self.assertNotIn(vton.OPTION_LINES["fit_over"], both)
+        self.assertNotIn(vton.OPTION_LINES["fit_slim"], both)
 
 
 class PoseTests(unittest.TestCase):

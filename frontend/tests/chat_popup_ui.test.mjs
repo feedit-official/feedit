@@ -234,15 +234,24 @@ await t('드롭다운으로 칸의 축을 바꾸면 그 값이 생성 요청에 
   assert.equal(fitBody.items[0].category, '모자');
 });
 
-await t('옵션 서랍은 접혀 있다가 눌러야 열리고, 스위치 다섯이 선다', async () => {
-  assert.equal(thread().querySelectorAll('.cpVfSw').length, 0, '처음부터 펼쳐져 있다');
+/* 2026-10-01 — 열기/여미기는 칸마다 슬라이드 하나(기본 열어 입기), 핏은 세 칸(기본 정핏).
+   예전엔 스위치 다섯(레이어드 · 아우터 열기/닫기 · 상의 열기/닫기)이었다. */
+await t('옵션 서랍은 접혀 있다가 눌러야 열리고, 스위치 하나와 슬라이드 셋이 선다', async () => {
+  assert.equal(thread().querySelectorAll('.cpVfGroup').length, 0, '처음부터 펼쳐져 있다');
   click(thread().querySelector('[data-vf-opts]'));
   await wait(10);
   const sw = thread().querySelectorAll('.cpVfSw');
-  assert.equal(sw.length, 5);
-  for (const b of sw) assert.equal(b.getAttribute('role'), 'switch', '스위치가 아니다');
+  assert.equal(sw.length, 1);
+  assert.equal(sw[0].getAttribute('role'), 'switch', '스위치가 아니다');
   const titles = [...thread().querySelectorAll('.cpVfGroupTitle')].map(x => x.textContent);
-  assert.deepEqual(titles, ['아우터 레이어드', '아우터 열기/닫기', '상의 열기/닫기']);
+  assert.deepEqual(titles, ['아우터 레이어드', '아우터', '상의', '핏']);
+  const slides = [...thread().querySelectorAll('.cpFitOpts .cpVfSlide')];
+  assert.deepEqual(slides.map(x => [...x.querySelectorAll('.cpVfCell')].map(b => b.textContent)),
+    [['열어 입기', '여며 입기'], ['열어 입기', '여며 입기'], ['오버핏', '정핏', '슬림핏']]);
+  /* 기본 칸 — 열어 입기 · 열어 입기 · 정핏 */
+  assert.deepEqual(slides.map(x => x.querySelector('.cpVfCell.on').textContent),
+    ['열어 입기', '열어 입기', '정핏']);
+  for (const x of slides) assert.equal(x.getAttribute('role'), 'radiogroup');
 });
 
 await t('옵션을 눌러도 대화가 맨 아래로 튀지 않는다 (2026-09-14)', async () => {
@@ -257,23 +266,63 @@ await t('옵션을 눌러도 대화가 맨 아래로 튀지 않는다 (2026-09-1
   await wait(10);
 });
 
-await t('아무 옵션도 켜지 않으면 전부 false 로 나간다 (예전 동작)', async () => {
+await t('아무것도 안 만지면 열어 입기 · 정핏 · 고화질로 나간다', async () => {
   click(thread().querySelector('[data-vf-generate]'));
   await wait(60);
   assert.deepEqual(fitBody.options,
-    {outer_layered:false, outer_open:false, outer_closed:false, top_open:false, top_closed:false});
+    {outer_layered:false, outer_open:true, outer_closed:false, top_open:true, top_closed:false,
+     fit_over:false, fit_slim:false});
+  assert.equal(fitBody.engine, 'sunburst');
 });
 
-await t('열기와 닫기는 같이 켜지지 않는다', async () => {
-  const opt = (k) => thread().querySelector('[data-vf-opt="' + k + '"]');
-  click(opt('outer_layered')); await wait(10);
-  click(opt('outer_open'));    await wait(10);
-  click(opt('outer_closed'));  await wait(10);
+const cellOf = (group, val) =>
+  thread().querySelector('[data-vf-slide="' + group + '"][data-vf-val="' + val + '"]');
+
+await t('두 칸 슬라이드는 누를 때마다 열어/여며가 바뀌고, 둘이 같이 켜지지 않는다', async () => {
+  click(thread().querySelector('[data-vf-opt="outer_layered"]')); await wait(10);
+  /* 고른 칸(열어 입기)을 눌러도 반대쪽으로 넘어간다 — 스위치처럼 */
+  click(cellOf('outer', 'open')); await wait(10);
+  assert.equal(thread().querySelector('[data-vf-slide="outer"].on').dataset.vfVal, 'closed');
+  click(cellOf('top', 'closed')); await wait(10);
   click(thread().querySelector('[data-vf-generate]'));
   await wait(60);
   assert.equal(fitBody.options.outer_layered, true);
   assert.equal(fitBody.options.outer_closed, true);
-  assert.equal(fitBody.options.outer_open, false, '열기와 닫기가 같이 켜졌다');
+  assert.equal(fitBody.options.outer_open, false, '열기와 여미기가 같이 켜졌다');
+  assert.equal(fitBody.options.top_closed, true);
+  assert.equal(fitBody.options.top_open, false);
+  /* 바꾼 묶음 수가 접힌 버튼에 붙는다 — 레이어드 · 아우터 · 상의 */
+  assert.equal(thread().querySelector('.cpFitOptsBtn b').textContent, '3');
+  click(cellOf('outer', 'closed')); await wait(10);     /* 다시 누르면 열어 입기 */
+  assert.equal(thread().querySelector('[data-vf-slide="outer"].on').dataset.vfVal, 'open');
+});
+
+await t('핏은 세 칸 중 하나 — 오버핏 · 정핏(이름 없음) · 슬림핏', async () => {
+  const fitOpts = async (val) => {
+    click(cellOf('fit', val)); await wait(10);
+    click(thread().querySelector('[data-vf-generate]')); await wait(60);
+    return [fitBody.options.fit_over, fitBody.options.fit_slim];
+  };
+  assert.deepEqual(await fitOpts('over'), [true, false]);
+  /* 세 칸짜리는 고른 칸을 다시 눌러도 그대로다 */
+  assert.deepEqual(await fitOpts('over'), [true, false]);
+  assert.deepEqual(await fitOpts('slim'), [false, true]);
+  assert.deepEqual(await fitOpts('regular'), [false, false]);
+  const slide = cellOf('fit', 'regular').closest('.cpVfSlide');
+  assert.equal(slide.style.getPropertyValue('--i'), '1', '손잡이가 정핏 칸에 있지 않다');
+});
+
+await t('생성 방식 — 빠르게(Flare)를 고르면 그대로 요청에 실리고 머리말이 바뀐다', async () => {
+  const head = () => thread().querySelector('.cpFitHead span').textContent;
+  assert.equal(head(), 'GPT IMAGE 2.5 SUNBURST');
+  click(cellOf('engine', 'flare')); await wait(10);
+  assert.equal(head(), 'GPT IMAGE 2.5 FLARE');
+  click(thread().querySelector('[data-vf-generate]')); await wait(60);
+  assert.equal(fitBody.engine, 'flare');
+  /* 결과 아래에 무엇으로 몇 초 걸렸는지 — 옛 서버는 engine 을 안 돌려줘서 고화질로 적힌다 */
+  assert.match(thread().querySelector('.cpFitMade').textContent, /^고화질 \(SUNBURST\) · \d+초$/);
+  click(cellOf('engine', 'flare')); await wait(10);   /* 다시 누르면 고화질로 */
+  assert.equal(head(), 'GPT IMAGE 2.5 SUNBURST');
 });
 
 await t('결과가 나오면 이미지 저장 버튼이 붙는다', () => {
@@ -451,6 +500,20 @@ await t('팝업 버튼이 독립 착장을 연다', async () => {
   click(document.querySelector('#cpVtonQuick'));
   await wait(40);
   assert.equal(count(), before + 1, '팝업 버튼이 새 착장을 열지 않았다');
+});
+
+/* 챗봇이 고른 연출이 슬라이드에 그대로 선다 (2026-10-01).
+   서버 build_fit 은 켠 이름만 돌려준다 — 안 고른 묶음은 기본 칸(열어 입기 · 정핏)이다. */
+await t('챗봇이 고른 연출(top_closed)은 상의 슬라이드를 여며 입기로 세운다', () => {
+  const f = CP.cpFitFromServer({ items: [{ slot: '상의', image: 'https://image.msscdn.net/a.jpg' }],
+                                 options: ['top_closed'] }, '');
+  assert.equal(f.options.top_closed, true);
+  assert.equal(f.options.top_open, false);
+  assert.equal(f.options.outer_open, true, '안 고른 아우터가 기본(열어 입기)이 아니다');
+  assert.deepEqual([f.options.fit_over, f.options.fit_slim], [false, false]);
+  /* 둘 다 켜져 온 옛 값은 고른 칸 하나로 정리된다 — 모순된 지시가 나가지 않는다 */
+  const g = CP.cpFitFromServer({ items: [], options: ['outer_open', 'outer_closed'] }, '');
+  assert.equal(Number(g.options.outer_open) + Number(g.options.outer_closed), 1);
 });
 
 console.log(`\n${pass}개 통과 · ${fail}개 실패`);

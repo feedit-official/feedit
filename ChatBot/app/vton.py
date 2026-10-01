@@ -1,4 +1,4 @@
-"""준비된 FEEDiT 모델과 여러 상품 사진을 GPT Image 2.5 Sunburst에 보낸다."""
+"""준비된 FEEDiT 모델과 여러 상품 사진을 GPT Image 2.5 (Sunburst · Flare)에 보낸다."""
 from __future__ import annotations
 
 import base64
@@ -6,6 +6,7 @@ import contextlib
 import os
 import random
 import re
+import time
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -104,7 +105,27 @@ SLOT_ORDER = ["상의", "하의", "아우터", "원피스(셋업)", "신발", "�
               "모자", "벨트", "안경"]
 AUTO = "자동 분류"
 CATEGORIES = set(SLOT_ORDER) | {AUTO}
-MODEL = "gpt-image-2.5-sunburst"
+# ── 생성 엔진 (2026-10-01) ──────────────────────────────────
+#   사용자가 고른다. 기본은 화질 쪽(Sunburst), 빨리 보고 싶으면 Flare.
+#   OpenAI 문서(2026-10-01 확인, developers.openai.com · GPT Image 2.5 prompting guide):
+#     Sunburst — "optimized for quality", GPT Image 2 보다 높은 화질
+#     Flare    — "optimized for speed", GPT Image 2 와 비슷한 화질
+#     두 모델 모두 images/edits 를 받고, 해상도 한도(긴 변 3840 · 픽셀 8,294,400)와
+#     quality 값(low … max)이 같다 — 그래서 SIZE · QUALITY 를 따로 두지 않는다.
+#   ★ 얼마나 빨라지는지는 우리 입력(기준 사진 7장 + 상품)으로 재 봐야 안다.
+#     결과의 elapsed_ms 로 남긴다. 문서도 "자기 작업으로 재라" 고 적어 두었다.
+ENGINES = {
+    "sunburst": {"model": "gpt-image-2.5-sunburst", "label": "GPT Image 2.5 Sunburst"},
+    "flare": {"model": "gpt-image-2.5-flare", "label": "GPT Image 2.5 Flare"},
+}
+DEFAULT_ENGINE = "sunburst"
+MODEL = ENGINES[DEFAULT_ENGINE]["model"]
+
+
+def engine_of(name: str | None) -> str:
+    """모르는 이름은 기본 엔진으로 — 옛 화면은 engine 을 보내지 않는다."""
+    key = str(name or "").strip().lower()
+    return key if key in ENGINES else DEFAULT_ENGINE
 # ── 출력 해상도·품질 (2026-09-14) ───────────────────────────
 #   1024x1024(정사각, 기본 품질)로 내던 것을 4K급 세로로 올린다.
 #   ★ 왜 3840x2160(표준 4K)이 아니라 2480x3312 인가 —
@@ -143,7 +164,10 @@ MAX_ITEMS = min(len(SLOT_ORDER), MAX_IMAGES - REFERENCE_COUNT)
 # 칸마다 어떻게 입혀야 하는가. prompt() 가 이 표를 읽는다 —
 # 칸을 늘릴 때 프롬프트 문장을 손으로 이어 붙이지 않도록 한자리에 모은다.
 WEAR_GUIDE = {
-    "상의": "상체에 입히고 여밈과 기장은 상품 사진의 형태를 그대로 따르세요",
+    # ★ '여밈 방식' 이다 — 단추·지퍼가 어디에 어떻게 달렸나. 열었나 여몄나(상태)는
+    #   옵션(top_open/top_closed)이 정한다. 예전 "여밈 … 그대로" 는 기본 '열어 입기'
+    #   문장과 맞섰다 (2026-10-01).
+    "상의": "상체에 입히고 기장과 여밈 방식(단추·지퍼 위치)은 상품 사진을 그대로 따르세요",
     "하의": "허리선에 맞춰 입히고 기장과 밑단 처리를 그대로 두세요",
     "아우터": "상의 위에 겹쳐 입히고 어깨선과 소매 길이를 몸에 맞추세요",
     "원피스(셋업)": "한 벌로 입히고 다른 상·하의와 겹치지 않게 하세요",
@@ -157,28 +181,67 @@ WEAR_GUIDE = {
 # ── 착장 옵션 (2026-09-14) ──────────────────────────────────
 #   ★ 켠 것만 문장이 붙는다. 전부 꺼 두면 예전 프롬프트와 같다 —
 #     끄는 것이 "닫아라"는 지시가 되면 사용자가 고르지 않은 연출이 들어간다.
+#   ★ 2026-10-01 — 화면이 바뀌었다. 열기/여미기는 칸(상의·아우터)마다 스위치 하나이고
+#     기본이 '열어 입기' 다. 그래서 이제 **아무 것도 안 만진 요청에도 outer_open ·
+#     top_open 이 실린다.** 두 가지를 같이 고쳤다.
+#       ① 문장이 그 칸의 옷이 있을 때만 붙는다(SLOT_OF). 하의만 넣었는데 "아우터는 앞을
+#          열어" 가 실리면 모델이 없던 아우터를 그려 넣는다.
+#       ② 여밈이 없는 옷(티셔츠·니트·풀오버)은 그대로 두라고 문장 안에서 말한다. 기본이
+#          켜진 이상, 이 옷에 열린 트임을 새로 만들라는 지시가 되면 안 된다.
+#     상의를 '열어 입기' 로 두고 안에 받쳐 입을 것이 없을 때는 맨살이 드러나지 않게
+#     단추를 위쪽만 풀라고 적는다 — 기본값이 사진을 망치면 안 된다.
 OPTION_LINES = {
     "outer_layered": ("아우터가 둘 이상이면 얇고 짧은 것을 안쪽, 두껍고 긴 것을 "
                       "바깥쪽으로 두어 자연스럽게 레이어드하세요."),
-    "outer_open": "아우터는 앞을 열어 입은 상태로 표현하고 안에 입은 옷이 보이게 하세요.",
-    "outer_closed": "아우터는 앞을 여미거나 잠근 상태로 표현하세요.",
-    "top_open": "상의는 앞을 열어 입은 상태로 표현하고 안에 받쳐 입은 옷이 보이게 하세요.",
-    "top_closed": "상의는 앞을 여미거나 잠근 상태로 표현하세요.",
+    "outer_open": ("앞여밈(지퍼·단추)이 있는 아우터는 앞을 열어 입은 상태로 표현하고 안에 "
+                   "입은 옷이 보이게 하세요. 앞여밈이 없는 아우터는 그대로 두세요."),
+    "outer_closed": ("앞여밈(지퍼·단추)이 있는 아우터는 앞을 여미거나 잠근 상태로 표현하세요."),
+    "top_open": ("앞여밈(단추·지퍼)이 있는 상의는 앞을 열어 입은 상태로 표현하세요. 안에 받쳐 "
+                 "입은 상의가 없으면 단추를 위쪽 한두 개만 풀어 자연스럽게 연출하세요. "
+                 "티셔츠·니트처럼 앞여밈이 없는 상의는 그대로 두고 트임을 새로 만들지 마세요."),
+    "top_closed": "앞여밈(단추·지퍼)이 있는 상의는 끝까지 여민 상태로 표현하세요.",
+    # ── 핏 (2026-10-01) — 화면은 오버핏 · 정핏 · 슬림핏 세 칸, 기본 정핏.
+    #   정핏은 문장을 붙이지 않는다 — 상품 사진의 핏 그대로가 정핏이고, 예전 동작이다.
+    "fit_over": ("핏은 오버핏으로 표현하세요 — 한두 치수 크게 입은 것처럼 어깨선이 살짝 "
+                 "내려오고 몸판·소매·바짓단에 여유가 생기게 하세요. 이 핏 지시가 상품 "
+                 "사진의 실루엣보다 우선합니다."),
+    "fit_slim": ("핏은 슬림핏으로 표현하세요 — 몸판·소매·바짓단이 몸선을 따라 좁게 "
+                 "떨어지게 하세요. 이 핏 지시가 상품 사진의 실루엣보다 우선합니다."),
 }
 # 서로 맞서는 짝. 둘 다 켜져 오면 어느 쪽도 쓰지 않는다 —
 # 모순된 지시를 보내느니 모델이 알아서 하게 두는 편이 낫다.
-OPTION_CONFLICTS = [("outer_open", "outer_closed"), ("top_open", "top_closed")]
+OPTION_CONFLICTS = [("outer_open", "outer_closed"), ("top_open", "top_closed"),
+                    ("fit_over", "fit_slim")]
+# 이 옵션은 이 칸의 옷이 있을 때만 의미가 있다. 칸을 모르는 사진('자동 분류')이
+# 있으면 그 사진이 이 칸일 수 있으니 붙인다 — 문장 자체가 조건부다.
+SLOT_OF = {"outer_open": "아우터", "outer_closed": "아우터",
+           "top_open": "상의", "top_closed": "상의"}
+FIT_KEYS = ("fit_over", "fit_slim")
 
 
-def option_lines(options) -> list[str]:
-    """켜진 옵션만 문장으로. 모르는 이름은 조용히 버린다."""
+def option_keys(options, categories: list[str] | None = None) -> list[str]:
+    """프롬프트에 실제로 실을 옵션 이름. 모르는 이름은 조용히 버린다.
+
+    categories 를 주면 그 칸의 옷이 없는 옵션을 뺀다(None 이면 칸을 보지 않는다).
+    """
     if not isinstance(options, dict):
         return []
     on = [k for k in OPTION_LINES if options.get(k)]
     for a, b in OPTION_CONFLICTS:
         if a in on and b in on:
             on = [k for k in on if k not in (a, b)]
-    return [OPTION_LINES[k] for k in OPTION_LINES if k in on]
+    if categories is not None:
+        cats = set(categories)
+        on = [k for k in on
+              if k not in SLOT_OF or SLOT_OF[k] in cats or AUTO in cats]
+    return on
+
+
+def option_lines(options, categories: list[str] | None = None) -> list[str]:
+    """켜진 옵션만 문장으로."""
+    return [OPTION_LINES[k] for k in option_keys(options, categories)]
+
+
 _DATA_URL = re.compile(r"^data:(image/(?:png|jpeg|webp));base64,(.+)$", re.I | re.S)
 
 
@@ -290,10 +353,14 @@ def prompt(categories: list[str], options: dict | None = None) -> str:
         f"{REFERENCE_COUNT}번은 이번 컷의 기준입니다. 자세, 팔다리 위치, 얼굴 방향, "
         "카메라 각도, 화면 안에서의 크기와 위치, 배경과 조명을 이 사진 그대로 두세요.",
         f"{first}번째 이미지부터가 입힐 상품입니다. {item_guide}.",
-        "각 상품의 색상, 패턴, 로고, 소재 질감, 봉제선과 실루엣을 정확히 보존하세요.",
+        # ★ 핏을 골랐으면 '실루엣 보존' 을 빼고 말한다 — 같은 프롬프트 안에서 "실루엣을
+        #   그대로" 와 "오버핏으로" 가 맞서면 모델이 어느 쪽도 제대로 하지 않는다.
+        ("각 상품의 색상, 패턴, 로고, 소재 질감, 봉제선을 정확히 보존하세요."
+         if any(k in FIT_KEYS for k in option_keys(options, cats))
+         else "각 상품의 색상, 패턴, 로고, 소재 질감, 봉제선과 실루엣을 정확히 보존하세요."),
         "여러 상품은 실제 옷을 입는 순서와 레이어 관계에 맞춰 하나의 코디로 조합하세요.",
     ]
-    body += option_lines(options)
+    body += option_lines(options, cats)
     body += [
         f"바꾸는 것은 옷뿐입니다. 얼굴, 머리, 체형, 자세, 배경, 조명은 "
         f"기준 사진 그대로 두세요 — 특히 얼굴이 다른 사람처럼 보이면 안 됩니다.",
@@ -329,8 +396,11 @@ def _items(items: list[dict] | None, image_data_url: str | None,
 
 def generate(*, model_id: str, items: list[dict] | None = None,
              image_data_url: str | None = None, category: str | None = None,
-             options: dict | None = None, pose: str | None = None) -> dict:
+             options: dict | None = None, pose: str | None = None,
+             engine: str | None = None) -> dict:
     model = MODELS.get(model_id)
+    engine = engine_of(engine)
+    image_model = ENGINES[engine]["model"]
     if not model:
         raise ValueError(f"'{model_id}' 는 없는 AI 모델입니다 "
                          f"(쓸 수 있는 것: {', '.join(sorted(MODELS))}).")
@@ -344,6 +414,8 @@ def generate(*, model_id: str, items: list[dict] | None = None,
     key = (os.getenv("OPENAI_API_KEY") or "").strip()
     if not key:
         raise RuntimeError("OPENAI_API_KEY가 설정되지 않았습니다.")
+    categories = [row["category"] for row in chosen]
+    started = time.monotonic()
     # ★ 기준 사진이 먼저, 상품이 나중 — prompt() 가 부르는 번호 그대로다.
     #   파일은 보내는 동안 열어 둔다(ExitStack). 하나씩 열고 닫으면 requests 가
     #   읽을 때는 이미 닫혀 있다.
@@ -358,8 +430,8 @@ def generate(*, model_id: str, items: list[dict] | None = None,
         response = requests.post(
             "https://api.openai.com/v1/images/edits",
             headers={"Authorization": f"Bearer {key}"},
-            data={"model": MODEL,
-                  "prompt": prompt([row["category"] for row in chosen], options),
+            data={"model": image_model,
+                  "prompt": prompt(categories, options),
                   "size": SIZE, "quality": QUALITY,
                   "output_format": OUTPUT_FORMAT,
                   "output_compression": OUTPUT_COMPRESSION,
@@ -376,7 +448,10 @@ def generate(*, model_id: str, items: list[dict] | None = None,
     if not encoded:
         raise RuntimeError("생성된 이미지를 받지 못했습니다.")
     mime = MIME.get(OUTPUT_FORMAT, "image/png")
-    return {"image": "data:" + mime + ";base64," + encoded, "model": MODEL,
+    return {"image": "data:" + mime + ";base64," + encoded, "model": image_model,
+            "engine": engine, "engine_label": ENGINES[engine]["label"],
+            # 요청을 보내고 받기까지 — 엔진별로 얼마나 걸리는지 재는 자리다.
+            "elapsed_ms": int((time.monotonic() - started) * 1000),
             "model_label": model["label"],
             "size": SIZE, "quality": QUALITY, "format": OUTPUT_FORMAT,
             # 어느 포즈가 뽑혔나 — 같은 자세를 한 번 더 내고 싶을 때 이 이름을
@@ -385,10 +460,9 @@ def generate(*, model_id: str, items: list[dict] | None = None,
             # 기준 사진이 실제로 몇 장 실렸나 — 폴더가 비어도 조용히 넘어가지
             # 않게 여기서 드러낸다.
             "references": [path.name for path in refs],
-            "categories": [row["category"] for row in chosen],
+            "categories": categories,
             # 어떤 옵션이 실제로 프롬프트에 실렸나. 화면엔 안 뜨지만 로그로 본다.
-            "options": [k for k in OPTION_LINES
-                        if OPTION_LINES[k] in option_lines(options)],
+            "options": option_keys(options, categories),
             "item_count": len(chosen)}
 
 
