@@ -496,23 +496,48 @@ HOT_RULE = ("최근 7일 평균(ma7)이 28일 평균(ma28)보다 얼마나 높�
             f"최근 28일 중 {HOT_MIN_ACTIVE_28}일 이상 언급된 용어만 올립니다.")
 
 
+# ★ 2026-10-01 — 홈 HOT TREND 는 **매일 다시 계산되는 버전**을 읽는다.
+#   매일 04:10 core.refresh_text_signals_daily 가 최근 35일을 이 버전으로 다시 쓴다
+#   (analysis/text_signals/metrics.py METRIC_VERSION). 운영 .env 의
+#   FEEDIT_METRIC_VERSION 이 있으면 그쪽을 따른다 — 트렌드 분석 화면의 기본 버전과 같은 값이다.
+HOT_DAILY_BASIS_NOTE = ("유튜브 댓글·영상 설명·커머스 리뷰를 합친 지표입니다. "
+                        "매일 새벽 최근 35일을 다시 계산합니다.")
+
+
+def _hot_source():
+    """(행 묶음, 기준 설명) — 매일 갱신 버전의 전 플랫폼 합산 행. 없을 때만 장기 이력."""
+    # 분석 패키지는 다른 곳(apps/core/tasks.py)처럼 쓰는 자리에서 불러온다.
+    from analysis.text_signals.metrics import METRIC_VERSION as DAILY_METRIC_VERSION
+    version = (os.getenv("FEEDIT_METRIC_VERSION") or DAILY_METRIC_VERSION).strip()
+    daily = TermMetricDaily.objects.filter(metric_version=version, source__isnull=True)
+    if daily.exists():
+        return daily, {"source": "ALL", "metric_version": version,
+                       "refresh": "daily", "note": HOT_DAILY_BASIS_NOTE}
+    hist = TermMetricDaily.objects.filter(
+        metric_version=HISTORY_VERSION, source__code__iexact=HISTORY_SOURCE)
+    return hist, {**HISTORY_BASIS, "refresh": "manual"}
+
+
 def _hot_terms(request):
     """GET /api/trend?rank=hot — 홈 HOT TREND TOP 10.
 
-    장기 이력(YouTube) 버전의 마지막 적재일 기준. 지표는 다시 계산하지 않고
-    적재된 ma7·ma28 을 그대로 읽어 변화율만 낸다.
+    지표는 다시 계산하지 않고 적재된 ma7·ma28 을 그대로 읽어 변화율만 낸다.
+
+    ★ 2026-10-01 — 예전엔 장기 이력 버전(feedit-yt-history-v1)을 읽었다. 그 버전은
+      2026-09-19 에 한 번 적재한 백필이라 **2026-09-08 에 멈춰** 있었고, 홈의 순위가
+      3주 넘게 같은 목록(배럴레그 · 플랫슈즈 …)이었다. 이제 매일 다시 계산되는 버전의
+      합산 행(source 없음)을 읽는다(_hot_source). 그 버전에 행이 없을 때만 장기 이력으로 간다.
     """
     limit = _int(request, "limit", 10, 1, 30)
-    hist = TermMetricDaily.objects.filter(
-        metric_version=HISTORY_VERSION, source__code__iexact=HISTORY_SOURCE)
-    as_of = hist.aggregate(d=Max("metric_date"))["d"]
+    base, basis = _hot_source()
+    as_of = base.aggregate(d=Max("metric_date"))["d"]
     if not as_of:
         return _empty("순위를 낼 지표가 아직 없습니다.")
     active = dict(
-        hist.filter(metric_date__gt=as_of - timedelta(days=28))
+        base.filter(metric_date__gt=as_of - timedelta(days=28))
         .values("term_id").annotate(n=Count("id")).values_list("term_id", "n"))
     latest = (
-        hist.filter(metric_date__gt=as_of - timedelta(days=3),
+        base.filter(metric_date__gt=as_of - timedelta(days=3),
                     term_id__in=[k for k, v in active.items() if v >= HOT_MIN_ACTIVE_28])
         .exclude(term__status="INACTIVE")
         .order_by("term_id", "-metric_date").distinct("term_id")
@@ -535,7 +560,7 @@ def _hot_terms(request):
     falling = sorted((x for x in rows if x["change_pct"] < 0), key=lambda x: x["change_pct"])
     return _ok({
         "as_of": as_of.isoformat(),
-        "basis": HISTORY_BASIS,
+        "basis": basis,
         "rule": HOT_RULE,
         "rising": rising[:limit],
         "falling": falling[:limit],

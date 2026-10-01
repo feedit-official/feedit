@@ -4660,3 +4660,57 @@ KREAM 주소를 대표로 고르던 문제도 확인했다. 무신사 계열 이
 - 배포: 챗봇 컨테이너 · Django API(대화 저장에 `next` 보존) · Vercel 프론트 셋 다 올라가야 끝까지 이어진다.
   프론트만 올라가도 열린 대화 안에서는 바로 동작하고, Django 가 없으면 대화를 다시 열 때 `next` 가 빠진다.
 - 이 변경 전에 저장된 대화에는 `next` 가 없다. 그 대화에서 "응" 으로 이어 가면 예전처럼 짐작한다.
+
+## 2026-10-01 14:35 KST — Claude · 홈 트렌드 TOP 10 매일 갱신 · 살!말? 투표 TOP 10 실시간 갱신
+
+### 무엇을 왜 고쳤나
+
+홈 채팅바 위 **트렌드 온도 TOP 10** 이 3주 넘게 같은 목록(2026-09-08 기준)이었다.
+
+- 서버 `/api/trend?rank=hot`(`_hot_terms`)이 장기 이력 버전 `feedit-yt-history-v1` 을 읽었다.
+  이 버전은 2026-09-19 에 한 번 적재한 유튜브 댓글 백필이라 마지막 날이 2026-09-08 에서 멈춰 있다.
+  매일 04:10 `core.refresh_text_signals_daily` 가 다시 쓰는 버전은 `feedit-unified-text-v1` 이다.
+- 화면(`chat.js` `hotBuild`)도 페이지를 열 때 한 번만 읽었다. 탭을 열어 두면 다음 날에도 그대로였다.
+
+살!말? 모드의 **LIVE 투표 TOP 10** 은 모드를 처음 켤 때 한 번 읽고 끝이었다.
+그 뒤 남이 투표해도, 내가 투표해도 숫자가 바뀌지 않았다.
+
+고친 것
+
+- `backend/apps/api/views.py` `_hot_source()` — 매일 갱신 버전(`FEEDIT_METRIC_VERSION`, 없으면
+  `analysis.text_signals.metrics.METRIC_VERSION`)의 **전 플랫폼 합산 행(source 없음)** 을 읽는다.
+  그 버전에 행이 하나도 없을 때만 예전 장기 이력으로 간다. 순위 규칙(최근 28일 중 7일 이상 언급,
+  최근 3일 안의 마지막 값, ma7/ma28 변화율)은 그대로다. 응답 `basis` 에 `source: ALL` ·
+  `refresh: daily` 를 싣는다.
+- `frontend/home/static/js/chat.js`
+  - 트렌드 TOP 10 — 30분마다(그리고 탭으로 돌아올 때) 확인해 기준일이나 순위가 바뀌었을 때만 다시 그린다.
+    지표는 하루 한 번 바뀌므로 이 정도면 다음 날 순위로 넘어간다. 아래 설명줄은
+    "… 기준 · 전 플랫폼 합산 · 최근 7일 평균 vs 28일 평균 · 매일 갱신" 으로 바뀐다.
+  - 투표 TOP 10 — 살!말? 모드에 들어올 때마다, 홈에서 모드를 보는 동안 20초마다,
+    내가 투표한 직후(`feedit:vote`) 다시 읽는다. `cache:'no-store'` 로 브라우저 캐시를 쓰지 않는다.
+  - 숨은 탭 · 다른 화면에서는 읽지 않는다.
+- `frontend/account/static/js/account_api.js` `saveVote` — 서버가 투표를 받은 뒤 `feedit:vote` 를 알린다.
+
+### 어떻게 확인했나
+
+- `frontend/tests/home_hot_refresh.test.mjs`(새 시험, `npm test` 끝에 붙임) — 실제 `main.js` · `chat.js` ·
+  `account_api.js` 를 jsdom 에 올리고 시계를 앞으로 돌려 본다. 7건:
+  매일 갱신 설명줄 · 30분 안 재요청 없음 · 30분 뒤 다음 날 순위 · 모드 진입 시 no-store 재요청 ·
+  투표 직후 재요청 · 20초 주기 · 다른 화면에서는 요청 없음. 고치기 전 코드로 돌리면 5건 실패.
+- `npm test` 의 나머지 시험은 하나씩 돌려 통과. `resale_product_ui.test.mjs` 1건
+  ("응답에 있는 플랫폼만 카드로 그린다" 3 !== 2)은 이 변경 없이도 실패한다 — 리세일 작업 쪽 기존 실패.
+- `views.py` 는 이 환경에 Django 6.1(Python 3.12+)이 없어 `py_compile` 과 코드 읽기로만 확인했다.
+  운영 RDS 에 대고 새 순위를 직접 뽑아 보지는 못했다.
+- `rebuild_text_metrics` 는 언급이 있는 날에만 행을 쓴다(언급 0 인 날은 행이 없다).
+  그래서 "28일 중 7일 이상" 을 행 개수로 세는 기존 규칙이 새 버전에서도 같은 뜻이다.
+
+### 남은 것 · 주의
+
+- 배포: Django API 를 다시 빌드해야 서버 순위가 바뀐다
+  (`docker compose --env-file .env -f docker/compose.api.yml build api` →
+  `... up -d --no-deps api`). 프론트는 Vercel 배포. 챗봇 컨테이너는 상관없다.
+  프론트만 올라가면 자동 갱신은 되지만 서버가 여전히 9/8 목록을 준다.
+- Vercel `/api/trend` 중계가 성공 응답을 5분(+재검증 10분) 캐시한다. 하루 한 번 바뀌는 순위라 그대로 둔다.
+- 순위가 유튜브 댓글 기준에서 전 플랫폼 합산 기준으로 바뀌므로 목록 구성이 달라진다.
+  챗봇 순위(`rank_terms`, 최신일 온도순)와는 여전히 다른 순위다 — 이쪽은 상승률 순이다.
+- 투표 TOP 10 은 20초 주기라 남의 투표는 최대 20초 늦게 보인다. 웹소켓 같은 푸시는 아니다.

@@ -272,7 +272,10 @@ function hotPaint(){
     '<span class="n">'+String(i+1).padStart(2,'0')+'</span>'+
     '<span class="k">'+cardEsc(t[0])+'</span><span class="ph">'+cardEsc(HOT_FACET[t[3]]||t[3]||'')+'</span>'+
     '<span class="d '+(t[1]>0?'up':'dn')+'">'+(t[1]>0?'▲':'▼')+Math.abs(t[1])+'%</span></button>').join('')+
-    (HOT_META?'<div class="hotNote">'+cardEsc(HOT_META.as_of)+' 기준 · YouTube 댓글 · 최근 7일 평균 vs 28일 평균</div>':'');
+    (HOT_META?'<div class="hotNote">'+cardEsc(HOT_META.as_of)+' 기준 · '+
+      (HOT_META.basis&&HOT_META.basis.source==='ALL'?'전 플랫폼 합산':'YouTube 댓글')+
+      ' · 최근 7일 평균 vs 28일 평균'+
+      (HOT_META.basis&&HOT_META.basis.refresh==='daily'?' · 매일 갱신':'')+'</div>':'');
 }
 async function hotLoad(){
   try{
@@ -289,7 +292,8 @@ async function hotLoad(){
 }
 async function hotVoteLoad(){
   try{
-    const r=await fetch('/api/salmal/cards?tab=popular',{credentials:'same-origin',headers:{Accept:'application/json'}});
+    /* 투표 수는 그때그때 바뀐다 — 브라우저 캐시를 쓰지 않는다(살!말? 화면 vote_app 과 같다) */
+    const r=await fetch('/api/salmal/cards?tab=popular',{credentials:'same-origin',cache:'no-store',headers:{Accept:'application/json'}});
     const j=await r.json();
     if(!r.ok||j.status!=='ok'){ HOT_VOTE_STATE='error'; return; }
     const items=(j.data&&j.data.items)||[];
@@ -298,16 +302,48 @@ async function hotVoteLoad(){
     HOT_VOTE_STATE=HOT_VOTE.length?'ok':'empty';
   }catch(e){ HOT_VOTE_STATE='error'; }
 }
+/* ── 자동 갱신 (2026-10-01) ─────────────────────────────
+   ★ 예전엔 페이지를 열 때 한 번만 읽었다. 투표 순위는 모드를 처음 켤 때 한 번 읽고 끝이었다.
+   · 트렌드 TOP 10 — 지표가 하루 한 번(매일 새벽) 다시 계산된다. 30분마다 확인해서
+     기준일이나 순위가 바뀌었을 때만 다시 그린다. 탭을 오래 열어 둬도 다음 날 순위로 바뀐다.
+   · 투표 TOP 10 — 투표는 그때그때 바뀐다. 홈에서 살!말? 모드를 보는 동안 20초마다 읽고,
+     내가 투표하면(feedit:vote) 바로 다시 읽는다.
+   · 안 보이는 탭 · 다른 화면에서는 읽지 않는다. 돌아오면 그때 확인한다. */
+const HOT_REFRESH_MS=30*60*1000;
+const VOTE_REFRESH_MS=20*1000;
+let hotLoadedAt=0, voteLoadedAt=0;
+const hotOnHome=()=>!document.hidden&&(!document.body.dataset.view||document.body.dataset.view==='home');
+const hotSig=()=>JSON.stringify([HOT,HOT_META&&HOT_META.as_of]);
+const voteSig=()=>JSON.stringify(HOT_VOTE);
+async function hotReload(){
+  const before=hotSig();
+  await hotLoad(); hotLoadedAt=Date.now();
+  if(!SM_ON&&hotSig()!==before){ hotI=0; hotPaint(); hotStep(); }
+}
+async function hotVoteReload(){
+  const before=voteSig();
+  await hotVoteLoad(); voteLoadedAt=Date.now();
+  if(SM_ON&&voteSig()!==before){ hotI=0; hotPaint(); hotStep(); }
+}
+function hotTick(){
+  if(!hotOnHome())return;
+  if(Date.now()-hotLoadedAt>=HOT_REFRESH_MS)hotReload();
+  if(SM_ON&&Date.now()-voteLoadedAt>=VOTE_REFRESH_MS)hotVoteReload();
+}
 /* 모드가 바뀌면 같은 자리를 다시 그린다 (smSwitch 에서 부른다) */
 export function hotRefresh(){
   hotI=0; hotPaint(); hotStep();
-  if(SM_ON&&HOT_VOTE_STATE!=='ok') hotVoteLoad().then(()=>{ if(SM_ON){ hotI=0; hotPaint(); hotStep(); } });
+  /* 살!말? 모드로 들어올 때마다 다시 읽는다 — 예전엔 처음 한 번만 읽어 옛 순위가 남았다 */
+  if(SM_ON)hotVoteReload();
 }
 export function hotBuild(){
   const list=$('#hotList'); if(!list)return;
   hotPaint(); hotStep();
-  hotLoad().then(()=>{ if(!SM_ON){ hotI=0; hotPaint(); hotStep(); } });
+  hotLoad().then(()=>{ hotLoadedAt=Date.now(); if(!SM_ON){ hotI=0; hotPaint(); hotStep(); } });
   setInterval(()=>{ if(!hotOpen)hotStep() },2400);
+  setInterval(hotTick,VOTE_REFRESH_MS);
+  document.addEventListener('visibilitychange',hotTick);
+  document.addEventListener('feedit:vote',()=>{ voteLoadedAt=0; if(SM_ON)hotVoteReload(); });
   $('#hotBar').addEventListener('click',hotToggle);
   /* 스타일이 아닌 용어(아이템·소재·색 …)는 챗봇에 바로 물어본다 */
   list.addEventListener('click',e=>{

@@ -98,7 +98,9 @@ export const logChat = (conversationId, title = '') =>
 
 /* choice: 'BUY' | 'PASS' | null(투표 취소) */
 export const saveVote = ({ cardKey, title = '', brand = '', style = '', choice = null }) =>
-  quiet(request('vote', { method:'POST', body:{ card_key:cardKey, title, brand, style, choice } }));
+  quiet(request('vote', { method:'POST', body:{ card_key:cardKey, title, brand, style, choice } }))
+    /* 투표가 서버에 들어간 뒤 알린다 — 홈의 LIVE 투표 TOP 10 이 바로 다시 읽는다 (2026-10-01) */
+    .then(r => { if (r) { try { document.dispatchEvent(new CustomEvent('feedit:vote')); } catch (e) {} } return r; });
 
 export const saveVoteComment = ({ cardId, content }) =>
   request('vote-comment', { method:'POST', body:{ card_id:cardId, content } });
