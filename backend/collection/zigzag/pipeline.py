@@ -4,47 +4,40 @@ from datetime import datetime, timezone
 from urllib.parse import parse_qs, urlparse
 
 from collection.common.pipeline import BasePlatformPipeline
+from collection.common.schemas import CollectionResult
 
-from .collector import ZigzagCollector
-from .store_enricher import ZigzagStoreEnricher
+from .config import (
+    DEFAULT_ACTION_ID,
+    DEFAULT_GROUPS,
+    DEFAULT_LAYOUT_ID,
+    DEFAULT_LIMITS,
+    DEFAULT_MAX_DELAY,
+    DEFAULT_MIN_DELAY,
+    DEFAULT_MODULE_SLOT_ID,
+    DEFAULT_ORDER,
+)
+from .service import ZigzagCnvService
 
 
 class ZigzagPipeline(BasePlatformPipeline):
     """
-    FEEDIT Zigzag pipeline.
+    FEEDIT Zigzag collection pipeline.
 
-    CrawlTarget 지원 방식
+    지원 수집 유형:
+    1. CNV
+       - 카테고리별 trend/style tag 상품 관측
 
-    1) RANKING / CATEGORY
-       예:
-       https://zigzag.kr/categories/-1?middle_category_id=507&sort=200
+    2. RANKING
+       - 세부 카테고리별 상품 랭킹
+       - 선택적으로 상품 리뷰 수집
 
-       -> URL에서 category_id / sort 추출
-       -> Zigzag GraphQL category collector 실행
-       -> 상품 카드 최대 limit개 저장
+    이 클래스는 수집 결과만 CollectionResult로 반환한다.
 
-    2) OTHER + params.mode=SHOP
-       예:
-       target_url = https://zigzag.kr/naeni
-
-       params:
-       {
-           "mode": "SHOP",
-           "product_limit": 100,
-           "max_pages": null
-       }
-
-       -> 스토어 프로필
-       -> 스타일
-       -> 북마크
-       -> 카테고리
-       -> 쿠폰
-       -> 배너
-       -> 스토어 상품
-       를 하나의 S3 raw document로 저장한다.
+    S3 RAW 저장, RawDocument 생성, CrawlRun 처리는
+    collection.common.runner에서 담당한다.
     """
 
-    SOURCE = "ZIGZAG"
+    SOURCE_CODE = "ZIGZAG"
 
     def collect(
         self,
@@ -52,464 +45,459 @@ class ZigzagPipeline(BasePlatformPipeline):
         target_type: str,
         target_url: str | None,
         params: dict,
-    ) -> dict:
-
-        if not target_url:
-            raise ValueError(
-                "ZIGZAG target_url이 없습니다."
-            )
-
-        target_type = (
-            target_type or ""
-        ).upper().strip()
-
+    ) -> CollectionResult:
         params = params or {}
 
-        mode = str(
-            params.get("mode") or ""
+        collection_type = str(
+            params.get("collection_type") or ""
         ).upper().strip()
 
-        # ========================================================
-        # SHOP
-        # ========================================================
+        ranking_mode = str(
+            params.get("ranking_mode") or ""
+        ).lower().strip()
+
+        # ============================================================
+        # RANKING
+        # ============================================================
 
         if (
-            mode == "SHOP"
-            or (
-                target_type == "OTHER"
-                and "/categories/" not in target_url
-            )
+            collection_type == "RANKING"
+            or ranking_mode == "detail_category"
         ):
-            return self._collect_shop(
+            if ranking_mode not in {
+                "",
+                "detail_category",
+            }:
+                raise ValueError(
+                    "지원하지 않는 Zigzag "
+                    f"ranking_mode: {ranking_mode}"
+                )
+
+            from .detail_ranking import (
+                collect_detail_category_ranking,
+            )
+
+            raw_result = collect_detail_category_ranking(
                 target_url=target_url,
                 params=params,
             )
 
-        # ========================================================
-        # CATEGORY / RANKING
-        # ========================================================
+            return self._to_collection_result(
+                raw_result
+            )
 
-        if target_type in {
-            "CATEGORY",
-            "RANKING",
+        # ============================================================
+        # CNV
+        # ============================================================
+
+        if collection_type not in {
+            "",
+            "CNV",
         }:
-            return self._collect_category(
-                target_url=target_url,
-                params=params,
-                entity_type=target_type,
+            raise ValueError(
+                "지원하지 않는 Zigzag "
+                f"collection_type: {collection_type}"
             )
 
-        raise ValueError(
-            "ZIGZAG에서 지원하지 않는 target입니다. "
-            f"target_type={target_type}, mode={mode or '-'}"
-        )
+        normalized_target_type = (
+            target_type
+            or ""
+        ).upper().strip()
 
-    # ============================================================
-    # SHOP
-    # ============================================================
-
-    def _collect_shop(
-        self,
-        *,
-        target_url: str,
-        params: dict,
-    ) -> dict:
-
-        product_limit_raw = params.get(
-            "product_limit",
-            100,
-        )
-
-        product_limit = (
-            None
-            if product_limit_raw in {
-                None,
-                "",
-                "ALL",
-                "all",
-            }
-            else int(product_limit_raw)
-        )
-
-        max_pages_raw = params.get(
-            "max_pages"
-        )
-
-        max_pages = (
-            int(max_pages_raw)
-            if max_pages_raw
-            not in {
-                None,
-                "",
-            }
-            else None
-        )
-
-        collect_products = self._to_bool(
-            params.get(
-                "collect_products",
-                True,
-            )
-        )
-
-        with ZigzagCollector() as collector:
-
-            data = collector.collect_shop(
-                target_url,
-                product_limit=product_limit,
-                max_pages=max_pages,
-                collect_products=collect_products,
+        if normalized_target_type != "RANKING":
+            raise ValueError(
+                "ZigzagPipeline은 현재 "
+                "RANKING CrawlTarget만 지원합니다. "
+                f"target_type={normalized_target_type}"
             )
 
-        shop = (
-            data.get("shop")
-            if isinstance(
-                data.get("shop"),
-                dict,
-            )
-            else {}
-        )
-
-        source_brand_id = (
-            shop.get("source_brand_id")
-        )
-
-        if not source_brand_id:
-            raise RuntimeError(
-                "ZIGZAG SHOP source_brand_id가 없습니다."
-            )
-
-        products = (
-            data.get("products")
-            if isinstance(
-                data.get("products"),
-                list,
-            )
-            else []
-        )
-
-        payload = {
-            "schema_version": "2.0",
-            "source": self.SOURCE,
-            "entity_type": "SHOP",
-
-            "shop": shop,
-
-            "categories": (
-                data.get("categories")
-                or []
-            ),
-
-            "coupon": (
-                data.get("coupon")
-            ),
-
-            "banners": (
-                data.get("banners")
-                or []
-            ),
-
-            "products": products,
-
-            # S3 원본에는 플랫폼 profile raw도 보존.
-            # DB normalizer에서는 필요한 값만 사용하면 됨.
-            "raw_profile": (
-                data.get("raw_profile")
-            ),
-        }
-
-        collected_at = (
-            data.get("collected_at")
-            or datetime.now(
-                timezone.utc
-            ).isoformat()
-        )
-
-        return {
-            "entity_type": "SHOP",
-
-            "source_entity_id": str(
-                source_brand_id
-            ),
-
-            "source_url": (
-                data.get("source_url")
-                or target_url
-            ),
-
-            "collected_at": collected_at,
-
-            "http_status": (
-                data.get("http_status")
-            ),
-
-            "content_type": (
-                data.get("content_type")
-                or "application/json"
-            ),
-
-            "payload": payload,
-
-            "discovered_count": (
-                len(products)
-            ),
-
-            "success_count": (
-                len(products)
-            ),
-
-            "failure_count": 0,
-        }
-
-    # ============================================================
-    # CATEGORY / RANKING
-    # ============================================================
-
-    def _collect_category(
-        self,
-        *,
-        target_url: str,
-        params: dict,
-        entity_type: str,
-    ) -> dict:
-
-        (
-            category_id,
-            sort,
-        ) = self._parse_category_scope(
-            target_url,
+        category_id = self._resolve_category_id(
+            target_url=target_url,
             params=params,
         )
 
-        limit = int(
-            params.get(
-                "limit",
-                100,
-            )
+        groups = (
+            params.get("groups")
+            or DEFAULT_GROUPS
         )
 
-        if limit <= 0:
-            raise ValueError(
-                "ZIGZAG limit은 1 이상이어야 합니다."
-            )
-
-        max_pages_raw = params.get(
-            "max_pages"
-        )
-
-        max_pages = (
-            int(max_pages_raw)
-            if max_pages_raw
-            not in {
-                None,
-                "",
-            }
-            else None
-        )
-
-        products: list[dict] = []
-        errors: list[dict] = []
-
-        enrich_store = self._to_bool(
-            params.get("enrich_store", True)
-        )
-
-        enrichment_stats = {
-            "enabled": enrich_store,
-            "unique_store_count": 0,
-            "cache_hit_count": 0,
-            "db_hit_count": 0,
-            "fetched_count": 0,
-            "failure_count": 0,
+        limits = {
+            **DEFAULT_LIMITS,
+            **(params.get("limits") or {}),
         }
 
-        with ZigzagCollector() as collector:
-            enricher = (
-                ZigzagStoreEnricher(collector=collector)
-                if enrich_store
-                else None
+        order = str(
+            params.get("order")
+            or DEFAULT_ORDER
+        ).strip()
+
+        layout_id = str(
+            params.get("layout_id")
+            or DEFAULT_LAYOUT_ID
+        )
+
+        action_id = str(
+            params.get("action_id")
+            or DEFAULT_ACTION_ID
+        )
+
+        module_slot_id = str(
+            params.get("module_slot_id")
+            or DEFAULT_MODULE_SLOT_ID
+        )
+
+        min_delay = float(
+            params.get(
+                "min_delay",
+                DEFAULT_MIN_DELAY,
             )
+        )
 
-            for (
-                _raw_body,
-                parsed_items,
-                _has_next,
-            ) in collector.iter_category_pages(
+        max_delay = float(
+            params.get(
+                "max_delay",
+                DEFAULT_MAX_DELAY,
+            )
+        )
+
+        # ============================================================
+        # CNV COLLECTION
+        # ============================================================
+
+        with ZigzagCnvService(
+            layout_id=layout_id,
+            action_id=action_id,
+            module_slot_id=module_slot_id,
+            min_delay=min_delay,
+            max_delay=max_delay,
+        ) as service:
+            data = service.collect_category(
                 category_id=category_id,
-                sort=sort,
-                max_pages=max_pages,
-            ):
-                for item in parsed_items:
-                    item = dict(item)
-                    item["rank"] = len(products) + 1
-
-                    if enricher is not None:
-                        item = enricher.enrich(item)
-                        store = item.get("store") or {}
-                        enrichment_error = store.get("enrichment_error")
-                        if enrichment_error:
-                            errors.append({
-                                "rank": item.get("rank"),
-                                "source_product_id": item.get("source_product_id"),
-                                "store_id": item.get("store_id"),
-                                "stage": "STORE_ENRICHMENT",
-                                **enrichment_error,
-                            })
-
-                    products.append(item)
-                    if len(products) >= limit:
-                        break
-
-                if len(products) >= limit:
-                    break
-
-            if enricher is not None:
-                enrichment_stats = {
-                    "enabled": True,
-                    "unique_store_count": enricher.unique_store_count,
-                    "cache_hit_count": enricher.cache_hit_count,
-                    "db_hit_count": enricher.db_hit_count,
-                    "fetched_count": enricher.fetched_count,
-                    "failure_count": enricher.failure_count,
-                }
+                groups=groups,
+                limits=limits,
+                order=order,
+            )
 
         collected_at = datetime.now(
             timezone.utc
-        ).isoformat()
-
-        payload = {
-            "schema_version": "2.0",
-
-            "source": self.SOURCE,
-
-            "entity_type": entity_type,
-
-            "ranking": {
-                "source_url": target_url,
-                "category_id": category_id,
-                "sort": sort,
-                "requested_limit": limit,
-                "discovered_count": (
-                    len(products)
-                ),
-            },
-
-            "products": products,
-
-            "store_enrichment": enrichment_stats,
-
-            "errors": errors,
-        }
-
-        return {
-            "entity_type": entity_type,
-
-            "source_entity_id": (
-                f"zigzag-{entity_type.lower()}:"
-                f"{category_id}:{sort}"
-            ),
-
-            "source_url": target_url,
-
-            "collected_at": collected_at,
-
-            "http_status": 200,
-
-            "content_type": (
-                "application/json"
-            ),
-
-            "payload": payload,
-
-            "discovered_count": (
-                len(products)
-            ),
-
-            "success_count": (
-                len(products)
-            ),
-
-            "failure_count": 0,
-        }
-
-    # ============================================================
-    # URL / PARAMS
-    # ============================================================
-
-    @staticmethod
-    def _parse_category_scope(
-        target_url: str,
-        *,
-        params: dict,
-    ) -> tuple[str, str]:
-
-        query = parse_qs(
-            urlparse(
-                target_url
-            ).query,
-            keep_blank_values=True,
         )
 
+        collected_at_iso = (
+            collected_at.isoformat()
+        )
+
+        # ============================================================
+        # CNV STATISTICS
+        # ============================================================
+
+        tag_snapshot_count = 0
+        product_occurrence_count = 0
+
+        unique_product_ids: set[str] = set()
+
+        group_stats: dict[str, dict] = {}
+
+        for group, rows in data["groups"].items():
+            group_occurrences = 0
+
+            for row in rows:
+                products = (
+                    row.get("products")
+                    or []
+                )
+
+                tag_snapshot_count += 1
+
+                product_occurrence_count += (
+                    len(products)
+                )
+
+                group_occurrences += (
+                    len(products)
+                )
+
+                for product in products:
+                    product_id = (
+                        product.get(
+                            "product_id"
+                        )
+                    )
+
+                    if product_id:
+                        unique_product_ids.add(
+                            str(product_id)
+                        )
+
+            group_stats[group] = {
+                "tag_snapshot_count":
+                    len(rows),
+
+                "product_occurrence_count":
+                    group_occurrences,
+            }
+
+        unique_product_count = len(
+            unique_product_ids
+        )
+
+        # ============================================================
+        # RAW PAYLOAD
+        # ============================================================
+
+        payload = {
+            "schema_version": "1.0",
+            "source": "ZIGZAG",
+            "entity_type": "CNV_CATEGORY",
+            "collected_at": collected_at_iso,
+
+            "cnv": {
+                "category_id":
+                    category_id,
+
+                "order":
+                    order,
+
+                "groups":
+                    groups,
+
+                "limits":
+                    limits,
+
+                "layout_id":
+                    layout_id,
+
+                "module_slot_id":
+                    module_slot_id,
+
+                "tag_snapshot_count":
+                    tag_snapshot_count,
+
+                "product_occurrence_count":
+                    product_occurrence_count,
+
+                "unique_product_count":
+                    unique_product_count,
+
+                "group_stats":
+                    group_stats,
+            },
+
+            "groups":
+                data["groups"],
+        }
+
+        source_url = (
+            target_url
+            or (
+                "https://zigzag.kr/pages/"
+                "srp-clp-category"
+                f"?category_id={category_id}"
+            )
+        )
+
+        # ============================================================
+        # COLLECTION RESULT
+        # ============================================================
+
+        return CollectionResult(
+            source_code="ZIGZAG",
+            entity_type="CNV_CATEGORY",
+            source_entity_id=(
+                f"zigzag-cnv:{category_id}"
+            ),
+            source_url=source_url,
+            collected_at=collected_at,
+            http_status=200,
+            payload=payload,
+            discovered_count=(
+                unique_product_count
+            ),
+            success_count=(
+                unique_product_count
+            ),
+            failure_count=0,
+        )
+
+    # ================================================================
+    # LEGACY DICT -> COLLECTION RESULT
+    # ================================================================
+
+    @staticmethod
+    def _to_collection_result(
+        raw_result,
+    ) -> CollectionResult:
+        """
+        detail_ranking.py의 기존 반환 형식을
+        공통 CollectionResult 계약으로 변환한다.
+
+        detail_ranking.py 자체는 수정하지 않는다.
+        """
+
+        if isinstance(
+            raw_result,
+            CollectionResult,
+        ):
+            return raw_result
+
+        if not isinstance(
+            raw_result,
+            dict,
+        ):
+            raise TypeError(
+                "Zigzag detail ranking 결과는 "
+                "dict 또는 CollectionResult여야 합니다. "
+                f"actual={type(raw_result).__name__}"
+            )
+
+        required_fields = (
+            "entity_type",
+            "source_entity_id",
+            "source_url",
+            "collected_at",
+            "payload",
+            "discovered_count",
+            "success_count",
+            "failure_count",
+        )
+
+        missing_fields = [
+            field
+            for field in required_fields
+            if field not in raw_result
+        ]
+
+        if missing_fields:
+            raise ValueError(
+                "Zigzag detail ranking 결과에 "
+                "필수 필드가 없습니다: "
+                + ", ".join(missing_fields)
+            )
+
+        collected_at = (
+            raw_result["collected_at"]
+        )
+
+        if isinstance(
+            collected_at,
+            str,
+        ):
+            collected_at = (
+                datetime.fromisoformat(
+                    collected_at.replace(
+                        "Z",
+                        "+00:00",
+                    )
+                )
+            )
+
+        return CollectionResult(
+            source_code="ZIGZAG",
+
+            entity_type=(
+                raw_result[
+                    "entity_type"
+                ]
+            ),
+
+            source_entity_id=(
+                raw_result[
+                    "source_entity_id"
+                ]
+            ),
+
+            source_url=(
+                raw_result[
+                    "source_url"
+                ]
+            ),
+
+            collected_at=collected_at,
+
+            http_status=(
+                raw_result.get(
+                    "http_status",
+                    200,
+                )
+            ),
+
+            payload=(
+                raw_result[
+                    "payload"
+                ]
+            ),
+
+            discovered_count=int(
+                raw_result[
+                    "discovered_count"
+                ]
+            ),
+
+            success_count=int(
+                raw_result[
+                    "success_count"
+                ]
+            ),
+
+            failure_count=int(
+                raw_result[
+                    "failure_count"
+                ]
+            ),
+        )
+
+    # ================================================================
+    # CATEGORY
+    # ================================================================
+
+    @staticmethod
+    def _resolve_category_id(
+        *,
+        target_url: str | None,
+        params: dict,
+    ) -> str:
         category_id = (
             params.get(
                 "category_id"
             )
-            or (
-                query.get(
-                    "middle_category_id"
-                )
-                or query.get(
-                    "category_id"
-                )
-                or query.get(
-                    "category"
-                )
-                or [None]
-            )[0]
         )
 
-        sort = (
-            params.get(
-                "sort"
-            )
-            or (
-                query.get("sort")
-                or ["200"]
-            )[0]
-            or "200"
-        )
-
-        if not category_id:
-            raise ValueError(
-                "ZIGZAG category_id를 "
-                "URL 또는 params에서 찾지 못했습니다."
+        if category_id not in {
+            None,
+            "",
+        }:
+            return str(
+                category_id
             )
 
-        return (
-            str(category_id),
-            str(sort),
+        if target_url:
+            parsed = urlparse(
+                target_url
+            )
+
+            query = parse_qs(
+                parsed.query
+            )
+
+            for key in (
+                "category_id",
+                "middle_category_id",
+            ):
+                values = query.get(
+                    key
+                )
+
+                if (
+                    values
+                    and values[0]
+                ):
+                    return str(
+                        values[0]
+                    )
+
+        raise ValueError(
+            "Zigzag category_id를 "
+            "찾지 못했습니다. "
+            "CrawlTarget.params.category_id "
+            "또는 target URL의 "
+            "category_id를 설정하세요."
         )
-
-    @staticmethod
-    def _to_bool(
-        value,
-    ) -> bool:
-
-        if isinstance(
-            value,
-            bool,
-        ):
-            return value
-
-        if value is None:
-            return False
-
-        return str(
-            value
-        ).strip().lower() in {
-            "1",
-            "true",
-            "yes",
-            "y",
-            "on",
-        }

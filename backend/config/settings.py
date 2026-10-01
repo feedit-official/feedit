@@ -12,16 +12,7 @@ load_dotenv(ROOT_DIR / ".env")
 
 DEBUG = os.getenv("DJANGO_DEBUG", "False").lower() == "true"
 
-# ── SECRET_KEY (2026-09-21) ─────────────────────────────────
-#
-# 예전에는 없으면 조용히 "dev-secret-key" 로 떨어졌다. 이 저장소는 public
-# 이라, 배포 서버에서 그 값이 쓰이면 **세션 쿠키와 CSRF 토큰을 누구나 위조**
-# 할 수 있다. 조용히 취약한 것보다 시끄럽게 안 뜨는 쪽이 낫다.
-#
-# ★ 배포 전에 서버에서 이 한 줄을 먼저 확인할 것:
-#       grep -c '^DJANGO_SECRET_KEY=.\+' .env      →  1 이 나와야 한다
-#   0 이면 아래처럼 만들어 넣고 나서 올린다:
-#       python3 -c "import secrets;print(secrets.token_urlsafe(64))"
+
 _SECRET = os.getenv("DJANGO_SECRET_KEY", "").strip()
 if not _SECRET:
     if DEBUG:
@@ -187,12 +178,25 @@ CELERY_RESULT_BACKEND = os.getenv(
     f"redis://{_REDIS_HOST}:{_REDIS_PORT}/1",
 )
 
+CELERY_ACCEPT_CONTENT = ["json"]
+CELERY_TASK_SERIALIZER = "json"
+CELERY_RESULT_SERIALIZER = "json"
+CELERY_TIMEZONE = "Asia/Seoul"
+CELERY_ENABLE_UTC = True
+CELERY_TASK_TRACK_STARTED = True
+CELERY_TASK_ACKS_LATE = True
+CELERY_WORKER_PREFETCH_MULTIPLIER = 1
+CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
+
+
+
 CELERY_BEAT_SCHEDULE = {
     "dispatch-due-crawl-targets": {
         "task": "core.dispatch_due_targets",
 
         # 60초마다 CrawlTarget 확인
         "schedule": 60.0,
+        "kwargs": {"batch_size": 2},
     },
     # ── 알림 (apps/api/tasks.py) ──
     #   시간대는 app.conf.timezone = Asia/Seoul 이다.
@@ -205,10 +209,6 @@ CELERY_BEAT_SCHEDULE = {
     "notify-weekly": {
         "task": "app.notify_weekly",
         "schedule": crontab(hour=18, minute=0, day_of_week=0),
-    },
-    "refresh-text-signals-daily": {
-        "task": "core.refresh_text_signals_daily",
-        "schedule": crontab(hour=4, minute=10),
     },
     # ── 검색 신호 (2026-09-22) ──
     #   ★ config/celery.py 에도 같은 항목이 있다. 일부러 양쪽에 둔다.
@@ -224,6 +224,10 @@ CELERY_BEAT_SCHEDULE = {
     "collect-search-weekly": {
         "task": "core.collect_search_weekly",
         "schedule": crontab(hour=6, minute=10, day_of_week="1-5"),
+    },
+    "collect-search-volume-monthly": {
+        "task": "core.collect_search_volume_monthly",
+        "schedule": crontab(hour=6, minute=40, day_of_month="2"),
     },
     # ── 운영 알림 (2026-09-27) ──
     #   매일 09:20 — 장기 미갱신 소스가 있으면 운영 계정 · 메일로 알린다 (apps/core/services/ops_alerts.py)

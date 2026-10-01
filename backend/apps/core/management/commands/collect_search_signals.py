@@ -87,19 +87,13 @@ class Command(BaseCommand):
         dry = opts["dry_run"]
         today = date.today()
 
-        terms = list(
-            DictionaryTerm.objects.filter(status="ACTIVE")
-            .values_list("id", "canonical_name", "normalized_name")
-            .order_by("id")
-        )
-        if opts["limit"]:
-            terms = terms[:opts["limit"]]
-        keywords = [t[1] for t in terms if t[1]]
-        by_keyword = {}
-        for tid, canonical, normalized in terms:
-            for name in (canonical, normalized):
-                if name:
-                    by_keyword.setdefault(str(name).replace(" ", "").lower(), tid)
+        from collection.search_volume.term_resolver import SearchTermResolver
+
+        resolver = SearchTermResolver()
+        search_terms = resolver.active_search_terms(limit=opts["limit"])
+        keywords = [row.query for row in search_terms]
+        by_keyword = {row.normalized_query.replace(" ", ""): row.term_id for row in search_terms}
+        self.term_resolver = resolver
 
         self.stdout.write(f"📅 {today} · mode={opts['mode']} · 용어 {len(keywords):,}개"
                           + ("  [DRY-RUN]" if dry else ""))
@@ -229,7 +223,7 @@ class Command(BaseCommand):
         src = self._source(source_code, "구글 검색")
         objs, seen = [], set()
         for r in rows:
-            tid = by_keyword.get(str(r.get("keyword") or "").replace(" ", "").lower())
+            tid = self.term_resolver.resolve(r.get("keyword"))
             if not tid:
                 continue
             try:
@@ -255,7 +249,7 @@ class Command(BaseCommand):
         objs, seen = [], set()
         for group in results:
             name = str(group.get("title") or group.get("groupName") or "")
-            tid = by_keyword.get(name.replace(" ", "").lower())
+            tid = self.term_resolver.resolve(name)
             if not tid:
                 continue
             for point in group.get("data") or []:
@@ -281,7 +275,7 @@ class Command(BaseCommand):
         src = self._source("GOOGLE_SEARCH", "구글 검색")
         objs, seen = [], set()
         for r in rows:
-            tid = by_keyword.get(str(r.get("keyword") or "").replace(" ", "").lower())
+            tid = self.term_resolver.resolve(r.get("keyword"))
             region = str(r.get("region") or "").strip()
             if not tid or not region:
                 continue

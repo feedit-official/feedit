@@ -270,48 +270,6 @@ class UserSavedItem(models.Model):
         verbose_name="콘텐츠",
     )
 
-    # ── 가격 하락 알림(1번)이 쓰는 기준값 ──────────────────────────
-    # 찜한 순간의 가격을 여기에 박아 둔다. 스냅샷 시계열만으로는
-    # '언제 대비 내렸는지'가 사람마다 달라 판정이 흔들린다.
-    saved_price = models.DecimalField(
-        max_digits=14,
-        decimal_places=2,
-        null=True,
-        blank=True,
-        verbose_name="찜 시점 가격",
-    )
-
-    # 그 가격을 읽은 판매처. 한 상품에 판매처가 여럿이면 비교 대상을 고정한다.
-    saved_price_source = models.ForeignKey(
-        "core.ProductSource",
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="saved_price_items",
-        verbose_name="가격 기준 판매처",
-    )
-
-    saved_price_at = models.DateTimeField(
-        null=True,
-        blank=True,
-        verbose_name="찜 시점 가격 관측일시",
-    )
-
-    # 마지막으로 알린 가격. 같은 하락을 며칠 내리 알리지 않기 위해 남긴다.
-    notified_price = models.DecimalField(
-        max_digits=14,
-        decimal_places=2,
-        null=True,
-        blank=True,
-        verbose_name="마지막 알림 가격",
-    )
-
-    notified_at = models.DateTimeField(
-        null=True,
-        blank=True,
-        verbose_name="마지막 알림 시각",
-    )
-
     created_at = models.DateTimeField(
         auto_now_add=True,
         verbose_name="저장일시",
@@ -632,59 +590,6 @@ class VoteReport(models.Model):
         return f"{self.get_target_type_display()} #{self.target_id} / {self.get_status_display()}"
 
 
-class VoteFeedback(models.Model):
-    """살!말? 사후 피드백 — 투표가 마감된 뒤 글쓴이가 남기는 결과 (2026-09-19).
-
-    글쓴이만, 카드당 하나. 투표자들의 '적중'(내 판단이 맞았나)은 이 값으로 계산한다
-    (apps/api/badges.py — 연속 적중 · 여론 조력자 · 성실 피드백러).
-    """
-
-    class Purchase(models.TextChoices):
-        BOUGHT = "BOUGHT", "샀어요"
-        SKIPPED = "SKIPPED", "안 샀어요"
-        UNDECIDED = "UNDECIDED", "아직 고민 중"
-
-    card = models.OneToOneField(
-        VoteCard,
-        on_delete=models.CASCADE,
-        related_name="feedback",
-        verbose_name="카드",
-    )
-    user = models.ForeignKey(
-        AppUser,
-        on_delete=models.CASCADE,
-        related_name="vote_feedbacks",
-        verbose_name="작성자",
-    )
-    purchase = models.CharField(max_length=20, choices=Purchase.choices, verbose_name="구매 여부")
-    satisfaction = models.PositiveSmallIntegerField(
-        null=True, blank=True, verbose_name="만족도(1~5)",
-        help_text="샀으면 '사길 잘했나', 안 샀으면 '안 사길 잘했나'. 고민 중이면 비워 둔다.",
-    )
-    helpful = models.BooleanField(null=True, blank=True, verbose_name="투표가 도움이 됐나")
-    comment = models.CharField(max_length=300, blank=True, default="", verbose_name="한 줄 후기")
-    created_at = models.DateTimeField(auto_now_add=True, verbose_name="작성일시")
-    updated_at = models.DateTimeField(auto_now=True, verbose_name="수정일시")
-
-    class Meta:
-        db_table = '"app"."vote_feedback"'
-        verbose_name = "살말 피드백"
-        verbose_name_plural = "살말 피드백"
-        indexes = [
-            models.Index(fields=["user", "-created_at"], name="idx_vote_feedback_user"),
-        ]
-        constraints = [
-            models.CheckConstraint(
-                condition=models.Q(satisfaction__isnull=True)
-                | models.Q(satisfaction__gte=1, satisfaction__lte=5),
-                name="ck_vote_feedback_satisfaction",
-            ),
-        ]
-
-    def __str__(self):
-        return f"#{self.card_id} {self.get_purchase_display()} · {self.satisfaction or '-'}"
-
-
 class ChatSession(models.Model):
     """
     사용자와 AI 챗봇의 대화 세션.
@@ -788,6 +693,63 @@ class ChatMessage(models.Model):
 
     def __str__(self):
         return f"{self.get_role_display()} / {self.created_at}"
+
+
+# ============================================================
+# Legacy service models preserved during backend merge
+# ============================================================
+
+class VoteFeedback(models.Model):
+    """살!말? 사후 피드백 — 투표가 마감된 뒤 글쓴이가 남기는 결과 (2026-09-19).
+
+    글쓴이만, 카드당 하나. 투표자들의 '적중'(내 판단이 맞았나)은 이 값으로 계산한다
+    (apps/api/badges.py — 연속 적중 · 여론 조력자 · 성실 피드백러).
+    """
+
+    class Purchase(models.TextChoices):
+        BOUGHT = "BOUGHT", "샀어요"
+        SKIPPED = "SKIPPED", "안 샀어요"
+        UNDECIDED = "UNDECIDED", "아직 고민 중"
+
+    card = models.OneToOneField(
+        VoteCard,
+        on_delete=models.CASCADE,
+        related_name="feedback",
+        verbose_name="카드",
+    )
+    user = models.ForeignKey(
+        AppUser,
+        on_delete=models.CASCADE,
+        related_name="vote_feedbacks",
+        verbose_name="작성자",
+    )
+    purchase = models.CharField(max_length=20, choices=Purchase.choices, verbose_name="구매 여부")
+    satisfaction = models.PositiveSmallIntegerField(
+        null=True, blank=True, verbose_name="만족도(1~5)",
+        help_text="샀으면 '사길 잘했나', 안 샀으면 '안 사길 잘했나'. 고민 중이면 비워 둔다.",
+    )
+    helpful = models.BooleanField(null=True, blank=True, verbose_name="투표가 도움이 됐나")
+    comment = models.CharField(max_length=300, blank=True, default="", verbose_name="한 줄 후기")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="작성일시")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="수정일시")
+
+    class Meta:
+        db_table = '"app"."vote_feedback"'
+        verbose_name = "살말 피드백"
+        verbose_name_plural = "살말 피드백"
+        indexes = [
+            models.Index(fields=["user", "-created_at"], name="idx_vote_feedback_user"),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(satisfaction__isnull=True)
+                | models.Q(satisfaction__gte=1, satisfaction__lte=5),
+                name="ck_vote_feedback_satisfaction",
+            ),
+        ]
+
+    def __str__(self):
+        return f"#{self.card_id} {self.get_purchase_display()} · {self.satisfaction or '-'}"
 
 
 class Notification(models.Model):

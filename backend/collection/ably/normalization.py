@@ -1,14 +1,26 @@
+"""Preview compatibility; persistence now lives in pipeline.step01_ingestion.ably."""
 from __future__ import annotations
+import re
+import unicodedata
 
-from collection.common.normalization import (
-    TABLE_BRAND_SOURCE,
-    TABLE_CATEGORY_SOURCE,
-    TABLE_PRODUCT_SOURCE,
-    TABLE_PRODUCT_SOURCE_SNAPSHOT,
-    clean_text,
-    gender_scope,
-    source_key_text,
-)
+TABLE_BRAND_SOURCE = "brand_source"
+TABLE_CATEGORY_SOURCE = "category_source"
+TABLE_PRODUCT_SOURCE = "product_source"
+TABLE_PRODUCT_SOURCE_SNAPSHOT = "product_source_snapshot"
+
+
+def clean_text(value):
+    if value is None:
+        return None
+    return re.sub(r"\s+", " ", unicodedata.normalize("NFKC", str(value))).strip() or None
+
+
+def source_key_text(value):
+    return (clean_text(value) or "").casefold() or None
+
+
+def gender_scope(value):
+    return value if isinstance(value, str) and value in {"MALE", "FEMALE", "UNISEX"} else None
 
 
 def _present(values: dict) -> dict:
@@ -36,6 +48,15 @@ def normalize_ably_preview(product: dict, ranking_context: dict | None = None) -
         "sku_code": product.get("sku_code"),
         "market": market,
     })
+    market_attributes = None
+    if market:
+        market_attributes = _present({
+            "market_sno": market.get("source_market_id"),
+            "market_name": market.get("name"),
+        })
+
+    # Ranking responses can contain a brand ID without its name. Keep the
+    # product linked to that brand ID instead of treating its seller as a brand.
     source_brand = brand if brand.get("source_brand_id") or brand.get("name") else {}
     source_brand_kind = "BRAND"
     if not source_brand and market:
@@ -54,6 +75,13 @@ def normalize_ably_preview(product: dict, ranking_context: dict | None = None) -
             **source_brand,
             "source_brand_id": _name_fallback(prefix, source_brand.get("name")),
         }
+    brand_source_attributes = {"candidate_kind": source_brand_kind}
+    if market_attributes:
+        brand_source_attributes["markets"] = [market_attributes]
+    if source_brand_kind == "MARKET_FALLBACK" and brand.get("source_brand_id"):
+        brand_source_attributes["observed_brand_snos"] = [
+            str(brand["source_brand_id"])
+        ]
     source_category_id = category.get("source_category_id")
     source_category_name = category.get("name")
     category_kind = "SOURCE_CATEGORY"
@@ -98,7 +126,7 @@ def normalize_ably_preview(product: dict, ranking_context: dict | None = None) -
                 "source_id": None,
                 "source_brand_id": source_brand.get("source_brand_id"),
                 "name": source_brand.get("name"),
-                "attributes": {"candidate_kind": source_brand_kind},
+                "attributes": brand_source_attributes,
                 "brand_id": None,
                 "mapping_status": "UNMAPPED",
                 "_references": {"source": {"code": "ABLY"}},

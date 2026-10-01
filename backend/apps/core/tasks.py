@@ -2,49 +2,41 @@ from __future__ import annotations
 
 import logging
 from datetime import timedelta
+from typing import Any
 
 from celery import shared_task
-from django.conf import settings
-from django.db import transaction
+from django.db import close_old_connections, transaction
 from django.db.models import Q
 from django.utils import timezone
 
-from apps.core.models import CrawlTarget, RawDocument
-from apps.core.services import (
-    create_crawl_run,
-    create_raw_document,
-    mark_crawl_run_failed,
-    mark_crawl_run_success,
-    mark_target_crawled,
-)
-from apps.core.services.registry import get_pipeline_class
+from apps.core.models import CrawlRun, CrawlTarget
+from collection.common.runner import run_target
 
 
 logger = logging.getLogger(__name__)
 
+DISPATCH_BATCH_SIZE = 2
 
-# 한 번의 dispatcher 실행에서 너무 많은 타깃을
-# 동시에 queue에 넣지 않도록 제한.
-DISPATCH_BATCH_SIZE = 100
-
-
-# ============================================================
-# LIVE TARGET EXECUTOR
-# ============================================================
-
-
-# ── 공통 재시도 (2026-09-27, COLLECT-001) ────────────────────────
-# 요구사항: "수집이 실패하면 재시도하고, 계속 실패하면 담당자한테 알림이 간다."
-# 수집기마다 따로 두던 재시도(무신사 USED 등)와 별개로, 실행 단위로 한 번 더 감싼다.
-# 시도마다 CrawlRun 이 따로 남으므로 실패 이력은 그대로 보인다.
-# 담당자 알림은 **마지막 시도까지 실패했을 때만** 보낸다.
 LIVE_MAX_RETRIES = 2
-LIVE_RETRY_COUNTDOWN = (300, 900)          # 5분 뒤, 15분 뒤
+LIVE_RETRY_COUNTDOWN = (300, 900)
 
 
-def live_retry_countdown(retries):
-    """몇 번째 재시도인지(0부터)에 맞는 대기 초."""
-    return LIVE_RETRY_COUNTDOWN[min(retries, len(LIVE_RETRY_COUNTDOWN) - 1)]
+def live_retry_countdown(retries: int) -> int:
+    return LIVE_RETRY_COUNTDOWN[
+        min(retries, len(LIVE_RETRY_COUNTDOWN) - 1)
+    ]
+
+
+@shared_task(
+    name="core.celery_smoke_test",
+)
+def celery_smoke_test(
+    message: str = "FEEDIT DATA CRAWLER",
+) -> dict[str, Any]:
+    return {
+        "ok": True,
+        "message": message,
+    }
 
 
 @shared_task(
@@ -55,561 +47,190 @@ def live_retry_countdown(retries):
 def run_live_target(
     self,
     target_id: int,
-):
+) -> dict[str, Any]:
     """
-    CrawlTarget 하나를 실제로 실행한다.
+    CrawlTarget 하나를 실행한다.
 
-    흐름:
-        CrawlTarget
-        -> CrawlRun 생성
-        -> 플랫폼 Pipeline 실행
-        -> S3 RAW 저장
-        -> RawDocument 생성
-        -> 플랫폼별 후처리
-        -> CrawlRun 성공/실패 처리
-        -> CrawlTarget last_crawled_at 갱신
+    실제 수집/RAW 저장/RawDocument 생성/STEP01/STEP02는
+    collection.common.runner.run_target()이 담당한다.
+
+    Celery task의 책임:
+    - DB connection 정리
+    - runner 호출
+    - 실패 재시도
+    - 최종 실패 로그
     """
+    close_old_connections()
 
-    target = (
-        CrawlTarget.objects
-        .select_related("source")
-        .get(id=target_id)
-    )
-
-    # ========================================================
-    # 0. CRAWL RUN
-    # ========================================================
-
-    crawl_run = create_crawl_run(
-        target=target,
-        celery_task_id=self.request.id,
+    logger.info(
+        "Celery crawl start. target_id=%s task_id=%s",
+        target_id,
+        self.request.id,
     )
 
     try:
-        # ====================================================
-        # 1. PLATFORM PIPELINE
-        # ====================================================
-
-        pipeline_class = get_pipeline_class(
-            target.source.code
+        result = run_target(
+            target_id=target_id,
         )
 
-        pipeline = pipeline_class(
-            bucket=settings.AWS_STORAGE_BUCKET_NAME,
-            region_name=settings.AWS_REGION,
+        logger.info(
+            "Celery crawl success. target_id=%s task_id=%s",
+            target_id,
+            self.request.id,
         )
 
-        params = dict(target.params or {})
-        if (
-            target.source.code == "musinsa_used"
-            and target.collection_mode == CrawlTarget.CollectionMode.LIVE
-        ):
-            params.setdefault("live", True)
-
-        result = pipeline.run_target(
-            target_type=target.target_type,
-            target_url=target.target_url,
-            params=params,
-        )
-
-        # ====================================================
-        # 2. RAW DOCUMENT
-        #
-        # 실제 RAW 데이터는 S3에 저장한다.
-        # RDS에는 S3 위치와 메타데이터만 기록한다.
-        # ====================================================
-
-        create_raw_document(
-            crawl_run=crawl_run,
-            document_type=result["entity_type"],
-            external_id=result["source_entity_id"],
-            source_url=result.get("source_url"),
-            s3_bucket=result["s3"]["bucket"],
-            s3_key=result["s3"]["key"],
-            content_hash=result.get(
-                "content_hash"
-            ),
-            http_status=result.get(
-                "http_status"
-            ),
-            content_type=result.get(
-                "content_type"
-            ),
-            collected_at=result.get(
-                "collected_at"
-            ),
-        )
-
-        # create_raw_document()의 반환형에 의존하지 않고
-        # 방금 저장한 S3 key로 정확한 RawDocument를 다시 잡는다.
-        raw_document = (
-            RawDocument.objects
-            .select_related(
-                "source",
-                "crawl_run",
-            )
-            .get(
-                s3_bucket=result["s3"]["bucket"],
-                s3_key=result["s3"]["key"],
-            )
-        )
-
-        # ====================================================
-        # 3. SOURCE-SPECIFIC POST PROCESS
-        #
-        # ZIGZAG RANKING
-        #   -> Source Ingestion
-        #   -> BrandSource / CategorySource / ProductSource
-        #
-        # YOUTUBE CREATOR
-        #   -> ContentProfile upsert
-        #   -> ContentItem(video) upsert
-        # ====================================================
-
-        source_code = target.source.code.upper()
-        entity_type = result["entity_type"].upper()
-
-        source_ingestion_result = None
-        profile_id = None
-        video_result = None
-        comment_result = None
-
-        # ----------------------------------------------------
-        # ZIGZAG RANKING -> Source Ingestion
-        # ----------------------------------------------------
-        if (
-            source_code == "ZIGZAG"
-            and entity_type == "RANKING"
-        ):
-            from apps.core.services.source_ingestion import (
-                ingest_zigzag_raw_document,
-            )
-
-            source_ingestion_result = (
-                ingest_zigzag_raw_document(
-                    raw_document_id=raw_document.id
-                )
-            )
-
-        # ----------------------------------------------------
-        # ABLY / MUSINSA_USED -> Source Ingestion
-        # ----------------------------------------------------
-        if source_code == "ABLY" and entity_type == "RANKING":
-            from apps.core.services.source_ingestion import (
-                ingest_ably_raw_document,
-            )
-
-            source_ingestion_result = ingest_ably_raw_document(
-                raw_document_id=raw_document.id,
-            )
-
-        if (
-            source_code == "MUSINSA_USED"
-            and entity_type in {"RANKING", "PRODUCT"}
-        ):
-            from apps.core.services.source_ingestion import (
-                ingest_musinsa_used_raw_document,
-            )
-
-            source_ingestion_result = ingest_musinsa_used_raw_document(
-                raw_document_id=raw_document.id,
-            )
-
-        # ----------------------------------------------------
-        # YOUTUBE CREATOR -> Profile + Videos
-        # ----------------------------------------------------
-        if (
-            source_code == "YOUTUBE"
-            and entity_type == "CREATOR"
-        ):
-            platform_data = (
-                result.get("platform_data")
-                or {}
-            )
-
-            # 구버전 payload는 profile dict 자체가
-            # platform_data로 들어온다.
-            profile_data = (
-                platform_data.get("profile")
-                or (
-                    platform_data
-                    if platform_data.get("channel_id")
-                    else None
-                )
-            )
-
-            videos = (
-                platform_data.get("videos")
-                or []
-            )
-
-            if profile_data:
-                from apps.core.services.content import (
-                    upsert_youtube_content_items,
-                    upsert_youtube_content_profile,
-                )
-
-                profile = (
-                    upsert_youtube_content_profile(
-                        source=target.source,
-                        data=profile_data,
-                    )
-                )
-
-                profile_id = profile.id
-
-                if videos:
-                    video_result = (
-                        upsert_youtube_content_items(
-                            source=target.source,
-                            videos=videos,
-                            profile=profile,
-                            observed_at=(
-                                platform_data.get(
-                                    "collected_at"
-                                )
-                            ),
-                        )
-                    )
-
-                    if video_result["failure_count"]:
-                        logger.warning(
-                            "YouTube 영상 적재 일부 실패. "
-                            "target_id=%s failed=%s",
-                            target.id,
-                            video_result["failure_count"],
-                        )
-
-        # ----------------------------------------------------
-        # YOUTUBE VIDEO -> Comments -> TextDocument(PENDING)
-        # ----------------------------------------------------
-        if (
-            source_code == "YOUTUBE"
-            and entity_type == "COMMENT"
-        ):
-            from apps.core.models import ContentItem
-            from apps.core.services.content import upsert_youtube_comments
-
-            platform_data = result.get("platform_data") or {}
-            video_id = (
-                platform_data.get("video_id")
-                or result.get("source_entity_id")
-            )
-            content_item = ContentItem.objects.get(
-                source=target.source,
-                external_content_id=video_id,
-            )
-            comment_result = upsert_youtube_comments(
-                source=target.source,
-                content_item=content_item,
-                comments=platform_data.get("comments") or [],
-            )
-
-        # ====================================================
-        # 4. RUN SUCCESS
-        # ====================================================
-
-        mark_crawl_run_success(
-            crawl_run,
-            discovered_count=result.get(
-                "discovered_count",
-                0,
-            ),
-            success_count=result.get(
-                "success_count",
-                0,
-            ),
-            failure_count=result.get(
-                "failure_count",
-                0,
-            ),
-        )
-        mark_target_crawled(
-            target
-        )
-
-        # ====================================================
-        # 5. RESULT
-        # ====================================================
-
-        return {
-            "target_id": target.id,
-            "target_name": target.name,
-            "target_type": target.target_type,
-            "source": target.source.code,
-            "crawl_run_id": crawl_run.id,
-            "raw_document_id": raw_document.id,
-            "entity_type": result[
-                "entity_type"
-            ],
-            "source_entity_id": result[
-                "source_entity_id"
-            ],
-            "s3_bucket": result["s3"][
-                "bucket"
-            ],
-            "s3_key": result["s3"]["key"],
-            "verified": result["s3"].get(
-                "verified",
-                False,
-            ),
-            "discovered_count": result.get(
-                "discovered_count",
-                0,
-            ),
-            "success_count": result.get(
-                "success_count",
-                0,
-            ),
-            "failure_count": result.get(
-                "failure_count",
-                0,
-            ),
-            "source_ingestion": source_ingestion_result,
-            "content_profile_id": profile_id,
-            "content_item_count": (
-                video_result["success_count"]
-                if video_result
-                else 0
-            ),
-            "content_item_failed": (
-                video_result["failure_count"]
-                if video_result
-                else 0
-            ),
-            "comment_ingestion": comment_result,
-        }
+        return result
 
     except Exception as exc:
-        # ====================================================
-        # RUN FAILED
-        # ====================================================
-
-        logger.exception(
-            "CrawlTarget failed. "
-            "target_id=%s source=%s",
-            target.id,
-            target.source.code,
-        )
-
         retries = self.request.retries or 0
         will_retry = retries < LIVE_MAX_RETRIES
 
-        mark_crawl_run_failed(
-            crawl_run,
-            error=(f"{exc} (재시도 {retries + 1}/{LIVE_MAX_RETRIES} 예정)" if will_retry else exc),
-            error_code=exc.__class__.__name__,
-            alert=not will_retry,          # 계속 실패했을 때만 담당자에게 알린다
+        logger.exception(
+            "CrawlTarget failed. target_id=%s retry=%s/%s",
+            target_id,
+            retries,
+            LIVE_MAX_RETRIES,
         )
 
         if will_retry:
-            raise self.retry(exc=exc, countdown=live_retry_countdown(retries))
+            raise self.retry(
+                exc=exc,
+                countdown=live_retry_countdown(retries),
+            )
+
         raise
 
-
-# ============================================================
-# CELERY ENQUEUE
-# ============================================================
+    finally:
+        close_old_connections()
 
 
 def _enqueue_live_target(
     target_id: int,
-):
+) -> None:
     """
-    DB transaction commit 이후 호출된다.
+    transaction commit 이후 Celery broker에 등록한다.
 
-    Celery Broker 등록에 실패하면 next_crawl_at을
-    현재 시각으로 되돌려 다음 dispatcher 실행에서
-    다시 잡힐 수 있게 한다.
+    broker 등록에 실패하면 next_crawl_at을 현재 시각으로 복구하여
+    다음 dispatcher에서 다시 잡힐 수 있게 한다.
     """
-
     try:
-        run_live_target.delay(
-            target_id
-        )
+        run_live_target.delay(target_id)
 
     except Exception:
         logger.exception(
-            "Failed to enqueue CrawlTarget. "
-            "target_id=%s",
+            "Failed to enqueue CrawlTarget. target_id=%s",
             target_id,
         )
 
-        # 이미 next_crawl_at이 미래로 갱신된 상태이므로,
-        # Broker 등록 실패 시 다시 실행 대상이 되게 복구.
         CrawlTarget.objects.filter(
             id=target_id,
             is_active=True,
         ).update(
-            next_crawl_at=timezone.now()
+            next_crawl_at=timezone.now(),
         )
-
-
-# ============================================================
-# LIVE TARGET DISPATCHER
-# ============================================================
 
 
 @shared_task(
     name="core.dispatch_due_targets",
 )
-def dispatch_due_targets():
+def dispatch_due_targets(
+    batch_size: int = DISPATCH_BATCH_SIZE,
+) -> dict[str, Any]:
     """
-    실행 시간이 도래한 LIVE CrawlTarget을 조회하여
-    Celery queue에 등록한다.
+    실행 시각이 도래한 LIVE CrawlTarget을 Celery queue에 등록한다.
 
-    실행 조건:
-        - is_active=True
-        - collection_mode=LIVE
-        - next_crawl_at IS NULL
-          또는
-        - next_crawl_at <= 현재 시각
+    조건:
+    - is_active=True
+    - collection_mode=LIVE
+    - next_crawl_at IS NULL 또는 next_crawl_at <= now
 
-    동시성 처리:
-        select_for_update(skip_locked=True)
-
-    Queue 등록:
-        transaction.on_commit()
-
-    즉 여러 dispatcher가 동시에 실행되더라도
-    같은 CrawlTarget을 중복 dispatch하는 것을
-    최대한 방지한다.
+    중복 dispatch 방지:
+    - select_for_update(skip_locked=True)
+    - RUNNING CrawlRun 확인
+    - transaction.on_commit 이후 broker enqueue
     """
+    close_old_connections()
 
     now = timezone.now()
-
     dispatched = 0
-    target_ids = []
+    target_ids: list[int] = []
+    skipped_running: list[int] = []
 
-    # ========================================================
-    # 1. DUE TARGET LOCK
-    # ========================================================
-
-    with transaction.atomic():
-        targets = list(
-            CrawlTarget.objects
-            .select_for_update(
-                skip_locked=True
-            )
-            .select_related("source")
-            .filter(
-                is_active=True,
-                collection_mode=(
-                    CrawlTarget.CollectionMode.LIVE
-                ),
-            )
-            .filter(
-                Q(
-                    next_crawl_at__isnull=True
+    try:
+        with transaction.atomic():
+            targets = list(
+                CrawlTarget.objects
+                .select_for_update(skip_locked=True)
+                .select_related("source")
+                .filter(
+                    is_active=True,
+                    collection_mode=CrawlTarget.CollectionMode.LIVE,
                 )
-                | Q(
-                    next_crawl_at__lte=now
+                .filter(
+                    Q(next_crawl_at__isnull=True)
+                    | Q(next_crawl_at__lte=now)
                 )
+                .order_by(
+                    "priority",
+                    "id",
+                )[:batch_size]
             )
-            .order_by(
-                "priority",
-                "id",
-            )[
-                :DISPATCH_BATCH_SIZE
-            ]
-        )
 
-        # ====================================================
-        # 2. SCHEDULE NEXT RUN
-        # ====================================================
-
-        for target in targets:
-            interval = (
-                target.interval_minutes
-                or (
-                    target
-                    .source
-                    .crawl_interval_minutes
+            for target in targets:
+                is_running = (
+                    CrawlRun.objects
+                    .filter(
+                        crawl_target=target,
+                        status="RUNNING",
+                    )
+                    .exists()
                 )
-                or 1440
-            )
 
-            next_crawl_at = (
-                now
-                + timedelta(
-                    minutes=interval
+                if is_running:
+                    skipped_running.append(target.id)
+                    continue
+
+                interval = (
+                    target.interval_minutes
+                    or target.source.crawl_interval_minutes
+                    or 1440
                 )
-            )
 
-            target.next_crawl_at = (
-                next_crawl_at
-            )
+                target.next_crawl_at = (
+                    now
+                    + timedelta(minutes=interval)
+                )
+                target.save(
+                    update_fields=["next_crawl_at"],
+                )
 
-            target.save(
-                update_fields=[
-                    "next_crawl_at",
-                ]
-            )
-
-            # ================================================
-            # 3. QUEUE AFTER DB COMMIT
-            #
-            # DB transaction이 성공적으로 commit된 다음에만
-            # Celery Broker에 task를 등록한다.
-            #
-            # lambda closure 문제를 피하기 위해
-            # target_id를 default argument로 고정.
-            # ================================================
-
-            transaction.on_commit(
-                lambda target_id=target.id: (
-                    _enqueue_live_target(
-                        target_id
+                transaction.on_commit(
+                    lambda target_id=target.id: (
+                        _enqueue_live_target(target_id)
                     )
                 )
-            )
 
-            target_ids.append(
-                target.id
-            )
+                target_ids.append(target.id)
+                dispatched += 1
 
-            dispatched += 1
-    return {
-        "dispatched": dispatched,
-        "target_ids": target_ids,
-    }
+        result = {
+            "checked_at": now.isoformat(),
+            "dispatched": dispatched,
+            "target_ids": target_ids,
+            "skipped_running": skipped_running,
+        }
 
+        logger.info(
+            "Dispatcher finished. dispatched=%s skipped_running=%s",
+            dispatched,
+            len(skipped_running),
+        )
 
-@shared_task(
-    name="core.refresh_text_signals_daily",
-    soft_time_limit=60 * 170,
-    time_limit=60 * 180,
-)
-def refresh_text_signals_daily():
-    """YouTube 댓글 수집 → 리뷰 · 콘텐츠 본문 동기화 → 공통 LLM 분석 → 지표 적재."""
+        return result
 
-    import os
+    finally:
+        close_old_connections()
 
-    from analysis.text_signals import run_text_signal_pipeline, sync_content_documents, sync_product_reviews
-    from collection.youtube.daily import collect_daily_youtube_comments
-
-    collection_result = collect_daily_youtube_comments()
-    review_result = sync_product_reviews()
-    content_result = sync_content_documents()   # ★ 2026-09-20 영상 제목+설명도 분석한다
-    configured_limit = int(os.getenv("FEEDIT_TEXT_DAILY_ANALYSIS_LIMIT", "0"))
-    analysis_result = run_text_signal_pipeline(
-        limit=configured_limit or None,
-        include_stale=False,
-        rebuild_metrics=True,
-    )
-    return {
-        "youtube": collection_result,
-        "reviews": review_result,
-        "content": content_result,
-        "analysis": analysis_result,
-    }
-
-
-# ══════════════════════════════════════════════════════════════
-#  검색 신호 (2026-09-21)
-#   '뭐라고 말했나'(refresh_text_signals_daily) 와 짝을 이루는 '뭘 찾아봤나' 쪽.
-#   쿼터 계산과 요일 배분 근거는 management/commands/collect_search_signals.py 참고.
-# ══════════════════════════════════════════════════════════════
 
 @shared_task(
     name="core.collect_search_daily",
@@ -617,12 +238,18 @@ def refresh_text_signals_daily():
     time_limit=60 * 120,
 )
 def collect_search_daily():
-    """매일 — 구글 트렌즈(추이·연관어·지역) + 네이버 데이터랩 전체 추이."""
-    from django.core.management import call_command
     from io import StringIO
 
+    from django.core.management import call_command
+
     out = StringIO()
-    call_command("collect_search_signals", mode="daily", stdout=out)
+
+    call_command(
+        "collect_search_signals",
+        mode="daily",
+        stdout=out,
+    )
+
     return out.getvalue()[-2000:]
 
 
@@ -632,41 +259,37 @@ def collect_search_daily():
     time_limit=60 * 120,
 )
 def collect_search_weekly():
-    """평일 — 데이터랩 성별·연령 컷. 요일에 따라 한 덩어리씩만 돈다.
-
-    세그먼트는 일간 변동값이 아니라 캐릭터 규정이라 주 1회로 충분하고,
-    나눠 돌아야 하루 1,000회 한도에 여유가 남는다.
-    """
-    from django.core.management import call_command
     from io import StringIO
 
+    from django.core.management import call_command
+
     out = StringIO()
-    call_command("collect_search_signals", mode="weekly", stdout=out)
+
+    call_command(
+        "collect_search_signals",
+        mode="weekly",
+        stdout=out,
+    )
+
     return out.getvalue()[-2000:]
-
-
-# ============================================================
-# 장기 미갱신 확인 (2026-09-27, OPERATIONS-002)
-# ============================================================
 
 
 @shared_task(
     name="core.check_data_freshness",
 )
 def check_data_freshness():
-    """소스별 마지막 정상 수집이 기준(수집 주기 × 2)을 넘겼으면 운영 계정 · 메일로 알린다.
+    from apps.core.services.ops_alerts import (
+        check_freshness_and_alert,
+    )
 
-    하루 한 번. 같은 날 다시 돌아도 알림은 한 번만 나간다(dedup 키가 날짜다).
-    """
-    from apps.core.services.ops_alerts import check_freshness_and_alert
     result = check_freshness_and_alert()
-    logger.info("장기 미갱신 확인 — %s", result)
+
+    logger.info(
+        "Data freshness check: %s",
+        result,
+    )
+
     return result
-
-
-# ============================================================
-# 지표 다시 계산 (2026-09-27, ADMIN-001 — 운영 화면의 '지표 다시 계산' 버튼)
-# ============================================================
 
 
 @shared_task(
@@ -674,18 +297,49 @@ def check_data_freshness():
     soft_time_limit=60 * 50,
     time_limit=60 * 60,
 )
-def rebuild_metrics(days=35):
-    """이미 분석이 끝난 텍스트 언급으로 최근 days 일의 일별 지표만 다시 계산한다(LLM 호출 없음).
-
-    manage.py rebuild_term_metrics 와 같은 함수를 부른다. 매일 04:10 배치는 35일치만 다시 계산하므로
-    그보다 긴 구간을 채우거나, 사전을 고친 뒤 바로 반영하고 싶을 때 운영 화면에서 누른다.
-    """
+def rebuild_metrics(
+    days: int = 35,
+):
     from datetime import date, timedelta
 
-    from analysis.text_signals.metrics import rebuild_text_metrics
+    from analysis.text_signals.metrics import (
+        rebuild_text_metrics,
+    )
 
-    days = max(1, min(int(days), 400))
+    days = max(
+        1,
+        min(int(days), 400),
+    )
+
     until = date.today()
-    result = rebuild_text_metrics(since=until - timedelta(days=days), until=until)
-    logger.info("지표 다시 계산 %s일 — %s", days, result)
-    return {"days": days, **(result or {})}
+
+    result = rebuild_text_metrics(
+        since=until - timedelta(days=days),
+        until=until,
+    )
+
+    logger.info(
+        "Metrics rebuild. days=%s result=%s",
+        days,
+        result,
+    )
+
+    return {
+        "days": days,
+        **(result or {}),
+    }
+
+
+@shared_task(
+    name="core.collect_search_volume_monthly",
+    soft_time_limit=60 * 110,
+    time_limit=60 * 120,
+)
+def collect_search_volume_monthly():
+    """네이버 검색광고 + Google Keyword Planner 월간 절대 검색량 적재."""
+    from io import StringIO
+    from django.core.management import call_command
+
+    out = StringIO()
+    call_command("collect_search_volume", source="all", stdout=out)
+    return out.getvalue()[-4000:]
