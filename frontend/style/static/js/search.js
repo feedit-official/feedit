@@ -273,7 +273,7 @@ export function fsExact(q){
    ══════════════════════════════════════════════════════ */
 export var FS={pick:{},stockItem:null,resaleItem:null,resaleModalItems:[],resaleModalLoading:false,
                opts:null,narrowed:false,note:'',err:'',matched:null,
-               loading:false,colq:{},sug:[],cur:-1,open:false,id:null};
+               loading:false,colq:{},sug:[],hist:[],cur:-1,open:false,id:null};
 
 export function fsReset(){ FS.pick={}; FS.stockItem=null; FS.resaleItem=null; FS.resaleModalItems=[]; FS.colq={} }
 export function fsPickedOf(ax){ return FS.pick[ax]||[] }
@@ -481,7 +481,7 @@ function fsLoadResaleSug(){
   const q=$('#fsInput')?.value.trim()||'';
   clearTimeout(fsResaleT);
   if(fsResaleAbort){ fsResaleAbort.abort(); fsResaleAbort=null; }
-  if(!q){ fsHideSug(); return; }
+  if(!q){ fsShowHistOrHide(); return; }
   const my=++fsResaleSeq, terms=fsSugTerms(q);
   fsPaintSugAll(terms,[],'loading',q);
   fsResaleT=setTimeout(async()=>{
@@ -538,8 +538,81 @@ function fsLoadResaleModalProducts(){
     }
   },220);
 }
+/* ══════════════════════════════════════════════════════
+   ── 최근 검색어 (할인률 변화 · 리세일 지수 · 수명주기) ──
+   언급량·연관어·긍부정 검색바(saved_keywords.js)와 같은 모양·같은 동작이다.
+   · 검색창이 비어 있을 때 눌러 보면 뜬다. 탭마다 따로 쌓고, 탭마다 최대 7개.
+   · 줄마다 × 로 한 건 삭제 · 전체 삭제 · 자동저장 끄기/켜기(끄면 즉시 지움).
+   · 브라우저에만 남는다(localStorage). 자동저장 켜짐/꺼짐은 언급량 쪽과 같은 설정을 쓴다.
+   ══════════════════════════════════════════════════════ */
+const FSH_KEY='feedit.fsHistory.v1';
+const FSH_ON_KEY='feedit.kwHistory.on.v1';
+const FSH_MAX=7;
+function fsHistOn(){ try{ return localStorage.getItem(FSH_ON_KEY)!=='0' }catch(e){ return false } }
+function fsHistSetOn(on){
+  try{
+    localStorage.setItem(FSH_ON_KEY,on?'1':'0');
+    if(!on)localStorage.removeItem(FSH_KEY);
+  }catch(e){}
+}
+function fsHistAll(){
+  if(!fsHistOn())return [];
+  try{ const raw=JSON.parse(localStorage.getItem(FSH_KEY)||'[]'); return Array.isArray(raw)?raw.filter(x=>x&&x.q&&x.t):[] }
+  catch(e){ return [] }
+}
+function fsHistList(){ return fsHistAll().filter(x=>x.t===FS.id).slice(0,FSH_MAX) }
+function fsHistSave(all){ try{ localStorage.setItem(FSH_KEY,JSON.stringify(all.slice(0,40))) }catch(e){} }
+const fsHistKey=x=>x.t+'|'+x.k+'|'+(x.item&&x.item.id!=null?x.item.type+x.item.id:x.f+':'+x.q);
+function fsHistAdd(entry){
+  if(!fsHistOn()||!entry||!entry.q||!FS.id)return;
+  entry.t=FS.id; entry.at=Date.now();
+  const key=fsHistKey(entry);
+  const all=fsHistAll().filter(x=>fsHistKey(x)!==key);
+  all.unshift(entry); fsHistSave(all);
+}
+function fsHistRemove(i){
+  const key=fsHistKey(FS.hist[i]||{}); if(!FS.hist[i])return;
+  fsHistSave(fsHistAll().filter(x=>fsHistKey(x)!==key));
+}
+function fsHistClear(){ fsHistSave(fsHistAll().filter(x=>x.t!==FS.id)) }
+/* 비어 있을 때 뜨는 패널. 보여 줄 것이 없으면 false */
+function fsPaintHist(){
+  const box=$('#fsSug'); if(!box||!FS.id)return false;
+  FS.sug=[]; FS.cur=-1;
+  if(!fsHistOn()){
+    FS.hist=[];
+    box.innerHTML='<div class="kwHist"><div class="kwHistFoot">'+
+      '<span class="kwHistNote">검색 기록을 저장하지 않는 중입니다.</span>'+
+      '<button type="button" data-fh-toggle="on">자동저장 켜기</button></div></div>';
+    box.hidden=false; return true;
+  }
+  const list=FS.hist=fsHistList();
+  if(!list.length)return false;
+  box.innerHTML='<div class="kwHist">'+
+    '<div class="kwHistHead">최근 검색어</div>'+
+    list.map((x,i)=>'<div class="kwHistRow">'+
+      '<button type="button" class="kwHistGo" data-fh="'+i+'">'+
+        '<span class="fc">'+fsEsc(x.k==='term'?(x.f||'검색'):x.k==='resale'?'상품':'상품')+'</span>'+
+        '<span class="lb">'+fsEsc(x.q)+'</span></button>'+
+      '<button type="button" class="kwHistDel" data-fh-del="'+i+'" aria-label="'+fsEsc(x.q)+' 기록 삭제" title="이 기록 삭제">\u00d7</button>'+
+    '</div>').join('')+
+    '<div class="kwHistFoot"><button type="button" data-fh-clear>전체 삭제</button>'+
+    '<button type="button" data-fh-toggle="off">자동저장 끄기</button></div></div>';
+  box.hidden=false; return true;
+}
+function fsShowHistOrHide(){ if(!fsPaintHist())fsHideSug(); }
+function fsPickHist(x){
+  if(!x)return;
+  if(x.k==='resale')fsPickResale(x.item);
+  else if(x.k==='stock')fsPickSug(Object.assign({_src:'stock'},x.item));
+  else fsPickSug({f:x.f,label:x.q});
+}
+
 function fsPickResale(item){
   if(!fsResaleSelect(item))return;
+  fsHistAdd({k:'resale',q:item.name||item.label||'',item:{id:item.id,type:item.type,name:item.name||item.label||'',
+    brand:item.brand||'',model_code:item.model_code||'',code:item.code||'',image:item.image||'',
+    images:Array.isArray(item.images)?item.images.slice(0,3):[],platforms:item.platforms||[],source_count:item.source_count||0}});
   $('#fsInput').value=''; $('#fsBar').classList.remove('typing');
   $('#fsClear').hidden=true; fsHideSug(); fsApply();
 }
@@ -547,6 +620,8 @@ function fsPickSug(o){
   if(!o)return;
   if(o._src==='stock'){
     if(!fsStockSelect(o))return;
+    fsHistAdd({k:'stock',q:o.name||o.label||'',item:{id:o.id,name:o.name||o.label,label:o.label||o.name,
+      brand:o.brand||'',source:o.source||'',thumb:o.thumb||'',image:o.image||o.thumb||'',platforms:o.platforms||[]}});
     $('#fsInput').value=''; $('#fsBar').classList.remove('typing');
     $('#fsClear').hidden=true; fsHideSug(); fsApply(); return;
   }
@@ -591,7 +666,7 @@ function fsPick(o){
      (연관 검색어의 '지금 보는 조건 · 누르면 해제' 와 같은 동작) */
   const onlyThis=fsCount()===1&&fsHas(o.f,o.label);
   fsReset();
-  if(!onlyThis)fsToggle(o.f,o.label);
+  if(!onlyThis){ fsToggle(o.f,o.label); fsHistAdd({k:'term',q:o.label,f:o.f}); }
   $('#fsInput').value=''; $('#fsBar').classList.remove('typing');
   $('#fsClear').hidden=true; fsHideSug();
   fsApply();
@@ -1146,6 +1221,13 @@ export function fsBuild(){
     }
   });
   $('#fsSug').addEventListener('click',e=>{
+    const hd=e.target.closest('[data-fh-del]');
+    if(hd){ fsHistRemove(+hd.dataset.fhDel); fsShowHistOrHide(); return }
+    if(e.target.closest('[data-fh-clear]')){ fsHistClear(); fsShowHistOrHide(); return }
+    const ht=e.target.closest('[data-fh-toggle]');
+    if(ht){ fsHistSetOn(ht.dataset.fhToggle==='on'); fsShowHistOrHide(); return }
+    const hg=e.target.closest('[data-fh]');
+    if(hg){ fsPickHist(FS.hist[+hg.dataset.fh]); return }
     const b=e.target.closest('.sg'); if(!b)return;
     fsPickSug(FS.sug[+b.dataset.k]);
   });
@@ -1153,8 +1235,9 @@ export function fsBuild(){
     if(e.target&&e.target.matches&&e.target.matches('.resaleThumb img'))fsResaleImageFallback(e.target);
   },true);
   $('#fsClear').addEventListener('click',()=>{
-    inp.value=''; bar.classList.remove('typing'); $('#fsClear').hidden=true; fsHideSug(); inp.focus();
+    inp.value=''; bar.classList.remove('typing'); $('#fsClear').hidden=true; fsShowHistOrHide(); inp.focus();
   });
+  inp.addEventListener('focus',()=>{ if(!inp.value)fsShowHistOrHide() });
   $('#fsMore').addEventListener('click',()=>{ FS.open?fsClosePop():fsOpenPop() });
   $('#fsChips').addEventListener('click',e=>{
     if(e.target.closest('[data-stock-drop]')){ fsStockClear(); fsApply(); return }

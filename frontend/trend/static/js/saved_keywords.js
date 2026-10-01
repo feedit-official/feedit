@@ -53,7 +53,7 @@ function kwHistOn(){
 function kwHistSetOn(on){
   try{
     localStorage.setItem(KWH_ON_KEY, on?'1':'0');
-    if(!on)localStorage.removeItem(KWH_KEY);   /* 끄면 남은 기록도 함께 지운다 */
+    if(!on){ localStorage.removeItem(KWH_KEY); localStorage.removeItem('feedit.fsHistory.v1'); }   /* 끄면 남은 기록도 함께 지운다 */
   }catch(e){}
 }
 function kwHistList(){
