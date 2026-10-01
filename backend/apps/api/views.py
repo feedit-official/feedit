@@ -1651,10 +1651,12 @@ def _item_with_thumb_rows(qs, expr, keep, limit):
 def _discount_product_rows(qs, query, limit, offset=0):
     """할인률 후보는 이름 집계가 아니라 실제 일반 판매 상품 ID 단위로 돌려준다."""
     qs = qs.filter(Exists(ProductSourceSnapshot.objects.filter(product_source_id=OuterRef("pk"))))
+    qs = qs.annotate(_label=ITEM_EXPR, _brand=BRAND_EXPR)
     if query:
         qs = qs.filter(Q(source_name__icontains=query)
-                       | Q(product__canonical_name__icontains=query))
-    rows = (qs.annotate(_label=ITEM_EXPR, _brand=BRAND_EXPR)
+                       | Q(product__canonical_name__icontains=query)
+                       | Q(_brand__icontains=query))
+    rows = (qs
             .values("id", "_label", "_brand", "thumbnail_url", "source__name")
             .distinct().order_by("-id")[offset:offset + limit])
     return [{"id": row["id"], "label": row["_label"] or "상품명 없음",
