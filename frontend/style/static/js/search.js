@@ -126,13 +126,16 @@ export const FS_ORDER=['상품명','아이템명','브랜드','카테고리','�
 /* 세 지표 모두 같은 네 축을 쓴다.
    수명주기의 유행 곡선은 아래 조건 중 지표가 붙는 대표 용어를 기준으로 계산하고,
    실제로 고른 전체 조건은 상품 집합과 화면 제목에 그대로 남긴다. */
-const FS_TAB_AXES={};
+const FS_TAB_AXES={life:['스타일','브랜드','종류']};
 export function fsAxesFor(id){ return FS_TAB_AXES[id]||null }
 export function fsAxOk(ax){ const a=fsAxesFor(FS.id); return !a||a.indexOf(ax)>=0 }
+/* 검색창 후보로 걸 수 있는 축 — 수명주기는 세부 검색 칸은 3개뿐이지만,
+   검색창에서는 소재·색·디테일·TPO 같은 속성어도 쓴다. */
+function fsSearchOk(ax){ return fsAxOk(ax)||(FS.id==='life'&&FS_ATTR.indexOf(ax)>=0) }
 /* 탭을 옮겼을 때 그 탭에서 못 쓰는 조건은 뗀다 — 보이지 않는 조건이 결과에 남으면 안 된다 */
 export function fsDropDisallowed(){
   let n=0;
-  for(const ax of Object.keys(FS.pick)){ if(!fsAxOk(ax)){ n+=FS.pick[ax].length; delete FS.pick[ax] } }
+  for(const ax of Object.keys(FS.pick)){ if(!fsSearchOk(ax)){ n+=FS.pick[ax].length; delete FS.pick[ax] } }
   return n;
 }
 /* 서버 사전(facet) → 화면 축 */
@@ -207,7 +210,7 @@ export function fsMatch(q,limit){
   const al=FALIAS[q.trim()]||FALIAS[n]; const an=al?fsNorm(al):null;
   const hit=[];
   FIDX.forEach(o=>{
-    if(!fsAxOk(o.f))return;           /* 이 탭에서 못 거는 축은 후보에도 안 띄운다 */
+    if(!fsSearchOk(o.f))return;       /* 이 탭에서 못 거는 축은 후보에도 안 띄운다 */
     let i=o.key.indexOf(n);
     if(i<0&&an)i=o.key.indexOf(fsNorm(an));
     if(i<0)return;
@@ -248,7 +251,7 @@ export function fsExact(q){
      ★ 별칭을 여기 섞으면 안 된다. 사전에는 '청바지' → '데님' 별칭이 있어서,
        별칭이 가리키는 말까지 '일치'로 받아 주면 둘 중 순위가 높은 데님이 잡힌다.
        사전에 '청바지' 라는 말이 따로 있는데도 데님으로 검색되던 것이 이 때문이었다. */
-  const literal=FIDX.filter(o=>fsAxOk(o.f)&&fsNorm(o.label)===n);
+  const literal=FIDX.filter(o=>fsSearchOk(o.f)&&fsNorm(o.label)===n);
   if(literal.length===1)return literal[0];
   if(literal.length>1){
     /* 같은 글자가 여러 축에 있다(데님 = 소재 · 종류). fsMatch 가 세운 순서를 따른다 */
@@ -259,7 +262,7 @@ export function fsExact(q){
   const al=FALIAS[String(q||'').trim()]||FALIAS[n];
   const an=al?fsNorm(al):null;
   if(!an)return null;
-  return FIDX.find(o=>fsAxOk(o.f)&&fsNorm(o.label)===an)||null;
+  return FIDX.find(o=>fsSearchOk(o.f)&&fsNorm(o.label)===an)||null;
 }
 
 /* ══════════════════════════════════════════════════════
@@ -371,7 +374,7 @@ function fsPaintSug(){
      친 말이 아니라 그 줄을 집는다 — 연관어는 ↑↓ 로 직접 고를 때만 잡힌다. */
   FS.sug=fsMatch(q,8); FS.cur=-1;
   if(!FS.sug.length){
-    const near=FIDX.filter(o=>fsAxOk(o.f)&&o.key[0]===fsNorm(q)[0]).slice(0,3);
+    const near=FIDX.filter(o=>fsSearchOk(o.f)&&o.key[0]===fsNorm(q)[0]).slice(0,3);
     const axes=fsAxesFor(FS.id);
     box.innerHTML='<div class="none">'+(axes?'이 탭에서 찾을 수 있는 키워드가 아닙니다.':'패션 어휘로 인식하지 못했습니다.')+'<br>'+
       (axes?'수명주기는 사전에 있는 '+axes.join(' · ')+'만 다룹니다.<br>아이템명은 검색할 수 없습니다.'
