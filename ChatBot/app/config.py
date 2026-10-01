@@ -54,14 +54,38 @@ MIN_OBS_14 = 5
 MIN_OBS_28 = 10
 
 # 표본이 이보다 적으면 숫자 옆에 경고를 붙인다.
-#   trend_chat.py 가 이미 쓰는 기준을 그대로 가져왔다. 새로 만들면 화면과 다른 말을 하게 된다.
+#   트렌드 분석 긍부정 탭의 SENT_MIN_N(최근 28일 반응 20건)과 같은 값이다.
+#   ★ 2026-10-01 — 예전엔 이 값을 **하루치** 언급 수에 걸었다. 그러면 거의 모든 용어가
+#     '표본 부족' 이 되어, 화면이 '뜨거움' 이라 말하는 용어에 챗봇은 '판단 보류' 라고 했다.
+#     지금은 최근 28일 합계에 건다(trend_view.trend_summary · sentiment_summary).
 THIN_SAMPLE = 20
 
 # 챗봇이 검색어(주어)로 인정하는 축
 SEARCH_FACETS = ("style", "material", "item", "brand")
 
-# 온도 구간 — trend_chat.temperature_label() 과 같은 경계를 쓴다
-TEMP_BANDS = ((25, "차가움"), (50, "미지근"), (75, "따뜻함"), (101, "과열"))
+# 온도 구간 — 트렌드 분석 '언급량·온도' 탭과 같은 경계를 쓴다.
+#   frontend/trend/static/js/dispatch.js (id==='temp'):
+#       band = temp>=85 ? 과열 : temp>=65 ? 따뜻함 : temp>=40 ? 미지근 : 차가움
+#   ★ 2026-10-01 — 예전 경계(25/50/75)는 옛 trend_chat.py 의 것이었다.
+#     화면이 '따뜻함(뜨거움)' 이라 말한 아디다스 83° 를 챗봇은 '과열' 이라고 불렀다.
+TEMP_BANDS = ((40, "차가움"), (65, "미지근"), (85, "따뜻함"), (101, "과열"))
+# 같은 구간의 판정 문구 — 화면 다이얼 옆 제목과 설명 그대로.
+TEMP_VERDICTS = {
+    "과열": ("과열", "이미 정점을 지나는 신호가 섞여 있습니다. 지금부터는 식는 속도를 지켜볼 구간입니다."),
+    "따뜻함": ("뜨거움", "언급량이 꾸준히 오르는 중입니다. 지금 붙잡을 만한 온도입니다."),
+    "미지근": ("달아오르는 중", "막 올라오기 시작한 단계입니다. 조금 더 지켜보면 방향이 뚜렷해집니다."),
+    "차가움": ("아직 잠잠", "절대 언급량이 적어 판단하기엔 이릅니다. 추적만 걸어두는 편이 안전합니다."),
+}
+
+
+def js_round(value) -> int:
+    """JavaScript Math.round 와 같은 반올림(.5 는 위로).
+
+    화면은 Math.round 로 숫자를 띄운다. 파이썬 round() 는 은행가 반올림이라
+    82.5 를 82 로 만든다 — 화면 83° 옆에서 챗봇이 82° 라고 말하게 된다.
+    """
+    import math
+    return int(math.floor(float(value) + 0.5))
 
 
 def missing_inputs() -> list[str]:
@@ -86,7 +110,8 @@ def missing_inputs() -> list[str]:
 
 
 def temp_band(value) -> str:
-    v = float(value or 0)
+    # 화면은 반올림한 정수로 구간을 정한다(84.6 → 85 → 과열). 같은 순서로 한다.
+    v = js_round(value or 0)
     for edge, name in TEMP_BANDS:
         if v < edge:
             return name

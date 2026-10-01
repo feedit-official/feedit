@@ -83,9 +83,11 @@ class ReportSkillTest(unittest.TestCase):
         self.assertEqual([m["span"] for m in canvas["modules"]], [8, 4])
 
     def test_three_sentiment_kpis_get_three_columns_and_korean_labels(self):
+        # 2026-10-01 — 트렌드 분석 긍부정 탭과 같은 요약(trend_view.sentiment_summary)을 그린다.
         block = blocks.b_sentiment({"sentiment": {
-            "index": 50, "n_total": 1, "pos_pct": 100.0, "neg_pct": 0.0,
-            "top_pos": "considering", "top_neg": "disappoint",
+            "window_days": 28, "반응": {"긍정": 10, "중립": 18, "부정": 1, "합계": 29},
+            "positive_pct": 34, "negative_pct": 3, "dial": 91, "dial_label": "긍정 우위 %",
+            "purchase_intent_index": None, "judged": True, "verdict": "강한 구매 신호",
         }})
         catalog = [{"id": "sentiment:고프코어", "kind": "sentiment",
                     "term": "고프코어", "block": block}]
@@ -95,7 +97,11 @@ class ReportSkillTest(unittest.TestCase):
         canvas = report_skill.build(catalog, trace)
         module = canvas["modules"][0]
         self.assertEqual(module["columns"], 3)
-        self.assertEqual(module["block"]["items"][1]["note"], "구매고민")
+        items = module["block"]["items"]
+        self.assertEqual([i["k"] for i in items], ["긍정 우위 %", "긍정 반응 비율", "부정 반응 비율"])
+        self.assertEqual(items[0]["v"], "91")
+        self.assertIn("강한 구매 신호", items[0]["note"])
+        self.assertEqual(items[1]["note"], "최근 28일 · 10건")
 
     def test_direction_kpis_keep_their_term_and_facet_label(self):
         node = dict(NODE, direction={"label": "완만한 상승", "ratio": 1.2,

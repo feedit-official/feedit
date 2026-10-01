@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import os
+import threading
+import time
 from urllib.parse import urlencode
 
 import requests
@@ -148,3 +150,69 @@ class MarketHTTPAdapter(SalmalHTTPAdapter):
         wt = d.get("weekly_temp") or []
         out["weekly_temp_recent"] = wt[:6]
         return out
+
+
+# ══════════════════════════════════════════════════════════════
+#  ★ 2026-10-01 트렌드 온도 · 긍부정 — 트렌드 분석 화면이 부르는 주소를 **같은 인자로** 부른다.
+#
+#    챗봇이 analysis.term_metric_daily 를 직접 읽던 때 화면과 세 군데가 갈렸다.
+#      ① 지표 버전: 챗봇은 한 버전(feedit-unified-text-v1)에 못 박았고, /api/trend 는
+#         용어마다 가장 최근 적재 버전을 고른다. 브랜드는 옛 버전에만 있어
+#         챗봇은 '아디다스 측정 자료 없음', 화면은 '온도 83°' 였다.
+#      ② 긍부정: 챗봇은 마지막 **하루** 행(팬츠 2건)을, 화면은 /api/sentiment 를
+#         최근 28일로 합친 값(팬츠 536건)을 봤다.
+#      ③ 기간: 화면은 days=400 을 부른다. 짧게 부르면 합산 이력이 28점에 못 미칠 때
+#         유튜브 장기 이력으로 바꾸는 판단(views.trend)이 달라져 온도가 갈린다(고프코어).
+#    그래서 주소도 인자도 화면(live_data.prime · sentimentUrl)과 똑같이 맞춘다.
+#
+#    ★ 짧게 담아 둔다. 한 턴 안에서 get_metric(문장)과 리포트 카드(report.build_term)가
+#      같은 값을 쓰게 하려는 것이다. 두 번 물으면 그 사이 적재가 돌아 서로 다른 숫자가
+#      한 화면에 설 수 있다. 실패는 담지 않는다 — 고친 뒤 다시 물으면 바로 보여야 한다.
+# ══════════════════════════════════════════════════════════════
+TREND_DAYS = 400          # live_data.prime(term, days = 400)
+SENTIMENT_DAYS = 400      # live_data.sentimentUrl → days: '400'
+TREND_CACHE_SEC = 90.0
+
+
+class TrendHTTPAdapter(SalmalHTTPAdapter):
+    """/api/trend · /api/sentiment 의 응답을 그대로(status·reason 포함) 돌려준다."""
+
+    def __init__(self, base: str | None = None, timeout: float = 8.0,
+                 ttl: float = TREND_CACHE_SEC):
+        super().__init__(base=base, timeout=timeout)
+        self.ttl = ttl
+        self._cache: dict[tuple, tuple[float, dict]] = {}
+        self._lock = threading.Lock()
+
+    def _payload(self, path: str, params: dict) -> dict:
+        key = (path, tuple(sorted(params.items())))
+        now = time.monotonic()
+        with self._lock:
+            hit = self._cache.get(key)
+            if hit and now - hit[0] < self.ttl:
+                return hit[1]
+        try:
+            token = (os.getenv("FEEDIT_API_TOKEN") or "").strip()
+            headers = {"X-FEEDiT-Token": token} if token else {}
+            r = requests.get(f"{self.base}/{path}?{urlencode(params)}",
+                             headers=headers, timeout=self.timeout)
+            r.raise_for_status()
+            payload = r.json()
+            if not isinstance(payload, dict):
+                raise ValueError("JSON 객체가 아닙니다")
+        except Exception as exc:  # noqa: BLE001 - 도구 실패가 대화를 죽이지 않는다
+            return {"status": "error",
+                    "reason": f"트렌드 분석 데이터를 읽지 못했습니다 ({type(exc).__name__})."}
+        if payload.get("status") in ("ok", "empty"):
+            with self._lock:
+                self._cache[key] = (now, payload)
+        return payload
+
+    def trend(self, term: str) -> dict:
+        return self._payload("trend", {"term": str(term or "").strip(), "days": TREND_DAYS})
+
+    def sentiment(self, term: str, brand: bool = False) -> dict:
+        params = {"term": str(term or "").strip(), "days": SENTIMENT_DAYS}
+        if brand:
+            params["subject"] = "brand"
+        return self._payload("sentiment", params)

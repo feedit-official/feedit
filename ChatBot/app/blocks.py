@@ -26,31 +26,41 @@ FACET_KO = {"style": "스타일", "item": "아이템", "material": "소재", "br
 
 # ── 개별 블록 ─────────────────────────────────────────
 TONE_KO = {"positive": "긍정", "negative": "부정", "mixed": "엇갈림", "neutral": None}
-# metric_term_sentiment_daily.top_pos_intent / top_neg_intent 원본 값 — 화면엔 한글로만 낸다.
-INTENT_KO = {"buy_done": "구매완료", "considering": "구매고민", "disappoint": "실망",
-             "price_pain": "가격불만", "restock": "재입고요청", "returned": "반품"}
+
 
 def b_metric_rank(t: dict, as_of: str) -> dict | None:
-    """지표를 행으로. 가장 기본이 되는 블록."""
+    """지표를 행으로. 가장 기본이 되는 블록.
+
+    ★ 2026-10-01 — 값은 트렌드 분석 화면과 같은 것이다(report.build_term → trend_view).
+      · 온도 옆 말은 화면 제목의 판정(뜨거움·달아오르는 중 …)을 그대로 쓴다.
+      · 언급량은 **최근 28일 합계**다. 예전엔 마지막 하루 행이라 '1건' 이 찍혔다.
+      · 순위는 그날 언급된 전체 용어 중 백분위(0~100)다.
+    """
     if not t.get("available"):
         return {"type": "rank", "slot": "left", "title": t["canonical"],
                 "meta": (t.get("facet_name") or "") + " · " + as_of,
-                "rows": [{"k": "아직 수집된 언급이 없습니다", "small": "사전에는 있습니다",
-                          "v": "0건", "up": False}]}
+                "rows": [{"k": t.get("reason") or "아직 수집된 언급이 없습니다",
+                          "small": "사전에는 있습니다", "v": "0건", "up": False}]}
     rows = []
     if t.get("temp") is not None:
-        rows.append({"k": "트렌드 온도", "small": t.get("temp_band"),
-                     "v": f"{t['temp']}점", "up": t["temp"] >= 50})
+        rows.append({"k": "트렌드 온도", "small": t.get("temp_verdict") or t.get("temp_band"),
+                     "v": f"{t['temp']}점", "up": t["temp"] >= 65})
     if t.get("raw_count") is not None:
+        window = t.get("mention_window")
         rows.append({"k": "언급량",
-                     "small": f"{len(t.get('sources') or [])}개 소스" if t.get("sources") else "",
+                     "small": f"최근 {window}일" if window else
+                              (f"{len(t.get('sources') or [])}개 소스" if t.get("sources") else ""),
                      "v": f"{int(t['raw_count']):,}건", "up": int(t["raw_count"]) >= 20})
     if t.get("pct_rank") is not None:
-        rows.append({"k": "순위", "small": "전체 대비",
-                     "v": f"상위 {100 - round(float(t['pct_rank']))}%",
+        top = t.get("top_pct")
+        if top is None:
+            top = max(1, 100 - round(float(t["pct_rank"])))
+        rows.append({"k": "순위", "small": "그날 전체 용어 중",
+                     "v": f"상위 {top}%",
                      "up": float(t["pct_rank"]) >= 50})
+    meta_day = t.get("observed_on") or as_of
     return {"type": "rank", "slot": "left", "title": t["canonical"],
-            "meta": (t.get("facet_name") or "") + " · " + as_of, "rows": rows}
+            "meta": (t.get("facet_name") or "") + " · " + str(meta_day), "rows": rows}
 
 
 # 비율 칸의 설명. coverage.direction() 의 구간과 같은 말을 쓴다.
@@ -134,50 +144,46 @@ def b_assoc_axis(t: dict) -> dict | None:
 
 
 def b_sentiment(t: dict) -> dict | None:
+    """긍부정 결론 — 트렌드 분석 긍부정 탭의 다이얼·비율과 같은 값(최근 28일 합계)."""
     s = t.get("sentiment")
-    if not s:
+    if not s or s.get("unavailable"):
         return None
+    r = s.get("반응") or {}
+    dial = s.get("dial")
     return {"type": "kpis", "slot": "full", "items": [
-        {"k": "구매의향 지수", "v": str(s.get("index")), "unit": "점",
-         "note": f"표본 {s.get('n_total')}건", "up": (s.get("index") or 0) >= 50},
-        {"k": "긍정 신호", "v": str(s.get("pos_pct")), "unit": "%",
-         "note": INTENT_KO.get(s.get("top_pos"), s.get("top_pos") or ""), "up": True},
-        {"k": "부정 신호", "v": str(s.get("neg_pct")), "unit": "%",
-         "note": INTENT_KO.get(s.get("top_neg"), s.get("top_neg") or ""), "up": False},
+        {"k": s.get("dial_label") or "긍정 우위 %", "v": "–" if dial is None else str(dial),
+         "unit": "" if dial is None else ("점" if s.get("purchase_intent_index") is not None else "%"),
+         "note": f"{s.get('verdict')} · 반응 {int(r.get('합계') or 0):,}건",
+         "up": bool(s.get("judged")) and (dial or 0) >= 55},
+        {"k": "긍정 반응 비율", "v": "–" if s.get("positive_pct") is None else str(s["positive_pct"]),
+         "unit": "" if s.get("positive_pct") is None else "%",
+         "note": f"최근 {s.get('window_days', 28)}일 · {int(r.get('긍정') or 0):,}건", "up": True},
+        {"k": "부정 반응 비율", "v": "–" if s.get("negative_pct") is None else str(s["negative_pct"]),
+         "unit": "" if s.get("negative_pct") is None else "%",
+         "note": f"최근 {s.get('window_days', 28)}일 · {int(r.get('부정') or 0):,}건", "up": False},
     ]}
 
 
 def b_sentiment_signal(t: dict) -> dict | None:
-    """긍부정을 '몇 %' 가 아니라 '몇 건' 으로. 신호 유형(top_pos·top_neg)별 건수.
+    """긍부정을 '몇 %' 가 아니라 '몇 건' 으로 — 화면의 '신호 유형별 건수' 표와 같은 6칸.
 
-    metric_term_sentiment_daily 가 유형별 전체 분포는 안 주고 폴더(1위)만 준다 —
-    그래서 '몇 개 유형 중 몇 건' 이 아니라 '가장 많이 나온 유형이 몇 건' 으로 답한다.
-    지어낸 유형을 만들지 않는다 — top_pos_intent 가 없으면 그 줄은 아예 안 낸다.
+    순서는 DB 칸 순서(질문·구매·경험·호평·비판·잡담)로 고정한다. 건수로 줄 세우면
+    날마다 자리가 바뀌어 비교가 안 된다. 0건도 지우지 않는다 — '없었다' 도 결과다.
     """
     s = t.get("sentiment")
-    if not s:
+    if not s or s.get("unavailable"):
         return None
-    rows = []
-    pos_n, neg_n = s.get("pos_count"), s.get("neg_count")
-    mx = max((pos_n or 0), (neg_n or 0)) or 1
-    if s.get("top_pos") and s.get("top_pos_count"):
-        label = INTENT_KO.get(s["top_pos"], s["top_pos"])
-        rows.append({"k": f"긍정 · {label}", "w": round(100 * s["top_pos_count"] / mx),
-                     "v": f"{int(s['top_pos_count']):,}건", "up": True})
-    if s.get("top_neg") and s.get("top_neg_count"):
-        label = INTENT_KO.get(s["top_neg"], s["top_neg"])
-        rows.append({"k": f"부정 · {label}", "w": round(100 * s["top_neg_count"] / mx),
-                     "v": f"{int(s['top_neg_count']):,}건", "up": False})
-    if pos_n is not None:
-        rows.append({"k": "긍정 신호 전체", "w": round(100 * pos_n / mx),
-                     "v": f"{int(pos_n):,}건", "up": True})
-    if neg_n is not None:
-        rows.append({"k": "부정 신호 전체", "w": round(100 * neg_n / mx),
-                     "v": f"{int(neg_n):,}건", "up": False})
-    if not rows:
+    sig = s.get("signals") or {}
+    if not sig:
         return None
-    return {"type": "table", "slot": "right", "title": "긍부정 신호 건수",
-            "meta": f"표본 {s.get('n_total') or 0}건",
+    from .trend_view import SIGNALS
+    mx = max([int(v or 0) for v in sig.values()] + [1])
+    rows = [{"k": name, "w": round(100 * int(sig.get(name) or 0) / mx),
+             "v": f"{int(sig.get(name) or 0):,}건", "up": pol > 0}
+            for name, _f, pol in SIGNALS if name in sig]
+    r = s.get("반응") or {}
+    return {"type": "table", "slot": "right", "title": "신호 유형별 건수",
+            "meta": f"최근 {s.get('window_days', 28)}일 · 반응 {int(r.get('합계') or 0):,}건",
             "head": ["신호 유형", "", "건수"], "rows": rows}
 
 

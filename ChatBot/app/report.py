@@ -11,8 +11,8 @@ from __future__ import annotations
 
 from datetime import datetime, timezone, timedelta
 
-from . import plans, templates
-from .config import temp_band, SEARCH_FACETS
+from . import plans, templates, trend_view
+from .config import SEARCH_FACETS
 from .coverage import assess, direction
 
 KST = timezone(timedelta(hours=9))
@@ -44,13 +44,25 @@ def _josa(word: str, with_b: str, without_b: str) -> str:
     return with_b if _has_batchim(word) else without_b
 
 
-def build_term(store, gate, hit: dict, as_of: str) -> dict:
-    """term 하나에 대해 우리가 아는 전부를 모은다. 플랜 자르기는 하지 않는다."""
+def build_term(store, gate, hit: dict, as_of: str, *, with_sentiment: bool = True,
+               api=None) -> dict:
+    """term 하나에 대해 우리가 아는 전부를 모은다. 플랜 자르기는 하지 않는다.
+
+    ★ 2026-10-01 — 온도·언급량·순위·플랫폼·긍부정은 **트렌드 분석 화면과 같은 값**이다
+      (trend_view.term_view). 예전엔 지표 표를 직접 읽어서, 같은 답 안에서 문장은
+      "상위 1%" 카드는 "상위 82%" 처럼 서로 다른 말을 했다. get_metric 과 같은
+      어댑터·같은 캐시를 쓰므로 한 턴의 문장과 카드가 같은 응답에서 나온다.
+      연관어·근거는 아직 지표 표를 직접 읽는다.
+    """
     key = hit["term_key"]
-    latest = store.term_latest(key)
-    sentiment = store.term_sentiment(key)
-    assoc = store.term_assoc(key)
-    cov = assess(store, key, as_of, latest, sentiment, len(assoc))
+    view = trend_view.term_view(hit["canonical"], hit.get("facet"),
+                                with_sentiment=with_sentiment, api=api)
+    T = view.get("trend") if view.get("status") == "ok" else None
+    sentiment = view.get("sentiment") if T else None
+    if sentiment and sentiment.get("unavailable"):
+        sentiment = None
+    assoc = store.term_assoc(key) if T else []
+    cov = assess(T, sentiment, len(assoc), view.get("reason"))
 
     node = {
         "canonical": hit["canonical"],
@@ -59,29 +71,38 @@ def build_term(store, gate, hit: dict, as_of: str) -> dict:
         "via": hit.get("via"),
         "coverage": cov.as_dict(),
     }
-    if not latest:
+    if not T:
         node["available"] = False
+        node["reason"] = view.get("reason")
         return node
 
     node["available"] = True
-    node["observed_on"] = latest.get("observed_on")
-    node["raw_count"] = int(latest.get("raw_count") or 0)
-    node["temp"] = int(latest.get("temp") or 0)
-    node["temp_band"] = temp_band(latest.get("temp"))
-    node["pct_rank"] = latest.get("pct_rank")
-    node["level"] = latest.get("level")
-    node["momentum"] = latest.get("momentum")
-    node["share_pct"] = latest.get("share_pct")
+    node["observed_on"] = T["as_of"]
+    node["data_as_of"] = T["data_as_of"]
+    node["metric_version"] = T["metric_version"]
+    # ★ 언급량은 하루치가 아니라 최근 28일 합계다. 카드 행 이름도 그렇게 적는다.
+    node["raw_count"] = T["mention_28d"]
+    node["mention_7d"] = T["mention_7d"]
+    node["mention_window"] = 28
+    node["temp"] = T["temp"]
+    node["temp_band"] = T["band"]
+    node["temp_verdict"] = T["verdict"]
+    node["pct_rank"] = T["percentile"]
+    node["top_pct"] = T["top_pct"]
+    node["level"] = T["level"]
+    node["momentum"] = T["momentum"]
+    node["share_pct"] = None
+    node["notes"] = T["notes"]
 
     if cov.can_direction:
-        node["direction"] = direction(latest)
+        node["direction"] = direction({"ma7": T["ma7"], "ma28": T["ma28"]})
 
-    srcs = store.term_sources(key)
-    node["sources"] = [{"code": s["source_code"],
-                        "name": SOURCE_KO.get(s["source_code"], s["source_code"]),
-                        "raw_count": int(s["raw_count"] or 0),
-                        "temp": int(s["temp"] or 0),
-                        "observed_on": s["observed_on"]} for s in srcs]
+    node["sources"] = [{"code": p["code"],
+                        "name": SOURCE_KO.get(str(p["code"] or "").lower(), p["name"]),
+                        "raw_count": int(p.get("mention") or 0),
+                        "temp": p["temp"],
+                        "observed_on": p.get("date"),
+                        "stale": p.get("stale")} for p in view.get("platforms") or []]
 
     if cov.can_assoc:
         node["associations"] = [{"canonical": a["assoc_canonical"],
@@ -91,19 +112,8 @@ def build_term(store, gate, hit: dict, as_of: str) -> dict:
                                  "lift": a["lift"], "score": a["score_v"],
                                  "is_new": bool(a["is_new"])} for a in assoc]
     if cov.can_sentiment:
-        # ★ 건수(pos_count·neg_count·top_*_count)도 함께 담는다.
-        #   예전엔 비율(pos_pct)과 유형 이름(top_pos)만 있어 "몇 건" 을 답할 수 없었다 —
-        #   '긍부정(신호 유형별 건수)' 질문엔 %가 아니라 건수가 답이다.
-        node["sentiment"] = {"index": sentiment.get("index_value"),
-                             "n_total": sentiment.get("n_total"),
-                             "pos_pct": sentiment.get("pos_pct"),
-                             "neg_pct": sentiment.get("neg_pct"),
-                             "pos_count": sentiment.get("pos_count"),
-                             "neg_count": sentiment.get("neg_count"),
-                             "top_pos": sentiment.get("top_pos_intent"),
-                             "top_pos_count": sentiment.get("top_pos_count"),
-                             "top_neg": sentiment.get("top_neg_intent"),
-                             "top_neg_count": sentiment.get("top_neg_count")}
+        # 화면 긍부정 탭과 같은 값 — 최근 28일 합계와 판정(trend_view.sentiment_summary).
+        node["sentiment"] = sentiment
 
     # 근거는 '원문 통짜'가 아니라 판정에 실제로 쓰인 짧은 대목이다 (store.term_evidence 주석)
     # url 은 원문으로 돌아갈 수 있을 때만 채워진다(store.evidence_link).
@@ -120,6 +130,8 @@ def build_term(store, gate, hit: dict, as_of: str) -> dict:
 # ── 한 줄 결론 — 틀에 값을 꽂는다. 문장을 생성하지 않는다 ──────────
 def headline(node: dict, intent: str) -> str:
     if not node.get("available"):
+        if node.get("reason"):
+            return str(node["reason"])
         return (f"<b>{node['canonical']}</b>{_josa(node['canonical'],'은','는')} "
                 f"사전에는 있지만 아직 수집된 언급이 없습니다.")
     c, t, band = node["canonical"], node["temp"], node["temp_band"]
@@ -142,12 +154,17 @@ def headline(node: dict, intent: str) -> str:
     if intent == "metric.sentiment":
         s = node.get("sentiment")
         if s:
-            return (f"<b>{c}</b>의 구매의향 지수는 <b>{s['index']}점</b>입니다. "
-                    f"표본 {s['n_total']}건 기준입니다.")
-        return f"<b>{c}</b>{j} 구매의향을 판단할 문장이 아직 없습니다."
+            # 화면 긍부정 탭의 결론 카드와 같은 말 (최근 28일 합계)
+            r = s.get("반응") or {}
+            return (f"<b>{c}</b>{j} 지금 <b>{s['verdict']}</b>입니다. "
+                    f"최근 {s['window_days']}일 반응 {r.get('합계', 0):,}건 기준입니다.")
+        return f"<b>{c}</b>{j} 긍부정을 판단할 반응이 아직 없습니다."
 
-    return (f"<b>{c}</b>의 트렌드 온도는 <b>{t}점 · {band}</b>입니다. "
-            f"언급 {n:,}건 기준입니다.")
+    if t is None:
+        return f"<b>{c}</b>의 트렌드 온도가 아직 계산되지 않았습니다."
+    verdict = node.get("temp_verdict") or band
+    return (f"<b>{c}</b>{j} 지금 <b>{verdict}</b> 구간 — 트렌드 온도 <b>{t}점</b>입니다. "
+            f"최근 28일 언급 {n:,}건 기준입니다.")
 
 
 def compose(store, gate, question: str, intent: str, parsed: dict,

@@ -35,9 +35,10 @@ import re
 from typing import Any, Callable
 
 from . import season as season_ref     # 인자 이름(season)과 겹치지 않게
-from . import product_link, salmal_index
+from . import product_link, salmal_index, trend_view
 from . import vton
-from .config import MIN_OBS_7, MIN_OBS_14, MIN_OBS_28, THIN_SAMPLE, temp_band
+from .config import MIN_OBS_28, MIN_OBS_7, temp_band
+from .coverage import direction as _direction
 
 # ══════════════════════════════════════════════════════════
 #  스키마
@@ -61,30 +62,38 @@ AXES = ["온도", "모멘텀", "순위", "연관어", "긍부정", "출처별", 
 #    직접 말하게** 한다. 모델이 판단 문장을 지어내기 전에, 이 조건에서
 #    허용되는 표현이 무엇인지 응답에 함께 온다.
 #
-#  백분위 상위 = pct_rank >= 0.5
+#  백분위 상위 = pct_rank >= 50   (백분위는 0~100 — metrics._percentiles)
+#  방향      = coverage.direction() 의 tone (ma7 ÷ ma28). 모멘텀 값으로 정하지 않는다.
+#
+#  ★ 2026-10-01 — 예전엔 pct_rank >= 0.5 · momentum > 0 으로 갈랐다.
+#    둘 다 척도를 잘못 읽은 것이다. 백분위는 0~100 이라 거의 모든 용어가 '상위' 였고,
+#    모멘텀은 50 이 보합인 0~100 값이라 늘 '오르는 중' 이었다.
+#    그 결과 표본이 충분한 용어는 전부 "지금 올라오는 중 · 권유 가능" 이 됐다.
 
-def _say_rule(pct_rank, momentum, thin: bool) -> dict:
+def _say_rule(pct_rank, tone, thin: bool, mention_28d: int | None = None) -> dict:
     """이 지표 조합에서 허용되는 표현과 권유 가능 여부."""
     if thin:
         # 표본이 임계 아래면 판단 문장 자체를 막는다.
+        n = f"최근 28일 언급 {mention_28d}건 — " if mention_28d is not None else ""
         return {"allowed": "관측만 적는다",
                 "recommend": "금지",
-                "note": "표본이 적어 판단 문장을 쓰지 마세요. 관측된 수치만 적으세요."}
-    if pct_rank is None or momentum is None:
+                "note": f"{n}표본이 적어 판단 문장을 쓰지 마세요. 관측된 수치와 화면의 온도 구간만 적으세요."}
+    if pct_rank is None or tone is None:
         return {"allowed": "관측만 적는다", "recommend": "금지",
-                "note": "백분위나 모멘텀이 없어 방향을 말할 수 없습니다."}
-    high = float(pct_rank) >= 0.5
-    up = float(momentum) > 0
-    if high and up:
+                "note": "백분위나 28일 방향을 낼 관측이 없어 오르는지 내리는지 말할 수 없습니다."}
+    high = float(pct_rank) >= 50
+    if high and tone == "up":
         return {"allowed": "지금 올라오는 중입니다", "recommend": "가능", "note": ""}
-    if high and not up:
-        return {"allowed": "정점을 지나는 중입니다", "recommend": "조건부",
+    if high:
+        return {"allowed": "정점을 지나는 중입니다" if tone == "down" else "높은 수준에 머물러 있습니다",
+                "recommend": "조건부",
                 "note": "권유하려면 얼마나 남았는지 기간을 함께 적으세요."}
-    if not high and up:
+    if tone == "up":
         return {"allowed": "이제 올라오기 시작했습니다", "recommend": "조건부",
                 "note": "아직 절대량이 적다는 점을 함께 적으세요."}
-    return {"allowed": "내려가는 중입니다", "recommend": "금지",
-            "note": "내려가는 중인 것을 권하지 마세요. 사실만 적으세요."}
+    return {"allowed": "내려가는 중입니다" if tone == "down" else "아직 낮은 수준에 머물러 있습니다",
+            "recommend": "금지",
+            "note": "올라오는 근거가 없으니 권하지 마세요. 사실만 적으세요."}
 FACETS = ["style", "material", "item", "brand"]
 # similar_terms 가 훑어볼 후보 수. 후보마다 연관어를 한 번씩 읽으므로
 # 이 값이 곧 SQLite 조회 횟수다. 로컬이라 40이면 수십 ms 다.
@@ -177,7 +186,10 @@ SPECS: list[dict] = [
         "get_metric",
         "한 용어의 지표를 가져온다. axes 를 여러 개 넣으면 한 번에 가져온다. "
         "판단이 필요한 질문일수록 여러 축을 함께 넣어야 한다 — "
-        "'지금 사도 돼?' 는 온도만으로는 답이 안 된다.",
+        "'지금 사도 돼?' 는 온도만으로는 답이 안 된다. "
+        "★ 값은 트렌드 분석 화면과 같다(온도 구간·판정 문구·최근 7/28일 합계·긍부정 28일 판정). "
+        "온도는 화면의 verdict 로, 긍부정은 화면의 verdict 로 말하고 따로 판정을 만들지 마라. "
+        "'주의' 가 있으면 그 기준일·집계 방식을 답변에 밝혀라.",
         {
             "term": {"type": "string", "description": "search_terms 가 준 정확한 표기"},
             "axes": {"type": "array", "items": {"type": "string", "enum": AXES},
@@ -632,9 +644,11 @@ class Toolbox:
     """
 
     def __init__(self, store, gate, ctx: dict | None = None,
-                 salmal=None, taste=None, websearch=None, market=None) -> None:
+                 salmal=None, taste=None, websearch=None, market=None,
+                 trend=None) -> None:
         self.store = store
         self.market = market   # 없으면 처음 부를 때 MarketHTTPAdapter 를 만든다
+        self.trend = trend     # 없으면 trend_view.source() — 리포트 카드와 같은 캐시를 쓴다
         self.gate = gate
         self.ctx = ctx or {}
         self.salmal = salmal
@@ -777,126 +791,112 @@ class Toolbox:
         }
 
     # ── 지표 ────────────────────────────────────────────
+    def _trend_api(self):
+        if self.trend is None:
+            self.trend = trend_view.source()
+        return self.trend
+
     def t_get_metric(self, term: str, axes: list[str]) -> dict:
-        key = self._key(term)
-        latest = self.store.term_latest(key)
-        if not latest:
+        """한 용어의 지표 — **트렌드 분석 화면과 같은 값**을 읽는다 (2026-10-01).
+
+        온도·모멘텀·순위·출처별·긍부정은 화면이 부르는 /api/trend · /api/sentiment 를
+        같은 인자로 불러 화면과 같은 규칙으로 요약한다(trend_view.py).
+        연관어·근거는 아직 지표 표를 직접 읽는다.
+
+        ★ 예전엔 표를 직접 읽어 화면과 판단이 갈렸다(trend_view.py 머리말의 표).
+          · 브랜드는 '측정 자료 없음'(화면은 온도 83°)
+          · 긍부정은 마지막 하루 행(팬츠 2건, 화면은 28일 536건)
+          · 백분위를 0~1 로 읽어 '상위 1%'(화면 기준 상위 82%)
+        """
+        want = set(axes or [])
+        view = trend_view.term_view(term, self.gate.facet_of(term),
+                                    with_sentiment="긍부정" in want, api=self._trend_api())
+        if view["status"] == "error":
+            # ★ 표를 직접 읽어 대신 채우지 않는다. 화면과 다른 숫자가 다시 나간다.
+            #   has_metric 을 False 로 두지 않는다 — '없다' 가 아니라 '못 읽었다' 다.
+            return {"term": term, "has_metric": None,
+                    "unavailable": view["reason"] + " 잠시 뒤 다시 물어 주세요."}
+        if view["status"] == "empty":
             # ★ 키 이름을 found 로 쓰지 않는다.
             #   search_terms 는 found 를 **목록**으로 준다. 같은 이름으로 여기서
             #   불리언을 주면 결과를 훑는 코드가 bool 을 순회하려다 터지고,
             #   모델도 두 도구의 found 를 같은 뜻으로 읽는다.
             #   (2026-09-09 실측: agent_path._terms_from 이 이걸로 죽었다)
-            return {"term": term, "has_metric": False,
-                    "reason": "이 용어는 사전에는 있지만 아직 측정된 지표가 없습니다."}
+            return {"term": term, "has_metric": False, "reason": view["reason"]}
 
-        day = latest.get("observed_on")
-        n7 = self.store.obs_count(key, 7, day)
-        n14 = self.store.obs_count(key, 14, day)
-        n28 = self.store.obs_count(key, 28, day)
+        T = view["trend"]
+        obs = T["obs"]
+        say = trend_view.may_say(obs)
+        can_dir = obs["n28"] >= MIN_OBS_28 and obs["n7"] >= MIN_OBS_7
+        d = _direction({"ma7": T["ma7"], "ma28": T["ma28"]}) if can_dir else None
         out: dict[str, Any] = {
-            "term": term, "has_metric": True, "as_of": day,
-            "observations": {"n7": n7, "n14": n14, "n28": n28},
+            "term": term, "has_metric": True,
+            "basis": "트렌드 분석 화면과 같은 값",
+            "as_of": T["as_of"],                 # 이 용어의 마지막 집계일
+            "data_as_of": T["data_as_of"],       # 화면이 '기준일' 로 띄우는 DB 최신화 일자
+            "metric_version": T["metric_version"],
+            # ★ 언급량은 하루치가 아니라 기간 합계로 준다.
+            "mentions": {"최근7일": T["mention_7d"], "최근28일": T["mention_28d"]},
+            "observations": T["obs"],
             # ★ 관측이 모자라면 그 축은 **말하면 안 된다.** config 의 실측 기준이다.
-            "may_say": {"수준": n7 >= MIN_OBS_7,
-                        "2주변화": n14 >= MIN_OBS_14,
-                        "방향": n28 >= MIN_OBS_28},
-            "thin_sample": (latest.get("raw_count") or 0) < THIN_SAMPLE,
+            "may_say": say,
+            "thin_sample": T["thin"],
         }
-        # ★ 기준선을 같이 준다 (설계도 부록 11).
-        #   "온도 71°" 만으로는 높은 건지 낮은 건지 **사용자가 모른다.**
-        #   pct_rank 는 이미 term_latest 가 주고 있었는데 꺼내 쓰지 않았다.
-        pct = latest.get("pct_rank")
-        thin = out["thin_sample"]
-        want = set(axes or [])
+        if T["notes"]:
+            # 기준일이 묵었거나, 장기 이력으로 그렸거나, 언급 0 행의 온도인 경우.
+            # 숫자만 말하면 오늘 값처럼 읽힌다 — 답변에 그대로 밝힌다.
+            out["주의"] = T["notes"]
+            # '며칠 전' 을 적으면 verify 가 대조할 수 있게 숫자로도 둔다.
+            out["stale_days"] = T["stale_days"]
         if "온도" in want:
             out["온도"] = {
-                "temp": latest.get("temp"),
-                "band": temp_band(latest.get("temp")),
-                # 71 이 무슨 뜻인지 — 같은 축에서 몇 등인가
-                "percentile": pct,
-                "rank_text": (None if pct is None else
-                              f"같은 축에서 상위 {max(1, round((1 - float(pct)) * 100))}%"),
-                # 지난주와 견주면 방향이 보인다.
-                #   ★ 2주 관측이 모자라면 주지 않는다 — may_say["2주변화"] 와 같은 기준.
-                #     안 그러면 표본 16건짜리 용어가 "지난주보다 31° 하락" 이라고 나간다.
-                "delta_1w": (self._delta_1w(key, latest)
-                             if n14 >= MIN_OBS_14 else None),
-                # 지난주 온도 자체. 모델이 빼기를 하지 않아도 되게 한다.
-                "temp_1w_ago": ((self._week_ago(key, latest) or (None, None))[0]
-                                if n14 >= MIN_OBS_14 else None),
-                "delta_1w_note": (None if n14 >= MIN_OBS_14 else
-                                  f"14일 관측 {n14}건 — 지난주 대비 변화를 말하기엔 모자랍니다."),
+                "temp": T["temp"],
+                "band": T["band"],                 # 화면 막대: 차가움·미지근·따뜻함·과열
+                "verdict": T["verdict"],           # 화면 제목: "OO는 지금 {verdict} 구간"
+                "verdict_text": T["verdict_text"],
+                # ★ 기준선 (설계도 부록 11) — "온도 71°" 만으로는 높은지 낮은지 모른다.
+                #   백분위는 그날 언급된 **전체 용어** 사이의 순위다(0~100). '같은 축' 이 아니다.
+                "percentile": T["percentile"],
+                "rank_text": (None if T["top_pct"] is None else
+                              f"그날 언급된 전체 용어 중 상위 {T['top_pct']}%"),
+                # 화면의 '이번 주 온도 변화' 와 같은 계산(7일 전 또는 그 앞의 가장 가까운 행).
+                #   ★ 2주 관측이 모자라면 말하지 않게 한다 — 표본 몇 건짜리가 "31° 하락" 으로 나간다.
+                "delta_1w": T["delta_1w"] if say["2주변화"] else None,
+                "temp_1w_ago": T["temp_1w_ago"] if say["2주변화"] else None,
+                "temp_1w_ago_date": T["temp_1w_ago_date"] if say["2주변화"] else None,
+                "delta_1w_note": (None if say["2주변화"] else
+                                  f"14일 관측 {obs['n14']}일 — 지난주 대비 변화를 말하기엔 모자랍니다."),
                 # 표본 — 12건으로 낸 71° 와 1,240건으로 낸 71° 는 다르다
-                "sample_n": latest.get("raw_count"),
-                "as_of": day,
+                "sample_n": T["mention_28d"],
+                "sample_basis": "최근 28일 언급 합계",
+                "as_of": T["as_of"],
             }
         if "모멘텀" in want:
-            out["모멘텀"] = ({"momentum": latest.get("momentum"),
-                            "ma7": latest.get("ma7"), "ma28": latest.get("ma28")}
-                           if n28 >= MIN_OBS_28 else
-                           {"unavailable": f"28일 관측 {n28}건 — 방향을 말하기엔 모자랍니다."})
+            out["모멘텀"] = ({"momentum": T["momentum"], "flat_at": 50,   # 화면: 성장 모멘텀 (50=보합)
+                            "ma7": T["ma7"], "ma28": T["ma28"],
+                            "direction": d["label"] if d else None,
+                            "ratio_7d_28d": d["ratio"] if d else None}
+                           if can_dir else
+                           {"unavailable": f"28일 관측 {obs['n28']}일 — 방향을 말하기엔 모자랍니다."})
         if "순위" in want:
-            out["순위"] = {"pct_rank": latest.get("pct_rank"), "level": latest.get("level")}
+            out["순위"] = {"percentile": T["percentile"], "top_pct": T["top_pct"],
+                         "level": T["level"],
+                         "basis": "그날 언급된 전체 용어 사이의 백분위(0~100)"}
         if "출처별" in want:
-            out["출처별"] = self.store.term_sources(key)
+            out["출처별"] = view["platforms"] or {"unavailable": "플랫폼별 온도가 아직 없습니다."}
         if "연관어" in want:
-            out["연관어"] = self.store.term_assoc(key, limit=8)
+            out["연관어"] = self.store.term_assoc(self._key(term), limit=8)
         if "긍부정" in want:
-            # ★ 2026-09-09 — 표본 문턱을 여기서 건다.
-            #   실측: material:니트 의 감성은 n_total=1, pos_pct=100.0 이었다.
-            #   그대로 내보내면 모델이 "긍정 100%" 라고 쓴다. 댓글 한 건이다.
-            #   may_say 를 만들어 두고 이 축만 문턱이 없었다.
-            s = self.store.term_sentiment(key)
-            n_s = int((s or {}).get("n_total") or 0)
-            if not s:
-                out["긍부정"] = {"unavailable": "감성 지표가 아직 없습니다."}
-            elif n_s < MIN_OBS_7:
-                out["긍부정"] = {
-                    "unavailable": f"감성 표본 {n_s}건 — 비율을 말하기엔 모자랍니다.",
-                    "n_total": n_s}
-            else:
-                s = dict(s)
-                if n_s < THIN_SAMPLE:
-                    s["thin_sample"] = True
-                    s["note"] = f"표본 {n_s}건 — 비율을 적을 때 표본 수를 반드시 함께 적으세요."
-                out["긍부정"] = s
+            # ★ 화면 긍부정 탭과 같은 값 — 최근 28일 합계, 20건 미만이면 '판단 보류'.
+            #   (2026-09-09 의 '표본 문턱' 은 그대로다. 문턱의 자리만 화면과 맞췄다.)
+            out["긍부정"] = view.get("sentiment") or {"unavailable": "긍부정 지표가 아직 없습니다."}
         if "근거" in want:
-            out["근거"] = self.store.term_evidence(key, limit=3)
+            out["근거"] = self.store.term_evidence(self._key(term), limit=3)
 
         # ★ 이 조건에서 써도 되는 문장. 모델이 판단을 지어내기 전에 준다.
-        out["말할_수_있는_것"] = _say_rule(pct, latest.get("momentum"), thin)
+        out["말할_수_있는_것"] = _say_rule(T["percentile"], d["tone"] if d else None,
+                                       T["thin"], T["mention_28d"])
         return out
-
-    def _delta_1w(self, key: str, latest: dict):
-        """지난주 대비 온도 변화. 관측이 없으면 None — 0 으로 채우지 않는다."""
-        d = self._week_ago(key, latest)
-        return None if d is None else d[1]
-
-    def _week_ago(self, key: str, latest: dict):
-        """(지난주 온도, 변화량). 둘 다 **도구가 계산해서** 준다.
-
-        ★ 왜 지난주 값을 따로 주나 (2026-09-09 실측)
-          delta_1w 만 주면 모델이 "지난주 87도에서 31도 하락" 이라고 쓴다 —
-          87 은 56+31 을 스스로 계산한 값이다. 계산이 맞아도 도구가 확인해
-          준 값이 아니라 검증관이 지웠다("87도에서 " 삭제).
-          그런데 사용자에게는 "지난주 87°에서 31° 하락" 이 "31° 하락" 보다
-          훨씬 유용하다(설계도 부록 11 — 기준선).
-          검증을 푸는 대신 **도구가 그 값을 직접 준다.** 값은 도구에서만
-          나온다는 원칙을 지키면서 답변이 친절해진다.
-        """
-        try:
-            rows = self.store.term_series(key, days=14)
-        except Exception:                                # noqa: BLE001
-            return None
-        now = latest.get("temp")
-        if now is None or len(rows) < 2:
-            return None
-        # rows 는 최신순. 7일 전에 가장 가까운 것을 고른다.
-        past = rows[min(7, len(rows) - 1)]
-        if past.get("temp") is None:
-            return None
-        prev = round(float(past["temp"]), 1)
-        return prev, round(float(now) - prev, 1)
 
     def t_get_evidence(self, term: str, limit: int = 3) -> dict:
         """근거 원문 조각. 링크는 **있는 것만** 붙인다.

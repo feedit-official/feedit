@@ -45,24 +45,30 @@ class Coverage:
         return d
 
 
-def assess(store, term_key: str, as_of: str, latest: dict | None,
-           sentiment: dict | None, assoc_count: int) -> Coverage:
+def assess(trend: dict | None, sentiment: dict | None, assoc_count: int,
+           reason: str | None = None) -> Coverage:
+    """무엇을 말해도 되는지. trend 는 trend_view.trend_summary() 의 결과다.
+
+    ★ 2026-10-01 — 관측 일수와 표본을 **트렌드 분석 화면과 같은 시계열**에서 센다.
+      예전엔 지표 표를 따로 읽어 표본을 **하루치** 언급 수로 쟀다(raw < 20 이면 표본 부족).
+      그러면 거의 모든 용어가 '표본 부족' 이 되어 화면과 다른 판단을 했다.
+      지금은 최근 28일 언급 합계로 잰다.
+    """
     c = Coverage(reasons=[])
-    if not latest:
-        c.reasons.append(("NO_METRIC", "이 말은 사전에는 있지만 아직 수집된 언급이 없습니다."))
+    if not trend:
+        c.reasons.append(("NO_METRIC", reason or "이 말은 사전에는 있지만 아직 수집된 언급이 없습니다."))
         return c
 
     c.has_latest = True
     c.can_level = True
-    raw = int(latest.get("raw_count") or 0)
-    c.thin_sample = raw < THIN_SAMPLE
+    m28 = int(trend.get("mention_28d") or 0)
+    c.thin_sample = bool(trend.get("thin"))
     if c.thin_sample:
         c.reasons.append(("THIN_SAMPLE",
-                          f"최신 언급이 {raw}건뿐이라 값이 크게 흔들립니다."))
+                          f"최근 28일 언급이 {m28}건뿐이라 값이 크게 흔들립니다."))
 
-    c.obs7 = store.obs_count(term_key, 7, as_of)
-    c.obs14 = store.obs_count(term_key, 14, as_of)
-    c.obs28 = store.obs_count(term_key, 28, as_of)
+    obs = trend.get("obs") or {}
+    c.obs7, c.obs14, c.obs28 = int(obs.get("n7") or 0), int(obs.get("n14") or 0), int(obs.get("n28") or 0)
 
     c.can_direction = c.obs28 >= MIN_OBS_28 and c.obs7 >= MIN_OBS_7
     if not c.can_direction:
@@ -79,18 +85,16 @@ def assess(store, term_key: str, as_of: str, latest: dict | None,
     if not c.can_assoc:
         c.reasons.append(("NO_ASSOC", "아직 계산된 연관어가 없습니다."))
 
-    n_sent = int((sentiment or {}).get("n_total") or 0)
-    c.can_sentiment = n_sent > 0
+    n_sent = int(((sentiment or {}).get("반응") or {}).get("합계") or 0)
+    c.can_sentiment = bool(sentiment) and n_sent > 0
     if not c.can_sentiment:
-        c.reasons.append(("NO_SENTIMENT", "구매의향을 판단할 문장이 아직 없습니다."))
-    elif n_sent < THIN_SAMPLE:
+        c.reasons.append(("NO_SENTIMENT", "긍부정을 판단할 반응이 아직 없습니다."))
+    elif not sentiment.get("judged"):
         c.reasons.append(("THIN_SENTIMENT",
-                          f"구매의향 표본이 {n_sent}건이라 중립 쪽으로 보정됩니다."))
+                          f"최근 28일 반응이 {n_sent}건이라 판단을 보류합니다 "
+                          f"({THIN_SAMPLE}건 이상이면 판정)."))
 
-    obs = latest.get("observed_on")
-    if obs and obs < as_of:
-        from datetime import date
-        c.stale_days = (date.fromisoformat(as_of) - date.fromisoformat(obs)).days
+    c.stale_days = int(trend.get("stale_days") or 0)
     return c
 
 

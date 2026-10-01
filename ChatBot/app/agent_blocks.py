@@ -125,11 +125,11 @@ def _trace_metric_entries(term: str, axes: set, res: dict, facet: str | None,
     out: list[dict] = []
     temp = res.get("온도")
     if isinstance(temp, dict) and temp.get("temp") is not None:
-        rows = [{"k": "트렌드 온도", "small": str(temp.get("band") or ""),
-                 "v": f"{temp['temp']}점", "up": float(temp["temp"]) >= 50}]
+        rows = [{"k": "트렌드 온도", "small": str(temp.get("verdict") or temp.get("band") or ""),
+                 "v": f"{temp['temp']}점", "up": float(temp["temp"]) >= 65}]
         sample = temp.get("sample_n")
         if sample is not None:
-            rows.append({"k": "언급량", "small": "도구 조회 결과",
+            rows.append({"k": "언급량", "small": "최근 28일",
                          "v": f"{int(sample):,}건", "up": int(sample) >= 20})
         block = {"type": "rank", "slot": "left", "title": term,
                  "meta": " · ".join(x for x in (FACET_SAY.get(facet or "", facet or ""),
@@ -141,10 +141,15 @@ def _trace_metric_entries(term: str, axes: set, res: dict, facet: str | None,
 
     raw_sources = res.get("출처별")
     if "출처별" in axes and isinstance(raw_sources, list) and raw_sources:
-        sources = [{"name": report.SOURCE_KO.get(str(s.get("source_code") or ""),
-                                                  str(s.get("source_code") or "출처")),
-                    "raw_count": s.get("raw_count")}
-                   for s in raw_sources if isinstance(s, dict)]
+        # get_metric 의 출처별 = 트렌드 분석 '플랫폼별 온도' 표(trend_view.platforms).
+        #   예전 모양(source_code · raw_count)도 읽는다 — 시험 기록과 옛 궤적.
+        sources = []
+        for s in raw_sources:
+            if not isinstance(s, dict):
+                continue
+            code = str(s.get("code") or s.get("source_code") or "")
+            sources.append({"name": report.SOURCE_KO.get(code.lower(), s.get("name") or code or "출처"),
+                            "raw_count": s.get("mention", s.get("raw_count"))})
         entry = _content("sources", B.b_sources({"sources": sources},
                                                  str(res.get("as_of") or as_of)), term=term)
         if entry:
@@ -393,11 +398,13 @@ def build(trace, store, gate, question: str = "") -> list[dict]:
         node = None
         try:
             key = _key_for(term, gate, store, got["facets"].get(term))
+            # ★ get_metric 과 같은 어댑터·같은 캐시로 읽는다(trend_view.source).
+            #   문장과 카드가 같은 응답에서 나와야 "상위 1%" 옆에 "상위 82%" 가 서지 않는다.
             node = report.build_term(
                 store, gate,
                 {"term_key": key, "canonical": term,
                  "facet": _facet_of(key, got["facets"].get(term))},
-                as_of or "")
+                as_of or "", with_sentiment="긍부정" in axes)
         except Exception:                       # noqa: BLE001
             # 저장소 재조회가 실패해도 도구가 이미 돌려준 값은 버리지 않는다.
             node = None
