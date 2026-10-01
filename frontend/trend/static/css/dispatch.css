@@ -362,3 +362,10 @@
 .sentPie .pieLg i{width:10px;height:10px;border-radius:2px}
 .sentPie .pieLg b{font-size:15px;text-align:right}
 .sentPie .pieLg em{font-style:normal;font-size:11px;color:var(--pink-2);text-align:left}
+
+/* 수명주기 · 주별 온도 카드 — 왼쪽 카드 높이에 맞추고 넘치면 더보기 */
+.lcWk{display:flex;flex-direction:column;overflow:hidden}
+.lcWk .lcWkBody{flex:1;min-height:0;overflow:hidden}
+.lcWk.open .lcWkBody{overflow:visible}
+.lcWk .lcWkMore{margin:8px auto 0;padding:6px 16px;border:1px solid var(--pink-3);border-radius:999px;background:#fff;font:inherit;font-size:12px;cursor:pointer}
+.lcWk .lcWkMore[hidden]{display:none}

@@ -2130,15 +2130,15 @@ export function trRender(id){
           '<div data-chart="lifeMain"></div>'+
           '<div class="note"><i>◆</i>화제성 레벨의 흐름입니다. 오른쪽 끝 음영이 <b>지금</b>입니다. '+
             (si<2?'아직 올라가는 중이라 여유가 있습니다.':'꼭짓점을 지나면 회복하지 않는 경우가 많습니다.')+'</div></div>'+
-        '<div class="panelC"><div class="ph"><h3>주별 온도</h3><em>최근 8주</em></div>'+
-          (wkRows.length
+        '<div class="panelC lcWk"><div class="ph"><h3>주별 온도</h3><em>최근 8주</em></div>'+
+          '<div class="lcWkBody">'+(wkRows.length
           ? '<table class="mTable lg"><tr><th>시기</th><th>온도</th><th></th></tr>'+
             wkRows.map(r=>'<tr><td>'+(r.weeks_ago===0?'이번 주':r.weeks_ago+'주 전')+'</td>'+
               '<td><span class="bar" style="display:block"><i class="'+(r.temp>=60?'c':'')+'" style="width:'+Math.round(r.temp)+'%"></i></span></td>'+
               '<td class="n">'+Math.round(r.temp)+'°</td></tr>').join('')+
             '</table>'
-          : unavailableHTML('최근 8주 온도 값이 없습니다.',''))+
-          '<div class="note"><i>◆</i>'+trEsc(D.rule)+'</div></div>'+
+          : unavailableHTML('최근 8주 온도 값이 없습니다.',''))+'</div>'+
+          '<button type="button" class="lcWkMore" hidden>더보기</button></div>'+
       '</div>'+
       '<div class="trGrid one" style="margin-top:12px">'+
         '<div class="panelC"><div class="gHead"><h3>언급량 · 판매량</h3></div>'+
@@ -2150,7 +2150,7 @@ export function trRender(id){
               '지금은 언급량만 보여 드립니다.'+(D.basis?' (언급량: YouTube 댓글 기준)':'')+'</div>')+
           '</div>'+
       '</div>';
-    G_CFG.lifeMain={key:full+'life',rows:D.series,band:[.88,1],min:0,max:100,
+    G_CFG.lifeMain={key:full+'life',h:300,rows:D.series,band:[.88,1],min:0,max:100,
       emptyReason:'화제성 레벨 시계열이 비어 있습니다.',
       sets:[{id:'l',name:'화제성 레벨',field:'level',unit:''}]};
     const sales=D.sales_series||[];
@@ -2164,6 +2164,17 @@ export function trRender(id){
       emptyReason:'언급량 시계열이 비어 있습니다.',
       sets:gapSets};
     gMount(); trFillBars(); trDial();
+    /* 주별 온도 카드 — 왼쪽 카드 높이에 맞추고, 넘치는 행은 더보기로 펼친다 */
+    const wkCard=body.querySelector('.lcWk'), wkBody=wkCard&&wkCard.querySelector('.lcWkBody'), wkBtn=wkCard&&wkCard.querySelector('.lcWkMore');
+    if(wkCard&&wkBtn){
+      const fit=()=>{
+        const h=wkCard.previousElementSibling.offsetHeight;
+        wkCard.classList.remove('open'); wkCard.style.maxHeight=h+'px';
+        wkBtn.hidden=wkBody.scrollHeight<=wkBody.clientHeight+1;
+      };
+      wkBtn.onclick=()=>{ const o=wkCard.classList.toggle('open'); wkCard.style.maxHeight=o?'none':''; if(!o)fit(); wkBtn.textContent=o?'접기':'더보기'; };
+      requestAnimationFrame(fit);
+    }
   }
   if(HAS_A)aAnimate($$('#trBody .kpi, #trBody .panelC, #trBody .concl, #trBody .verdict, #trBody .cheapest, #trBody .svAlso'),
     {opacity:[0,1],translateY:[16,0],duration:760,delay:aStagger(60),ease:'out(3)'});

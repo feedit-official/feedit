@@ -154,7 +154,7 @@ export function gChart(host,cfg){
 
 /* 좌표계에 실제로 그리는 부분. 값이 어디서 왔든 그리는 방법은 같다. */
 function gPaint(el,cfg,g,labels,sets){
-  const H=210,PL=34,PR=14,PT=14,PB=28;
+  const H=cfg.h||210,PL=34,PR=14,PT=14,PB=28;
   /* cfg.wide — 가로 전체 카드(.trGrid.one)에 놓인 차트.
      viewBox 가 620×210 로 고정이면 폭을 늘린 만큼 높이 · 글씨 · 선 굵기가 같이 커진다.
      그래서 폭(W)만 늘린다 — 원래 자리(1.5fr 칸)보다 넓어진 비율만큼 W 를 키우면
