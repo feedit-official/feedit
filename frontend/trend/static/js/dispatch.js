@@ -2002,7 +2002,15 @@ export function trRender(id){
       kpi('4주간 중고거래량',hasTradeVolume&&D.volume_4w!=null?Number(D.volume_4w).toLocaleString():'측정 전',hasTradeVolume&&D.volume_4w!=null?'건':'',
         hasTradeVolume?'최근 4주 실제 거래 기준':'실거래량 미적재',hasTradeVolume&&D.volume_4w!=null),
     ];
-    const cards=(D.platform_cards||[]).map(card=>{
+    /* 무신사 · 크림 카드는 값이 없어도 항상 둔다 — 없는 쪽은 '없음' 문구로 채운다 */
+    const platformCards=(D.platform_cards||[]).slice();
+    [['무신사','신상품'],['크림','중고·리셀']].forEach(([nm,kind])=>{
+      if(!platformCards.some(c=>String(c.name||'').includes(nm)))platformCards.push({name:nm,empty:kind});
+    });
+    platformCards.sort((a,b)=>(a.name.includes('크림')?1:0)-(b.name.includes('크림')?1:0));
+    const cards=platformCards.map(card=>{
+      if(card.empty)return '<article class="resalePlatformCard empty"><div><span>'+trEsc(card.name)+'</span><em>'+card.empty+'</em></div>'+
+        '<b>가격 정보 없음</b><p>이 플랫폼에서 확인된 가격이 없어요</p><small>&nbsp;</small></article>';
       const isResale=card.market==='resale';
       const noListing=isResale&&card.listing_count===0;
       const main=noListing?'현재 판매 중인 중고 매물이 없어요':isResale?(card.median_price!=null?trWon(card.median_price):'가격 집계 중'):
@@ -2046,10 +2054,10 @@ export function trRender(id){
     if((D.sizes||[]).length)panels.push('<div class="panelC"><div class="ph"><h3>사이즈별 시세</h3><em>자료가 있는 사이즈만</em></div>'+
       '<table class="mTable lg"><tr><th>사이즈</th><th>정가 대비</th><th>시세</th></tr>'+D.sizes.map(z=>'<tr><td>'+trEsc(z.label)+'</td>'+
         '<td class="n '+((z.ratio||0)>=1?'up':'dn')+'">'+(z.ratio==null?'–':'×'+z.ratio.toFixed(2))+'</td><td class="n">'+trWon(z.price)+'</td></tr>').join('')+'</table></div>');
-    if(exact&&D.spread)panels.push('<div class="panelC svSpread"><div class="svSpreadLabel">현재 매물과 최근 거래</div>'+
+    const spreadHTML=exact&&D.spread?'<section class="resaleSpread"><div class="gHead"><h3>현재 매물과 최근 거래</h3></div><div class="panelC svSpread">'+
       '<div class="svSpreadRow"><span>현재 최저 매물 중앙값</span><b>'+trWon(D.spread.ask)+'</b></div>'+
       '<div class="svSpreadRow"><span>최근 거래 사례 중앙값</span><b>'+trWon(D.spread.trade)+'</b></div>'+
-      '<div class="note"><i>◆</i>동일 표준상품으로 연결된 자료만 사용하며 상태·사이즈 차이는 남아 있을 수 있습니다.</div></div>');
+      '<div class="note"><i>◆</i>동일 표준상품으로 연결된 자료만 사용하며 상태·사이즈 차이는 남아 있을 수 있습니다.</div></div></section>':'';
     body.innerHTML=
       (exact?'<div class="resaleMode" role="group" aria-label="리세일 지수 목적"><button type="button" data-resale-mode="buy" class="'+(RESALE_MODE==='buy'?'on':'')+'">사려고 해요</button>'+
         '<button type="button" data-resale-mode="sell" class="'+(RESALE_MODE==='sell'?'on':'')+'">팔려고 해요</button></div>':'')+
@@ -2057,7 +2065,9 @@ export function trRender(id){
       '<div class="note resaleBasis"><i>◆</i>'+trEsc(String(D.as_of).slice(0,10))+' 기준 · 최근 '+D.days+'일 · 판단 신뢰도 '+trEsc(confidence)+
         (product&&product.mapped===false?' · 아직 다른 플랫폼과 표준상품 매핑 전':'')+'</div>'+
       (kpis.length?'<div class="kpis">'+kpis.join('')+'</div>':'')+
-      (cards?'<section class="resalePlatforms"><div class="gHead"><h3>플랫폼별 현재 가격</h3><p>DB에서 같은 표준상품으로 연결된 플랫폼만 표시합니다.</p></div><div class="resalePlatformGrid">'+cards+'</div></section>':'')+
+      ((cards||spreadHTML)?'<div class="resaleTop">':'')+
+      (cards?'<section class="resalePlatforms"><div class="gHead"><h3>플랫폼별 현재 가격</h3></div><div class="resalePlatformGrid">'+cards+'</div></section>':'')+spreadHTML+
+      ((cards||spreadHTML)?'</div>':'')+
       (recommendations?'<section class="resaleRecommendations"><div class="gHead"><div><h3>'+trEsc(full)+' 중고 추천 상품</h3><p>USED·크림에서 실제 관측된 상품을 5개씩 보여 줍니다.</p></div>'+
         (recommendationPool.length>5?'<button type="button" class="resaleMore" data-resale-more>다른 상품 보기 <span>↻</span></button>':'')+'</div><div class="resaleRecGrid">'+recommendations+'</div></section>':'')+
       (mdSignals?'<section class="resaleMd"><div class="gHead"><div><h3>리세일 시장 한눈에 보기</h3><p>가격 방어율·거래량 변화·정가 프리미엄이 얼마나 이어졌는지 보여 드립니다.</p></div></div><div class="resaleMdGrid">'+mdSignals+'</div></section>':'')+
