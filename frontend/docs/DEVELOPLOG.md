@@ -4612,3 +4612,51 @@ KREAM 주소를 대표로 고르던 문제도 확인했다. 무신사 계열 이
 
 - 챗봇 순위(rank_terms)는 지표 표의 최신일 온도순이다. 홈 HOT TREND(유튜브 이력 기준 상승률)와는 다른 순위다.
 - 본문에 지난 주제를 섞는 것("최근 본 플리스와 함께 …")은 프롬프트로만 막았다. 코드로 지우지 않는다.
+
+## 2026-10-01 10:45 KST — Claude · 챗봇이 되물은 것을 다음 턴이 모르던 문제
+
+### 무엇을 왜 고쳤나
+
+```
+챗봇   더비슈즈의 출처별 반응이나, 실제 언급 근거를 더 볼까요?
+사용자 응 두개 다 알려줘
+챗봇   아이템은 더비슈즈·재킷 중심으로, 소재는 니트가 … (아이템 순위 · 소재 순위)
+```
+
+대화 기억(history)에는 **사용자 질문 · 용어 · 사진 관찰값**만 있었다.
+챗봇이 답 끝에 되물은 질문(`[다음]` 줄)은 어디에도 남지 않았다.
+- 화면: `aiMsg.turn = {q, intent, terms}` — followup 을 넣지 않았다
+- 서버 기억(`history.make_turn` · `sanitize`): 같은 넷만
+- 대화 저장(`chat_views._clean_turn`): 같은 넷만
+
+그래서 "응 두개 다" 가 무엇에 대한 대답인지 모델이 알 방법이 없었고,
+앞선 질문 목록(아이템 순위 · 소재 순위)에서 '두 개' 를 짐작했다.
+
+같은 대화의 "‘더비슈즈는 왜 93점이야?’ 대신 더비슈즈 용어 기준으로 봤어요" 도 고쳤다.
+`search_terms` 가 alts 를 넘기기만 하면 '대신 봤다(substituted)' 를 붙였다.
+원문에서 이미 찾았으면 대체가 아니다.
+
+고친 것
+
+- 턴에 `next`(챗봇이 되물은 질문 한 줄, 태그 없이 200자)를 둔다.
+  화면 `chat_popup.js` · 서버 `history.py`(기억 · sanitize) · `engine._remember` · Django `_clean_turn` 모두.
+  답변 본문은 여전히 기억하지 않는다 — 질문은 주장이 아니라 근거로 쓰일 위험이 없다.
+- `orchestrator._ctx_block` — 바로 앞 턴에 `next` 가 있으면
+  `[직전 답변이 물은 것] …` 으로 모델에게 준다. 규칙 11 에 짧은 대답은 그 질문에 대한 대답이고,
+  "둘 다" 면 거기 적힌 두 가지를 같은 대상으로 실행하라고 적었다.
+- `tools.t_search_terms` — 원문으로 못 찾고 alts 로만 찾았을 때만 substituted.
+
+### 어떻게 확인했나
+
+- `ChatBot/tests/popup.test.mjs` 6번 — 실제 팝업에서 followup 이 붙은 답 뒤에 다음 질문을 보내면
+  요청 history 마지막 턴에 `next` 가 글자로 실린다. 이 변경을 빼고 돌리면 실패하는 것도 확인했다.
+- `ChatBot/tests/test_followup_memory.py` — sanitize · make_turn · `[직전 답변이 물은 것]` · substituted.
+- `_clean_turn` 은 이 환경에 Django 6.1(Python 3.12+)이 없어 함수만 떼어 돌려 확인했다. Django 시험은 돌리지 못했다.
+- ChatBot unittest 195건, `bash ChatBot/tests/run.sh`, frontend `chat_popup_ui` · `chat_history_db` 통과.
+- 실제 모델로 "…볼까요? → 응 두개 다" 를 다시 돌려 보지는 못했다.
+
+### 남은 것 · 주의
+
+- 배포: 챗봇 컨테이너 · Django API(대화 저장에 `next` 보존) · Vercel 프론트 셋 다 올라가야 끝까지 이어진다.
+  프론트만 올라가도 열린 대화 안에서는 바로 동작하고, Django 가 없으면 대화를 다시 열 때 `next` 가 빠진다.
+- 이 변경 전에 저장된 대화에는 `next` 가 없다. 그 대화에서 "응" 으로 이어 가면 예전처럼 짐작한다.

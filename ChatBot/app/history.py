@@ -5,13 +5,22 @@
   사람은 같은 질문을 다른 말에 대해 다시 묻는 것으로 읽는다.
   앞 턴이 없으면 규칙도 LLM 도 "고프코어가 뭐냐" 로 읽는다. 실제로 그렇게 답했다.
 
-무엇을 기억하나 — 네 가지뿐이다.
+무엇을 기억하나 — 다섯 가지뿐이다.
   · 무엇을 물었나 (intent)
   · 무엇에 대해 물었나 (사전에 걸린 term)
   · 원문 (사용자에게 "앞 질문을 이어받았다" 고 보여 주려고)
   · 사진에서 직접 확인한 구조화 관찰값 (아이템·색·소재·실루엣 등)
+  · 챗봇이 끝에 되물은 이어 갈 질문 (`next` — 답변의 [다음] 줄)
 답변 본문은 기억하지 않는다. 다음 답을 만들 때 쓰이지 않는데 들고 있으면
 언젠가 그걸 근거 삼아 말하게 된다.
+
+★ `next` 를 기억하는 이유 (2026-10-01 실측)
+  챗봇이 "더비슈즈의 출처별 반응이나, 실제 언급 근거를 더 볼까요?" 라고 묻고
+  사용자가 "응 두개 다 알려줘" 라고 답했는데, 다음 턴의 모델은 그 질문을 몰랐다.
+  기억에는 사용자 질문만 있었기 때문이다. 모델은 앞선 질문들에서 '두 개' 를
+  짐작해 아이템 순위와 소재 순위를 다시 보여 줬다.
+  짧은 대답(응 · 둘 다 · 그거)은 **챗봇이 물은 것**에 대한 대답이다. 그 질문이
+  없으면 어떤 모델도 풀 수 없다. 질문은 주장이 아니라서 근거로 쓰일 위험도 없다.
 
 수명
   대화당 8턴, 2시간, 전체 500대화. 개발 서버는 프로세스 메모리다.
@@ -27,6 +36,15 @@ from collections import OrderedDict, deque
 MAX_TURNS = 8
 TTL_SEC = 2 * 60 * 60
 MAX_CONV = 500
+NEXT_MAX = 200     # 이어 갈 질문 한 줄의 상한
+
+
+def clean_next(value) -> str | None:
+    """이어 갈 질문 한 줄 — 태그를 걷고 한 줄로 줄인다. 밖에서 온 값일 수 있다."""
+    import re
+    text = re.sub(r"<[^>]+>", " ", str(value or ""))
+    text = " ".join(text.split())[:NEXT_MAX]
+    return text or None
 
 
 # 되묻기로 끝난 턴의 intent. agent_path.ask() 가 이 값을 돌려주고,
@@ -78,7 +96,7 @@ def sanitize_visual(raw) -> dict | None:
 
 
 def make_turn(question: str, intent: str, mode: str, terms: list[dict],
-              visual: dict | None = None) -> dict:
+              visual: dict | None = None, follow: str | None = None) -> dict:
     turn = {
         "q": " ".join(str(question or "").split())[:200],
         "intent": intent,
@@ -87,6 +105,9 @@ def make_turn(question: str, intent: str, mode: str, terms: list[dict],
                    "term_key": t.get("term_key")} for t in (terms or [])][:4],
         "at": time.time(),
     }
+    nxt = clean_next(follow)
+    if nxt:
+        turn["next"] = nxt
     seen = sanitize_visual(visual)
     if seen:
         turn["visual"] = seen
@@ -157,5 +178,8 @@ def sanitize(raw) -> list[dict]:
         visual = sanitize_visual(t.get("visual") or t.get("visual_context"))
         if visual:
             turn["visual"] = visual
+        nxt = clean_next(t.get("next") or t.get("followup"))
+        if nxt:
+            turn["next"] = nxt
         out.append(turn)
     return out

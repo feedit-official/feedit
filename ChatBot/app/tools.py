@@ -782,7 +782,11 @@ class Toolbox:
             out["source"] = "metric"          # 사전이 아니라 지표에서 직접 찾았다
             out["note"] = ("사전에는 없지만 지표에 이름이 있는 용어가 있습니다"
                            "(브랜드 등). 그대로 get_metric 에 넘기면 됩니다.")
-        if hits and len(tried) > 1:
+        # ★ '대신 봤다' 는 **원문으로는 못 찾았을 때만**이다 (2026-10-01).
+        #   예전엔 alts 를 넘기기만 하면 붙었다. "더비슈즈는 왜 93점이야?" 는 원문에서
+        #   더비슈즈를 찾았는데도 "'더비슈즈는 왜 93점이야?' 대신 더비슈즈 기준으로 봤다"
+        #   는 어색한 문장이 나갔다. 원문에서 찾은 것(from 이 없는 것)이 있으면 대체가 아니다.
+        if hits and len(tried) > 1 and all(h.get("from") for h in hits):
             out["substituted"] = True
             첫말 = tried[0] if len(tried[0]) <= 40 else tried[0][:39] + "…"
             out["substituted_note"] = (

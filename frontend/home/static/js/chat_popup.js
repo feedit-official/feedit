@@ -1095,7 +1095,14 @@ function cpFixStyleLinks(host){
     else{ btn.remove(); }
   });
 }
-/* 최근 턴 몇 개 — server.py history 형식({q,intent,terms})으로.
+/* 서버가 보낸 이어 갈 질문(HTML 한 줄) → 글자만. 기억(turn)에 넣을 값이라 태그·엔티티를 걷는다.
+   (DOM 에 붙이지 않는다 — 받은 HTML 을 innerHTML 로 해석할 이유가 없다.) */
+function cpNextText(html){
+  return String(html||'').replace(/<[^>]+>/g,' ')
+    .replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&#39;|&#x27;/g,"'")
+    .replace(/&amp;/g,'&').replace(/\s+/g,' ').trim().slice(0,200);
+}
+/* 최근 턴 몇 개 — server.py history 형식({q,intent,terms,next})으로.
    답이 아직 안 온 턴(진행 중)은 넣지 않는다 — intent 가 아직 없다. */
 export function cpHistoryFor(c){
   const out=[];
@@ -1197,6 +1204,10 @@ async function cpAskLive(c,aiMsg,text,images){
       /* 사진 답변의 item·소재·색·실루엣은 다음 턴의 주어다. 예전에는 terms만
          저장해서 "소재는 뭐야?"가 무엇을 가리키는지 통째로 사라졌다. */
       if(rep.visual_context)aiMsg.turn.visual=rep.visual_context;
+      /* 챗봇이 끝에 되물은 것도 기억한다 (2026-10-01). "응 두개 다 알려줘" 는 이 질문에 대한
+         대답인데, 예전엔 다음 턴에 사용자 질문만 넘어가서 서버가 '두 개' 를 짐작했다. */
+      const nextQ=cpNextText(rep.followup);
+      if(nextQ)aiMsg.turn.next=nextQ;
       /* 확정된 코디 — 답변과 함께 착장 칸을 펼친다 (2026-09-22). 버튼을 한 번 더
          누르게 하지 않는다. 원본은 이 하나다(server.actions_for 주석). */
       if(rep.fit&&(rep.fit.items||[]).length&&!aiMsg.fit){

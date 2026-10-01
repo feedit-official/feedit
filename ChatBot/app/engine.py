@@ -98,7 +98,7 @@ class ChatEngine:
                                  taste=self.taste, on_progress=on_progress,
                                  cancel_check=cancel_check)
             self._remember(conversation_id, q, out.get("intent") or "agent", mode,
-                           out.get("terms") or [])
+                           out.get("terms") or [], follow=out.get("followup"))
             return out
 
         # 앞 턴. 클라이언트가 보낸 것이 있으면 그쪽을 믿는다 —
@@ -211,9 +211,10 @@ class ChatEngine:
             self._polish(rep)
         return rep
 
-    def _remember(self, conv_id, q, intent, mode, terms, visual=None):
+    def _remember(self, conv_id, q, intent, mode, terms, visual=None, follow=None):
         if conv_id:
-            self.memory.add(conv_id, history.make_turn(q, intent, mode, terms, visual))
+            self.memory.add(conv_id, history.make_turn(q, intent, mode, terms, visual,
+                                                       follow=follow))
 
     def _vision_terms(self, visual: dict | None) -> list[dict]:
         """사진 관찰값 중 사전에 실제로 있는 용어만 지표용 term으로 승격한다."""

@@ -60,7 +60,7 @@ function sseBody(rep){
   let i=0;
   return {getReader:()=>({read:async()=>i<parts.length?{done:false,value:parts[i++]}:{done:true}})};
 }
-let SERVE = FX.level, HEALTH = true, LEXREQ = null, FAILURE = null;
+let SERVE = FX.level, HEALTH = true, LEXREQ = null, FAILURE = null, LAST_CHAT = null;
 global.fetch = async (url, opt) => {
   const u = String(url);
   if(!HEALTH) throw new Error('서버 없음');   /* 죽으면 전부 실패한다 */
@@ -71,6 +71,7 @@ global.fetch = async (url, opt) => {
     return {ok:true, json:async()=>({ok:true, surface:LEXREQ.surface, count:1})};
   }
   if(u.endsWith('/v1/chat')) {
+    try { LAST_CHAT = JSON.parse(opt.body); } catch(e) { LAST_CHAT = null; }
     if(FAILURE==='http') return {ok:false,status:503};
     if(FAILURE==='stream' || FAILURE==='eof') {
       let sent=false;
@@ -193,6 +194,24 @@ await wait(2600);
 th = thread();
 ok(!th.querySelector('.bars'), '플랫폼 막대 없음');
 ok(!!th.querySelector('.kwReq .ask button[data-v="price"]'), '업셀 버튼이 요금제로 간다');
+
+console.log('\n=== 6. 챗봇이 되물은 것이 다음 턴의 맥락으로 넘어가나 (2026-10-01) ===');
+/* "더비슈즈의 출처별 반응이나 … 볼까요?" → "응 두개 다" 가 무엇에 대한 대답인지
+   서버가 알아야 한다. 예전엔 history 에 사용자 질문만 실렸다. */
+HEALTH = true;
+SERVE = {...FX.level, followup:'<p>더비슈즈의 출처별 반응이나, 실제 언급 근거를 더 볼까요?</p>'};
+cp.cpNewConvo(); cp.openChatWith('더비슈즈는 왜 93점이야?');
+await wait(2600);
+SERVE = FX.level;
+const input = document.getElementById('cpInput');
+input.value = '응 두개 다 알려줘';
+cp.cpSend();
+await wait(2600);
+const sent = (LAST_CHAT && (LAST_CHAT.history || (LAST_CHAT.context||{}).history)) || [];
+const lastTurn = sent[sent.length-1] || {};
+ok(lastTurn.q === '더비슈즈는 왜 93점이야?', `직전 턴이 실렸다 (${lastTurn.q})`);
+ok(lastTurn.next === '더비슈즈의 출처별 반응이나, 실제 언급 근거를 더 볼까요?',
+   `되물은 질문이 글자로 실렸다 (${lastTurn.next})`);
 
 console.log(fail? `\n실패 ${fail}건` : '\n전부 통과');
 process.exit(fail?1:0);

@@ -61,7 +61,11 @@ def _clip(value, limit):
 
 
 def _clean_turn(turn):
-    """챗봇 기억에 필요한 것만 — 무엇을 물었나 · 어떤 용어 · 사진 관찰값."""
+    """챗봇 기억에 필요한 것만 — 무엇을 물었나 · 어떤 용어 · 사진 관찰값 · 챗봇이 되물은 것.
+
+    ★ next (2026-10-01) — 답변 끝의 이어 갈 질문. "응 두개 다 알려줘" 가 무엇에 대한
+      대답인지 다음 턴이 알아야 한다. 여기서 버리면 대화를 다시 열었을 때 사라진다.
+    """
     if not isinstance(turn, dict):
         return None
     terms = []
@@ -71,6 +75,9 @@ def _clean_turn(turn):
     out = {"q": _text(turn.get("q"), 500), "intent": _text(turn.get("intent"), 60), "terms": terms}
     if isinstance(turn.get("visual"), (dict, list)):
         out["visual"] = turn["visual"]
+    nxt = _text(turn.get("next"), 200)
+    if nxt:
+        out["next"] = nxt
     return out
 
 
