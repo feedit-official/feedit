@@ -285,6 +285,33 @@ await t('옵션을 눌러도 대화가 맨 아래로 튀지 않는다 (2026-09-1
   await wait(10);
 });
 
+/* 2026-10-02 — 옵션을 바꿀 때마다 대화 전체를 다시 그려 왼쪽 사진들이 깜빡였다.
+   이제 위젯 안에서 달라진 곳만 고친다 — 사진 <img> 는 같은 요소로 남아야 한다. */
+await t('옵션 · 엔진 · 모델 · 종류 판을 바꿔도 사진 요소는 다시 만들어지지 않는다', async () => {
+  const imgs = () => [...thread().querySelectorAll('.cpFitModels img, .cpFitItemImg')];
+  const before = imgs();
+  const say = thread().querySelector('.msg.ai .say');
+  assert.ok(before.length >= 3, '모델 · 옷 사진이 없다');
+  for (const sel of ['[data-vf-flip="outer"]', '[data-vf-slide="fit"][data-vf-val="over"]',
+                     '[data-vf-opt="outer_layered"]', '[data-vf-slide="engine"][data-vf-val="flare"]',
+                     '[data-vf-model="man"]', '[data-vf-kind="0"]']) {
+    click(thread().querySelector(sel)); await wait(10);
+  }
+  const after = imgs();
+  assert.equal(after.length, before.length);
+  after.forEach((img, i) => assert.equal(img, before[i], `${i}번째 사진이 새 요소로 바뀌었다`));
+  assert.equal(thread().querySelector('.msg.ai .say'), say, '답변 말풍선까지 다시 그렸다');
+  assert.ok(thread().querySelector('.cpFitModels.m-man'), 'Male 로 안 바뀌었다');
+  assert.ok(thread().querySelector('.cpFitSheet'), '종류 판이 안 열렸다');
+  /* 되돌린다 */
+  for (const sel of ['.cpFitSheetHead [data-vf-kind]', '[data-vf-model="woman"]',
+                     '[data-vf-slide="engine"][data-vf-val="sunburst"]', '[data-vf-opt="outer_layered"]',
+                     '[data-vf-slide="fit"][data-vf-val="regular"]', '[data-vf-flip="outer"]']) {
+    click(thread().querySelector(sel)); await wait(10);
+  }
+  assert.equal(thread().querySelector('.cpFitSheet'), null);
+});
+
 await t('아무것도 안 만지면 열어 입기 · 정핏 · 고화질로 나간다', async () => {
   click(thread().querySelector('[data-vf-generate]'));
   await wait(60);

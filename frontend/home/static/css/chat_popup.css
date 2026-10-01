@@ -308,7 +308,10 @@
   overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;
   scrollbar-width:thin;scrollbar-color:#cfcbc4 transparent;
 }
-.cpFitFull{box-sizing:border-box;padding:18px;display:flex;flex-direction:column;gap:12px;animation:cpFitFade .3s var(--ease)}
+.cpFitFull{box-sizing:border-box;padding:18px;display:flex;flex-direction:column;gap:12px}
+/* 접기 ↔ 펼치기로 새로 들어온 쪽만 한 번 서서히 나타난다(cpMorph 가 붙인다).
+   예전엔 .cpFitFull 자체에 걸려 있어 옵션을 바꿀 때마다 다시 돌며 깜빡였다. */
+.cpFitIn{animation:cpFitFade .3s var(--ease)}
 @keyframes cpFitFade{from{opacity:0}to{opacity:1}}
 @keyframes cpFitDrop{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:none}}
 
@@ -409,7 +412,7 @@
 .cpFitWarn.busy{color:var(--pink-1)}
 
 /* 접힌 설정 칸 — 위에서부터 모델, 옷 칸들, 칸 추가. 어느 것을 눌러도 펼친다. */
-.cpFitMini{box-sizing:border-box;padding:14px 0;display:flex;flex-direction:column;align-items:center;gap:8px;animation:cpFitFade .3s var(--ease)}
+.cpFitMini{box-sizing:border-box;padding:14px 0;display:flex;flex-direction:column;align-items:center;gap:8px}
 .cpMiniSq{
   width:40px;height:40px;flex:0 0 auto;padding:0;box-sizing:border-box;border-radius:10px;overflow:hidden;
   background:#f5f3ef;color:var(--pink-0);display:grid;place-items:center;transition:box-shadow .18s;
