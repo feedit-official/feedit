@@ -152,7 +152,7 @@
         </div>
         {% elif row.product_source %}
         <div class="tx-source">
-            {% if row.product_source.product_url %}<a href="{{ row.product_source.product_url }}" target="_blank" rel="noopener">{{ row.product_source.source_name|default:row.product_source.product.canonical_name|default:"상품명 없음" }}</a>{% else %}{{ row.product_source.source_name|default:row.product_source.product.canonical_name|default:"상품명 없음" }}{% endif %}
+            {% if row.product_source.product_url %}<a href="{{ row.product_source.product_url }}" target="_blank" rel="noopener">{% firstof row.product_source.source_name row.product_source.product.canonical_name "상품명 없음" %}</a>{% else %}{% firstof row.product_source.source_name row.product_source.product.canonical_name "상품명 없음" %}{% endif %}
             · {{ row.product_source.source_product_id }}
         </div>
         {% endif %}
