@@ -169,3 +169,6 @@
 .bioEdit.on .bePen{opacity:0}
 .bioEdit.on .beOk{opacity:1;stroke-dashoffset:0}
 
+
+.svTags{display:flex;gap:5px;flex-wrap:wrap}
+.svBadges{display:flex;flex-direction:column;gap:4px;align-items:center;justify-self:center}

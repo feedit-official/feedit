@@ -299,7 +299,7 @@
   background-size:240% 100%;background-repeat:no-repeat;
   animation:rkGloss 7s var(--ease) infinite;pointer-events:none;
 }
-.acct .xpNext{font-size:10.5px;color:var(--pink-2);margin-top:8px;line-height:1.5}
+.acct .xpNext{display:none;font-size:10.5px;color:var(--pink-2);margin-top:8px;line-height:1.5}
 /* 최고 레벨 문구까지 등급색으로 칠하면 바와 경쟁한다. 색은 Lv 글자에만 준다 */
 .acct .profileName{font-size:18px;font-weight:600;letter-spacing:-.02em}
 .acct .profileEmail{font-size:12px;color:var(--pink-2);margin-top:5px;margin-bottom:18px}

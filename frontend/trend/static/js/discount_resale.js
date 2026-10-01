@@ -113,6 +113,9 @@ function svBuild(id,d){
   if(atLow)kind='low';
   else if(dl!=null)kind=dl>=5?'surge':dl<=-5?'drop':'calm';
   else kind='none';
+  const ks=[]; if(atLow)ks.push('low');
+  if(dl!=null)ks.push(dl>=5?'surge':dl<=-5?'drop':'calm');
+  if(!ks.length)ks.push('none');
 
   const likedAt=d.likedAt||Date.now();
   const days=Math.max(0,Math.floor((Date.now()-likedAt)/86400000));
@@ -124,11 +127,11 @@ function svBuild(id,d){
     calm :tempLine+' 지난주와 거의 같습니다.',
     low  :svWon(p)+' — 기록된 가격 중 가장 낮습니다'+
           (hi?' (최고 '+svWon(hi)+' 대비 <b>'+Math.round((1-p/hi)*100)+'%</b> 아래)':'')+'.'+
-          (dl!=null?' '+tempLine:''),
+          (dl!=null?'<br>'+tempLine:''),
     none :svEsc(t.reason||'지표가 아직 없습니다.')
   }[kind];
   return { id, n:d.nm||'상품명 없음', b:d.br||'', img:d.img||'', url:d.url||'',
-           p, lo, hi, atLow, d:days, idx, was, dl, k:kind, why, note, asOf:t.asOf||null,
+           p, lo, hi, atLow, d:days, idx, was, dl, k:kind, ks, why, note, asOf:t.asOf||null,
            same:Number.isFinite(d.same)?d.same:null };
 }
 
@@ -213,7 +216,7 @@ export function svRender(body){
       '<div class="svAlsoGrid">'+also.map(s=>{
         const k=SV_KIND[s.k];
         return '<div class="svAlsoCard" style="--k:'+k[2]+'">'+
-          '<div class="svAlsoTop"><span class="svTag">'+k[0]+'</span>'+
+          '<div class="svAlsoTop"><span class="svTags">'+s.ks.map(x=>'<span class="svTag" style="--k:'+SV_KIND[x][2]+'">'+SV_KIND[x][0]+'</span>').join('')+'</span>'+
             '<u>'+svPic(s)+'</u></div>'+
           '<b>'+svEsc(s.n)+'</b><span class="svAlsoB">'+svEsc(s.b)+
             (s.same!=null?' · 찜 '+s.same.toLocaleString('ko-KR')+'명':'')+'</span>'+
@@ -233,7 +236,7 @@ export function svRender(body){
     '<section class="panelC svList" style="margin-top:12px">'+
       '<div class="ph"><h3>찜한 것 전체</h3><em>WATCHLIST</em></div>'+
       '<div class="svFilter">'+SV_TABS.map(t=>{
-        const c=t[0]==='all'?SV.length:SV.filter(s=>s.k===t[0]).length;
+        const c=t[0]==='all'?SV.length:SV.filter(s=>s.ks.includes(t[0])).length;
         if(t[0]==='none'&&!c)return '';
         return '<button type="button" class="svChip'+(t[0]===SV_F?' on':'')+'" data-sv="'+t[0]+'">'+
           t[1]+'<i>'+c+'</i></button>'}).join('')+'</div>'+
@@ -287,7 +290,7 @@ function svPager(total){
   return out+'</div>';
 }
 function svRows(){
-  const all=SV_F==='all'?SV:SV.filter(s=>s.k===SV_F);
+  const all=SV_F==='all'?SV:SV.filter(s=>s.ks.includes(SV_F));
   if(!all.length)return '<div class="svEmpty">이 상태인 것이 없습니다.</div>';
   const pages=Math.max(1,Math.ceil(all.length/SV_PER));
   if(SV_PG>pages)SV_PG=pages;
@@ -300,12 +303,12 @@ function svRows(){
       '<div class="svName"><b>'+svEsc(s.n)+'</b><span>'+svEsc(s.b)+' · '+svEsc(s.why)+
         (s.same!=null?' · 찜 '+s.same.toLocaleString('ko-KR')+'명':'')+'</span></div>'+
       '<div class="svAge">'+svAge(s.d)+'</div>'+
-      '<div class="svIdx"><div class="svMini"><i data-w="'+Math.max(0,Math.min(100,s.idx||0))+'"></i></div>'+
+      '<div class="svIdx" title="스타일 트렌드 온도(0~100) · 지난주 대비 변화"><div class="svMini"><i data-w="'+Math.max(0,Math.min(100,s.idx||0))+'"></i></div>'+
         '<b>'+svV(s.idx)+'</b><em class="'+(d>0?'up':d<0?'dn':'')+'">'+
         (d==null?'—':(d>0?'+':'')+(d||'±0'))+'</em></div>'+
       '<div class="svPrice"><b>'+(s.p?svWon(s.p):'가격 정보 없음')+'</b>'+
-        '<span>'+(s.atLow?'기록 최저가':s.lo!=null?'최저 '+svWon(s.lo):'가격 기록 없음')+'</span></div>'+
-      '<span class="svBadge">'+k[0]+'</span></div>'}).join('')+svPager(all.length);
+        '<span>'+(s.atLow?'지금이 최저가':s.lo!=null?'기록 최저 '+svWon(s.lo):'가격 기록 없음')+'</span></div>'+
+      '<span class="svBadges">'+s.ks.map(x=>'<span class="svBadge" style="--k:'+SV_KIND[x][2]+'">'+SV_KIND[x][0]+'</span>').join('')+'</span></div>'}).join('')+svPager(all.length);
 }
 
 /* 목록 행이 아래에서 한 장씩 올라오고, 미니바가 뒤따라 찬다 */

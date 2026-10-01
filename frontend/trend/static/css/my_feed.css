@@ -64,8 +64,7 @@
 .tpSalHead p.tpSalDesc{max-width:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .tpSalHead p strong{font-weight:600;color:var(--pink-0)}
 .tpFilterLogic{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
-.tpLogicChip{font-size:11px;padding:8px 12px;border-radius:999px;background:#fff;
-  border:1px solid var(--pink-3);color:var(--pink-1)}
+.tpLogicChip{font-size:11px;padding:8px 0;color:var(--pink-1)}
 .tpLogicChip.on{background:var(--pink-0);color:var(--paper);border-color:var(--pink-0)}
 .tpSalGrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:20px;margin-top:18px}
 /* 카드(.voteCard)는 실제 살!말? 카드 그대로 두고, 매칭 이유 · 태그는
