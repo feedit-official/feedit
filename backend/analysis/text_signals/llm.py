@@ -41,7 +41,7 @@ class OpenAITextSignalClient:
         #   챗봇 키로 몰래 넘어가지 않도록 OPENAI_API_KEY 로 대신하지 않는다.
         self.api_key = (os.getenv("FEEDIT_TEXT_OPENAI_API_KEY") or "").strip()
         self.base_url = (os.getenv("OPENAI_BASE_URL") or "https://api.openai.com/v1").rstrip("/")
-        self.model = os.getenv("FEEDIT_TEXT_LLM_MODEL", "gpt-5.6-luna")
+        self.model = os.getenv("FEEDIT_TEXT_LLM_MODEL", "gpt-6-luna")
         self.effort = os.getenv("FEEDIT_TEXT_LLM_EFFORT", "low")
         self.timeout = int(os.getenv("FEEDIT_TEXT_LLM_TIMEOUT", "90"))
         self.max_output_tokens = int(os.getenv("FEEDIT_TEXT_LLM_MAX_OUTPUT_TOKENS", "12000"))

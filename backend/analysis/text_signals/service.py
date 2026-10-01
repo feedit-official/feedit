@@ -43,6 +43,10 @@ SLOT_BY_TYPE = {
     "TPO": "tpo",
 }
 POLARITY_SCORE = {"POS": Decimal("1"), "NEU": Decimal("0.5"), "NEG": Decimal("0")}
+TOKEN_PRICES_PER_MILLION = {
+    "gpt-5.6-luna": (0.20, 0.02, 1.20),
+    "gpt-6-luna": (0.10, 0.01, 0.50),
+}
 
 
 def _norm(value: str | None) -> str:
@@ -451,12 +455,15 @@ def run_text_signal_pipeline(
 ) -> dict:
     """1차 사전 필터 → 2차 LLM → 근거 검증 → 적재 → 일별 지표 계산."""
 
+    model_name = os.getenv("FEEDIT_TEXT_LLM_MODEL", "gpt-6-luna")
+    if model_name not in TOKEN_PRICES_PER_MILLION:
+        raise ValueError(f"분석 비용 단가가 없는 모델입니다: {model_name}")
     dictionary = DictionaryIndex()
     run = AnalysisPipelineRun.objects.create(
         run_date=timezone.localdate(),
         pipeline_version=PIPELINE_VERSION,
         prompt_version=PROMPT_VERSION,
-        model_name=os.getenv("FEEDIT_TEXT_LLM_MODEL", "gpt-5.6-luna"),
+        model_name=model_name,
     )
     query = TextDocument.objects.select_related(
         "content_item", "product_source__source", "product_source__source_brand", "product_source__source_category"
@@ -550,7 +557,12 @@ def run_text_signal_pipeline(
             analyzed += 1
 
     fresh = max(0, usage.input_tokens - usage.cached_tokens)
-    cost = (fresh * 0.20 + usage.cached_tokens * 0.02 + usage.output_tokens * 1.20) / 1_000_000
+    input_price, cached_price, output_price = TOKEN_PRICES_PER_MILLION[run.model_name]
+    cost = (
+        fresh * input_price
+        + usage.cached_tokens * cached_price
+        + usage.output_tokens * output_price
+    ) / 1_000_000
     metric_result = {}
     if rebuild_metrics:
         try:
