@@ -275,6 +275,8 @@ _FIX_INSTRUCTIONS = """너는 FEEDiT 답변의 사실 검증관이다.
 ## 규칙
 1. 도구 결과에 없는 숫자는 지운다. 그 문장이 숫자 없이 성립하면 문장은 남기고
    숫자만 뺀다. 성립하지 않으면 문장을 통째로 뺀다.
+   ★ 숫자만 빼서 "상위 개는" · "총 건" 처럼 단위만 남으면 성립하지 않는 것이다.
+     그 문장을 통째로 뺀다.
 2. `missing` 에 적힌 축은 자료가 없는 것이다. 그 축의 **값**을 말하는 문장은
    "아직 측정 자료가 없습니다" 로 바꾼다.
 2-1. `bad_recommend` 가 비어 있지 않으면, 그 대상에 대한 **권유 문장을 지운다.**
@@ -311,7 +313,22 @@ def _read_fix(answer: str, res: dict | None) -> tuple[str | None, str]:
     strays = _new_latin_words(answer, fixed)
     if strays:
         return None, "fix_garbled:" + ",".join(strays[:3])
+    # ★ 숫자만 뽑고 단위를 남긴 재작성도 깨진 것이다 (2026-10-01).
+    #   실측: "상위 4개는 모두 과열" 의 4 를 지우고 "상위 개는 모두 과열" 을 내보냈다.
+    #   규칙 1 은 그럴 때 문장을 통째로 빼라고 했다. 원문보다 '단위만 남은 자리' 가
+    #   늘었으면 그 재작성은 받지 않는다.
+    if _dangling_units(fixed) > _dangling_units(answer):
+        return None, "fix_garbled:dangling_unit"
     return fixed, ""
+
+
+# 숫자 없이 홀로 남은 단위 — "상위 개는", "총 건", "온도 점" 의 개 · 건 · 점
+_DANGLING = re.compile(r"(?:^|(?<=[\s(·,]))(?:개|건|위|일|점|명|배|곳|%)"
+                       r"(?=[는은이가를의도만까지와과로\s,.)]|$)", re.M)
+
+
+def _dangling_units(text: str) -> int:
+    return len(_DANGLING.findall(text or ""))
 
 
 def fix(answer: str, trace, rep: Report, question: str = "",

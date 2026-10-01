@@ -37,7 +37,7 @@ from typing import Any, Callable
 from . import season as season_ref     # 인자 이름(season)과 겹치지 않게
 from . import product_link, salmal_index, trend_view
 from . import vton
-from .config import MIN_OBS_28, MIN_OBS_7, temp_band
+from .config import MIN_OBS_28, MIN_OBS_7, TEMP_VERDICTS, js_round, temp_band
 from .coverage import direction as _direction
 
 # ══════════════════════════════════════════════════════════
@@ -559,6 +559,47 @@ def progress_say(name: str, args: dict) -> str | None:
 #  실행
 # ══════════════════════════════════════════════════════════
 
+def _rank_items(rows: list[dict]) -> dict:
+    """rank_terms 의 항목 — 숫자와 구간을 트렌드 분석 화면과 같게 (2026-10-01).
+
+    ★ 온도는 화면처럼 반올림한다(Math.round). 예전엔 원값(87.6)을 주고 카드는
+      int() 로 잘라 87점이 떴다 — 화면은 같은 용어를 88° 로 보여 준다.
+      구간은 반올림한 값으로 정하므로(84.6 → 85 → 과열), 잘라 쓰면 "84점 · 과열" 처럼
+      숫자와 구간이 어긋난다.
+    ★ 순위 · 구간별 개수 · 맨 위부터 같은 구간이 몇 개인지를 **도구가 센다.**
+      모델이 항목을 세어 "상위 4개는 모두 과열" 이라고 쓰면 4 는 도구 결과에 없는
+      숫자라 검증이 지웠고, 화면에 "상위 개는 모두 과열" 이 남았다(2026-10-01 실측).
+    """
+    items = []
+    for i, r in enumerate(rows, 1):
+        raw = r.get("temp")
+        temp = None if raw is None else js_round(raw)
+        band = None if raw is None else temp_band(raw)
+        facet = r.get("facet")
+        items.append({"rank": i, "term": r["canonical"], "facet": facet,
+                      "facet_name": FACET_SAY.get(facet, facet),
+                      "temp": temp, "band": band,
+                      "verdict": TEMP_VERDICTS[band][0] if band else None,
+                      "raw_count": r.get("raw_count")})
+    counts: dict[str, int] = {}
+    for it in items:
+        if it["band"]:
+            counts[it["band"]] = counts.get(it["band"], 0) + 1
+    streak = 0
+    for it in items:
+        if items and it["band"] and it["band"] == items[0]["band"]:
+            streak += 1
+        else:
+            break
+    return {
+        "items": items,
+        # 화면 '언급량·온도' 탭과 같은 구간 경계 (config.TEMP_BANDS)
+        "band_edges": {"과열": 85, "따뜻함": 65, "미지근": 40},
+        "band_counts": {b: counts[b] for b in ("과열", "따뜻함", "미지근", "차가움") if b in counts},
+        "top_streak": ({"band": items[0]["band"], "count": streak} if items and items[0]["band"] else None),
+    }
+
+
 class TraceLog:
     """이번 요청에서 무엇을 불렀고 무엇이 돌아왔나.
 
@@ -785,9 +826,7 @@ class Toolbox:
             # ★ 요청한 수보다 적을 수 있다. 그 사실을 명시한다 —
             #   안 그러면 모델이 나머지를 채워 넣는다.
             "short_of_asked": len(rows) < n,
-            "items": [{"term": r["canonical"], "facet": r["facet"],
-                       "temp": r["temp"], "band": temp_band(r["temp"]),
-                       "raw_count": r["raw_count"]} for r in rows],
+            **_rank_items(rows),
         }
 
     # ── 지표 ────────────────────────────────────────────

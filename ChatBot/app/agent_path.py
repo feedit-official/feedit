@@ -171,6 +171,62 @@ def _split_followup(text: str) -> tuple[str, str]:
     return body, last.group(1).strip()
 
 
+# 용어가 들어 있는 칸 — 도구 인자(get_market 의 brand·kind·style 포함)와 결과 양쪽
+_LOOKUP_KEYS = ("term", "canonical", "assoc_canonical", "base", "brand", "kind", "style")
+_LOOKUP_LISTS = ("terms", "alts", "styles", "kinds", "shared", "style_tags")
+
+
+def _looked_up(trace) -> set[str]:
+    """이번 질문에서 도구로 실제로 조회한 용어 — 인자와 결과 양쪽에서 모은다."""
+    out: set[str] = set()
+
+    def walk(v):
+        if isinstance(v, dict):
+            for k, x in v.items():
+                if k in _LOOKUP_KEYS and isinstance(x, str) and x.strip():
+                    out.add(x.strip())
+                elif k in _LOOKUP_LISTS and isinstance(x, list):
+                    out.update(str(t).strip() for t in x if isinstance(t, str) and t.strip())
+                else:
+                    walk(x)
+        elif isinstance(v, (list, tuple)):
+            for x in v:
+                walk(x)
+
+    for c in (trace.calls if trace else []):
+        if c.get("tool") == "compose_report":
+            continue
+        walk(c.get("args") or {})
+        walk(c.get("result"))
+    return out
+
+
+def _grounded_followup(follow: str, question: str, trace, gate) -> str:
+    """이어 갈 질문은 **이번에 조회한 것**만 잇는다 (2026-10-01).
+
+    ★ 실측: "핫한 아이템 순위는?" 답 끝에 "[다음] 플리스재킷과 트랙탑 중 어느 쪽을
+      더 자세히 볼까요?" 가 붙었다. 트랙탑은 순위에 없었고 세 턴 전 주제였다.
+      모델이 [최근 본 용어]·[직전 질문] 에서 끌어온 것이다. 사용자에게는 질문을
+      잘못 알아들은 챗봇으로 보인다.
+    ★ 고치는 자리는 프롬프트(규칙 11)다. 여기서는 그래도 새어 나온 줄을 **빼기만** 한다.
+      다시 쓰지 않는다 — 이어 갈 질문은 덤이라, 없는 편이 엉뚱한 편보다 낫다.
+    ★ 판정은 사전 게이트로 한다. 이어 갈 질문에 나온 사전 용어가 이번 질문의
+      조회 결과(인자·결과)나 질문 자체에 없으면 근거 없는 제안이다.
+    """
+    if not follow or gate is None:
+        return follow
+    try:
+        named = {h.get("canonical") for h in (gate.parse(follow).get("search") or [])}
+        asked = {h.get("canonical") for h in (gate.parse(question).get("search") or [])}
+    except Exception:                               # noqa: BLE001 - 덤 검사가 답을 막지 않는다
+        return follow
+    named.discard(None)
+    if not named:
+        return follow
+    stray = named - _looked_up(trace) - asked
+    return "" if stray else follow
+
+
 def _notes(trace, rep: verify.Report, res: orchestrator.Result) -> list[dict]:
     """무엇을 못 했는지 숨기지 않는다. 화면의 '측정 불가' 와 같은 자리."""
     notes = []
@@ -265,6 +321,7 @@ def ask(question: str, *, store, gate, mode: str = "general",
                                 web_sourced=web_only, deadline=deadline)
     # 이어 갈 질문은 본문에서 떼어 화면이 카드 **아래**에 붙이게 한다.
     answer, follow = _split_followup(answer)
+    follow = _grounded_followup(follow, question, res.trace, gate)
 
     terms = _terms_from(res.trace)
     as_of = _as_of(res.trace)

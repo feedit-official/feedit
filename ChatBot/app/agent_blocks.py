@@ -188,10 +188,12 @@ def _rank_block(res: dict, as_of: str) -> dict | None:
     rows = []
     for it in items[:8]:
         temp = it.get("temp")
+        # ★ 축 이름은 한글(facet_name)로 — 예전엔 rank_terms 가 주지 않아 'item' 이 그대로 떴다.
+        #   온도는 rank_terms 가 화면처럼 반올림해 준다. 여기서 int() 로 다시 자르지 않는다.
         rows.append({"k": it.get("term") or "",
-                     "small": it.get("facet_name") or it.get("facet") or "",
-                     "v": (f"{int(temp)}점" if temp is not None else "—"),
-                     "up": (temp is not None and int(temp) >= 50)})
+                     "small": it.get("facet_name") or FACET_SAY.get(it.get("facet") or "", it.get("facet") or ""),
+                     "v": (f"{temp}점" if temp is not None else "—"),
+                     "up": (temp is not None and float(temp) >= 65)})
     return {"type": "rank", "slot": "full", "title": "지금 뜨는 것",
             "meta": meta, "rows": rows}
 
