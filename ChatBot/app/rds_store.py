@@ -8,7 +8,7 @@ from typing import Any
 import psycopg
 from psycopg.rows import dict_row
 
-from .config import METRIC_VERSION
+from .config import METRIC_VERSION, RANK_WINDOW_DAYS
 from .store import at_iso, platform_label
 
 
@@ -212,20 +212,36 @@ class RDSStore:
         return out
 
     def top_terms(self, facet: str | None = None, limit: int = 10,
-                  facets: list[str] | None = None) -> list[dict]:
+                  facets: list[str] | None = None,
+                  window_days: int = RANK_WINDOW_DAYS) -> list[dict]:
+        """온도 상위 용어 — 최근 window_days 일 안에서 용어마다 마지막 값으로 줄을 세운다.
+
+        ★ 2026-10-01 — 예전엔 전체 최신일 **하루**의 행만 봤다. 행은 언급이 있는 날에만
+          생기므로 그날 언급되지 않은 용어는 빠졌고, 스타일 축은 0개가 되기도 했다
+          ("입혀볼 수 있는 스타일" 에 "스타일 축 반환 없음"). 용어마다 metric_date 를
+          함께 돌려준다 — 그 값이 언제 것인지 답이 말할 수 있어야 한다.
+        """
         where, args = ["m.metric_version=%s", "m.source_id IS NULL"], [self.version]
         if facet:
             where.append("lower(t.term_type)=%s"); args.append(facet.lower())
         elif facets:
             where.append("lower(t.term_type)=ANY(%s)"); args.append([x.lower() for x in facets])
-        args.append(max(1, min(int(limit), 100)))
-        return self.q(
-            """SELECT t.canonical_name canonical,lower(t.term_type) facet,m.raw_count,
-                      m.trend_temperature temp,m.percentile pct_rank
-                 FROM analysis.term_metric_daily m
-                 JOIN dictionary.dictionary_term t ON t.id=m.term_id
-                WHERE """ + " AND ".join(where) +
-            " AND m.metric_date=(SELECT max(metric_date) FROM analysis.term_metric_daily WHERE metric_version=%s)"
-            " ORDER BY m.trend_temperature DESC NULLS LAST,m.raw_count DESC LIMIT %s",
-            tuple(args[:-1] + [self.version, args[-1]]),
+        rows = self.q(
+            """SELECT canonical,facet,raw_count,temp,pct_rank,metric_date FROM (
+                 SELECT DISTINCT ON (m.term_id)
+                        t.canonical_name canonical,lower(t.term_type) facet,m.raw_count,
+                        m.trend_temperature temp,m.percentile pct_rank,m.metric_date
+                   FROM analysis.term_metric_daily m
+                   JOIN dictionary.dictionary_term t ON t.id=m.term_id
+                  WHERE """ + " AND ".join(where) +
+            """ AND m.metric_date > (SELECT max(metric_date) FROM analysis.term_metric_daily
+                                       WHERE metric_version=%s) - (%s)::int
+                  ORDER BY m.term_id,m.metric_date DESC) latest
+              ORDER BY temp DESC NULLS LAST,raw_count DESC LIMIT %s""",
+            tuple(args + [self.version, max(1, int(window_days)), max(1, min(int(limit), 100))]),
         )
+        # 날짜는 글자로 — 도구 결과는 그대로 json 으로 모델에 간다(date 는 json 이 못 읽는다).
+        for row in rows:
+            if row.get("metric_date") is not None:
+                row["metric_date"] = str(row["metric_date"])[:10]
+        return rows

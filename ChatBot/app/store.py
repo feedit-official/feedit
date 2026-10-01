@@ -14,7 +14,7 @@ from __future__ import annotations
 import sqlite3
 from typing import Any
 
-from .config import DB_PATH, METRIC_VERSION
+from .config import DB_PATH, METRIC_VERSION, RANK_WINDOW_DAYS
 
 
 # ══════════════════════════════════════════════════════════
@@ -329,8 +329,12 @@ class ReadOnlyStore:
         return out
 
     def top_terms(self, facet: str | None = None, limit: int = 10,
-                  facets: list[str] | None = None) -> list[dict]:
+                  facets: list[str] | None = None,
+                  window_days: int = RANK_WINDOW_DAYS) -> list[dict]:
         """온도 상위 용어. `facet` 은 한 축, `facets` 는 여러 축으로 좁힌다.
+
+        ★ 2026-10-01 — 최근 window_days 일 안에서 용어마다 마지막 값으로 줄을 세운다
+          (RDSStore.top_terms 와 같은 규칙, config.RANK_WINDOW_DAYS).
 
         ★ facets 를 추가한 이유 (2026-09-09)
           '요즘 뭐가 핫해' 가 축 제한 없이 돌면 브랜드(아디다스·키르시)와
@@ -341,19 +345,25 @@ class ReadOnlyStore:
         day = self.latest_day()
         if not day:
             return []
-        where = ["metric_version=?", "observed_on=?", "source_code='__all__'"]
-        args: list = [self.version, day]
+        where = ["metric_version=?", "source_code='__all__'",
+                 "observed_on > date(?, ?)"]
+        args: list = [self.version, day, f"-{max(1, int(window_days))} days"]
         if facet:
             where.append("facet=?")
             args.append(facet)
         elif facets:
             where.append("facet IN (%s)" % ",".join("?" * len(facets)))
             args.extend(facets)
-        args.append(limit)
+        cond = " AND ".join(where)
         return self.q(
-            "SELECT canonical,facet,raw_count,temp,pct_rank FROM metric_term_daily "
-            "WHERE " + " AND ".join(where) +
-            " ORDER BY temp DESC, raw_count DESC LIMIT ?", tuple(args))
+            "SELECT m.canonical,m.facet,m.raw_count,m.temp,m.pct_rank,"
+            "       m.observed_on AS metric_date FROM metric_term_daily m "
+            "JOIN (SELECT canonical, max(observed_on) d FROM metric_term_daily "
+            "       WHERE " + cond + " GROUP BY canonical) x "
+            "  ON x.canonical=m.canonical AND x.d=m.observed_on "
+            "WHERE m.metric_version=? AND m.source_code='__all__' "
+            "ORDER BY m.temp DESC, m.raw_count DESC LIMIT ?",
+            tuple(args + [self.version, limit]))
 
 
 def default_store():

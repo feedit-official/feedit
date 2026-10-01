@@ -73,6 +73,59 @@ def absolute_image(url: str, source: str = "") -> str:
     return f"{base}/{path}" if base else ""
 
 
+# ── 스타일 이름 → 상품 태그 이름 (2026-10-01) ──────────────────
+#   /api/products 의 style 은 상품 태그(term_type='STYLE')의 **표준 이름과 정확히**
+#   맞아야 걸린다(backend/apps/api/views.py `_apply`). 모델은 사용자의 말을 그대로
+#   옮겨 적는다. 실측(2026-10-01, 운영 /api/products):
+#       style=긱시크    → 상품 있음        style=긱시크룩 → 0건
+#   "결혼식 하객" 은 아예 스타일이 아니다(사전 축 tpo). 그대로 찾으면 0건이고,
+#   챗봇은 "태그된 상품이 없다" 고 답했다 — 상품이 없는 게 아니라 이름이 틀렸다.
+#   그래서 찾기 전에 사전(LexiconGate)으로 스타일 표준 이름을 고른다.
+_NOT_STYLE_REASON = {
+    "tpo": "착용 상황(TPO)이라 상품 스타일 태그가 아닙니다",
+    "item": "아이템 이름이라 스타일이 아닙니다 — kinds 에 적을 말입니다",
+    "material": "소재 이름이라 스타일이 아닙니다",
+    "color": "색 이름이라 스타일이 아닙니다",
+    "brand": "브랜드 이름이라 스타일이 아닙니다",
+}
+
+
+def resolve_styles(names, gate) -> tuple[list[str], list[dict]]:
+    """(찾을 스타일 표준 이름, 스타일이 아니어서 뺀 말) 을 돌려준다.
+
+    ★ 사전을 못 읽으면 이름을 그대로 둔다 — 고칠 근거가 없는데 지우면, 맞게 적힌
+      이름까지 사라진다. 그때는 예전처럼 찾아 보고 없으면 없다고 말한다.
+    """
+    styles: list[str] = []
+    skipped: list[dict] = []
+    for raw in names or []:
+        name = str(raw or "").strip()
+        if not name:
+            continue
+        try:
+            parsed = gate.parse(name)
+        except Exception:                       # noqa: BLE001
+            parsed = None
+        if not isinstance(parsed, dict):
+            if name not in styles:
+                styles.append(name)
+            continue
+        hits = [h for key in ("search", "modifier", "other")
+                for h in (parsed.get(key) or []) if isinstance(h, dict)]
+        found = [str(h.get("canonical") or "") for h in hits
+                 if str(h.get("facet") or "").lower() == "style" and h.get("canonical")]
+        if found:
+            for canonical in found:
+                if canonical not in styles:
+                    styles.append(canonical)
+            continue
+        facet = next((str(h.get("facet") or "").lower() for h in hits if h.get("facet")), None)
+        skipped.append({"name": name, "facet": facet,
+                        "reason": _NOT_STYLE_REASON.get(facet or "",
+                                                        "사전에 없는 스타일 이름입니다")})
+    return styles, skipped
+
+
 def _normalize_slots(slots) -> list[str]:
     """모르는 칸 이름은 버리고, 같은 칸이 두 번 와도 그대로 둔다.
 

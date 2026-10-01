@@ -212,10 +212,13 @@ def decode_image(data_url: str, max_bytes: int = 5 * 1024 * 1024) -> tuple[bytes
 #       d3ha2047wt6x28.cloudfront.net 1,353 · kream-phinf.pstatic.net 655.
 #     같은 조회에서 호스트가 아예 없는 상대 경로가 27,424건 나왔다 — 그것은
 #     fit.absolute_image() 가 주소로 만든다.
+#   ★ 2026-10-01 — 지그재그 사진이 **s3 가 없는** 호스트(cf.product-image.s.zigzag.kr)로도
+#     온다. 운영 /api/products 실측: 긱시크·미니멀 상의·하의 21건 중 7건이 이 호스트였고,
+#     목록에 없어 코디에서 전부 빠졌다. 둘 다 받는다.
 ALLOWED_IMAGE_HOSTS = {
     h.strip().lower() for h in (
         os.getenv("FEEDIT_VTON_IMAGE_HOSTS")
-        or "image.msscdn.net,cf.product-image.s3.zigzag.kr,"
+        or "image.msscdn.net,cf.product-image.s3.zigzag.kr,cf.product-image.s.zigzag.kr,"
            "d3ha2047wt6x28.cloudfront.net,kream-phinf.pstatic.net"
     ).split(",") if h.strip()
 }

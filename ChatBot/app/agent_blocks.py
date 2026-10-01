@@ -183,6 +183,9 @@ def _rank_block(res: dict, as_of: str) -> dict | None:
     if not items:
         return None
     meta = as_of or ""
+    if res.get("window_days"):
+        # ★ 하루 순위가 아니다 (2026-10-01) — 최근 며칠 안에서 용어마다 마지막 값이다.
+        meta = f"최근 {res['window_days']}일" + (f" · {meta} 기준" if meta else "")
     if res.get("short_of_asked"):
         meta = (meta + " · " if meta else "") + f"찾은 것 {len(items)}개가 전부입니다"
     rows = []
@@ -190,8 +193,13 @@ def _rank_block(res: dict, as_of: str) -> dict | None:
         temp = it.get("temp")
         # ★ 축 이름은 한글(facet_name)로 — 예전엔 rank_terms 가 주지 않아 'item' 이 그대로 떴다.
         #   온도는 rank_terms 가 화면처럼 반올림해 준다. 여기서 int() 로 다시 자르지 않는다.
+        small = it.get("facet_name") or FACET_SAY.get(it.get("facet") or "", it.get("facet") or "")
+        day = str(it.get("date") or "")
+        if day and day != as_of:
+            # 기준일과 다른 날의 값이면 그 날짜를 옆에 적는다 (9/30 → "9/30")
+            small = f"{small} · {int(day[5:7])}/{int(day[8:10])}" if len(day) >= 10 else small
         rows.append({"k": it.get("term") or "",
-                     "small": it.get("facet_name") or FACET_SAY.get(it.get("facet") or "", it.get("facet") or ""),
+                     "small": small,
                      "v": (f"{temp}점" if temp is not None else "—"),
                      "up": (temp is not None and float(temp) >= 65)})
     return {"type": "rank", "slot": "full", "title": "지금 뜨는 것",

@@ -42,6 +42,14 @@ EXTRACTOR_DIR = Path(os.getenv("FEEDIT_EXTRACTOR_DIR") or VENDOR)
 
 METRIC_VERSION = os.getenv("FEEDIT_METRIC_VERSION", "feedit-unified-text-v1")
 
+# ── "요즘 뜨는 것" 순위의 창 (2026-10-01) ──
+#   지표 행은 **언급이 있는 날에만** 생긴다. 예전 순위는 전체 최신일 하루의 행만 봐서,
+#   그날 언급되지 않은 용어는 통째로 빠졌다. 스타일은 하루 언급이 1~3건이라 특히 심했다
+#   (10/1 실측: 스타일 축 0개 — 클래식 마지막 행 9/30 · 미니멀 9/29 · 고프코어 9/27).
+#   최근 이만큼의 날 안에서 용어마다 **마지막 값**으로 줄을 세운다. 그 값은 트렌드 분석
+#   화면이 그 용어의 온도로 보여 주는 값과 같다.
+RANK_WINDOW_DAYS = max(1, int(os.getenv("FEEDIT_RANK_WINDOW_DAYS") or 7))
+
 # ── 시계열을 말해도 되는 최소 관측 (2026-09-02 실측으로 정한 값) ──
 #   최신일 기준 창 안에 관측이 이만큼은 있어야 그 지표를 입에 올린다.
 #   실측 결과 — 최신 2026-09-01, term 509개

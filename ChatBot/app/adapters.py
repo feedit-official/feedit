@@ -44,6 +44,10 @@ class SalmalHTTPAdapter:
 _SEL_KEYS = ("brand", "kind", "style", "item")
 # 상품 조회 한 칸의 상한(초). 병렬로 불러도 가장 느린 칸이 한 바퀴를 정한다.
 PRODUCTS_TIMEOUT = 4.0
+# 스타일 목록(/api/facets)은 전체 상품을 세서 3~5초 걸린다(2026-10-01 운영 실측, 캐시 없이
+# 2.8·5.0초). 기본 8초를 다 기다리면 코디 한 바퀴가 그만큼 밀린다. 못 받으면 목록 없이 간다.
+FACETS_TIMEOUT = 6.0
+PATH_TIMEOUT = {"products": PRODUCTS_TIMEOUT, "facets": FACETS_TIMEOUT}
 
 
 def _sel(sel: dict | None) -> dict:
@@ -66,11 +70,12 @@ class MarketHTTPAdapter(SalmalHTTPAdapter):
         super().__init__(base=base, timeout=timeout)
 
     def _market(self, path: str, params: dict) -> dict:
-        # ★ 상품 조회만 시계를 짧게 쓴다 (2026-09-22). 코디는 칸마다 한 번씩 부르므로
-        #   한 칸의 지연이 그대로 한 바퀴의 지연이 된다.
+        # ★ 상품 조회는 시계를 짧게 쓴다 (2026-09-22). 코디는 칸마다 한 번씩 부르므로
+        #   한 칸의 지연이 그대로 한 바퀴의 지연이 된다. 스타일 목록(facets)도 코디 도구가
+        #   부르므로 상한을 둔다 (2026-10-01).
         keep = self.timeout
-        if path == "products":
-            self.timeout = min(self.timeout, PRODUCTS_TIMEOUT)
+        if path in PATH_TIMEOUT:
+            self.timeout = min(self.timeout, PATH_TIMEOUT[path])
         try:
             data = self._get(path, params)
         finally:
@@ -136,6 +141,37 @@ class MarketHTTPAdapter(SalmalHTTPAdapter):
             price = (src or {}).get("price") or {}
             row["price"] = price.get("sale") or price.get("list")
         return rows
+
+    # ── 입혀볼 수 있는 스타일 (2026-10-01) ──────────────────────
+    #   ★ 스타일 화면의 세부 검색(/api/facets)과 같은 목록이다 — 핵심 스타일마다
+    #     태그가 달린 판매 중 상품 수. 챗봇이 따로 세지 않는다(화면과 숫자가 같아야 한다).
+    #   ★ "입혀볼 수 있는 스타일이 뭐야?" 에 챗봇이 트렌드 순위(rank_terms)를 뒤져
+    #     "스타일 축에서 반환된 항목이 없다" 고 답했다(2026-10-01 실측). 순위는 그날
+    #     언급된 용어만 있고, 상품에 붙은 태그와는 다른 표다.
+    #   ★ 목록은 하루에 몇 번 바뀌지 않는다. 10분 동안 같은 답을 쓴다.
+    _styles_cache: dict = {}
+    STYLES_TTL = 600.0
+
+    def styles(self) -> list[dict]:
+        import time
+        hit = MarketHTTPAdapter._styles_cache.get(self.base)
+        if hit and time.monotonic() - hit[0] < self.STYLES_TTL:
+            return [dict(r) for r in hit[1]]
+        # limit 은 아이템·브랜드·상품명 칸의 길이다. 스타일 칸은 핵심 스타일 전부가 온다.
+        data = self._market("facets", {"limit": 1})
+        if "unavailable" in data:
+            return []
+        rows = []
+        for r in (data.get("style") or []):
+            if not isinstance(r, dict):
+                continue
+            label, count = str(r.get("label") or "").strip(), r.get("count")
+            if label and isinstance(count, int) and count > 0:
+                rows.append({"style": label, "products": count})
+        rows.sort(key=lambda r: -r["products"])
+        if rows:
+            MarketHTTPAdapter._styles_cache[self.base] = (time.monotonic(), rows)
+        return [dict(r) for r in rows]
 
     def lifecycle(self, sel: dict, term: str | None = None) -> dict:
         params = _sel(sel)

@@ -37,7 +37,7 @@ from typing import Any, Callable
 from . import season as season_ref     # 인자 이름(season)과 겹치지 않게
 from . import product_link, salmal_index, trend_view
 from . import vton
-from .config import MIN_OBS_28, MIN_OBS_7, TEMP_VERDICTS, js_round, temp_band
+from .config import MIN_OBS_28, MIN_OBS_7, RANK_WINDOW_DAYS, TEMP_VERDICTS, js_round, temp_band
 from .coverage import direction as _direction
 
 # ══════════════════════════════════════════════════════════
@@ -174,7 +174,9 @@ SPECS: list[dict] = [
         "rank_terms",
         "지금 온도가 높은 용어를 순서대로 돌려준다. "
         "'요즘 뭐가 핫해' '뜨는 브랜드' 처럼 답이 용어인 질문에 쓴다. "
-        "질문이 용어를 지목하지 않았을 때 search_terms 대신 이것을 쓴다.",
+        "질문이 용어를 지목하지 않았을 때 search_terms 대신 이것을 쓴다. "
+        "최근 window_days(7)일 안에 언급된 용어마다 마지막 날의 온도로 줄을 세운다 — "
+        "항목마다 그 값의 날짜(date)가 있다. 기준을 말할 때는 '최근 7일' 이라고 적어라.",
         {
             "facet": {"type": ["string", "null"], "enum": FACETS + [None],
                       "description": "축을 좁힐 때만. 전체면 null"},
@@ -404,6 +406,12 @@ SPECS: list[dict] = [
         "★ 어떤 스타일인지 되묻지 마라. styles 를 비우면 이 대화에서 이미 다룬 "
         "스타일(앞 턴에서 조회한 것 · 즐겨입는 스타일)로 서버가 짠다. 앞서 네가 "
         "추천한 스타일이 있으면 그것을 styles 에 그대로 적어라. "
+        "★ styles 에는 **스타일**만 적는다. 하객·출근·데이트 같은 착용 상황(TPO)이나 "
+        "아이템 이름은 스타일 태그가 아니라 상품이 걸리지 않는다 — 그런 요청이면 "
+        "어울리는 스타일을 골라 적고(무엇이 있는지 모르면 fit_styles), 아이템은 kinds 에 적어라. "
+        "결과가 unavailable 이고 available_styles 가 함께 오면, 그 목록에서 요청에 맞는 "
+        "스타일을 골라 **한 번 더** 불러라. 목록을 보고도 고를 수 없을 때만 목록을 "
+        "보여 주며 사용자에게 고르게 한다. "
         "kinds 에는 그때 함께 말한 아이템을 칸 순서대로 적는다(예: 트랙 재킷, 카고 팬츠) "
         "— 적으면 그 말로 찾고, 비우면 칸의 기본 아이템으로 찾는다. "
         "slots 은 채울 칸이다. 비우면 상의·하의·신발 한 벌로 고른다. 같은 칸을 두 번 "
@@ -427,6 +435,19 @@ SPECS: list[dict] = [
                      "description": "켤 연출만. 없으면 빈 배열"},
          "why": {"type": "string", "description": "이 조합을 고른 이유 한 문장"}},
         ["styles", "slots", "kinds", "options", "why"],
+    ),
+    # ★ 2026-10-01 — "입혀볼 수 있는 스타일이 뭐가 있어?" 의 답. 예전엔 이 질문에
+    #   맞는 도구가 없어 모델이 트렌드 순위(rank_terms)를 뒤졌고, 그날 언급된 스타일이
+    #   없어 "목록이 확인되지 않았다" 고 답했다. 순위와 상품 태그는 다른 표다.
+    _fn(
+        "fit_styles",
+        "코디를 짜서 입혀볼 수 있는 스타일 목록 — 상품에 스타일 태그가 달린 핵심 스타일과 "
+        "그 상품 수(스타일 화면 세부 검색과 같은 숫자). '입혀볼 수 있는 스타일이 뭐야?' "
+        "'어떤 스타일로 코디돼?' 에, 또는 propose_fit 에 적을 스타일을 고를 때 부른다. "
+        "★ 트렌드 순위(rank_terms)는 최근 언급된 용어의 순위라 이 질문의 답이 아니다. "
+        "상품 수는 태그가 달린 수다 — 사진이 없는 상품은 코디에 담기지 않는다.",
+        {},
+        [],
     ),
     _fn(
         "build_fit",
@@ -535,6 +556,8 @@ def progress_say(name: str, args: dict) -> str | None:
     if name == "propose_fit":
         st = [str(t).strip() for t in (args.get("styles") or []) if str(t).strip()]
         return f"{st[0]} 코디 짜는 중" if st else "코디 짜는 중"
+    if name == "fit_styles":
+        return "입혀볼 수 있는 스타일 보는 중"
     if name == "build_fit":
         return "고른 옷을 살펴보는 중"
     if name == "get_salmal":
@@ -576,11 +599,15 @@ def _rank_items(rows: list[dict]) -> dict:
         temp = None if raw is None else js_round(raw)
         band = None if raw is None else temp_band(raw)
         facet = r.get("facet")
-        items.append({"rank": i, "term": r["canonical"], "facet": facet,
-                      "facet_name": FACET_SAY.get(facet, facet),
-                      "temp": temp, "band": band,
-                      "verdict": TEMP_VERDICTS[band][0] if band else None,
-                      "raw_count": r.get("raw_count")})
+        item = {"rank": i, "term": r["canonical"], "facet": facet,
+                "facet_name": FACET_SAY.get(facet, facet),
+                "temp": temp, "band": band,
+                "verdict": TEMP_VERDICTS[band][0] if band else None,
+                "raw_count": r.get("raw_count")}
+        if r.get("metric_date"):
+            # 이 온도가 며칠 자 값인가 — 순위는 최근 7일 안의 마지막 값이다 (2026-10-01)
+            item["date"] = str(r["metric_date"])[:10]
+        items.append(item)
     counts: dict[str, int] = {}
     for it in items:
         if it["band"]:
@@ -820,6 +847,10 @@ class Toolbox:
         day = self.store.latest_day()
         return {
             "as_of": day,
+            # ★ 하루가 아니라 최근 며칠 안에서 용어마다 마지막 값이다 (2026-10-01, config.RANK_WINDOW_DAYS).
+            "window_days": RANK_WINDOW_DAYS,
+            "window_note": (f"최근 {RANK_WINDOW_DAYS}일 안에 언급된 용어마다 마지막 날의 온도로 "
+                            "줄을 세웠습니다. 날짜는 항목마다 다릅니다."),
             "asked": n,
             "returned": len(rows),
             # 어떤 축을 보고 센 순위인지 밝힌다. 모델이 답에 적을 수 있어야 한다.
@@ -1013,7 +1044,17 @@ class Toolbox:
                       options: Any = None, why: str = "") -> dict:
         from . import fit
 
-        picked = [str(s).strip() for s in (styles or []) if str(s or "").strip()]
+        asked = [str(s).strip() for s in (styles or []) if str(s or "").strip()]
+        # ★ 사전으로 스타일 표준 이름을 고른다 (2026-10-01, fit.resolve_styles).
+        #   "긱시크룩" → 긱시크. "결혼식 하객" 은 TPO 라 스타일로 찾지 않는다.
+        picked, skipped = fit.resolve_styles(asked, self.gate)
+        if asked and not picked:
+            # 적은 말이 하나도 스타일이 아니었다. 즐겨입는 스타일로 몰래 바꾸지 않는다 —
+            # 하객룩을 물었는데 고프코어 코디가 나오면 엉뚱하다. 고를 수 있는 목록을 준다.
+            names = " · ".join(f"‘{s['name']}’" for s in skipped)
+            return {"unavailable": f"{names} 은(는) 상품 스타일 태그가 아니라 그 이름으로는 "
+                                   "상품을 고를 수 없습니다.",
+                    "skipped": skipped, **self._fit_choices()}
         # ★ 되묻지 않는다 (2026-09-22). 모델이 앞 턴의 스타일을 옮겨 적지 않아도,
         #   이 대화에서 이미 다룬 스타일이 ctx 에 있다(orchestrator._recent_styles).
         #   "위 스타일대로 입혀 줘" 에 "어떤 스타일로요?" 를 되묻던 자리다.
@@ -1021,7 +1062,10 @@ class Toolbox:
             picked = [str(s) for s in (self.ctx.get("recent_styles") or [])]
         found = fit.propose(self._market_api(), picked, slots, kinds)
         if "unavailable" in found:
-            return found
+            out = {**found, **self._fit_choices()}
+            if skipped:
+                out["skipped"] = skipped
+            return out
         on = {str(k): True for k in (options or []) if str(k) in vton.OPTION_LINES}
         # ★ 아직 사진을 보지 않았다. 구조로 걸러지는 것만 먼저 뗀다(seen=[]) —
         #   여밈 판단은 사진을 볼 수 있는 build_fit 이 한다.
@@ -1035,7 +1079,40 @@ class Toolbox:
                "note": "아직 입히지 않았다. 사용자가 승인하면 살!말? 에서 입혀본다."}
         if dropped:
             out["dropped"] = dropped
+        if skipped:
+            # 적은 말 중 스타일이 아니어서 뺀 것 — 답변이 "하객은 스타일이 아니라 …" 라고
+            # 말할 근거다. 조용히 빼지 않는다.
+            out["skipped"] = skipped
         return out
+
+    def _fit_choices(self) -> dict:
+        """코디를 못 짰을 때 함께 주는 것 — 고를 수 있는 스타일 목록과 다음 행동."""
+        rows = self._fit_style_rows()
+        if not rows:
+            return {}
+        return {"available_styles": rows,
+                "next": "available_styles 에서 요청(상황·아이템)에 어울리는 스타일을 골라 "
+                        "propose_fit 을 한 번 더 불러라. kinds 는 그대로 둔다. 고를 수 없으면 "
+                        "이 목록을 보여 주고 사용자에게 고르게 하라."}
+
+    def _fit_style_rows(self) -> list[dict]:
+        # 목록을 못 읽어도 코디 답 자체는 죽지 않는다 — 목록 없이 사유만 간다.
+        getter = getattr(self._market_api(), "styles", None)
+        try:
+            rows = getter() if callable(getter) else []
+        except Exception:                       # noqa: BLE001
+            rows = []
+        return [r for r in (rows or []) if isinstance(r, dict) and r.get("style")]
+
+    def t_fit_styles(self) -> dict:
+        rows = self._fit_style_rows()
+        if not rows:
+            return {"unavailable": "스타일 태그 목록을 읽지 못했습니다."}
+        return {"styles": rows,
+                "basis": "스타일 화면 세부 검색과 같은 목록 — 핵심 스타일마다 태그가 달린 "
+                         "판매 중 상품 수",
+                "note": "이 이름으로 propose_fit 을 부르면 코디를 짤 수 있다. 사진이 없는 "
+                        "상품은 코디에 담기지 않으므로 상품 수가 곧 입혀볼 수 있는 수는 아니다."}
 
     def t_build_fit(self, options: Any = None) -> dict:
         from . import fit
