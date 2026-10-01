@@ -1629,13 +1629,37 @@ def _core_style_rows(qs, keep):
     return out
 
 
+def _recount_kind(qs, rows):
+    """카테고리 칸 숫자를 클릭 시 걸리는 상품(_apply 의 kind)과 같은 기준으로 다시 센다.
+
+    용어 연결 · 상품 카테고리 · 소스 카테고리 중 하나라도
+    그 이름이면 한 번만 센다."""
+    labels = [o["label"] for o in rows]
+    ids = qs.values("id")
+    sets = defaultdict(set)
+    for name, sid in (ProductTerm.objects
+                      .filter(term__term_type="ITEM", term__canonical_name__in=labels,
+                              product_source_id__in=ids)
+                      .values_list("term__canonical_name", "product_source_id")):
+        sets[name].add(sid)
+    for field in ("product__category__name", "source_category__category__name"):
+        for name, sid in (qs.filter(**{field + "__in": labels}).values_list(field, "id")):
+            sets[name].add(sid)
+    out = [dict(o, count=len(sets[o["label"]])) for o in rows]
+    out.sort(key=lambda o: (-o["count"], o["label"]))
+    return out
+
+
 def _term_rows(qs, term_type, keep, limit):
-    agg = (ProductTerm.objects.filter(term__term_type=term_type, product_source_id__in=qs.values("id"))
+    ids = qs.values("id")
+    agg = (ProductTerm.objects.filter(term__term_type=term_type, product_source_id__in=ids)
            .values("term__canonical_name")
            .annotate(n=Count("product_source_id", distinct=True))
            .order_by("-n", "term__canonical_name"))
     out = [{"label": r["term__canonical_name"], "count": r["n"]} for r in agg[:limit]
            if r["term__canonical_name"]]
+    if term_type == "ITEM" and out:
+        out = _recount_kind(qs, out)
     have = {o["label"] for o in out}
     out += [{"label": k, "count": 0, "picked_only": True} for k in keep if k not in have]
     return out
@@ -1758,7 +1782,7 @@ def discount_facets(request):
     data = {
         "style": _core_style_rows(_apply(base, sel, "style"), sel["style"]),
         "brand": _count_rows(_apply(base, sel, "brand"), BRAND_EXPR, sel["brand"], limit),
-        "kind": _count_rows(_apply(base, sel, "kind"), CATEGORY_EXPR, sel["kind"], limit),
+        "kind": _term_rows(_apply(base, sel, "kind"), "ITEM", sel["kind"], limit),
         "item": rows,
     }
     if not any(len(v) for v in data.values()):
