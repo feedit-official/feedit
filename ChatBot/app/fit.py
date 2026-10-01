@@ -126,6 +126,49 @@ def resolve_styles(names, gate) -> tuple[list[str], list[dict]]:
     return styles, skipped
 
 
+# ── 승인된 코디 (화면을 거쳐 돌아온 것) ─────────────────────────
+#   ★ 2026-10-01 — 승인 카드 "이 코디로 입혀보기" 를 누르면 화면이 코디를 들고 와서
+#     /v1/chat 의 fit_proposal 로 보낸다. 서버(server.py)는 받았는데 engine.ask 가
+#     ctx 로 옮기는 목록에 이 키가 없어 **조용히 버렸다.** 그래서 살!말? 의 첫 턴에
+#     build_fit 이 도구 목록에 한 번도 오르지 못했고, 모델은 "어떤 코디를 입혀볼까요?"
+#     라고 되물었다(2026-10-01 실측, 아메카지 코디).
+#   ★ 브라우저를 거쳐 온 값이다. 우리가 적은 칸만, 길이를 잘라 받는다. 사진 주소는
+#     build_fit 이 허용 호스트로 한 번 더 거른다(vton.image_host_allowed).
+_PROPOSAL_KEYS = ("name", "brand", "image", "url", "slot", "style", "kind", "price",
+                  "product_source_id", "source", "category")
+
+
+def clean_proposal(raw) -> dict | None:
+    """화면이 돌려준 코디를 서버가 쓸 모양으로. 입힐 것이 없으면 None."""
+    if not isinstance(raw, dict):
+        return None
+    items = []
+    for row in (raw.get("items") or [])[:MAX_SLOTS]:
+        if not isinstance(row, dict):
+            continue
+        kept = {}
+        for key in _PROPOSAL_KEYS:
+            value = row.get(key)
+            if isinstance(value, bool):
+                continue
+            if isinstance(value, (int, float)):
+                kept[key] = value
+            elif isinstance(value, str) and value.strip():
+                kept[key] = value.strip()[:500 if key in ("image", "url") else 80]
+        if kept.get("slot") in SLOT_KINDS and kept.get("image"):
+            items.append(kept)
+    if not items:
+        return None
+    out = {"items": items,
+           "options": [str(o) for o in (raw.get("options") or []) if str(o) in vton.OPTION_LINES],
+           "styles": [str(s).strip()[:30] for s in (raw.get("styles") or [])
+                      if str(s or "").strip()][:4]}
+    why = str(raw.get("why") or "").strip()[:200]
+    if why:
+        out["why"] = why
+    return out
+
+
 def _normalize_slots(slots) -> list[str]:
     """모르는 칸 이름은 버리고, 같은 칸이 두 번 와도 그대로 둔다.
 

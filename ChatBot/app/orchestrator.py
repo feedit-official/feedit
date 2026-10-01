@@ -320,6 +320,8 @@ FEEDiT 는 SNS·커머스를 수집해 용어별 트렌드 지표를 계산하�
     그 값으로 커뮤니티 카드를 채운다 — 적지 않으면 사용자가 친 원문(링크 주소)이
     상품명 칸에 그대로 들어간다. 확인하지 못한 칸은 null 로 둔다.
     이 때문에 도구를 한 번 더 부르지 마라. 바퀴가 모자라면 리포트가 통째로 사라진다.
+    ★ 예외 — `[승인된 코디]` 가 있는 턴은 입혀보기다. build_fit 만 부르고 짧게 답한다
+    (이 턴에는 살말 지수 도구가 목록에 없다).
 
 14. **직전 사진을 기억한다.** `[최근 이미지 분석]`이 있으면 "소재는?", "길이는?",
     "위 아이템은?" 같은 질문의 대상은 그 사진 속 아이템이다. 무엇을 말하는지 다시
@@ -505,6 +507,16 @@ def _ctx_block(question: str, ctx: dict, history: list[dict] | None) -> str:
         lines.append(f"[사용자가 보던 용어] {ctx['screen_term']}")
     if ctx.get("salmal_card_id"):
         lines.append(f"[살!말? 카드에서 넘어옴] card_id={ctx['salmal_card_id']}")
+    # ★ 승인된 코디 (2026-10-01). 이 턴의 질문은 버튼이 보낸 "이 코디로 입혀보기" 뿐이라,
+    #   무엇을 입힐지는 여기에만 있다. 없으면 모델은 "어떤 코디를요?" 를 되묻는다.
+    proposal = ctx.get("fit_proposal")
+    if isinstance(proposal, dict) and proposal.get("items"):
+        worn = " / ".join(f"{r.get('slot')} {str(r.get('name') or '')[:30]}"
+                          for r in proposal["items"] if isinstance(r, dict))
+        styles = "·".join(proposal.get("styles") or [])
+        lines.append(f"[승인된 코디] {styles + ' — ' if styles else ''}{worn}  ← 사용자가 "
+                     "'이 코디로 입혀보기' 를 눌러 승인했다. 되묻지 말고 build_fit 을 불러 "
+                     "착장 칸을 채워라. 이 턴은 구매 판단이 아니다.")
     # ★ 지역 — 없으면 한국을 기본으로 잡게 한다. 모델은 놔두면 미국을 가정한다.
     if ctx.get("region"):
         lines.append(f"[사용자 지역] {ctx['region']}")

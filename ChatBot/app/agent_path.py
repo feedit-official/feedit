@@ -100,6 +100,29 @@ def _fit(trace, tool: str) -> dict | None:
             "missing_slots": got.get("missing_slots") or []}
 
 
+def _approved_fit(ctx: dict | None) -> dict | None:
+    """승인된 코디인데 build_fit 이 돌지 않았을 때 — 승인한 그대로 착장 칸을 연다.
+
+    ★ 2026-10-01 — 승인 버튼을 눌렀는데 착장 칸이 안 열리면 사용자는 방금 승인한
+      코디를 잃는다(실측: "어떤 코디를 입혀볼까요?" 만 남았다). 모델이 시간·호출
+      실패로 build_fit 에 닿지 못해도 승인한 것은 사용자가 이미 본 코디다. 사진 검수
+      (여밈·두께)만 없는 상태로 연다 — 서버가 없을 때 화면이 하는 것(chat_popup
+      cpAskInto 의 !live 갈래)과 같다. 사진 주소는 허용 호스트만 남긴다.
+    """
+    proposal = (ctx or {}).get("fit_proposal")
+    if not isinstance(proposal, dict):
+        return None
+    from . import vton
+    items = [r for r in (proposal.get("items") or [])
+             if isinstance(r, dict) and r.get("slot")
+             and vton.image_host_allowed(r.get("image"))][:vton.MAX_ITEMS]
+    if not items:
+        return None
+    return {"items": items, "options": list(proposal.get("options") or []),
+            "styles": list(proposal.get("styles") or []), "why": proposal.get("why") or "",
+            "dropped": [], "missing_slots": [], "inspected": False}
+
+
 def _item_draft(trace) -> dict | None:
     """'물어보기' 카드가 그대로 받아 쓰는 상품 초안.
 
@@ -371,7 +394,7 @@ def ask(question: str, *, store, gate, mode: str = "general",
         "item_draft": _item_draft(res.trace),
         # 코디 — 제안(승인 카드가 받는다)과 확정(착장 칸이 받는다). 없으면 None.
         "fit_proposal": _fit(res.trace, "propose_fit"),
-        "fit": _fit(res.trace, "build_fit"),
+        "fit": _fit(res.trace, "build_fit") or _approved_fit(ctx),
         # ★ 화면 계약: chat_api.reportHTML 은 as_of 를 **객체**로 읽는다
         #   (rep.as_of && rep.as_of.metric). 문자열을 주면 .metric 이 undefined 라
         #   카드 제목줄의 기준일이 조용히 사라진다. 예전 경로(engine.py:205)도

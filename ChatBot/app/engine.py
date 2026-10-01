@@ -16,7 +16,7 @@ LLM 이 하지 않는 것
 """
 from __future__ import annotations
 
-from . import (agent_blocks, agent_path, context, followup, history, llm, mdclean,
+from . import (agent_blocks, agent_path, context, fit, followup, history, llm, mdclean,
                plans, polish, product_link, report, report_skill, salmal_index,
                websearch)
 from .followup import URL as _URL
@@ -93,6 +93,12 @@ class ChatEngine:
                 v = extra.get(k) if extra else None
                 if v:
                     ctx[k] = v
+            # ★ 승인된 코디 (2026-10-01). server.py 는 받아서 넘겼는데 여기 목록에 없어
+            #   버려졌다 — "이 코디로 입혀보기" 를 눌러도 build_fit 이 목록에 오르지 못하고
+            #   모델이 "어떤 코디를 입혀볼까요?" 를 되물었다. 걸러서 넣는다(fit.clean_proposal).
+            proposal = fit.clean_proposal(extra.get("fit_proposal")) if extra else None
+            if proposal:
+                ctx["fit_proposal"] = proposal
             out = agent_path.ask(q, store=self.store, gate=self.gate, mode=mode,
                                  history=past_a, ctx=ctx, salmal=self.salmal,
                                  taste=self.taste, on_progress=on_progress,

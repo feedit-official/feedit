@@ -1629,6 +1629,12 @@ def specs_for(ctx: dict | None = None) -> list[dict]:
         # 승인을 거치지 않은 턴에는 확정할 코디가 없다. get_salmal 이 카드에서
         # 넘어왔을 때만 목록에 있는 것과 같은 방식이다.
         drop.add("build_fit")
+    else:
+        # ★ 승인 버튼이 보낸 턴이다 (2026-10-01). 할 일은 입혀보기 하나 — 살말 지수
+        #   (규칙 13 "반드시")와 되묻기는 이 턴의 답이 아니다. 실측: 승인한 아메카지
+        #   코디를 받고도 "어떤 코디를 입혀볼까요?" 를 되물었다. 목록이 지킨다.
+        drop.add("get_salmal_index")
+        drop.add("ask_user")
     if not ctx.get("user_id"):
         drop.add("get_user_taste")
     if ctx.get("no_ask"):
