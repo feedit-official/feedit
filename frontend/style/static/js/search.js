@@ -385,22 +385,23 @@ function fsPaintSug(){
     box.hidden=false; return;
   }
   const n=fsNorm(q);
-  box.innerHTML=FS.sug.map((o,k)=>{
-    /* 친 글자만 코랄로 — 어디가 걸렸는지 보이게 */
-    let lb=fsEsc(o.label); const i=fsNorm(o.label).indexOf(n);
-    if(i>=0){ let c=0,s=-1,e=-1;
-      for(let p=0;p<o.label.length;p++){ if(!/\s/.test(o.label[p])){ if(c===i)s=p; if(c===i+n.length-1)e=p; c++ } }
-      if(s>=0&&e>=s)lb=fsEsc(o.label.slice(0,s))+'<em>'+fsEsc(o.label.slice(s,e+1))+'</em>'+fsEsc(o.label.slice(e+1));
-    }
-    const on=fsHas(o.f,o.label);
-    /* 검색창은 조건 하나를 새로 건다 — 이미 걸린 말이면 '빼기',
-       다른 조건이 함께 걸려 있으면 '이것만 남기기' 가 된다. */
-    const pt=on?(fsCount()===1?'지금 보는 조건 · 누르면 해제':'이것만 남기고 나머지 해제'):'';
-    return '<button class="sg'+(on?' picked':'')+'" data-k="'+k+'" type="button">'+
-      '<span class="fc">'+fsEsc(o.f)+'</span><span class="lb">'+lb+'</span>'+
-      (pt?'<span class="pt">'+pt+'</span>':'')+'</button>';
-  }).join('');
+  box.innerHTML=FS.sug.map((o,k)=>fsTermRowHTML(o,k,n)).join('');
   box.hidden=false;
+}
+function fsTermRowHTML(o,k,n){
+  /* 친 글자만 코랄로 — 어디가 걸렸는지 보이게 */
+  let lb=fsEsc(o.label); const i=fsNorm(o.label).indexOf(n);
+  if(i>=0){ let c=0,s=-1,e=-1;
+    for(let p=0;p<o.label.length;p++){ if(!/\s/.test(o.label[p])){ if(c===i)s=p; if(c===i+n.length-1)e=p; c++ } }
+    if(s>=0&&e>=s)lb=fsEsc(o.label.slice(0,s))+'<em>'+fsEsc(o.label.slice(s,e+1))+'</em>'+fsEsc(o.label.slice(e+1));
+  }
+  const on=FS.id==='stock'?false:fsHas(o.f,o.label);
+  /* 검색창은 조건 하나를 새로 건다 — 이미 걸린 말이면 '빼기',
+     다른 조건이 함께 걸려 있으면 '이것만 남기기' 가 된다. */
+  const pt=on?(fsCount()===1?'지금 보는 조건 · 누르면 해제':'이것만 남기고 나머지 해제'):'';
+  return '<button class="sg'+(on?' picked':'')+'" data-k="'+k+'" type="button">'+
+    '<span class="fc">'+fsEsc(o.f)+'</span><span class="lb">'+lb+'</span>'+
+    (pt?'<span class="pt">'+pt+'</span>':'')+'</button>';
 }
 let fsResaleT=null, fsResaleAbort=null, fsResaleSeq=0;
 let fsResaleModalT=null, fsResaleModalAbort=null, fsResaleModalSeq=0;
@@ -425,44 +426,82 @@ function fsResaleImageFallback(img){
   }
   img.closest('.resaleThumb,.fsOptThumb')?.classList.add('imageError');
 }
-function fsPaintResaleSug(items,q){
+function fsProductRowHTML(o,k){
+  const platform=fsResalePlatforms(o);
+  const tag=o._src==='resale'?'<em>'+(o.type==='product'?'표준상품':'플랫폼 단독')+'</em>':'';
+  return '<button class="sg resaleProduct" data-k="'+k+'" type="button">'+
+    '<span class="resaleThumb"><i>F</i>'+fsResaleImageHTML(o)+'</span>'+
+    '<span class="resaleSugTx"><span class="resaleSugTop"><b>'+fsEsc(o.name||'상품명 없음')+'</b>'+tag+'</span>'+
+      '<small>'+fsEsc([o.brand,o.model_code,o.code].filter(Boolean).join(' · ')||'상품 정보 없음')+'</small>'+
+      (platform?'<small class="platforms">'+fsEsc(platform)+'</small>':'')+'</span></button>';
+}
+/* 검색창 후보 = 연관어(브랜드 우선) + 그 말에 걸린 상품들.
+   할인률·리세일·수명주기가 같은 모양을 쓴다. */
+function fsSugTerms(q){
+  const n=fsNorm(q); if(!n)return [];
+  const brands=FIDX.filter(o=>o.f==='브랜드'&&o.key.indexOf(n)>=0)
+    .sort((a,b)=>a.key.indexOf(n)*100+a.label.length-(b.key.indexOf(n)*100+b.label.length)).slice(0,3);
+  if(FS.id==='stock')return brands;
+  const seen=new Set(brands.map(o=>o.f+'|'+o.label)), out=brands.slice();
+  fsMatch(q,6).forEach(o=>{ if(!seen.has(o.f+'|'+o.label)&&out.length<7){ seen.add(o.f+'|'+o.label); out.push(o) } });
+  return out;
+}
+function fsPaintSugAll(terms,products,state,q){
   const box=$('#fsSug'); if(!box)return;
-  FS.sug=items||[]; FS.cur=-1;
-  if(!FS.sug.length){
-    box.innerHTML='<div class="none">‘<b>'+fsEsc(q)+'</b>’으로 찾은 중고 상품이 없습니다.<br>'+
-      '상품명이나 모델번호를 다시 확인하거나, 세부 검색에서 브랜드 전체를 분석해 보세요.</div>';
-    box.hidden=false; return;
+  FS.sug=terms.concat(products); FS.cur=-1;
+  const n=fsNorm(q);
+  let html=terms.map((o,k)=>fsTermRowHTML(o,k,n)).join('');
+  html+=products.map((o,k)=>fsProductRowHTML(o,terms.length+k)).join('');
+  if(state==='loading'&&!products.length)html+='<div class="none">상품을 찾는 중입니다…</div>';
+  else if(state==='error')html+='<div class="none">상품 검색에 연결하지 못했습니다.<br>잠시 뒤 다시 시도해 주세요.</div>';
+  else if(state==='done'&&!products.length&&!terms.length){
+    if(FS.id==='life'){ fsPaintSug(); return; }
+    html='<div class="none">‘<b>'+fsEsc(q)+'</b>’으로 찾은 상품이 없습니다.<br>'+
+      '상품명이나 브랜드를 다시 확인하거나, 세부 검색을 이용해 보세요.</div>';
   }
-  box.innerHTML=FS.sug.map((o,k)=>{
-    const platform=fsResalePlatforms(o);
-    return '<button class="sg resaleProduct" data-k="'+k+'" type="button">'+
-      '<span class="resaleThumb"><i>F</i>'+fsResaleImageHTML(o)+'</span>'+
-      '<span class="resaleSugTx"><span class="resaleSugTop"><b>'+fsEsc(o.name||'상품명 없음')+'</b>'+
-        '<em>'+(o.type==='product'?'표준상품':'플랫폼 단독')+'</em></span>'+
-        '<small>'+fsEsc([o.brand,o.model_code,o.code].filter(Boolean).join(' · ')||'상품 정보 없음')+'</small>'+
-        (platform?'<small class="platforms">'+fsEsc(platform)+'</small>':'')+'</span></button>';
-  }).join('');
-  box.hidden=false;
+  box.innerHTML=html; box.hidden=false;
+}
+function fsSugFetchURL(q){
+  if(FS.id==='stock')return '/api/discount/facets?items_only=1&limit=1&item_limit=12&q='+encodeURIComponent(q);
+  return '/api/resale/products?q='+encodeURIComponent(q)+'&limit='+(FS.id==='life'?10:16);
+}
+function fsSugProducts(j){
+  if(FS.id==='stock'){
+    const rows=j&&j.status==='ok'&&j.data&&Array.isArray(j.data.item)?j.data.item:[];
+    return rows.map(r=>({_src:'stock',id:r.id,name:r.label,label:r.label,brand:r.brand,
+      source:r.source,thumb:r.thumb,image:r.thumb,platforms:r.source?[{name:r.source,count:1}]:[]}));
+  }
+  const rows=j&&j.status==='ok'&&j.data&&Array.isArray(j.data.items)?j.data.items:[];
+  return rows.map(r=>Object.assign({_src:'resale'},r));
 }
 function fsLoadResaleSug(){
-  const q=$('#fsInput')?.value.trim()||'', box=$('#fsSug');
+  const q=$('#fsInput')?.value.trim()||'';
   clearTimeout(fsResaleT);
   if(fsResaleAbort){ fsResaleAbort.abort(); fsResaleAbort=null; }
   if(!q){ fsHideSug(); return; }
-  const my=++fsResaleSeq;
-  if(box){ box.innerHTML='<div class="none">상품과 연결된 중고 매물을 찾는 중입니다…</div>'; box.hidden=false; }
+  const my=++fsResaleSeq, terms=fsSugTerms(q);
+  fsPaintSugAll(terms,[],'loading',q);
   fsResaleT=setTimeout(async()=>{
     const controller=new AbortController(); fsResaleAbort=controller;
     try{
-      const r=await fetch('/api/resale/products?q='+encodeURIComponent(q)+'&limit=16',{signal:controller.signal});
+      const r=await fetch(fsSugFetchURL(q),{signal:controller.signal});
       if(!r.ok)throw new Error('HTTP '+r.status);
       const j=await r.json(); if(my!==fsResaleSeq)return;
-      fsPaintResaleSug(j&&j.status==='ok'&&j.data?j.data.items:[],q);
+      const products=fsSugProducts(j);
+      /* 사전에 없는 브랜드(게스·타미진스 …)도 상품에 붙은 브랜드명으로 연관어에 올린다 */
+      const n=fsNorm(q), have=new Set(terms.map(o=>o.f+'|'+fsNorm(o.label)));
+      const extra=[];
+      products.forEach(o=>{
+        const b=String(o.brand||'').trim(), k='브랜드|'+fsNorm(b);
+        if(!b||fsNorm(b).indexOf(n)<0||have.has(k))return;
+        have.add(k); extra.push({f:'브랜드',label:b,key:fsNorm(b)});
+      });
+      const merged=extra.slice(0,3).concat(terms);
+      fsPaintSugAll(merged,products,'done',q);
     }catch(e){
       if(e&&e.name==='AbortError')return;
       if(my!==fsResaleSeq)return;
-      FS.sug=[]; FS.cur=-1;
-      if(box){ box.innerHTML='<div class="none">상품 검색에 연결하지 못했습니다.<br>잠시 뒤 다시 시도해 주세요.</div>'; box.hidden=false; }
+      fsPaintSugAll(terms,[],'error',q);
     }finally{ if(fsResaleAbort===controller)fsResaleAbort=null; }
   },220);
 }
@@ -500,6 +539,31 @@ function fsPickResale(item){
   if(!fsResaleSelect(item))return;
   $('#fsInput').value=''; $('#fsBar').classList.remove('typing');
   $('#fsClear').hidden=true; fsHideSug(); fsApply();
+}
+function fsPickSug(o){
+  if(!o)return;
+  if(o._src==='stock'){
+    if(!fsStockSelect(o))return;
+    $('#fsInput').value=''; $('#fsBar').classList.remove('typing');
+    $('#fsClear').hidden=true; fsHideSug(); fsApply(); return;
+  }
+  if(o._src==='resale'){
+    if(FS.id==='resale'){ fsPickResale(o); return; }
+    /* 수명주기는 상품 하나가 아니라 그 상품의 브랜드·종류 흐름을 본다 */
+    const ax=o.brand?'브랜드':null;
+    fsReset();
+    if(ax)fsToggle(ax,o.brand);
+    $('#fsInput').value=''; $('#fsBar').classList.remove('typing');
+    $('#fsClear').hidden=true; fsHideSug(); fsApply(); return;
+  }
+  if(FS.id==='stock'){
+    /* 할인률은 상품을 골라야 한다 — 브랜드로 후보를 좁힌 세부 검색을 연다 */
+    fsReset();
+    fsToggle(o.f,o.label);
+    $('#fsInput').value=''; $('#fsBar').classList.remove('typing');
+    $('#fsClear').hidden=true; fsHideSug(); fsOpenPop(); return;
+  }
+  fsPick(o);
 }
 function fsMoveSug(d){
   if(!FS.sug.length)return;
@@ -1025,16 +1089,18 @@ export function fsBuild(){
   inp.addEventListener('input',()=>{
     bar.classList.toggle('typing',!!inp.value);
     $('#fsClear').hidden=!inp.value;
-    if(FS.id==='stock'){ fsHideSug(); return; }
-    if(FS.id==='resale'){ fsLoadResaleSug(); return; }
-    fsPaintSug();
+    fsLoadResaleSug();
   });
   /* Enter 로 할 일을 한 곳에 모아 둔다 — 키를 눌렀을 때와,
      한글 조합이 끝난 뒤에 이어서 할 때가 똑같아야 한다. */
   function fsEnterGo(){
-    if(FS.id==='stock'){ fsOpenPop(); return }
+    if(FS.id==='stock'){
+      if(FS.cur>=0&&FS.sug[FS.cur])fsPickSug(FS.sug[FS.cur]);
+      else fsOpenPop();
+      return;
+    }
     if(FS.id==='resale'){
-      if(FS.cur>=0&&FS.sug[FS.cur])fsPickResale(FS.sug[FS.cur]);
+      if(FS.cur>=0&&FS.sug[FS.cur])fsPickSug(FS.sug[FS.cur]);
       else{
         /* 색·소재·TPO 같은 속성은 표준상품명이 아니다. 정확히 사전에 있는
            속성어를 친 경우에만 예전처럼 시장 전체 조건으로 분석한다. */
@@ -1045,7 +1111,7 @@ export function fsBuild(){
       return;
     }
     /* ↑↓ 로 직접 고른 줄이 있으면 그것이 우선이다 */
-    if(FS.cur>=0&&FS.sug[FS.cur]){ fsPick(FS.sug[FS.cur]); return }
+    if(FS.cur>=0&&FS.sug[FS.cur]){ fsPickSug(FS.sug[FS.cur]); return }
     /* 그 다음은 **친 말 그대로**. 연관어로 바꿔치기하지 않는다. */
     const exact=fsExact(inp.value);
     if(exact){ fsPick(exact); return }
@@ -1053,7 +1119,7 @@ export function fsBuild(){
        '클래식' 을 치면 그 말을 품은 브랜드 '식스핏 클래식' 이 하나뿐이라 그리로 끌려갔다.
        치지도 않은 브랜드가 검색되는 것은 후보가 하나든 열이든 똑같이 틀린 결과다.
        사전에 없으면 고르게 둔다 — 목록에서 누르거나 ↑↓ 로 잡으면 된다. */
-    fsPaintSug();
+    fsLoadResaleSug();
   }
   /* ★ 2026-09-23 — 한글을 치는 중의 Enter.
      '가을' 의 마지막 글자는 Enter 를 누르는 그 순간까지 **조합 중**이다. 그 상태에서
@@ -1078,8 +1144,7 @@ export function fsBuild(){
   });
   $('#fsSug').addEventListener('click',e=>{
     const b=e.target.closest('.sg'); if(!b)return;
-    if(FS.id==='resale')fsPickResale(FS.sug[+b.dataset.k]);
-    else fsPick(FS.sug[+b.dataset.k]);
+    fsPickSug(FS.sug[+b.dataset.k]);
   });
   $('#fsSug').addEventListener('error',e=>{
     if(e.target&&e.target.matches&&e.target.matches('.resaleThumb img'))fsResaleImageFallback(e.target);
