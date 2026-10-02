@@ -1,5 +1,5 @@
 /* ══════════════════════════════════════════════════════
-   금주의 리포트 — 내려받기(.xlsx) · 링크 공유 (2026-09-23)
+   금주의 리포트 — 내려받기(.xlsx) · 이미지 공유 (2026-09-23)
 
    요구사항 정의서에 '리포트를 파일로 저장하고 링크로 공유한다'로 적어 두고
    화면에는 없던 기능이다. 오른쪽 위 버튼 두 개가 이 파일을 부른다.
@@ -196,31 +196,31 @@ export async function canvasToPdf(canvas){
   return pdf.output('blob');
 }
 
-/* ── 공유 링크 ──
-   받는 사람이 열었을 때 금주의 리포트가 곧바로 서도록 주소에 화면과 탭을 적는다.
-   (app_shell/static/js/router.js 의 resumeNav 가 이 두 값을 읽는다)
-   기준 주와 키워드도 같이 적어, 다음 주에 열어도 무엇을 보던 링크였는지 남는다. */
-export function reportShareUrl({ keyword = '', week = '' } = {}){
-  const u = new URL(location.href);
-  u.hash = '';
-  u.searchParams.set('view', 'trend');
-  u.searchParams.set('tr', 'report');
-  if (keyword) u.searchParams.set('kw', keyword);
-  if (week) u.searchParams.set('week', week);
-  return u.toString();
-}
-
-/* 공유 — 모바일은 기본 공유 시트, PC 는 클립보드. 둘 다 막히면 주소를 그대로 보여 준다. */
-export async function shareLink(url, title){
-  if (navigator.share){
-    try{ await navigator.share({ title, url }); return '공유 창을 열었습니다.' }
-    catch(e){ if (e && e.name === 'AbortError') return '' }   /* 사용자가 닫은 것 — 조용히 */
+/* ── 이미지 공유 ──
+   링크가 아니라 리포트 그림(PNG)을 내보낸다.
+   · 파일 공유를 지원하는 기기(모바일·맥·윈도 크롬 등)는 기본 공유 시트로 PNG 를 넘긴다.
+   · 그렇지 않으면 PNG 를 클립보드에 복사해 붙여넣기로 공유하게 한다.
+   · 둘 다 막히면 파일로 저장한다.
+   blobPromise 는 아직 만드는 중인 그림이다 — 클립보드 복사는 눌린 순간에 시작해야 허용되므로
+   기다리기 전에 넘겨 받는다. 돌려주는 값은 화면에 띄울 안내 문구(비어 있으면 조용히). */
+export async function shareImage(blobPromise, filename, title){
+  const probe = typeof File === 'function' ? new File([''], filename, { type:'image/png' }) : null;
+  const canFile = !!(probe && navigator.share && navigator.canShare && navigator.canShare({ files:[probe] }));
+  if (!canFile && navigator.clipboard && typeof ClipboardItem === 'function'){
+    try{
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': blobPromise })]);
+      return '리포트 이미지를 복사했습니다. 붙여넣기(Ctrl/⌘+V)로 공유해 주세요.';
+    }catch(e){ /* 아래에서 파일로 저장한다 */ }
   }
-  try{
-    await navigator.clipboard.writeText(url);
-    return '리포트 링크를 복사했습니다.';
-  }catch(e){
-    window.prompt('아래 링크를 복사해 주세요.', url);
-    return '';
+  const blob = await blobPromise;
+  if (canFile){
+    try{
+      await navigator.share({ title, files:[new File([blob], filename, { type:'image/png' })] });
+      return '공유 창을 열었습니다.';
+    }catch(e){
+      if (e && e.name === 'AbortError') return '';   /* 사용자가 닫은 것 — 조용히 */
+    }
   }
+  saveBlob(blob, filename);
+  return '이 기기에서는 이미지를 바로 공유할 수 없어 파일로 저장했습니다.';
 }

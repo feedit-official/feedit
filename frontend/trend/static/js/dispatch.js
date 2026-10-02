@@ -18,7 +18,7 @@ import { jobBadgeHTML, jobPlanText, jobShown } from '../../../account/static/js/
 import { smBarFill, svRender } from './discount_resale.js';
 import { trCountUp } from './count_up.js';
 import { trDial, wkAnimate } from './weekly_report.js';
-import { buildXlsx, canvasToPdf, canvasToPng, captureElement, reportShareUrl, saveBlob, shareLink } from './report_export.js';
+import { buildXlsx, canvasToPdf, canvasToPng, captureElement, saveBlob, shareImage } from './report_export.js';
 import { trSideOpen } from '../../../app_shell/static/js/router.js';
 import { weeklyReport, weeklyVideos, savedProducts, setSavedProduct } from '../../../account/static/js/account_api.js';
 
@@ -2485,9 +2485,17 @@ document.addEventListener('click', async e=>{
   if(wkMenu()&&!wkMenu().hidden)wkMenuSet(false);
   const sh=e.target.closest&&e.target.closest('#trShareBtn');
   if(sh){
-    const rp=wkRange();
-    const url=reportShareUrl({keyword:WKEY&&WKEY.label||'', week:rp[0]+' '+rp[1].split(' · ')[0]});
-    const msg=await shareLink(url, 'FEEDiT 금주의 리포트');
-    if(msg)trToast(msg);
+    if(WR.state==='loading'){ trToast('리포트를 아직 불러오는 중입니다. 잠시 뒤 다시 눌러 주세요.'); return }
+    if(sh.disabled)return;
+    sh.disabled=true;
+    trToast('공유할 이미지를 만드는 중입니다…');
+    try{
+      /* 다운로드(이미지)와 같은 그림 — 제목부터 본문까지, 저장·공유 버튼은 뺀다 */
+      const png=captureElement($('.trMain'),{ignore:'#trHeadActs'}).then(canvasToPng);
+      const msg=await shareImage(png, wkFileBase()+'.png', 'FEEDiT 금주의 리포트');
+      if(msg)trToast(msg);
+    }catch(err){
+      trToast('이미지를 만들지 못했습니다 ('+(err&&err.message||err)+').');
+    }finally{ sh.disabled=false }
   }
 });
