@@ -96,6 +96,9 @@ def _fit(trace, tool: str) -> dict | None:
         return None
     return {"items": got.get("items") or [], "options": got.get("options") or [],
             "gender": got.get("gender"),
+            # 상황과 근거로 쓴 코디 기사(find_looks 가 확인한 것만) — 카드와 입혀보기 화면이
+            # "○○ 기사에서 본 조합" 을 보여 주고, 다음 '다른 룩' 이 피해 갈 기억이 된다.
+            "occasion": got.get("occasion") or "", "ref": got.get("ref"),
             "styles": got.get("styles") or [], "why": got.get("why") or "",
             "dropped": got.get("dropped") or [],
             "missing_slots": got.get("missing_slots") or []}
@@ -121,6 +124,7 @@ def _approved_fit(ctx: dict | None) -> dict | None:
         return None
     return {"items": items, "options": list(proposal.get("options") or []),
             "gender": proposal.get("gender"),
+            "occasion": proposal.get("occasion") or "", "ref": proposal.get("ref"),
             "styles": list(proposal.get("styles") or []), "why": proposal.get("why") or "",
             "dropped": [], "missing_slots": [], "inspected": False}
 

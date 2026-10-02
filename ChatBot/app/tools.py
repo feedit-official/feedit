@@ -452,8 +452,30 @@ SPECS: list[dict] = [
                      "description": "켤 연출만. 없으면 빈 배열"},
          "why": {"type": "string", "description": "이 조합을 고른 이유 한 문장"},
          "wearer": {"type": "string", "enum": ["self", "FEMALE", "MALE"],
-                    "description": "입을 사람. 본인이면 self, 다른 성별의 옷을 분명히 말했을 때만 FEMALE/MALE"}},
-        ["styles", "slots", "kinds", "options", "why", "wearer"],
+                    "description": "입을 사람. 본인이면 self, 다른 성별의 옷을 분명히 말했을 때만 FEMALE/MALE"},
+         "occasion": {"type": "string",
+                      "description": "입을 상황(TPO) 한 줄. 예: '친구 결혼식 하객', '주말 데이트'. 없으면 빈 문자열"},
+         "ref_url": {"type": "string",
+                     "description": "이 코디를 짠 근거로 쓴 find_looks 룩의 source.url. 안 썼으면 빈 문자열"}},
+        ["styles", "slots", "kinds", "options", "why", "wearer", "occasion", "ref_url"],
+    ),
+    # ★ 2026-10-02 — "데이트룩 추천해줘" 를 몇 번 물어도 같은 룩이었다. 코디의 재료가
+    #   모델의 일반 상식과 상품 추천순 1위뿐이었다. 요즘 실제로 입는 조합을 먼저 찾는다.
+    _fn(
+        "find_looks",
+        "상황(TPO)·분위기에 맞는 **요즘 연예인·인플루언서·매거진 코디**를 웹에서 찾는다. "
+        "출처(기사 주소)가 확인된 룩만 돌아오고, 룩마다 칸별 아이템(상품 검색어)이 있다. "
+        "'데이트룩 추천해줘' · '하객룩 뭐 입지' · '출근룩 짜줘' 처럼 **상황으로 코디를 물으면 "
+        "propose_fit 전에 먼저 부른다.** 고른 룩의 items 를 slots·kinds 로, source.url 을 "
+        "ref_url 로 propose_fit 에 넘겨라. 이 결과는 FEEDiT 측정값이 아니다 — 답변에서 "
+        "'요즘 ○○에서 이런 조합이 보인다' 처럼 출처와 함께 소개하라. "
+        "'다른 룩' 을 원하면 앞서 쓴 룩이 아닌 다른 룩을 골라라(캐시라 다시 불러도 빠르다).",
+        {"occasion": {"type": "string", "description": "입을 상황. 예: '친구 결혼식 하객', '주말 데이트'"},
+         "styles": {"type": "array", "items": {"type": "string"},
+                    "description": "원하는 분위기·스타일(있으면). 예: ['미니멀']"},
+         "wearer": {"type": "string", "enum": ["self", "FEMALE", "MALE"],
+                    "description": "입을 사람. propose_fit 의 wearer 와 같은 뜻"}},
+        ["occasion", "styles", "wearer"],
     ),
     # ★ 2026-10-01 — "입혀볼 수 있는 스타일이 뭐가 있어?" 의 답. 예전엔 이 질문에
     #   맞는 도구가 없어 모델이 트렌드 순위(rank_terms)를 뒤졌고, 그날 언급된 스타일이
@@ -575,6 +597,9 @@ def progress_say(name: str, args: dict) -> str | None:
     if name == "propose_fit":
         st = [str(t).strip() for t in (args.get("styles") or []) if str(t).strip()]
         return f"{st[0]} 코디 짜는 중" if st else "코디 짜는 중"
+    if name == "find_looks":
+        occ = str(args.get("occasion") or "").strip()
+        return f"요즘 {occ} 코디 찾아보는 중" if occ else "요즘 코디 찾아보는 중"
     if name == "fit_styles":
         return "입혀볼 수 있는 스타일 보는 중"
     if name == "build_fit":
@@ -1064,8 +1089,40 @@ class Toolbox:
             self.market = MarketHTTPAdapter()
         return self.market
 
+    def _gender_for(self, wearer: str | None) -> str | None:
+        # ★ 성별 (2026-10-02) — 기본은 회원정보의 성별(ctx.gender · 화면이 ME.gender 를 보낸다).
+        #   질문 글자로 정하지 않는다: "여자친구랑 데이트할 때 뭐 입지?" 는 남자가 입을 옷이다.
+        #   다른 사람의 옷이라고 분명히 말했을 때만 모델이 wearer 로 바꾼다.
+        return wearer if wearer in ("FEMALE", "MALE") else self.ctx.get("gender")
+
+    def t_find_looks(self, occasion: str = "", styles: Any = None, wearer: str = "self") -> dict:
+        from . import lookbook
+        names = [str(s).strip() for s in (styles or []) if str(s or "").strip()]
+        got = lookbook.find(occasion, names, self._gender_for(wearer))
+        # 이 대화에서 이미 근거로 쓴 룩을 알려 준다 — '다른 룩' 이면 그걸 피해서 고르게.
+        used = [str(u) for u in (self.ctx.get("fit_refs") or [])]
+        if used and got.get("looks"):
+            got = {**got, "used_before": [lk["source"]["url"] for lk in got["looks"]
+                                          if lk["source"]["url"] in used]}
+        return got
+
+    def _look_for(self, url: str) -> dict | None:
+        """이번 턴에 find_looks 가 실제로 돌려준 룩 중 이 주소의 것. 없으면 None —
+        모델이 적은 주소를 그대로 출처로 올리지 않는다."""
+        url = str(url or "").strip()
+        if not url:
+            return None
+        for call in self.trace.calls:
+            if call.get("tool") != "find_looks":
+                continue
+            for look in (call.get("result") or {}).get("looks") or []:
+                if look.get("source", {}).get("url") == url:
+                    return look
+        return None
+
     def t_propose_fit(self, styles: Any = None, slots: Any = None, kinds: Any = None,
-                      options: Any = None, why: str = "", wearer: str = "self") -> dict:
+                      options: Any = None, why: str = "", wearer: str = "self",
+                      occasion: str = "", ref_url: str = "") -> dict:
         from . import fit
 
         asked = [str(s).strip() for s in (styles or []) if str(s or "").strip()]
@@ -1084,11 +1141,11 @@ class Toolbox:
         #   "위 스타일대로 입혀 줘" 에 "어떤 스타일로요?" 를 되묻던 자리다.
         if not picked:
             picked = [str(s) for s in (self.ctx.get("recent_styles") or [])]
-        # ★ 성별 (2026-10-02) — 기본은 회원정보의 성별(ctx.gender · 화면이 ME.gender 를 보낸다).
-        #   질문 글자로 정하지 않는다: "여자친구랑 데이트할 때 뭐 입지?" 는 남자가 입을 옷이다.
-        #   다른 사람의 옷이라고 분명히 말했을 때만 모델이 wearer 로 바꾼다.
-        gender = wearer if wearer in ("FEMALE", "MALE") else self.ctx.get("gender")
-        found = fit.propose(self._market_api(), picked, slots, kinds, gender=gender)
+        gender = self._gender_for(wearer)
+        # ★ 이 대화에서 이미 보여 준 상품은 뺀다(화면이 fit_seen 으로 보낸다) — "다른 룩" 에
+        #   같은 셔츠가 또 나오지 않게. 후보 안에서 무작위로 고른다(fit.POOL · PICK_TOP).
+        found = fit.propose(self._market_api(), picked, slots, kinds, gender=gender,
+                            seen=self.ctx.get("fit_seen"))
         if "unavailable" in found:
             out = {**found, **self._fit_choices()}
             if skipped:
@@ -1105,6 +1162,15 @@ class Toolbox:
                "options": sorted(k for k, v in on.items() if v),
                "why": str(why or "").strip()[:200],
                "note": "아직 입히지 않았다. 사용자가 승인하면 살!말? 에서 입혀본다."}
+        if str(occasion or "").strip():
+            out["occasion"] = str(occasion).strip()[:40]
+        look = self._look_for(ref_url)
+        if look:
+            # 근거로 쓴 코디 기사 — find_looks 가 확인한 주소만 싣는다.
+            out["ref"] = {"title": look["title"], "who": look.get("who") or "",
+                          "url": look["source"]["url"], "domain": look["source"].get("domain") or ""}
+        elif str(ref_url or "").strip():
+            out["ref_dropped"] = "ref_url 이 이번 find_looks 결과에 없어 출처로 싣지 않았다."
         if dropped:
             out["dropped"] = dropped
         if skipped:
@@ -1171,6 +1237,7 @@ class Toolbox:
         return {"ready": True,
                 "items": fit.layer_order(items, seen),
                 "gender": proposal.get("gender"),
+                "occasion": proposal.get("occasion") or "", "ref": proposal.get("ref"),
                 "options": sorted(k for k, v in on.items() if v),
                 "dropped": dropped,
                 "note": "화면의 착장 칸을 채웠다. 생성은 사용자가 누를 때 일어난다."}

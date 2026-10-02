@@ -13,6 +13,7 @@
 """
 from __future__ import annotations
 
+import random
 from concurrent.futures import ThreadPoolExecutor
 
 from . import vton
@@ -165,9 +166,41 @@ def clean_proposal(raw) -> dict | None:
                       if str(s or "").strip()][:4]}
     if raw.get("gender") in ("FEMALE", "MALE"):
         out["gender"] = raw["gender"]
+    occ = " ".join(str(raw.get("occasion") or "").split())[:40]
+    if occ:
+        out["occasion"] = occ
+    ref = raw.get("ref") if isinstance(raw.get("ref"), dict) else None
+    if ref and str(ref.get("url") or "").startswith(("http://", "https://")):
+        out["ref"] = {k: str(ref.get(k) or "").strip()[:120 if k != "url" else 300]
+                      for k in ("title", "who", "url", "domain")}
     why = str(raw.get("why") or "").strip()[:200]
     if why:
         out["why"] = why
+    return out
+
+
+def clean_memory(raw) -> dict:
+    """화면이 보낸 '이 대화의 코디 기억'(fit_memory)을 걸러 ctx 에 넣을 모양으로.
+
+    ★ 브라우저를 거쳐 온 값이다. 문자열만, 개수와 길이를 잘라 받는다. 이 값은 상품을
+      **빼는 데만** 쓰고(seen), 출처(refs)는 모델에게 '피해서 고르라' 고 알려 주는 데만
+      쓴다 — 화면에 출처로 다시 올리지 않는다(출처는 이번 턴 find_looks 결과에서만 온다).
+    """
+    if not isinstance(raw, dict):
+        return {}
+    def strs(v, n, size):
+        return [str(x).strip()[:size] for x in (v if isinstance(v, list) else [])
+                if isinstance(x, (str, int)) and str(x).strip()][:n]
+    out = {}
+    seen = strs(raw.get("seen"), 60, 300)
+    if seen:
+        out["fit_seen"] = seen
+    refs = [u for u in strs(raw.get("refs"), 8, 300) if u.startswith(("http://", "https://"))]
+    if refs:
+        out["fit_refs"] = refs
+    occ = " ".join(str(raw.get("occasion") or "").split())[:40]
+    if occ:
+        out["fit_occasion"] = occ
     return out
 
 
@@ -182,8 +215,33 @@ def _normalize_slots(slots) -> list[str]:
     return (rows or list(DEFAULT_SLOTS))[:MAX_SLOTS]
 
 
-def propose(market, styles, slots=None, kinds=None, limit: int = 3,
-            gender: str | None = None) -> dict:
+# ── 늘 같은 룩이 나오던 문제 (2026-10-02) ─────────────────────
+#   예전엔 칸마다 추천순 **1위 한 점**(got[0])만 집었다. 같은 스타일 · 같은 아이템이면
+#   몇 번을 물어도 같은 상품, 같은 룩이었다.
+#   → 칸마다 후보를 POOL 만큼 받아, 이 대화에서 이미 보여 준 상품(seen)을 빼고, 위쪽
+#     PICK_TOP 안에서 하나를 뽑는다. 추천순 위쪽에서만 뽑으니 엉뚱한 상품이 섞이지
+#     않고, 같은 질문에도 다른 조합이 나온다.
+POOL = 12
+PICK_TOP = 6
+
+
+def item_key(row: dict) -> str:
+    """상품을 가리키는 열쇠 — 판매처 상품 id, 없으면 상품 주소, 없으면 사진 주소."""
+    for k in ("product_source_id", "url", "image"):
+        v = str((row or {}).get(k) or "").strip()
+        if v:
+            return v[:300]
+    return ""
+
+
+def _keys(row: dict) -> set[str]:
+    """상품의 열쇠 전부 — 화면은 주소로, 서버는 id 로 기억할 수 있어 어느 쪽이든 맞춘다."""
+    return {str((row or {}).get(k) or "").strip()[:300]
+            for k in ("product_source_id", "url", "image")} - {""}
+
+
+def propose(market, styles, slots=None, kinds=None, limit: int = POOL,
+            gender: str | None = None, seen=None, rng: random.Random | None = None) -> dict:
     """스타일 태그로 슬롯별 상품을 한 점씩 고른다. 생성하지 않는다.
 
     ★ 슬롯 조회는 서로 독립이다 — 차례로 물으면 한 바퀴가 어댑터 timeout×칸 수가
@@ -201,6 +259,8 @@ def propose(market, styles, slots=None, kinds=None, limit: int = 3,
     #   짝을 맞춰 오고, 빈 자리는 기준표(SLOT_KINDS)로 떨어진다.
     asked = [str(k or "").strip() for k in (kinds or [])]
     asked += [""] * max(0, len(picks) - len(asked))
+    shown = {str(x)[:300] for x in (seen or []) if str(x or "").strip()}
+    rng = rng or random.Random()
 
     def one(index: int, slot: str) -> list[dict]:
         # 찾을 말: 모델이 준 아이템 → 기준표. 스타일도 하나씩 건다 — 여러 개를 한
@@ -219,20 +279,34 @@ def propose(market, styles, slots=None, kinds=None, limit: int = 3,
                 image = absolute_image(row.get("image"), row.get("source"))
                 if image and vton.image_host_allowed(image):
                     got.append({**row, "image": image})
-            if got:
-                return [{**got[0], "slot": slot, "style": style, "kind": word}]
+            # 이미 보여 준 상품은 뺀다. 다 본 것뿐이면 다음 말로 넘어간다 — 같은 상품을
+            # "다른 룩" 이라며 다시 내밀지 않는다.
+            fresh = [r for r in got if not (_keys(r) & shown)]
+            if fresh:
+                pick = rng.choice(fresh[:PICK_TOP])
+                return [{**pick, "slot": slot, "style": style, "kind": word}]
         return []
 
     with ThreadPoolExecutor(max_workers=min(4, len(picks))) as pool:
         found = list(pool.map(one, range(len(picks)), picks))
 
-    items = [row for rows in found for row in rows]
+    # 같은 상품이 두 칸에 걸리면(아우터 둘 등) 뒤쪽 칸을 비운다.
+    used, items = set(), []
+    for rows in found:
+        for row in rows:
+            k = item_key(row)
+            if k and k in used:
+                continue
+            used.add(k)
+            items.append(row)
     if not items:
         empty = " · ".join(sorted(set(picks)))
         return {"unavailable": f"'{names[0]}' 태그가 붙은 상품 중 사진이 있는 것을 "
                                f"{empty} 칸에서 찾지 못했습니다."}
     missed = [s for s, rows in zip(picks, found) if not rows]
     out = {"items": items, "styles": names, "slots": picks}
+    if shown:
+        out["excluded_seen"] = len(shown)
     if gender:
         out["gender"] = gender
     if missed:

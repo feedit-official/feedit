@@ -661,13 +661,19 @@ a.cpFitLookCard:hover{border-color:var(--pink-0);box-shadow:0 4px 14px rgba(10,1
 .cpFitLookText b{font-size:12px;font-weight:600;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .cpFitLookText em{font-style:normal;font-size:10.5px;font-weight:700;color:#c2401f;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
-/* ③ 결과 사진 위 태그 — 흰 점 + 코럴 물결. 누른 점은 코럴로 찬다. */
-/* 생성 정보 알약(.cpFitMade)보다 위 — 신발 태그가 사진 맨 아래에서 알약에 깔리지 않게 */
+/* ③ 결과 사진 위 태그 (2026-10-02 오후 — 마우스오버 방식)
+   점이 늘 떠 있으니 사진이 가려졌다. 점은 사진에 마우스를 올렸을 때만 나타나고, 상품 카드는
+   점에 올리거나 눌러 고정했을 때(.on)만 뜬다. 카드는 사라질 때 잠깐(.22s) 머문다 — 점에서
+   카드로 마우스를 옮기는 사이에 닫히지 않게. */
 .cpFitTags{position:absolute;inset:0;z-index:3;pointer-events:none}
+.cpFitTagMark{position:absolute;width:0;height:0}
+.cpFitTagMark:hover,.cpFitTagMark.on,.cpFitTagMark:focus-within{z-index:2}
 .cpFitTag{
-  position:absolute;width:30px;height:30px;margin:-15px 0 0 -15px;padding:0;border-radius:50%;
+  position:absolute;left:-15px;top:-15px;width:30px;height:30px;padding:0;border-radius:50%;
   background:transparent;display:grid;place-items:center;pointer-events:auto;
+  opacity:0;transform:scale(.6);transition:opacity .2s var(--ease),transform .2s var(--ease);
 }
+.cpFitShot:hover .cpFitTag,.cpFitShot:focus-within .cpFitTag,.cpFitTagMark.on .cpFitTag{opacity:1;transform:none}
 .cpFitTag i{
   position:relative;width:14px;height:14px;border-radius:50%;background:#fff;
   box-shadow:0 0 0 2px rgba(28,26,23,.55),0 2px 8px rgba(0,0,0,.28);transition:background .18s,transform .18s;
@@ -676,14 +682,26 @@ a.cpFitLookCard:hover{border-color:var(--pink-0);box-shadow:0 4px 14px rgba(10,1
   content:"";position:absolute;inset:-6px;border-radius:50%;border:2px solid rgba(255,107,74,.85);
   animation:cpTagPulse 2.2s ease-out infinite;
 }
-.cpFitTag:hover i,.cpFitTag.on i{background:var(--coral);transform:scale(1.15)}
-.cpFitTag.on i::after{animation:none;opacity:0}
+.cpFitTag:hover i,.cpFitTagMark.on .cpFitTag i{background:var(--coral);transform:scale(1.15)}
+.cpFitTagMark.on .cpFitTag i::after{animation:none;opacity:0}
 @keyframes cpTagPulse{0%{transform:scale(.6);opacity:.9}80%,100%{transform:scale(1.5);opacity:0}}
 @media (prefers-reduced-motion:reduce){.cpFitTag i::after{animation:none;opacity:.6}}
+/* 터치 기기 — 마우스오버가 없다. 점을 작게 늘 두고, 눌러서 카드를 연다. */
+@media (hover:none){
+  .cpFitTag{opacity:.92;transform:scale(.78)}
+  .cpFitTag i::after{animation:none;opacity:0}
+}
 .cpFitTagCard{
-  position:absolute;z-index:4;width:218px;box-sizing:border-box;display:flex;gap:10px;padding:8px 11px 8px 8px;
-  border-radius:12px;background:#fff;color:var(--pink-0);box-shadow:0 10px 30px rgba(0,0,0,.28);
-  pointer-events:auto;animation:cpFitFade .2s var(--ease);
+  position:absolute;left:16px;top:0;z-index:1;width:218px;box-sizing:border-box;display:flex;gap:10px;
+  padding:8px 11px 8px 8px;border-radius:12px;background:#fff;color:var(--pink-0);
+  box-shadow:0 10px 30px rgba(0,0,0,.28);pointer-events:auto;transform:translateY(-50%);
+  opacity:0;visibility:hidden;transition:opacity .16s var(--ease),visibility 0s linear .22s;
+}
+.cpFitTagCard.l{left:auto;right:16px}
+.cpFitTagCard.top{transform:translateY(-14px)}
+.cpFitTagCard.bottom{transform:translateY(calc(-100% + 14px))}
+.cpFitTagMark:hover .cpFitTagCard,.cpFitTagMark:focus-within .cpFitTagCard,.cpFitTagMark.on .cpFitTagCard{
+  opacity:1;visibility:visible;transition-delay:0s;
 }
 .cpFitTagImg{flex:0 0 auto;width:52px;height:52px;border-radius:9px;background:#f5f3ef;display:grid;place-items:center;overflow:hidden}
 .cpFitTagImg img{max-width:100%;max-height:100%;object-fit:contain}
@@ -693,18 +711,77 @@ a.cpFitLookCard:hover{border-color:var(--pink-0);box-shadow:0 4px 14px rgba(10,1
 .cpFitTagText a{margin-top:2px;font-size:11px;font-weight:700;color:#c2401f;text-decoration:none}
 .cpFitTagText a:hover{text-decoration:underline;text-underline-offset:2px}
 /* 줄의 카드에 올리면 사진 위 같은 상품의 점이 커진다 — 둘이 같은 상품이라는 것을 눈으로 잇는다 */
+.cpFit:has([data-vf-look="0"]:hover) [data-vf-tag="0"]{opacity:1;transform:none}
 .cpFit:has([data-vf-look="0"]:hover) [data-vf-tag="0"] i{background:var(--coral);transform:scale(1.3)}
+.cpFit:has([data-vf-look="1"]:hover) [data-vf-tag="1"]{opacity:1;transform:none}
 .cpFit:has([data-vf-look="1"]:hover) [data-vf-tag="1"] i{background:var(--coral);transform:scale(1.3)}
+.cpFit:has([data-vf-look="2"]:hover) [data-vf-tag="2"]{opacity:1;transform:none}
 .cpFit:has([data-vf-look="2"]:hover) [data-vf-tag="2"] i{background:var(--coral);transform:scale(1.3)}
+.cpFit:has([data-vf-look="3"]:hover) [data-vf-tag="3"]{opacity:1;transform:none}
 .cpFit:has([data-vf-look="3"]:hover) [data-vf-tag="3"] i{background:var(--coral);transform:scale(1.3)}
+.cpFit:has([data-vf-look="4"]:hover) [data-vf-tag="4"]{opacity:1;transform:none}
 .cpFit:has([data-vf-look="4"]:hover) [data-vf-tag="4"] i{background:var(--coral);transform:scale(1.3)}
+.cpFit:has([data-vf-look="5"]:hover) [data-vf-tag="5"]{opacity:1;transform:none}
 .cpFit:has([data-vf-look="5"]:hover) [data-vf-tag="5"] i{background:var(--coral);transform:scale(1.3)}
+.cpFit:has([data-vf-look="6"]:hover) [data-vf-tag="6"]{opacity:1;transform:none}
 .cpFit:has([data-vf-look="6"]:hover) [data-vf-tag="6"] i{background:var(--coral);transform:scale(1.3)}
+.cpFit:has([data-vf-look="7"]:hover) [data-vf-tag="7"]{opacity:1;transform:none}
 .cpFit:has([data-vf-look="7"]:hover) [data-vf-tag="7"] i{background:var(--coral);transform:scale(1.3)}
+.cpFit:has([data-vf-look="8"]:hover) [data-vf-tag="8"]{opacity:1;transform:none}
 .cpFit:has([data-vf-look="8"]:hover) [data-vf-tag="8"] i{background:var(--coral);transform:scale(1.3)}
 @container vf (max-width:620px){
   .cpFitLook{padding:11px 12px 12px}
   .cpFitLookHead em{display:none}
   .cpFitLookCard{width:188px}
   .cpFitTagCard{width:190px}
+  .cpFitNext{padding:12px 12px 14px}
+}
+
+/* 근거로 쓴 코디 기사 — 웹에서 찾은 코디라 '참고한 코디' 로만 적는다(FEEDiT 측정값 아님). */
+.cpFitRef{
+  display:flex;align-items:baseline;gap:8px;margin:0 0 10px;padding:8px 11px;border-radius:10px;
+  background:#fff;border:1px dashed #d9d4cc;color:var(--pink-0);text-decoration:none;font-size:11.5px;min-width:0;
+}
+.cpFitRef span{flex:0 0 auto;font-weight:700;color:#c2401f}
+.cpFitRef b{min-width:0;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cpFitRef em{flex:0 0 auto;margin-left:auto;font-style:normal;color:#8f8b84}
+.cpFitRef:hover{border-color:var(--pink-0)}
+.cpFitWhy .cpFitRef,.msg .cpFitRef{max-width:520px}
+
+/* 결과 뒤 '다른 룩도 볼까요?' — 챗봇이 말을 건네는 자리. 위젯 맨 아래. */
+.cpFitNext{
+  display:flex;align-items:center;flex-wrap:wrap;gap:10px 14px;padding:13px 16px 15px;border-top:1px solid #ebe8e2;
+  background:#fff;animation:cpFitFade .3s var(--ease);
+}
+.cpFitNext p{margin:0;flex:1 1 240px;font-size:13px;line-height:1.5;color:#4a4845}
+.cpFitNext p b{color:var(--pink-0);font-weight:700}
+.cpFitNextBtns{display:flex;gap:6px;flex-wrap:wrap}
+.cpFitNextBtn{
+  display:inline-flex;align-items:center;gap:5px;min-height:34px;padding:0 13px;border-radius:999px;
+  background:var(--paper);color:var(--pink-0);font-size:12.5px;font-weight:600;transition:background .18s,color .18s;
+}
+.cpFitNextBtn:hover{background:#e9e6e0}
+.cpFitNextBtn.main{background:var(--pink-0);color:#fff}
+.cpFitNextBtn.main:hover{background:var(--coral);color:var(--pink-0)}
+
+/* ══════════════════════════════════════════════════════
+   2026-10-02 — 위젯을 오른쪽으로 넓히고, 옵션 독을 결과 오른쪽에 세로로 세운다.
+   대화 칸 오른쪽에 여백이 많이 남았다. 독이 사진 아래 한 줄을 차지하던 만큼 사진이
+   위아래로 커진다. 좁으면(≤ 900px) 예전처럼 사진 아래 가로 독이다.
+   ══════════════════════════════════════════════════════ */
+.cpFit{max-width:1120px}
+@container vf (min-width:900px){
+  .cpFitGrid{height:min(640px,max(480px,78vh))}
+  .cpFitOutput{display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-rows:minmax(0,1fr)}
+  .cpFitStage{grid-column:1;grid-row:1;min-height:0;height:100%;box-sizing:border-box;padding:14px 0 14px 14px}
+  .cpFitDockWrap{grid-column:2;grid-row:1;align-items:center;padding:14px 14px 14px 12px}
+  .cpFitDock{flex-direction:column;flex-wrap:nowrap;width:94px;padding:6px;gap:3px;border-radius:18px}
+  .cpDockGroup{flex-direction:column}
+  .cpDockSep{width:auto;height:1px;margin:3px 10px}
+  .cpDockFlip,.cpDockLayer{width:100%;padding:9px 0}
+  .cpDockFit{padding:7px 0}
+  .cpDockEngine{flex-direction:column}
+  .cpDockEng{width:100%;flex-direction:row;gap:6px;padding:8px 0}
+  .cpDockGo{flex:0 0 auto;width:100%;margin:5px 0 0;min-height:68px;flex-direction:column;gap:3px;font-size:13px}
+  .cpFitDl{right:124px}
 }

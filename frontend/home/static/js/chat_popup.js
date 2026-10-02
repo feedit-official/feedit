@@ -785,6 +785,12 @@ export function cpFitFromServer(fit,text){
   f.options=cpFitOptions((fit&&fit.options||[]).reduce((o,k)=>(o[k]=true,o),{}));
   f.sorting=false;
   f.fromServer=true;
+  /* 입을 상황과 근거 코디 기사 — '다른 룩' 이 같은 상황을 잇고 같은 기사를 피한다 */
+  f.occasion=String(fit&&fit.occasion||'').slice(0,40);
+  f.styles=(fit&&Array.isArray(fit.styles)?fit.styles:[]).map(x=>String(x||'').slice(0,20)).filter(Boolean).slice(0,4);
+  const ref=fit&&fit.ref; f.ref=(ref&&cpShopUrl(ref.url))
+    ?{title:String(ref.title||'').slice(0,80),who:String(ref.who||'').slice(0,40),
+      url:cpShopUrl(ref.url),domain:String(ref.domain||'').slice(0,60)}:null;
   return f;
 }
 /* 승인 카드가 넘긴 코디를 한 줄로 적는다 — 새 대화에는 앞 대화의 근거가 없다.
@@ -798,6 +804,7 @@ function cpFitWhyHTML(fit){
   out.push('<p>'+cpEsc(styles?styles+' 코디로 골랐습니다.':'고른 코디입니다.')+
            (why?' '+cpEsc(why):'')+'</p>');
   if(names.length)out.push('<p>'+cpEsc(names.join(' + '))+'</p>');
+  if(fit&&fit.ref)out.push(cpFitRefHTML(fit.ref));
   const dropped=(fit&&fit.dropped||[]).filter(Boolean);
   if(dropped.length)out.push('<p>'+cpEsc(dropped.join(' '))+'</p>');
   return out.join('');
@@ -989,9 +996,51 @@ function cpFitLookHTML(f,items){
         'aria-label="'+cpFitShopLabel(item)+'">'+body+'</a>'
       :'<div class="cpFitLookCard" data-vf-look="'+i+'">'+body+'</div>';
   }).join('');
-  return '<div class="cpFitLook" data-vf-id="look"><div class="cpFitLookHead"><b>코디 상품</b>'+
-    '<span>'+rows.length+'</span>'+(f.tags&&f.tags.length&&f.result?'<em>사진 위 점을 눌러도 볼 수 있어요</em>':'')+'</div>'+
+  return '<div class="cpFitLook" data-vf-id="look">'+cpFitRefHTML(f.ref)+'<div class="cpFitLookHead"><b>코디 상품</b>'+
+    '<span>'+rows.length+'</span>'+(f.tags&&f.tags.length&&f.result?'<em>사진에 올리면 어디에 입혔는지 보여요</em>':'')+'</div>'+
     '<div class="cpFitLookRow">'+cards+'</div></div>';
+}
+/* 근거로 쓴 코디 기사 (2026-10-02) — 서버 find_looks 가 출처를 확인한 것만 온다(tools._look_for).
+   웹에서 찾은 코디라 FEEDiT 측정값이 아니다 — '참고한 코디' 로만 적는다. */
+function cpFitRefHTML(ref){
+  const url=cpShopUrl(ref&&ref.url); if(!url)return '';
+  const who=String(ref.who||ref.domain||'').trim();
+  return '<a class="cpFitRef" href="'+cpEsc(url)+'" target="_blank" rel="noopener noreferrer">'+
+    '<span>참고한 코디</span><b>'+cpEsc(ref.title||'코디 기사')+'</b>'+(who?'<em>'+cpEsc(who)+' ↗</em>':'<em>↗</em>')+'</a>';
+}
+/* 결과가 나온 뒤 '다른 룩도 볼까요?' (2026-10-02). 같은 말이 대화 기록(turn.next)에도 남아서
+   사용자가 "응" 이라고만 쳐도 챗봇이 무엇에 대한 대답인지 안다(orchestrator._ctx_block). */
+function cpFitNextQuestion(f){
+  const occ=String(f&&f.occasion||'').trim();
+  return (occ?occ+' ':'')+'다른 룩도 추천해 드릴까요?';
+}
+function cpFitNextHTML(f){
+  if(!f||!f.result||f.loading||!f.fromServer)return '';
+  const occ=String(f.occasion||'').trim();
+  return '<div class="cpFitNext" data-vf-id="next"><p><b>이 룩 어떠세요?</b> '+cpEsc(cpFitNextQuestion(f))+'</p>'+
+    '<div class="cpFitNextBtns">'+
+      '<button type="button" class="cpFitNextBtn main" data-vf-more="look">다른 룩 추천 '+VF_SVG(VF_IC.arrow,13)+'</button>'+
+      '<button type="button" class="cpFitNextBtn" data-vf-more="mood">다른 분위기로</button>'+
+    '</div></div>';
+}
+/* 이 대화에서 보여 준 코디 기억 — 서버가 같은 상품을 다시 내밀지 않게(fit.clean_memory).
+   승인 전 제안(proposal) · 승인한 코디(fitProposal) · 입혀보기 칸(fit) 모두 본다. */
+export function cpFitMemory(c){
+  const seen=[], refs=[]; let occasion='';
+  for(const m of (c&&c.messages)||[]){
+    for(const box of [m.proposal,m.fitProposal,m.fit]){
+      if(!box||typeof box!=='object')continue;
+      for(const it of (Array.isArray(box.items)?box.items:[])){
+        const k=String((it&&(it.url||it.product_source_id||it.image||it.imageUrl))||'').trim();
+        if(k&&!seen.includes(k))seen.push(k);
+      }
+      const ref=cpShopUrl(box.ref&&box.ref.url);
+      if(ref&&!refs.includes(ref))refs.push(ref);
+      if(box.occasion)occasion=String(box.occasion).slice(0,40);
+    }
+  }
+  if(!seen.length&&!refs.length&&!occasion)return undefined;
+  return {seen:seen.slice(-60),refs:refs.slice(-8),occasion};
 }
 /* ③ 결과 사진 위 쇼핑 태그 — 서버(vton.locate)가 준 점. 점을 누르면 그 상품 카드가 뜬다. */
 function cpFitTagsHTML(f,items){
@@ -1005,29 +1054,27 @@ function cpFitTagsHTML(f,items){
     placed.push({x,y});
     return {...t,x,y};
   });
-  const open=spots.find(t=>t.item===f.tagOpen);
-  const dots=spots.map(t=>{
+  /* ★ 2026-10-02 (오후) — 점이 늘 떠 있으니 사진이 가려진다는 말을 들었다.
+     점은 사진에 마우스를 올렸을 때만 나타나고(CSS .cpFitShot:hover), 카드는 점에 올리거나
+     눌러 고정했을 때(.on)만 뜬다. 터치 기기는 마우스오버가 없으니 점을 작게 늘 두고 눌러서 연다. */
+  const marks=spots.map(t=>{
     const item=items[t.item], on=t.item===f.tagOpen;
-    return '<button type="button" class="cpFitTag'+(on?' on':'')+'" data-vf-tag="'+t.item+'" '+
-      'style="left:'+(t.x*100).toFixed(1)+'%;top:'+(t.y*100).toFixed(1)+'%" aria-expanded="'+on+'" '+
-      'aria-label="'+cpEsc(vfKindName(item.auto?VF_AUTO:item.category))+' · '+cpEsc(item.name||'상품')+' 보기"><i></i></button>';
-  }).join('');
-  let card='';
-  if(open){
-    const item=items[open.item], source=cpFitSourceName(item), src=item.image||item.imageUrl;
+    const source=cpFitSourceName(item), src=item.image||item.imageUrl;
     /* 점 오른쪽에 펴되, 사진 오른쪽 가장자리면 왼쪽으로. 위아래 끝이면 안쪽으로 붙인다. */
-    const tx=open.x>.55?'calc(-100% - 16px)':'16px';
-    const ty=open.y<.18?'-14px':open.y>.82?'calc(-100% + 14px)':'-50%';
-    card='<div class="cpFitTagCard" role="dialog" aria-label="'+cpEsc(item.name||'상품')+'" '+
-      'style="left:'+(open.x*100).toFixed(1)+'%;top:'+(open.y*100).toFixed(1)+'%;transform:translate('+tx+','+ty+')">'+
-      '<span class="cpFitTagImg"><img src="'+cpEsc(src)+'" alt=""></span>'+
+    const side=t.x>.55?' l':'', edge=t.y<.18?' top':t.y>.82?' bottom':'';
+    const card='<div class="cpFitTagCard'+side+edge+'" role="tooltip">'+
+      '<span class="cpFitTagImg"><img src="'+cpEsc(src)+'" alt="" loading="lazy"></span>'+
       '<span class="cpFitTagText"><small>'+cpEsc([item.brand,source].filter(Boolean).join(' · '))+'</small>'+
         '<b>'+cpEsc(item.name||vfKindName(item.category))+'</b>'+
         (item.url?'<a href="'+cpEsc(item.url)+'" target="_blank" rel="noopener noreferrer" aria-label="'+cpFitShopLabel(item)+'">'+
           cpEsc(source||'판매처')+'에서 보기 ↗</a>':'')+
       '</span></div>';
-  }
-  return '<div class="cpFitTags">'+dots+card+'</div>';
+    return '<span class="cpFitTagMark'+(on?' on':'')+'" style="left:'+(t.x*100).toFixed(1)+'%;top:'+(t.y*100).toFixed(1)+'%">'+
+      '<button type="button" class="cpFitTag" data-vf-tag="'+t.item+'" aria-expanded="'+on+'" '+
+      'aria-label="'+cpEsc(vfKindName(item.auto?VF_AUTO:item.category))+' · '+cpEsc(item.name||'상품')+' 보기"><i></i></button>'+
+      card+'</span>';
+  }).join('');
+  return '<div class="cpFitTags">'+marks+'</div>';
 }
 /* 왼쪽 설정 칸 — 펼친 모습 */
 function cpFitSetupHTML(f,items){
@@ -1165,7 +1212,7 @@ function cpFitHTML(m){
         save+
         '<div class="cpFitStage">'+stage+state+'</div>'+
         cpFitDockHTML(f)+
-      '</div></div>'+cpFitLookHTML(f,items)+'</section>';
+      '</div></div>'+cpFitLookHTML(f,items)+cpFitNextHTML(f)+'</section>';
 }
 /* 사용자가 친 문장을 상품명 자리에 쓸 수 있는지. 주소가 섞여 있으면 쓰지 않는다 —
    "https://… 이거 사도 될까?" 에서 주소를 떼어 내도 남는 말은 상품명이 아니다. */
@@ -1437,6 +1484,8 @@ async function cpAskLive(c,aiMsg,text,images){
                     taste_context:cpTasteContext(c),
                     /* 승인된 코디. 이것이 있는 턴에만 서버가 build_fit 을 부를 수 있다. */
                     fit_proposal:aiMsg.fitProposal||undefined,
+                    /* 이 대화에서 보여 준 코디 — '다른 룩' 에 같은 상품이 다시 나오지 않게 */
+                    fit_memory:cpFitMemory(c),
                     images:(images&&images.length)?images:undefined},{
     /* ★ 진행 상황 (server.py 의 push("status", {stage:"tool", message})).
        예전에는 이 핸들러가 아예 없어서 서버가 보낸 이벤트가 **조용히
@@ -1474,6 +1523,13 @@ async function cpAskLive(c,aiMsg,text,images){
          누르게 하지 않는다. 원본은 이 하나다(server.actions_for 주석). */
       if(rep.fit&&(rep.fit.items||[]).length&&!aiMsg.fit){
         aiMsg.fit=cpFitFromServer(rep.fit,text);
+      }
+      /* 승인 전 제안도 기억한다 — 바로 이어 "다른 룩" 을 물으면 이 상품들을 뺀다 */
+      if(rep.fit_proposal&&(rep.fit_proposal.items||[]).length){
+        const p=rep.fit_proposal;
+        aiMsg.proposal={items:(p.items||[]).slice(0,9).map(it=>({url:String(it.url||''),
+          product_source_id:String(it.product_source_id||''),image:String(it.image||'')})),
+          occasion:String(p.occasion||'').slice(0,40),ref:p.ref&&cpShopUrl(p.ref.url)?{url:cpShopUrl(p.ref.url)}:null};
       }
       aiMsg.cardHtml=reportHTML(rep);
       const el=sayEl(); const host=el&&el.parentElement;
@@ -1844,6 +1900,19 @@ document.addEventListener('click', e=>{
     cpFitRender(m);
     return;
   }
+  /* 결과 뒤 '다른 룩 추천' — 같은 상황으로 새 코디를 묻는다. 서버는 이 대화에서 보여 준
+     상품과 근거 기사를 빼고 고른다(fit_memory). */
+  const more=e.target.closest('#cpThread [data-vf-more]');
+  if(more){
+    const m=cpAIMessageFor(more); if(!m||!m.fit)return;
+    const occ=String(m.fit.occasion||'').trim();
+    const styles=(m.fit.styles||[]).join('·');
+    const text=more.dataset.vfMore==='mood'
+      ?(occ?occ+' ':'')+'코디를 다른 분위기로 추천해줘'+(styles?' ('+styles+' 말고)':'')
+      :(occ?occ+' ':'')+'다른 룩도 추천해줘';
+    cpAsk(text,cpKeyFor(text));
+    return;
+  }
   const tagClose=e.target.closest('#cpThread [data-vf-tagclose]');
   if(tagClose){
     const m=cpAIMessageFor(tagClose);
@@ -2058,6 +2127,11 @@ async function cpGenerateFitMessage(m){
     const used=VF_ENGINES.find(e=>e.v===data.engine)||VF_ENGINES.find(e=>e.v===VF_DEFAULT_ENGINE);
     m.fit.made={engine:used.v,label:used.label+' ('+used.name+')',
                 sec:Math.max(1,Math.round((Date.now()-t0)/1000))};
+    /* 결과 아래 '다른 룩도 볼까요?' 를 대화 기록에도 남긴다 — "응" 만 쳐도 이어진다 */
+    if(m.fit.fromServer){
+      m.turn=m.turn||{q:'이 코디로 입혀보기',intent:'agent',terms:[]};
+      m.turn.next=cpFitNextQuestion(m.fit);
+    }
   }catch(err){ m.fit.status=(err&&err.message)||'착용 이미지를 만들지 못했습니다.'; m.fit.stateKind='error'; }
   m.fit.loading=false; cpFitRender(m);
 }

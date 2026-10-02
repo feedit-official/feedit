@@ -161,6 +161,10 @@ LINK_EXTRA = float(os.getenv("FEEDIT_CHAT_LINK_EXTRA") or 15.0)
 #     (fit.propose) 한 바퀴가 4~5초이므로, 한 바퀴 값만 더한다.
 FIT_EXTRA = float(os.getenv("FEEDIT_CHAT_FIT_EXTRA") or 10.0)
 FIT_TOOLS = ("propose_fit", "build_fit")
+# ── 요즘 코디 찾기 예산 (2026-10-02) ─────────────────────────
+#   find_looks 는 웹 검색이라 한 번에 10~20초가 든다(캐시면 즉시). 코디와 같은 방식으로,
+#   **불린 사실**이 확인됐을 때 한 번만 늘린다. 안 늘리면 룩을 찾아 놓고 코디를 못 짠다.
+LOOK_EXTRA = float(os.getenv("FEEDIT_CHAT_LOOK_EXTRA") or 20.0)
 _URL = re.compile(r"https?://|\bwww\.[^\s]+", re.I)
 CALL_TIMEOUT = 30       # 한 번의 모델 호출 상한 (2026-09-18: 20 → 30, Terra·웹검색 여유)
 MIN_CALL = 2.5          # 이보다 적게 남으면 부르지 않는다 — 못 끝낼 호출은 기다림만 늘린다
@@ -396,6 +400,16 @@ FEEDiT 는 SNS·커머스를 수집해 용어별 트렌드 지표를 계산하�
     서게 된다(2026-09-10 실측). 우리 연관어 자료가 아직 얇아서 생기는 일이다.
   ★ 우리 데이터는 **용어** 단위라 상품 목록도 사진도 없다. "사진을 보여 드릴게요"
     라고 말하지 마라. 용어를 짚어 주고 `[다음]` 으로 무엇을 더 볼지 물어라.
+- **상황으로 코디를 물으면(데이트룩 · 하객룩 · 출근룩 · "○○ 갈 때 뭐 입지") → find_looks 먼저.**
+  요즘 연예인·인플루언서·매거진에서 실제로 입은 조합을 찾고, 그중 하나를 골라 그 룩의
+  items 를 slots·kinds 로, source.url 을 ref_url 로, 상황을 occasion 으로 propose_fit 에
+  넘긴다. 답에는 "요즘 ○○(출처)에서 이런 조합이 보여서 이렇게 짰다" 를 한 줄로 쓴다 —
+  이건 FEEDiT 측정값이 아니라 웹에서 찾은 코디라는 점이 드러나게. looks 가 비면 그 사실을
+  말하고 스타일 기준으로 propose_fit 을 부른다(출처를 지어내지 않는다).
+- **"다른 룩" · "다른 거" · 직전에 "다른 룩도 볼까요?" 에 "응" 이면 → 새 코디를 짠다.**
+  [직전 답변이 물은 것]과 [이 대화에서 쓴 코디]를 보고, 앞서 근거로 쓴 룩(used_before)이 아닌
+  다른 룩이나 다른 스타일로 find_looks → propose_fit 을 다시 부른다. 이미 보여 준 상품은
+  서버가 빼 준다. 같은 상황(occasion)은 그대로 이어 간다.
 - **"입혀봐 줘" · "코디 보여 줘" 면 → propose_fit.** 승인 카드가 뜨고, 사용자가 누르면
   살!말? 에서 입혀본다. styles 에는 **스타일**만 적는다 — 하객·출근 같은 상황은 어울리는
   스타일로 바꿔 적고, 블라우스·슬랙스 같은 아이템은 kinds 에 적는다.
@@ -521,6 +535,14 @@ def _ctx_block(question: str, ctx: dict, history: list[dict] | None) -> str:
         lines.append(f"[승인된 코디] {styles + ' — ' if styles else ''}{worn}  ← 사용자가 "
                      "'이 코디로 입혀보기' 를 눌러 승인했다. 되묻지 말고 build_fit 을 불러 "
                      "착장 칸을 채워라. 이 턴은 구매 판단이 아니다.")
+    # ★ 이 대화에서 이미 보여 준 코디 (2026-10-02) — '다른 룩' 이 같은 룩이 되지 않게.
+    if ctx.get("fit_occasion"):
+        lines.append(f"[이 대화의 코디 상황] {ctx['fit_occasion']}  ← '다른 룩' 이면 이 상황을 이어 간다")
+    if ctx.get("fit_seen"):
+        lines.append(f"[이 대화에서 이미 보여 준 상품] {len(ctx['fit_seen'])}점 — propose_fit 이 빼고 고른다")
+    if ctx.get("fit_refs"):
+        lines.append("[이 대화에서 근거로 쓴 코디 기사] " + " · ".join(ctx["fit_refs"][:4]) +
+                     "  ← '다른 룩' 이면 이 기사 말고 다른 룩을 골라라")
     # ★ 지역 — 없으면 한국을 기본으로 잡게 한다. 모델은 놔두면 미국을 가정한다.
     if ctx.get("region"):
         lines.append(f"[사용자 지역] {ctx['region']}")
@@ -743,6 +765,7 @@ def run(question: str, *, store, gate, ctx: dict | None = None,
 
     # 코디 도구가 불려 마감시각을 늘렸는가. 한 답변에 한 번만 늘린다.
     fit_extended = False
+    look_extended = False
 
     max_rounds = rounds_for(question)
     for rnd in range(max_rounds):
@@ -915,6 +938,11 @@ def run(question: str, *, store, gate, ctx: dict | None = None,
                 fit_extended = True
                 deadline += FIT_EXTRA
                 loop_end += FIT_EXTRA
+                out.deadline = deadline
+            if c["name"] == "find_looks" and not look_extended:
+                look_extended = True
+                deadline += LOOK_EXTRA
+                loop_end += LOOK_EXTRA
                 out.deadline = deadline
 
         # 도구 사이에서 들어온 중단은 아래의 보류 답 복구보다 우선한다.

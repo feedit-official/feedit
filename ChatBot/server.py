@@ -695,7 +695,10 @@ class Handler(BaseHTTPRequestHandler):
                      ("screen_term", "salmal_card_id", "user_id", "region", "taste_context", "gender",
                       # 승인된 코디 — 이것이 있는 턴에만 build_fit 이 도구 목록에 있다
                       # (tools.specs_for). 승인을 거치지 않으면 확정할 코디가 없다.
-                      "fit_proposal")
+                      "fit_proposal",
+                      # 이 대화에서 보여 준 코디 기억 — '다른 룩' 이 같은 상품을 다시 내밀지
+                      # 않게(fit.clean_memory 가 걸러 engine 이 ctx 에 넣는다).
+                      "fit_memory")
                      if req.get(k)}
             if isinstance(extra.get("taste_context"), dict):
                 extra["taste_context"] = clean_taste_context(extra["taste_context"])

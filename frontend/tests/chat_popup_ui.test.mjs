@@ -643,19 +643,22 @@ await t('③ 결과 사진 위 태그 — 판매처 상품만 점이 찍히고, 
   assert.match(shot.getAttribute('style'),/aspect-ratio:2480 \/ 3312/);
   const dots=[...thread().querySelectorAll('.cpFitTag')];
   assert.equal(dots.length,2);
-  assert.notEqual(dots[0].style.top,dots[1].style.top,'겹친 점은 비켜 선다');
-  assert.equal(thread().querySelector('.cpFitTagCard'),null);
+  const marks=[...thread().querySelectorAll('.cpFitTagMark')];
+  assert.notEqual(marks[0].style.top,marks[1].style.top,'겹친 점은 비켜 선다');
+  /* 카드는 점마다 미리 있되(마우스오버로 뜬다) 고정된 것(.on)은 아직 없다 */
+  assert.equal(thread().querySelectorAll('.cpFitTagCard').length,2);
+  assert.equal(thread().querySelector('.cpFitTagMark.on'),null);
   click(dots[0]); await wait(10);
-  const card=thread().querySelector('.cpFitTagCard');
+  const card=thread().querySelector('.cpFitTagMark.on .cpFitTagCard');
   assert.match(card.textContent,/릴렉스드 블레이저/);
   assert.match(card.textContent,/무신사 스탠다드 · 무신사/);
   assert.equal(card.querySelector('a').href,'https://www.musinsa.com/products/1');
   assert.equal(card.querySelector('a').rel,'noopener noreferrer');
   assert.equal(thread().querySelector('[data-vf-tag="0"]').getAttribute('aria-expanded'),'true');
-  /* 사진을 누르면 닫힌다 */
+  /* 사진을 누르면 고정이 풀린다 */
   click(thread().querySelector('.cpFitResult')); await wait(10);
-  assert.equal(thread().querySelector('.cpFitTagCard'),null);
-  assert.match(thread().querySelector('.cpFitLookHead').textContent,/사진 위 점을 눌러도/);
+  assert.equal(thread().querySelector('.cpFitTagMark.on'),null);
+  assert.match(thread().querySelector('.cpFitLookHead').textContent,/사진에 올리면/);
 });
 
 await t('③ 생성 요청은 이름과 태그 요청을 싣고, 서버 태그(보낸 순서)를 칸 번호로 옮긴다', async () => {
@@ -680,6 +683,42 @@ await t('③ 생성 요청은 이름과 태그 요청을 싣고, 서버 태그(�
   click(thread().querySelector('[data-vf-generate]')); await wait(60);
   assert.equal(fitBody.tags,false);
   assert.equal(thread().querySelector('.cpFitTag'),null);
+});
+
+await t('결과 뒤 다른 룩 제안 — 상황을 잇고, 보여 준 상품과 근거 기사를 서버에 알린다', async () => {
+  const fit=CP.cpFitFromServer({items:[
+    {slot:'상의',image:'https://image.msscdn.net/a.jpg',name:'옥스퍼드 셔츠',source_label:'무신사',
+     url:'https://www.musinsa.com/products/11',product_source_id:'11'},
+  ],styles:['미니멀'],occasion:'친구 결혼식 하객',
+   ref:{title:'블레이저 하객룩',who:'보그',url:'https://www.vogue.co.kr/g'}},'');
+  assert.equal(fit.occasion,'친구 결혼식 하객');
+  assert.equal(fit.ref.url,'https://www.vogue.co.kr/g');
+  const c=CP.cpNewConvo();
+  c.messages.push({role:'ai',html:'',fit});
+  CP.cpRenderThread();
+  /* 근거 기사는 '참고한 코디' 로 링크된다 */
+  const ref=thread().querySelector('.cpFitRef');
+  assert.equal(ref.href,'https://www.vogue.co.kr/g');
+  assert.match(ref.textContent,/참고한 코디/);
+  assert.equal(thread().querySelector('.cpFitNext'),null,'결과 전에는 묻지 않는다');
+  click(thread().querySelector('[data-vf-generate]')); await wait(60);
+  const next=thread().querySelector('.cpFitNext');
+  assert.match(next.textContent,/친구 결혼식 하객 다른 룩도 추천해 드릴까요\?/);
+  const msg=c.messages.find(m=>m.fit===fit);
+  assert.match(msg.turn.next,/다른 룩도 추천해 드릴까요/,'"응" 만 쳐도 이어지게 기록에 남는다');
+  const mem=CP.cpFitMemory(c);
+  assert.deepEqual(mem.refs,['https://www.vogue.co.kr/g']);
+  assert.equal(mem.occasion,'친구 결혼식 하객');
+  assert.ok(mem.seen.includes('https://www.musinsa.com/products/11'));
+  /* '다른 룩 추천' 은 같은 상황으로 이 대화에 새 질문을 보낸다 */
+  click(thread().querySelector('[data-vf-more="look"]')); await wait(30);
+  const asked=c.messages.filter(m=>m.role==='me').map(m=>m.text);
+  assert.ok(asked.includes('친구 결혼식 하객 다른 룩도 추천해줘'), asked.join(' / '));
+  /* 사진 직접 올린 위젯(서버 코디 아님)에는 묻지 않는다 */
+  const own=CP.cpNewConvo();
+  own.messages.push({role:'ai',html:'',fit:{...CP.cpFitFromServer({items:[]},''),fromServer:false,result:'data:image/png;base64,eA=='}});
+  CP.cpRenderThread();
+  assert.equal(thread().querySelector('.cpFitNext'),null);
 });
 
 console.log(`\n${pass}개 통과 · ${fail}개 실패`);

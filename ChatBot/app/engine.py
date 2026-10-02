@@ -99,6 +99,9 @@ class ChatEngine:
             proposal = fit.clean_proposal(extra.get("fit_proposal")) if extra else None
             if proposal:
                 ctx["fit_proposal"] = proposal
+            # ★ 이 대화에서 이미 보여 준 코디 (2026-10-02) — 상품(seen) · 근거 기사(refs) ·
+            #   상황(occasion). '다른 룩' 이 같은 룩이 되지 않게 도구와 모델이 본다.
+            ctx.update(fit.clean_memory(extra.get("fit_memory")) if extra else {})
             out = agent_path.ask(q, store=self.store, gate=self.gate, mode=mode,
                                  history=past_a, ctx=ctx, salmal=self.salmal,
                                  taste=self.taste, on_progress=on_progress,
