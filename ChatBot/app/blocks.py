@@ -83,18 +83,18 @@ def b_direction(t: dict) -> dict | None:
                         f"오르는지 내리는지 말할 수 없습니다."}
     return {"type": "kpis", "slot": "full", "title": t.get("canonical") or "",
             "meta": t.get("facet_name") or "", "items": [
-        {"k": "방향", "v": d["label"], "unit": "", "note": "최근 7일 대 4주", "up": d["tone"] == "up"},
+        {"k": "온도 방향", "v": d["label"], "unit": "", "note": "최근 7일 대 4주", "up": d["tone"] == "up"},
         # ★ 문턱을 여기서 따로 정하지 않는다 (2026-09-09).
         #   note 가 늘 "1보다 크면 오르는 중" 이고 up 이 ratio>=1 이라,
         #   coverage 가 **평평함**(0.9~1.1)이라고 판정한 1.03 이 바로 옆 칸에서
         #   상승색으로 "오르는 중" 이라고 강조됐다. 같은 카드 줄 안에서
         #   '평평함' 과 '오르는 중' 이 나란히 있고, 본문은 "식은 상태" 라고 썼다.
         #   판정 근거는 coverage.direction 의 tone 하나뿐이어야 한다.
-        {"k": "7일 / 4주", "v": f"{d['ratio']}", "unit": "배",
+        {"k": "온도 7일/4주 비율", "v": f"{d['ratio']}", "unit": "배",
          "note": _RATIO_NOTE.get(d.get("tone"), ""),
          "up": d.get("tone") == "up"},
-        {"k": "7일 평균", "v": f"{d['ma7']}", "unit": "", "note": "", "up": True},
-        {"k": "4주 평균", "v": f"{d['ma28']}", "unit": "", "note": "", "up": True},
+        {"k": "온도 7일 평균", "v": f"{d['ma7']}", "unit": "", "note": "", "up": True},
+        {"k": "온도 4주 평균", "v": f"{d['ma28']}", "unit": "", "note": "", "up": True},
     ]}
 
 
@@ -103,7 +103,7 @@ def b_sources(t: dict, as_of: str) -> dict | None:
     if not src:
         return None
     mx = max((s.get("raw_count") or 0) for s in src) or 1
-    return {"type": "bars", "slot": "right", "title": "플랫폼별 언급량", "meta": as_of,
+    return {"type": "bars", "slot": "right", "title": _of(t, "플랫폼별 언급량"), "meta": as_of,
             "items": [{"k": s["name"], "w": round(100 * (s.get("raw_count") or 0) / mx),
                        "v": f"{int(s.get('raw_count') or 0):,}"} for s in src]}
 
@@ -114,17 +114,23 @@ def b_platform_temp(t: dict, as_of: str) -> dict | None:
     src = [s for s in (t.get("sources") or []) if s.get("temp") is not None]
     if not src:
         return None
-    return {"type": "table", "slot": "right", "title": "플랫폼별 온도", "meta": "0–100",
+    return {"type": "table", "slot": "right", "title": _of(t, "플랫폼별 온도"), "meta": "0–100",
             "head": ["플랫폼", "", "온도"],
             "rows": [{"k": s["name"], "w": int(s["temp"]), "v": f"{int(s['temp'])}°",
                       "up": int(s["temp"]) >= 65} for s in src]}
+
+
+def _of(t: dict, label: str) -> str:
+    """어느 용어의 지표인지 제목에 밝힌다. 둘 이상 나란히 놓여도 구분되게."""
+    name = t.get("canonical")
+    return f"{name} {label}" if name else label
 
 
 def b_assoc(t: dict) -> dict | None:
     a = t.get("associations") or []
     if not a:
         return None
-    return {"type": "rank", "slot": "left", "title": "연관어",
+    return {"type": "rank", "slot": "left", "title": _of(t, "연관어"),
             "meta": f"{len(a)}개",
             "rows": [{"k": x["canonical"],
                       "small": x.get("facet_name", "") + (" · NEW" if x.get("is_new") else ""),
@@ -142,7 +148,7 @@ def b_assoc_axis(t: dict) -> dict | None:
     for x in a:
         agg[x.get("facet_name") or "기타"] = agg.get(x.get("facet_name") or "기타", 0) + 1
     mx = max(agg.values()) or 1
-    return {"type": "bars", "slot": "right", "title": "축별 비중", "meta": "연관어 수",
+    return {"type": "bars", "slot": "right", "title": _of(t, "연관어 축별 비중"), "meta": "연관어 수",
             "items": [{"k": k, "w": round(100 * v / mx), "v": str(v)}
                       for k, v in sorted(agg.items(), key=lambda x: -x[1])]}
 
@@ -154,7 +160,8 @@ def b_sentiment(t: dict) -> dict | None:
         return None
     r = s.get("반응") or {}
     dial = s.get("dial")
-    return {"type": "kpis", "slot": "full", "items": [
+    return {"type": "kpis", "slot": "full", "title": _of(t, "긍부정"),
+            "meta": f"{t.get('facet_name') or ''} · 최근 {s.get('window_days', 28)}일".strip(" ·"), "items": [
         {"k": s.get("dial_label") or "긍정 우위 %", "v": "–" if dial is None else str(dial),
          "unit": "" if dial is None else ("점" if s.get("purchase_intent_index") is not None else "%"),
          "note": f"{s.get('verdict')} · 반응 {int(r.get('합계') or 0):,}건",
@@ -186,7 +193,7 @@ def b_sentiment_signal(t: dict) -> dict | None:
              "v": f"{int(sig.get(name) or 0):,}건", "up": pol > 0}
             for name, _f, pol in SIGNALS if name in sig]
     r = s.get("반응") or {}
-    return {"type": "table", "slot": "right", "title": "신호 유형별 건수",
+    return {"type": "table", "slot": "right", "title": _of(t, "신호 유형별 건수"),
             "meta": f"최근 {s.get('window_days', 28)}일 · 반응 {int(r.get('합계') or 0):,}건",
             "head": ["신호 유형", "", "건수"], "rows": rows}
 
