@@ -1,0 +1,7 @@
+﻿source_code,run_count,success_runs,failed_runs,run_success_rate,discovered_count,item_success_count,item_failure_count
+musinsa_used,1400,1265,114,90.36,137673,129595,66
+musinsa,683,665,11,97.36,64429,64396,33
+YOUTUBE,427,189,236,44.26,71615,71563,1
+ABLY,354,318,34,89.83,31658,31658,0
+zigzag,163,135,23,82.82,105971,105971,2
+kream,104,73,26,70.19,7101,7101,4
