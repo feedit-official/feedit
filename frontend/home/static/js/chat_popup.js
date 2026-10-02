@@ -638,26 +638,25 @@ const VF_MAX=VF_CATEGORIES.length;
 /* 생성 엔진 (2026-10-01) — 서버 vton.ENGINES 와 같은 이름.
    기본은 화질 쪽(Sunburst). 빨리 보고 싶으면 Flare 를 고른다. */
 const VF_ENGINES=[
-  {v:'sunburst',label:'고화질',name:'GPT IMAGE 2.5 SUNBURST',title:'GPT Image 2.5 Sunburst — 화질 우선'},
-  {v:'flare',   label:'빠르게',name:'GPT IMAGE 2.5 FLARE',   title:'GPT Image 2.5 Flare — 속도 우선'},
+  {v:'sunburst',label:'고화질',name:'SUNBURST',title:'GPT Image 2.5 Sunburst — 화질 우선'},
+  {v:'flare',   label:'빠르게',name:'FLARE',   title:'GPT Image 2.5 Flare — 속도 우선'},
 ];
 const VF_DEFAULT_ENGINE='sunburst';
 const cpFitEngineOf=(f)=>VF_ENGINES.some(e=>e.v===(f&&f.engine))?f.engine:VF_DEFAULT_ENGINE;
 /* 착장 옵션 — 서버로는 예전처럼 **켠 이름만 true** 로 보낸다(vton.OPTION_LINES).
    화면에서 묶는 방법만 바뀌었다 (2026-10-01):
-     · 아우터 · 상의 — 스위치 하나. 기본 '열어 입기', 누르면 '여며 입기'.
-       예전엔 열기/여미기 스위치가 둘이라 두 개를 다 꺼 둘 수 있었는데(모델에게 맡김),
-       이제는 늘 둘 중 하나가 정해져 있다. 여밈이 없는 옷(티셔츠·니트)은 서버 문장이
-       '그대로 두라' 고 말하고, 그 칸의 옷이 없으면 문장 자체가 빠진다(vton.SLOT_OF).
-     · 핏 — 세 칸 슬라이드. 기본 정핏. 정핏은 문장을 붙이지 않는다(상품 핏 그대로). */
+     · 아우터 · 상의 — 버튼 하나. 기본 Open(열어 입기), 누르면 Close(여며 입기).
+       여밈이 없는 옷(티셔츠·니트)은 서버 문장이 '그대로 두라' 고 말하고,
+       그 칸의 옷이 없으면 문장 자체가 빠진다(vton.SLOT_OF).
+     · 핏 — 세 칸. 기본 정핏. 정핏은 문장을 붙이지 않는다(상품 핏 그대로).
+     · 레이어드 — 켜고 끈다(아우터 둘을 겹쳐 입기). */
 const VF_OPTIONS=['outer_layered','outer_open','outer_closed','top_open','top_closed','fit_over','fit_slim'];
 const VF_OPTION_GROUPS=[
-  {kind:'switch',key:'outer_layered',title:'아우터 레이어드',label:'겹쳐 입기',
-   hint:'아우터가 둘 이상일 때 겹쳐 입힙니다.'},
+  {kind:'switch',key:'outer_layered',title:'레이어드'},
   {kind:'slide',key:'outer',title:'아우터',def:'open',
-   cells:[{v:'open',label:'열어 입기',opt:'outer_open'},{v:'closed',label:'여며 입기',opt:'outer_closed'}]},
+   cells:[{v:'open',label:'Open',opt:'outer_open'},{v:'closed',label:'Close',opt:'outer_closed'}]},
   {kind:'slide',key:'top',title:'상의',def:'open',
-   cells:[{v:'open',label:'열어 입기',opt:'top_open'},{v:'closed',label:'여며 입기',opt:'top_closed'}]},
+   cells:[{v:'open',label:'Open',opt:'top_open'},{v:'closed',label:'Close',opt:'top_closed'}]},
   {kind:'slide',key:'fit',title:'핏',def:'regular',
    cells:[{v:'over',label:'오버핏',opt:'fit_over'},{v:'regular',label:'정핏',opt:''},{v:'slim',label:'슬림핏',opt:'fit_slim'}]},
 ];
@@ -670,25 +669,47 @@ function cpSlideValue(on,g){
 function cpSlideSet(on,g,value){
   g.cells.forEach(c=>{ if(c.opt)on[c.opt]=(c.v===value) });
 }
-/* 작은 on/off 슬라이드 — 챗바의 모드 전환(.salmalBtn)과 같은 몸짓이다. */
-function cpSwitchHTML(key,on,label){
-  return '<button type="button" class="cpVfSw'+(on?' on':'')+'" data-vf-opt="'+cpEsc(key)+'"'+
-    ' role="switch" aria-checked="'+(on?'true':'false')+'" aria-label="'+cpEsc(label)+'">'+
-    '<i class="thumb"></i></button>';
-}
-/* 두 칸·세 칸 슬라이드 (2026-10-01) — 위 스위치와 같은 알약 모양에 칸 이름이 함께 선다.
-   코랄 손잡이가 고른 칸으로 미끄러진다. 두 칸짜리는 고른 칸을 다시 눌러도 반대로
-   넘어간다 — "누르면 여며 입기" 가 되게. */
-function cpSlideHTML(key,title,cells,value){
-  const n=cells.length, idx=Math.max(0,cells.findIndex(c=>c.v===value));
-  return '<div class="cpVfSlide" role="radiogroup" aria-label="'+cpEsc(title)+'"'+
-    ' style="--n:'+n+';--i:'+idx+'">'+
-    '<i class="cpVfSlideThumb" aria-hidden="true"></i>'+
-    cells.map((c,i)=>'<button type="button" class="cpVfCell'+(i===idx?' on':'')+'" role="radio"'+
-      ' aria-checked="'+(i===idx?'true':'false')+'" data-vf-slide="'+cpEsc(key)+'" data-vf-val="'+cpEsc(c.v)+'"'+
-      (c.title?' title="'+cpEsc(c.title)+'"':'')+'>'+cpEsc(c.label)+'</button>').join('')+
-    '</div>';
-}
+/* ── 그림 (2026-10-01, 시안 C) ─────────────────────────────
+   선 하나짜리 24px 그림. 색은 글자색(currentColor)을 따른다. */
+const VF_SVG=(d,size)=>'<svg width="'+(size||20)+'" height="'+(size||20)+'" viewBox="0 0 24 24" fill="none" '+
+  'stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+d+'</svg>';
+/* 칸 종류마다 그림 하나 — 칸 오른쪽 아래 배지와 종류 고르기 판에 같이 쓴다.
+   ★ 이름은 VF_CATEGORIES · VF_AUTO 와 같아야 한다. 없는 이름은 Auto 그림으로 떨어진다. */
+const VF_KIND_ICON={
+  [VF_AUTO]:'<path d="M4 8V5.5A1.5 1.5 0 0 1 5.5 4H8"/><path d="M16 4h2.5A1.5 1.5 0 0 1 20 5.5V8"/><path d="M20 16v2.5a1.5 1.5 0 0 1-1.5 1.5H16"/><path d="M8 20H5.5A1.5 1.5 0 0 1 4 18.5V16"/><path d="M12 8.5l1 2.5 2.5 1-2.5 1-1 2.5-1-2.5-2.5-1 2.5-1z"/>',
+  '아우터':'<path d="M8.5 4 4.5 6.2 3 13l2.4.5L6 20h12l.6-6.5L21 13l-1.5-6.8L15.5 4 12 8.5 8.5 4z"/><path d="M12 8.5V20"/>',
+  '상의':'<path d="M8 4 4 6l1.5 4L7 9.5V20h10V9.5l1.5.5L20 6l-4-2c-.5 1.5-2 2.5-4 2.5S8.5 5.5 8 4z"/>',
+  '하의':'<path d="M7 3h10l1 18h-4.5L12 9l-1.5 12H6L7 3z"/><path d="M7 6.5h10"/>',
+  '원피스(셋업)':'<path d="M9.5 3h5l-1 4.5L18 20H6l4.5-12.5z"/><path d="M10.5 7.5h3"/>',
+  '신발':'<path d="M3 17v-5l5-.5 3-4 3.5 3.5L21 13v4z"/><path d="M3 17h18v1.5H3z"/>',
+  '양말':'<path d="M9 3h6v9.5l3.2 3.2a2.6 2.6 0 0 1-3.7 3.7L9 13.9z"/><path d="M9 6.5h6"/>',
+  '모자':'<path d="M4.5 15a7.5 7.5 0 0 1 15 0"/><path d="M3 15h13.5l4.5 2"/><path d="M12 7.5V6"/>',
+  '벨트':'<rect x="2.5" y="9.5" width="19" height="5" rx="1"/><rect x="9" y="8" width="6" height="8" rx="1.2"/><path d="M12 12h2"/>',
+  '안경':'<circle cx="7" cy="14" r="3.5"/><circle cx="17" cy="14" r="3.5"/><path d="M10.5 14h3"/><path d="M3.6 13 5 8.5"/><path d="M20.4 13 19 8.5"/>',
+};
+/* 종류 고르기 판의 순서 — Auto 를 맨 앞에. 화면 이름은 Auto, 서버로는 '자동 분류'. */
+const VF_KINDS=[VF_AUTO,'아우터','상의','하의','원피스(셋업)','신발','양말','모자','벨트','안경'];
+const vfKindName=(k)=>k===VF_AUTO?'Auto':k;
+const vfKindIcon=(k,size)=>VF_SVG(VF_KIND_ICON[k]||VF_KIND_ICON[VF_AUTO],size);
+const VF_IC={
+  plus:'<path d="M12 5v14"/><path d="M5 12h14"/>',
+  chevron:'<path d="M6 9l6 6 6-6"/>',
+  close:'<path d="M6 6l12 12"/><path d="M18 6 6 18"/>',
+  warn:'<path d="M12 3.5 2.5 20h19L12 3.5z"/><path d="M12 10v4.5"/><path d="M12 17.2v.1"/>',
+  sideOpen:'<rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><path d="M9.5 4.5v15"/><path d="M16 10l-2 2 2 2"/>',
+  sideClosed:'<rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><path d="M9.5 4.5v15"/><path d="M14 10l2 2-2 2"/>',
+  outerOpen:'<path d="M8.5 4 4.5 6.2 3 13l2.4.5L6 20h4.5V9.2L8.5 4z"/><path d="M15.5 4l4 2.2L21 13l-2.4.5L18 20h-4.5V9.2L15.5 4z"/><path d="M10.5 9.2 12 11l1.5-1.8"/>',
+  outerClosed:'<path d="M8.5 4 4.5 6.2 3 13l2.4.5L6 20h12l.6-6.5L21 13l-1.5-6.8L15.5 4 12 8.5 8.5 4z"/><path d="M12 8.5V20"/>',
+  topOpen:'<path d="M9 3.5 5 5.5 3.5 10.5l2.6.9L7 20h4.2V8.8L9 3.5z"/><path d="M15 3.5l4 2 1.5 5-2.6.9L17 20h-4.2V8.8L15 3.5z"/>',
+  topClosed:'<path d="M9 3.5 5 5.5 3.5 10.5l2.6.9L7 20h10l.9-8.6 2.6-.9L19 5.5l-4-2-3 3.2-3-3.2z"/><path d="M12 6.7V20"/>',
+  over:'<path d="M7 4 2.5 7l1.6 4.2L6 10.4V20.5h12V10.4l1.9.8L21.5 7 17 4c-.6 1.6-2.4 2.6-5 2.6S7.6 5.6 7 4z"/>',
+  regular:'<path d="M8 4 4 6l1.5 4L7 9.5V20h10V9.5l1.5.5L20 6l-4-2c-.5 1.5-2 2.5-4 2.5S8.5 5.5 8 4z"/>',
+  slim:'<path d="M9 4 5.5 5.8l1.3 3.6 1.5-.5V20h7.4V8.9l1.5.5 1.3-3.6L15 4c-.4 1.4-1.6 2.3-3 2.3S9.4 5.4 9 4z"/>',
+  layers:'<path d="M12 3 3 8l9 5 9-5-9-5z"/><path d="M3 13l9 5 9-5"/>',
+  sunburst:'<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3z"/>',
+  flare:'<path d="M13 2 4.5 13.5H11L10 22l8.5-11.5H12L13 2z"/>',
+  arrow:'<path d="M5 12h14"/><path d="M13 6l6 6-6 6"/>',
+};
 /* 내 말풍선 아래 아이콘 줄에 쓰는 그림 (2026-09-14).
    글자 버튼('다시 묻기') 하나로는 되돌리기밖에 못 했다 — 같은 질문을 그대로
    다시 보내거나 문장만 복사할 방법이 없었다. */
@@ -712,7 +733,10 @@ function cpNewFit(images,text){
     model:cpFitModel(text),status:'',result:'',loading:false,
     /* 옵션은 전부 꺼진 채로 시작한다 — 끈 상태가 예전 동작이다. 켜지 않은
        연출이 프롬프트에 실리면 사용자가 고르지 않은 사진이 나온다. */
-    options:cpFitOptions(null),optsOpen:false,
+    options:cpFitOptions(null),
+    /* 왼쪽 설정 칸 펼침(open)·접힘(closed), 종류 고르기 판을 연 칸(-1 = 닫힘).
+       화면 상태라 서버로는 보내지 않는다 (2026-10-01, 시안 C). */
+    side:'open',kindOpen:-1,
     /* 붙인 사진이 있으면 곧바로 종류를 확인한다(cpFitAutoSort). 그 전까지는
        예전처럼 순서대로 놓아 둔다 — 기다리는 동안 빈 화면을 보여주지 않는다. */
     sorting:attached.length>0};
@@ -721,8 +745,8 @@ function cpNewFit(images,text){
    sorting 을 켜지 않는다 — 칸은 이미 DB 태그로 정해졌고(propose_fit), 사진은
    서버가 build_fit 에서 한 번 봤다. 여기서 또 분류하면 vision 을 두 번 쓰고,
    '아우터' 로 넣은 트랙 재킷이 '상의' 로 바뀌어 레이어드 조건이 깨진다.
-   optsOpen 을 펴 둔다 — 모델이 정한 연출을 사용자가 보고 그 자리에서 끌 수 있어야
-   한다. 접혀 있으면 "내가 고르지 않은 연출이 들어갔다" 가 된다. */
+   모델이 정한 연출은 결과 아래 독에 늘 보인다(2026-10-01) — 예전 서랍처럼 펴 둘
+   필요가 없다. 사용자가 그 자리에서 보고 끌 수 있다. */
 export function cpFitFromServer(fit,text){
   const f=cpNewFit([],text||'');
   const rows=(fit&&Array.isArray(fit.items)?fit.items:[]).slice(0,VF_MAX)
@@ -734,7 +758,6 @@ export function cpFitFromServer(fit,text){
                name:String(it.name||''), auto:false}));
   if(rows.length)f.items=rows;
   f.options=cpFitOptions((fit&&fit.options||[]).reduce((o,k)=>(o[k]=true,o),{}));
-  f.optsOpen=true;
   f.sorting=false;
   f.fromServer=true;
   return f;
@@ -781,7 +804,7 @@ async function cpFitSortNow(m,f){
     /* 판별 못 한 사진은 '자동 분류'로 남긴다 — 서버가 다시 본다 */
     if(VF_CATEGORIES.includes(name)){ item.category=name; item.auto=false }
   });
-  if(cpActiveConvo()&&cpActiveConvo().messages.includes(m))cpRenderThread({keepScroll:true});
+  if(cpActiveConvo()&&cpActiveConvo().messages.includes(m))cpFitRender(m);
 }
 /* 칸 목록을 항상 같은 길이·같은 모양으로 되돌린다.
    ★ 같은 축이 둘 있어도 막지 않는다 (2026-09-14). 아우터 두 벌을 겹쳐 입히려면
@@ -819,37 +842,9 @@ function cpFitOptions(saved){
   VF_OPTION_GROUPS.forEach(g=>{ if(g.kind==='slide')cpSlideSet(out,g,cpSlideValue(out,g)) });
   return out;
 }
-/* 기본값에서 바꾼 묶음 수 — 접힌 '옵션' 버튼에 붙는 숫자.
-   기본이 '열어 입기' 로 켜져 있으니 켠 이름을 세면 늘 2 이상이 된다. */
-function cpFitOptionsChanged(on){
-  return VF_OPTION_GROUPS.filter(g=>g.kind==='switch'?Boolean(on[g.key]):cpSlideValue(on,g)!==g.def).length;
-}
 function cpFitOptionsOf(f){
   if(!f.options)f.options=cpFitOptions(null);
   return f.options;
-}
-/* 합성 화면 왼쪽 위 옵션 서랍 (2026-09-14).
-   ★ 접을 수 있게 둔다 — 결과 이미지를 가리는 자리라, 펼친 채로 두면 정작
-     봐야 할 사진이 반쯤 덮인다. 켠 개수는 접혀 있을 때도 보여 준다. */
-function cpFitOptsHTML(f){
-  const on=cpFitOptionsOf(f);
-  const count=cpFitOptionsChanged(on);
-  const body=f.optsOpen
-    ?'<div class="cpFitOptsBody">'+VF_OPTION_GROUPS.map(g=>
-        /* 슬라이드 묶음은 이름과 슬라이드를 한 줄에 — 서랍이 길어져 결과 칸 밖으로 잘렸다 */
-        '<div class="cpVfGroup'+(g.kind==='slide'?' slide':'')+'">'+
-          '<p class="cpVfGroupTitle">'+cpEsc(g.title)+'</p>'+
-          (g.kind==='switch'
-            ?'<div class="cpVfRow"><span>'+cpEsc(g.label)+'</span>'+
-               cpSwitchHTML(g.key,on[g.key],g.title+' '+g.label)+'</div>'
-            :cpSlideHTML(g.key,g.title,g.cells,cpSlideValue(on,g)))+
-          (g.hint?'<p class="cpVfGroupHint">'+cpEsc(g.hint)+'</p>':'')+
-        '</div>').join('')+
-      '<p class="cpFitOptsHint">앞여밈이 있는 옷만 열거나 여밉니다.<br>'+
-      '정핏은 상품 사진의 핏 그대로입니다.</p></div>':'';
-  return '<div class="cpFitOpts'+(f.optsOpen?' on':'')+'">'+
-    '<button type="button" class="cpFitOptsBtn" data-vf-opts="1" aria-expanded="'+(f.optsOpen?'true':'false')+'">'+
-    '옵션'+(count?'<b>'+count+'</b>':'')+'</button>'+body+'</div>';
 }
 /* ── 칸 목록 높이 (2026-09-14) ────────────────────────
    칸을 늘릴 때마다 왼쪽 설정 칸이 길어졌고, .cpFitGrid 가 align-items:stretch 라
@@ -889,12 +884,158 @@ function cpFitExt(f){
   if(mime==='jpeg'||mime==='jpg')return 'jpg';
   return 'png';
 }
+/* ── 착장 위젯 (2026-10-01, 시안 C · 결과 아래 독) ──────────────
+   한눈에 들어오게 작게 — 왼쪽은 접히는 설정 칸(모델 · 옷), 오른쪽은 결과와
+   그 아래 독(아우터 · 상의 Open/Close, 핏, 레이어드, 엔진, 입혀보기).
+   ★ 독은 결과 사진 위에 얹지 않는다. 사진 아래 따로 선다 — 고르는 동안 정작
+     봐야 할 결과가 가려지지 않게.
+   ★ 왼쪽을 접으면 모델 · 옷이 작은 네모로 줄고(.cpFitMini), 결과 칸이 그만큼 넓어진다.
+   ★ 옷 칸 종류는 칸 아래 이름을 눌러 고른다. 판은 칸 목록 위에 덮어 펼친다 —
+     스크롤하는 목록 안에 드롭다운을 두면 아래가 잘린다. */
+const VF_FIT_NAME={over:'오버핏',regular:'정핏',slim:'슬림핏'};
+const VF_MODELS=[{v:'woman',label:'Female',img:'/assets/vton-models/woman.png'},
+                 {v:'man',  label:'Male',  img:'/assets/vton-models/man.png'}];
+function cpFitDockHTML(f){
+  const on=cpFitOptionsOf(f), engine=cpFitEngineOf(f);
+  const sep='<span class="cpDockSep" aria-hidden="true"></span>';
+  /* 아우터 · 상의 — 버튼 하나로 Open ↔ Close. 그림도 같이 바뀐다. */
+  const flip=(key,title)=>{
+    const g=VF_OPTION_GROUPS.find(x=>x.key===key);
+    const open=cpSlideValue(on,g)==='open';
+    return '<button type="button" class="cpDockBtn cpDockFlip" data-vf-flip="'+key+'" '+
+      'aria-label="'+title+' '+(open?'열어 입기':'여며 입기')+' — 눌러서 바꾸기">'+
+      VF_SVG(VF_IC[key+(open?'Open':'Closed')],20)+
+      '<span>'+title+' <b>'+(open?'Open':'Close')+'</b></span></button>';
+  };
+  const fitG=VF_OPTION_GROUPS.find(x=>x.key==='fit'), fit=cpSlideValue(on,fitG);
+  const fits='<div class="cpDockFit"><div class="cpDockFitRow" role="radiogroup" aria-label="핏">'+
+    fitG.cells.map(c=>'<button type="button" role="radio" class="cpDockMini'+(c.v===fit?' on':'')+'" '+
+      'data-vf-slide="fit" data-vf-val="'+c.v+'" aria-checked="'+(c.v===fit)+'" aria-label="'+cpEsc(c.label)+'">'+
+      VF_SVG(VF_IC[c.v],19)+'</button>').join('')+
+    '</div><span>핏 · '+cpEsc(VF_FIT_NAME[fit]||'정핏')+'</span></div>';
+  const layered=Boolean(on.outer_layered);
+  const layer='<button type="button" role="switch" class="cpDockBtn cpDockLayer'+(layered?' on':'')+'" '+
+    'data-vf-opt="outer_layered" aria-checked="'+layered+'" aria-label="레이어드 — 아우터 둘을 겹쳐 입기">'+
+    VF_SVG(VF_IC.layers,20)+'<span>레이어드 <b>'+(layered?'On':'Off')+'</b></span></button>';
+  const engines='<div class="cpDockEngine" role="radiogroup" aria-label="생성 방식">'+
+    VF_ENGINES.map(e=>'<button type="button" role="radio" class="cpDockEng'+(e.v===engine?' on':'')+'" '+
+      'data-vf-slide="engine" data-vf-val="'+e.v+'" aria-checked="'+(e.v===engine)+'" title="'+cpEsc(e.title)+'"'+
+      (f.loading?' disabled':'')+'>'+VF_SVG(VF_IC[e.v],17)+'<span>'+cpEsc(e.label)+'</span></button>').join('')+
+    '</div>';
+  const go='<button type="button" class="cpDockGo" data-vf-generate'+(f.loading?' disabled':'')+'>'+
+    '<span>'+(f.loading?'만드는 중':'입혀보기')+'</span>'+VF_SVG(VF_IC.arrow,15)+'</button>';
+  return '<div class="cpFitDockWrap"><div class="cpFitDock">'+
+    '<div class="cpDockGroup">'+flip('outer','아우터')+flip('top','상의')+'</div>'+sep+
+    '<div class="cpDockGroup">'+fits+'</div>'+sep+
+    '<div class="cpDockGroup">'+layer+'</div>'+sep+
+    '<div class="cpDockGroup">'+engines+'</div>'+go+'</div></div>';
+}
+/* 왼쪽 설정 칸 — 펼친 모습 */
+function cpFitSetupHTML(f,items){
+  const models='<div class="cpFitModels m-'+(f.model==='man'?'man':'woman')+'" role="radiogroup" aria-label="모델">'+
+    VF_MODELS.map(x=>'<button type="button" role="radio" class="cpFitModel'+(f.model===x.v?' on':'')+'" '+
+      'data-vf-model="'+x.v+'" aria-checked="'+(f.model===x.v)+'" aria-label="'+x.label+' 모델">'+
+      '<img src="'+x.img+'" alt="" loading="lazy"><span>'+x.label+'</span></button>').join('')+
+    '<span class="cpFitModelFrame" aria-hidden="true"></span></div>';
+  const slots=items.map((item,index)=>{
+    const kind=item.auto?VF_AUTO:item.category;
+    const src=item.image||item.imageUrl;
+    return '<div class="cpFitSlot">'+
+      '<button type="button" class="cpFitItem'+(src?' has':'')+'" data-vf-pick="'+index+'" '+
+        'aria-label="'+(index+1)+'번 칸에 사진 '+(src?'바꾸기':'넣기')+'">'+
+        (src?'<img class="cpFitItemImg" src="'+cpEsc(src)+'" alt="'+cpEsc(item.name||vfKindName(kind))+'">'
+            :'<span class="cpFitPlus">'+VF_SVG(VF_IC.plus,18)+'</span>')+
+        '<span class="cpFitBadge" aria-hidden="true">'+vfKindIcon(kind,15)+'</span></button>'+
+      '<button type="button" class="cpFitRemove" data-vf-remove="'+index+'" aria-label="'+(index+1)+'번 칸 빼기">'+
+        VF_SVG(VF_IC.close,12)+'</button>'+
+      '<button type="button" class="cpFitKind'+(kind===VF_AUTO?' auto':'')+(f.kindOpen===index?' on':'')+'" '+
+        'data-vf-kind="'+index+'" aria-haspopup="dialog" aria-expanded="'+(f.kindOpen===index)+'" '+
+        'aria-label="'+(index+1)+'번 칸 종류: '+cpEsc(kind)+'">'+
+        '<span>'+cpEsc(vfKindName(kind))+'</span>'+VF_SVG(VF_IC.chevron,11)+'</button>'+
+      '<input type="file" data-vf-file="'+index+'" accept="image/png,image/jpeg,image/webp" hidden></div>';
+  }).join('');
+  /* 칸 늘리기 — 아홉 칸(서버 MAX_ITEMS)이 차면 사라진다 */
+  const add=items.length<VF_MAX
+    ?'<div class="cpFitSlot addSlot"><button type="button" class="cpFitItem cpFitAdd" data-vf-add="1" aria-label="칸 추가">'+
+      '<span class="cpFitPlus">'+VF_SVG(VF_IC.plus,18)+'</span></button><p class="cpFitAddCap">칸 추가</p></div>':'';
+  const ko=f.kindOpen, row=(ko>=0&&ko<items.length)?items[ko]:null;
+  const picked=row?(row.auto?VF_AUTO:row.category):'';
+  const sheet=row
+    ?'<div class="cpFitSheet" role="dialog" aria-label="'+(ko+1)+'번 칸 종류 고르기">'+
+      '<div class="cpFitSheetHead"><b>'+(ko+1)+'번 칸 · 종류 고르기</b>'+
+      '<button type="button" data-vf-kind="'+ko+'" aria-label="닫기">'+VF_SVG(VF_IC.close,14)+'</button></div>'+
+      '<div class="cpFitSheetList" role="listbox" aria-label="옷 종류">'+
+      VF_KINDS.map(k=>'<button type="button" role="option" class="'+(k===picked?'on':'')+'" '+
+        'data-vf-kindpick="'+ko+'|'+cpEsc(k)+'" aria-selected="'+(k===picked)+'">'+
+        vfKindIcon(k,16)+'<span>'+cpEsc(vfKindName(k))+'</span></button>').join('')+
+      '</div></div>':'';
+  const note=f.sorting
+    ?'<p class="cpFitWarn busy">사진이 어떤 옷인지 확인하는 중입니다…</p>'
+    :'<p class="cpFitWarn">'+VF_SVG(VF_IC.warn,14)+
+      '<span>Auto 분류는 정확하지 않을 수 있습니다.<br>칸 아래 이름을 눌러 직접 고를 수 있어요.</span></p>';
+  return '<div class="cpFitFull" data-vf-id="full">'+models+
+    '<div class="cpFitClothesHead"><b>옷</b><span>'+items.length+' / '+VF_MAX+'</span></div>'+
+    '<div class="cpFitClothes"><div class="cpFitItems">'+slots+add+'</div>'+sheet+'</div>'+note+'</div>';
+}
+/* 왼쪽 설정 칸 — 접힌 모습. 위에서부터 모델, 옷 칸들, 칸 추가. 누르면 펼친다. */
+function cpFitMiniHTML(f,items){
+  const model=VF_MODELS.find(x=>x.v===f.model)||VF_MODELS[0];
+  return '<div class="cpFitMini" data-vf-id="mini">'+
+    '<button type="button" class="cpMiniSq model" data-vf-side="1" aria-label="'+model.label+' 모델 — 눌러서 설정 펼치기">'+
+      '<img src="'+model.img+'" alt=""></button><span class="cpMiniRule" aria-hidden="true"></span>'+
+    items.map((item,i)=>{
+      const kind=item.auto?VF_AUTO:item.category, src=item.image||item.imageUrl;
+      return '<button type="button" class="cpMiniSq" data-vf-side="1" aria-label="'+(i+1)+'번 칸 · '+cpEsc(vfKindName(kind))+' — 눌러서 설정 펼치기">'+
+        (src?'<img src="'+cpEsc(src)+'" alt="">':vfKindIcon(kind,18))+'</button>';
+    }).join('')+
+    (items.length<VF_MAX?'<button type="button" class="cpMiniSq add" data-vf-side="1" aria-label="칸 추가 — 눌러서 설정 펼치기">'+VF_SVG(VF_IC.plus,16)+'</button>':'')+
+    '</div>';
+}
+/* ── 착장 위젯만 고쳐 그리기 (2026-10-02) ─────────────────────
+   옵션 하나를 바꿀 때마다 대화 전체를 innerHTML 로 다시 그렸더니, 왼쪽 모델 사진과
+   옷 사진이 새 <img> 로 바뀌며 깜빡였고(4K 결과 · data URL 사진은 다시 그리는 데
+   한 박자 걸린다), 펼침 애니메이션도 매번 다시 돌았다. 모델 테가 미끄러지는
+   움직임도 요소가 새로 생겨 보이지 않았다.
+   → 이 위젯의 새 마크업을 만들어 지금 화면과 **달라진 곳만** 고친다(cpMorph).
+     바뀌지 않은 <img> 는 그 자리에 남고, 클래스만 바뀐 요소는 CSS 전환이 그대로 걸린다.
+   ★ data-vf-id 가 다른 요소(펼친 칸 ↔ 접힌 네모)는 고치지 않고 통째로 바꾼다.
+     새로 들어온 쪽에만 cpFitIn 을 붙여 한 번 서서히 나타나게 한다.
+   ★ 화면에 이 위젯이 없으면(다른 대화를 보는 중 등) 예전처럼 대화를 다시 그린다. */
+function cpMorph(a,b){
+  const idOf=(n)=>n.nodeType===1?(n.getAttribute('data-vf-id')||''):'';
+  if(a.nodeType!==b.nodeType||a.nodeName!==b.nodeName||idOf(a)!==idOf(b)){
+    if(idOf(b))b.classList.add('cpFitIn');
+    a.replaceWith(b); return;
+  }
+  if(a.nodeType!==1){ if(a.nodeValue!==b.nodeValue)a.nodeValue=b.nodeValue; return; }
+  if(a.isEqualNode(b))return;
+  for(const at of [...b.attributes]) if(a.getAttribute(at.name)!==at.value)a.setAttribute(at.name,at.value);
+  for(const at of [...a.attributes]) if(!b.hasAttribute(at.name))a.removeAttribute(at.name);
+  const ac=[...a.childNodes], bc=[...b.childNodes];
+  bc.forEach((n,i)=>{ if(i<ac.length)cpMorph(ac[i],n); else a.appendChild(n); });
+  for(let i=bc.length;i<ac.length;i++)ac[i].remove();
+}
+function cpFitRender(m){
+  const th=$('#cpThread');
+  const key=String(m&&m.fit&&m.fit.key||'');
+  const sec=th&&key?[...th.querySelectorAll('.cpFit')].find(x=>x.dataset.fitKey===key):null;
+  if(!sec){ cpRenderThread({keepScroll:true}); return; }
+  const tpl=document.createElement('template');
+  tpl.innerHTML=cpFitHTML(m);
+  const fresh=tpl.content.firstElementChild;
+  if(!fresh){ cpRenderThread({keepScroll:true}); return; }
+  cpMorph(sec,fresh);
+  cpFitSizeItems(sec);
+}
 function cpFitHTML(m){
   const f=m.fit; if(!f)return '';
   const items=cpFitItems(f);
-  const result=f.loading?'<div class="cpFitLoader" aria-label="착용 이미지 생성 중"><i class="cpStar">✧</i></div>':
+  const open=f.side!=='closed';
+  const engine=cpFitEngineOf(f);
+  const engineSpec=VF_ENGINES.find(e=>e.v===engine);
+  const stage=f.loading?'<div class="cpFitLoader" aria-label="착용 이미지 생성 중"><i class="cpStar">✧</i></div>':
     f.result?'<img class="cpFitResult" src="'+cpEsc(f.result)+'" alt="AI 모델 착용 결과">':
-    '<div class="cpFitResultEmpty">완성된 착용 이미지가 여기에 나타납니다.</div>';
+    '<div class="cpFitResultEmpty">완성된 착용 이미지가<br>여기에 나타납니다.</div>';
   /* 무엇으로 몇 초 걸렸나 (2026-10-01) — 엔진을 고르는 이유가 시간이라, 결과마다 남긴다. */
   const made=(f.result&&!f.loading&&f.made&&f.made.label)
     ?'<p class="cpFitState success cpFitMade">'+cpEsc(f.made.label)+
@@ -906,50 +1047,19 @@ function cpFitHTML(m){
   const save=(f.result&&!f.loading)
     ?'<a class="cpFitDl" href="'+cpEsc(f.result)+'" download="feedit-fitting-'+cpEsc(f.key)+'.'+cpFitExt(f)+'"'+
      ' title="이미지 저장" aria-label="착용 이미지 저장">'+CP_IC_DOWN+'</a>':'';
-  /* ★ 모델 고르기를 맨 위로 (2026-09-14). 누구에게 입힐지가 먼저고 무엇을
-     입힐지가 그다음인데, 칸 아홉 개 밑에 묻혀 있어 스크롤해야 보였다. */
-  const models='<div class="cpFitModels">'+
-    '<label><input type="radio" data-vf-model value="woman" name="vf-'+cpEsc(f.key)+'"'+(f.model==='woman'?' checked':'')+'><img src="/assets/vton-models/woman.png" alt="여성 AI 모델"><span>여성 모델</span></label>'+
-    '<label><input type="radio" data-vf-model value="man" name="vf-'+cpEsc(f.key)+'"'+(f.model==='man'?' checked':'')+'><img src="/assets/vton-models/man.png" alt="남성 AI 모델"><span>남성 모델</span></label>'+
-  '</div>';
-  const slots=items.map((item,index)=>{
-    /* 축은 드롭다운으로 직접 고른다 (2026-09-14). 자동 분류가 틀렸을 때
-       사진을 지웠다 다시 넣는 것 말고는 고칠 방법이 없었다. */
-    const picked=item.auto?VF_AUTO:item.category;
-    const select='<select class="cpFitCat" data-vf-cat="'+index+'" aria-label="'+(index+1)+'번 칸 종류">'+
-      VF_CATEGORIES.concat([VF_AUTO]).map(c=>
-        '<option value="'+cpEsc(c)+'"'+(c===picked?' selected':'')+'>'+cpEsc(c)+'</option>').join('')+
-      '</select>';
-    return '<div class="cpFitSlot">'+
-      '<button type="button" class="cpFitRemove" data-vf-remove="'+index+'" aria-label="'+(index+1)+'번 칸 빼기">×</button>'+
-      '<button type="button" class="cpFitItem" data-vf-pick="'+index+'">'+
-      /* 상품 사진은 주소로 온다 — 그리는 데는 문제가 없다(막히는 건 fetch 쪽이다). */
-      ((item.image||item.imageUrl)
-        ?'<img class="cpFitItemImg" src="'+cpEsc(item.image||item.imageUrl)+
-          '" alt="'+cpEsc(item.name||item.category)+'">'
-        :'<span class="cpFitPlus">＋</span>')+'</button>'+select+
-      '<input type="file" data-vf-file="'+index+'" accept="image/png,image/jpeg,image/webp" hidden></div>';
-  }).join('');
-  /* 칸 늘리기 — 마지막에 붙는 ＋ 한 장. 아홉 칸(서버 MAX_ITEMS)이 차면 사라진다. */
-  const add=items.length<VF_MAX
-    ?'<div class="cpFitSlot addSlot">'+
-      '<button type="button" class="cpFitItem cpFitAdd" data-vf-add="1" aria-label="칸 추가">'+
-        '<span class="cpFitPlus">＋</span></button>'+
-      '<p class="cpFitAddCap">칸 추가</p></div>':'';
-  const engine=cpFitEngineOf(f);
-  const engineSpec=VF_ENGINES.find(e=>e.v===engine);
-  return '<section class="cpFit" data-fit-key="'+cpEsc(f.key)+'">'+
-    '<div class="cpFitHead"><span>'+cpEsc(engineSpec.name)+'</span><b>코디 입혀보기</b></div>'+
-    '<div class="cpFitGrid"><div class="cpFitSetup">'+
-      models+
-      '<p class="cpFitGuide">'+(f.sorting?'사진이 어느 칸인지 확인하는 중입니다…'
-        :'종류별 사진을 넣으면 선택한 옷을 한 장의 코디로 합칩니다. 칸이 모자라면 ＋ 로 늘리세요.')+'</p>'+
-      '<div class="cpFitItems">'+slots+add+'</div>'+
-      /* 엔진 고르기는 만드는 버튼 바로 위 — 고르는 순간이 만드는 순간이다 (2026-10-01) */
-      '<div class="cpFitAction">'+
-        '<div class="cpFitEngine">'+cpSlideHTML('engine','생성 방식',VF_ENGINES,engine)+'</div>'+
-        '<button type="button" class="pill cpFitGo" data-vf-generate'+(f.loading?' disabled':'')+'>입혀보기</button></div>'+
-    '</div><div class="cpFitOutput">'+cpFitOptsHTML(f)+save+result+state+'</div></div></section>';
+  return '<section class="cpFit'+(open?'':' side-closed')+'" data-fit-key="'+cpEsc(f.key)+'">'+
+    '<div class="cpFitHead">'+
+      '<button type="button" class="cpFitSideBtn" data-vf-side="1" aria-expanded="'+open+'" '+
+        'aria-label="'+(open?'설정 접기':'설정 펼치기')+'">'+VF_SVG(open?VF_IC.sideOpen:VF_IC.sideClosed,18)+'</button>'+
+      '<span>VIRTUAL TRY ON</span><b>코디 입혀보기</b></div>'+
+    '<div class="cpFitGrid">'+
+      '<aside class="cpFitSetup">'+(open?cpFitSetupHTML(f,items):cpFitMiniHTML(f,items))+'</aside>'+
+      '<div class="cpFitOutput">'+
+        '<span class="cpFitEngineTag">'+VF_SVG(VF_IC[engine],12)+'<span>'+cpEsc(engineSpec.name)+'</span></span>'+
+        save+
+        '<div class="cpFitStage">'+stage+state+'</div>'+
+        cpFitDockHTML(f)+
+      '</div></div></section>';
 }
 /* 사용자가 친 문장을 상품명 자리에 쓸 수 있는지. 주소가 섞여 있으면 쓰지 않는다 —
    "https://… 이거 사도 될까?" 에서 주소를 떼어 내도 남는 말은 상품명이 아니다. */
@@ -1618,9 +1728,59 @@ document.addEventListener('click', e=>{
     }
     return;
   }
-  /* 옵션 서랍 열고 닫기 */
-  const optsBtn=e.target.closest('#cpThread [data-vf-opts]');
-  if(optsBtn){ const m=cpAIMessageFor(optsBtn); if(m&&m.fit){ m.fit.optsOpen=!m.fit.optsOpen; cpRenderThread({keepScroll:true}); } return; }
+  /* 왼쪽 설정 칸 접기·펼치기 (2026-10-01). 접힌 칸의 작은 네모를 눌러도 펼친다.
+     종류 고르기 판은 같이 닫는다 — 접힌 칸에는 판을 띄울 자리가 없다. */
+  const side=e.target.closest('#cpThread [data-vf-side]');
+  if(side){
+    const m=cpAIMessageFor(side); if(!m||!m.fit)return;
+    m.fit.side=m.fit.side==='closed'?'open':'closed'; m.fit.kindOpen=-1;
+    cpFitRender(m);
+    return;
+  }
+  /* 모델 고르기 — Female / Male 두 장 중 하나 */
+  const model=e.target.closest('#cpThread [data-vf-model]');
+  if(model){
+    const m=cpAIMessageFor(model); if(!m||!m.fit)return;
+    const v=model.dataset.vfModel;
+    if(VF_MODELS.some(x=>x.v===v)&&m.fit.model!==v){ m.fit.model=v; cpFitRender(m); }
+    return;
+  }
+  /* 칸 아래 이름 — 그 칸의 종류 고르기 판을 열고 닫는다 */
+  const kind=e.target.closest('#cpThread [data-vf-kind]');
+  if(kind){
+    const m=cpAIMessageFor(kind); if(!m||!m.fit)return;
+    const i=Number(kind.dataset.vfKind);
+    m.fit.kindOpen=(m.fit.kindOpen===i)?-1:i;
+    cpFitRender(m);
+    return;
+  }
+  /* 판에서 종류 하나 고르기 — Auto 면 서버가 사진을 보고 정한다.
+     사용자가 직접 고른 종류는 auto 를 내려 두어야 프롬프트에 그 이름이 실린다. */
+  const kindPick=e.target.closest('#cpThread [data-vf-kindpick]');
+  if(kindPick){
+    const m=cpAIMessageFor(kindPick); if(!m||!m.fit)return;
+    const raw=String(kindPick.dataset.vfKindpick||''), cut=raw.indexOf('|');
+    const item=cpFitItems(m.fit)[Number(raw.slice(0,cut))], k=raw.slice(cut+1);
+    if(item){
+      if(k===VF_AUTO){ item.auto=true }
+      else if(VF_CATEGORIES.includes(k)){ item.category=k; item.auto=false }
+    }
+    m.fit.kindOpen=-1;
+    cpFitRender(m);
+    return;
+  }
+  /* 아우터 · 상의 Open ↔ Close — 버튼 하나를 누를 때마다 뒤집는다 */
+  const flipBtn=e.target.closest('#cpThread [data-vf-flip]');
+  if(flipBtn){
+    const m=cpAIMessageFor(flipBtn); if(!m||!m.fit)return;
+    const g=VF_OPTION_GROUPS.find(x=>x.kind==='slide'&&x.key===flipBtn.dataset.vfFlip&&x.cells.length===2);
+    if(!g)return;
+    const on=cpFitOptionsOf(m.fit);
+    const now=cpSlideValue(on,g);
+    cpSlideSet(on,g,g.cells.find(c=>c.v!==now).v);
+    cpFitRender(m);
+    return;
+  }
   /* 켜고 끄는 스위치 — 지금은 아우터 레이어드 하나다. */
   const opt=e.target.closest('#cpThread [data-vf-opt]');
   if(opt){
@@ -1629,30 +1789,26 @@ document.addEventListener('click', e=>{
     const g=VF_OPTION_GROUPS.find(x=>x.kind==='switch'&&x.key===key); if(!g)return;
     const on=cpFitOptionsOf(m.fit);
     on[key]=!on[key];
-    cpRenderThread({keepScroll:true});
+    cpFitRender(m);
     return;
   }
-  /* 슬라이드 (2026-10-01) — 아우터·상의 열어/여며, 핏 세 칸, 생성 엔진.
-     ★ 두 칸짜리는 고른 칸을 다시 눌러도 반대쪽으로 넘어간다. 스위치처럼 "누르면 여며
-       입기" 가 되게 — 어느 칸을 정확히 눌러야 하는지 따지게 하지 않는다.
-     ★ 같은 묶음 안의 이름은 고른 것 하나만 true 다(cpSlideSet) — 예전처럼 열기·닫기가
+  /* 고르기 묶음 (2026-10-01) — 핏 세 칸, 생성 엔진 두 칸. 누른 칸이 골라진다.
+     ★ 같은 묶음 안의 이름은 고른 것 하나만 true 다(cpSlideSet) — 오버핏·슬림핏이
        같이 켜져 모순된 지시가 나가는 일이 생길 수 없다. */
   const cell=e.target.closest('#cpThread [data-vf-slide]');
   if(cell){
     const m=cpAIMessageFor(cell); if(!m||!m.fit)return;
     const key=cell.dataset.vfSlide, val=cell.dataset.vfVal;
-    const flip=(cells,current)=>(cells.length===2&&val===current)
-      ?cells.find(c=>c.v!==current).v:val;
     if(key==='engine'){
       if(m.fit.loading)return;                 /* 만드는 중에는 바꾸지 않는다 */
-      m.fit.engine=flip(VF_ENGINES,cpFitEngineOf(m.fit));
+      if(!VF_ENGINES.some(x=>x.v===val))return;
+      m.fit.engine=val;
     }else{
       const g=VF_OPTION_GROUPS.find(x=>x.kind==='slide'&&x.key===key); if(!g)return;
       if(!g.cells.some(c=>c.v===val))return;
-      const on=cpFitOptionsOf(m.fit);
-      cpSlideSet(on,g,flip(g.cells,cpSlideValue(on,g)));
+      cpSlideSet(cpFitOptionsOf(m.fit),g,val);
     }
-    cpRenderThread({keepScroll:true});
+    cpFitRender(m);
     return;
   }
   /* 칸 한 개 늘리기 — 새 칸은 '자동 분류'로 시작한다 */
@@ -1661,7 +1817,7 @@ document.addEventListener('click', e=>{
     const m=cpAIMessageFor(addSlot); if(!m||!m.fit)return;
     const rows=cpFitItems(m.fit);
     if(rows.length<VF_MAX)rows.push({category:VF_CATEGORIES[0],image:'',auto:true});
-    cpRenderThread({keepScroll:true});
+    cpFitRender(m);
     return;
   }
   /* 칸 빼기 — 사진만 지우는 것이 아니라 칸째로 뺀다 (2026-09-14).
@@ -1676,7 +1832,7 @@ document.addEventListener('click', e=>{
         if(rows.length>1)rows.splice(index,1);
         else{ rows[0].image=''; rows[0].imageUrl=''; rows[0].name='';
               rows[0].category=VF_CATEGORIES[0]; rows[0].auto=true }
-        m.fit.result=''; m.fit.status=''; m.fit.stateKind=''; cpRenderThread({keepScroll:true});
+        m.fit.result=''; m.fit.status=''; m.fit.stateKind=''; cpFitRender(m);
       }
     }
     return;
@@ -1716,25 +1872,16 @@ document.addEventListener('keydown',e=>{
   if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); cpEditSave(idx); }
 });
 document.addEventListener('change',async e=>{
-  const cat=e.target.closest('#cpThread [data-vf-cat]');
-  if(cat){
-    const m=cpAIMessageFor(cat); if(!m||!m.fit)return;
-    const item=cpFitItems(m.fit)[Number(cat.dataset.vfCat)]; if(!item)return;
-    /* 사용자가 직접 고른 축은 자동 분류가 아니다 — auto 를 내려 두어야
-       생성할 때 '자동 분류' 대신 고른 이름이 프롬프트에 실린다. */
-    if(cat.value===VF_AUTO){ item.auto=true; }
-    else if(VF_CATEGORIES.includes(cat.value)){ item.category=cat.value; item.auto=false; }
-    return;
-  }
-  const model=e.target.closest('#cpThread [data-vf-model]');
-  if(model){ const m=cpAIMessageFor(model); if(m&&m.fit)m.fit.model=model.value; return; }
   const file=e.target.closest('#cpThread [data-vf-file]');
   if(file){
     const m=cpAIMessageFor(file), picked=file.files&&file.files[0]; if(!m||!m.fit||!picked)return;
     const index=Number(file.dataset.vfFile);
-    try{ const item=cpFitItems(m.fit)[index]; item.image=await imageFileToDataURL(picked); item.imageUrl=''; item.name=''; item.auto=false; m.fit.result=''; m.fit.status=''; m.fit.stateKind=''; }
+    /* 새로 넣은 사진은 Auto 로 시작한다 (2026-10-01) — 예전엔 auto 를 내려 버려서,
+       칸이 처음 받은 이름('상의')이 사진과 상관없이 그대로 프롬프트에 실렸다.
+       Auto 면 서버가 사진을 보고 정하고, 틀리면 칸 아래 이름을 눌러 고친다. */
+    try{ const item=cpFitItems(m.fit)[index]; item.image=await imageFileToDataURL(picked); item.imageUrl=''; item.name=''; item.auto=true; m.fit.kindOpen=-1; m.fit.result=''; m.fit.status=''; m.fit.stateKind=''; }
     catch(_err){ m.fit.status='이미지를 읽지 못했습니다.'; m.fit.stateKind='error'; }
-    cpRenderThread({keepScroll:true});
+    cpFitRender(m);
   }
 });
 async function cpGenerateFit(button){
@@ -1752,8 +1899,8 @@ async function cpGenerateFitMessage(m){
       ?{image:item.image,category:item.auto?VF_AUTO:item.category}
       /* 서버가 고른 상품 사진 — 주소만 보낸다. 받는 쪽은 vton._items 다. */
       :{image_url:item.imageUrl,category:item.auto?VF_AUTO:item.category}));
-  if(!items.length){ m.fit.status='아이템 사진이 하나 이상 필요합니다.'; m.fit.stateKind='error'; cpRenderThread({keepScroll:true}); return; }
-  m.fit.loading=true; m.fit.status=''; m.fit.stateKind='loading'; m.fit.made=null; cpRenderThread({keepScroll:true});
+  if(!items.length){ m.fit.status='아이템 사진이 하나 이상 필요합니다.'; m.fit.stateKind='error'; cpFitRender(m); return; }
+  m.fit.loading=true; m.fit.status=''; m.fit.stateKind='loading'; m.fit.made=null; cpFitRender(m);
   try{
     const engine=cpFitEngineOf(m.fit);
     const t0=Date.now();
@@ -1768,10 +1915,10 @@ async function cpGenerateFitMessage(m){
     /* 서버가 실제로 쓴 엔진을 따른다 — 옛 서버는 engine 을 모르니 Sunburst 로 만든다.
        시간은 화면이 기다린 시간(중계·전송 포함)이다. 사용자가 느끼는 시간이 그것이다. */
     const used=VF_ENGINES.find(e=>e.v===data.engine)||VF_ENGINES.find(e=>e.v===VF_DEFAULT_ENGINE);
-    m.fit.made={engine:used.v,label:used.label+' ('+used.name.replace('GPT IMAGE 2.5 ','')+')',
+    m.fit.made={engine:used.v,label:used.label+' ('+used.name+')',
                 sec:Math.max(1,Math.round((Date.now()-t0)/1000))};
   }catch(err){ m.fit.status=(err&&err.message)||'착용 이미지를 만들지 못했습니다.'; m.fit.stateKind='error'; }
-  m.fit.loading=false; cpRenderThread({keepScroll:true});
+  m.fit.loading=false; cpFitRender(m);
 }
 /* 피드백 한 번. '아쉬움' 은 사유를 고르는 줄로 한 번 더 열린다.
    보내기에 실패해도 화면은 고맙다고 답한다 — 사용자가 할 수 있는 일이 없다. */
