@@ -541,3 +541,14 @@
 
 /* 등급 기준 확정 전에는 숨긴다 (rank.js RANK_ON) */
 .xpWrap[hidden]{display:none!important}
+
+/* 로그인 복구 중 (2026-10-02) — [로그인] 대신 자리만 잡아 둔다. 지난번 이름을 아는 브라우저는
+   이름을 먼저 보여 주되(.me.pending), 복구가 끝나기 전에는 누를 수 없다. */
+.mAuth .pill.authPending{
+  min-width:66px;height:32px;padding:0;border-color:transparent;color:transparent;pointer-events:none;
+  background:linear-gradient(90deg,#efece7 0%,#f7f5f1 50%,#efece7 100%);background-size:200% 100%;
+  animation:authShimmer 1.2s ease-in-out infinite;
+}
+@keyframes authShimmer{from{background-position:100% 0}to{background-position:-100% 0}}
+@media (prefers-reduced-motion:reduce){.mAuth .pill.authPending{animation:none}}
+.mAuth .pill.me.pending{pointer-events:none}

@@ -785,9 +785,9 @@ a.cpFitLookCard:hover{border-color:var(--pink-0);box-shadow:0 4px 14px rgba(10,1
   .cpFitItems{gap:10px 12px}
   /* 독은 결과 칸 오른쪽 끝, 사진은 남는 칸의 가운데 (2026-10-02 3차).
      2차에서 사진과 독을 한 묶음으로 가운데 뒀더니, 위젯을 넓힌 만큼 독 오른쪽이 비었다. */
-  .cpFitOutput{display:flex;flex-direction:row;align-items:stretch;gap:18px;padding:0 18px 0 0}
+  .cpFitOutput{display:flex;flex-direction:row;align-items:stretch;gap:18px;padding:0}
   .cpFitStage{flex:1 1 auto;min-width:0;min-height:0;height:100%;box-sizing:border-box;padding:16px 0 16px 18px}
-  .cpFitDockWrap{flex:0 0 auto;align-items:center;padding:16px 0}
+  .cpFitDockWrap{flex:0 0 auto;align-items:center;padding:16px 18px 16px 0}
   .cpFitDock{flex-direction:column;flex-wrap:nowrap;width:94px;padding:6px;gap:3px;border-radius:18px}
   .cpDockGroup{flex-direction:column}
   .cpDockSep{width:auto;height:1px;margin:3px 10px}
@@ -796,6 +796,13 @@ a.cpFitLookCard:hover{border-color:var(--pink-0);box-shadow:0 4px 14px rgba(10,1
   .cpDockEngine{flex-direction:column}
   .cpDockEng{width:100%;flex-direction:row;gap:6px;padding:8px 0}
   .cpDockGo{flex:0 0 auto;width:100%;margin:5px 0 0;min-height:68px;flex-direction:column;gap:3px;font-size:13px}
+  /* 4차 (2026-10-02) — 독은 결과 칸 위에 따로 뜬 판으로 오른쪽에 띄우고, 사진은 독을 빼고
+     검은 칸 **전체**의 가운데에 둔다(3차는 독 옆 남는 칸의 가운데라 왼쪽 여백이 더 넓어 보였다).
+     결과 칸이 좁아 사진과 독이 겹칠 수 있으면(760px 미만) 3차처럼 나란히 둔다. */
+  @container vfout (min-width:760px){
+    .cpFitStage{padding:16px 18px}
+    .cpFitDockWrap{position:absolute;right:18px;top:0;bottom:0;z-index:3;padding:0}
+  }
 }
 
 /* 모델 위 성별 표시 — 고른 쪽 이름을 알약으로 */

@@ -171,7 +171,18 @@ function authNotify(changed){
   AUTH.ready = true;
   document.dispatchEvent(new CustomEvent(changed?'feedit:auth':'feedit:auth-ready'));
 }
-function authSettled(){ if(!AUTH.ready)authNotify(false) }
+function authSettled(){ if(!AUTH.ready){ authNotify(false); authPaint(); } }
+/* ── 새로고침 깜빡임 (2026-10-02) ───────────────────────────────
+   새로고침하면 헤더가 먼저 [로그인] 으로 그려지고, 로그인 복구(/api/auth/me 왕복)가 끝난
+   뒤에야 이름으로 바뀌었다 — 잠깐 로그아웃된 것처럼 보였다.
+   → 복구가 끝나기 전(AUTH.ready=false)에는 [로그인] 을 그리지 않는다. 지난번에 로그인해
+     있던 브라우저면 그때 이름(닉네임 하나만 — 다른 정보는 남기지 않는다)을 먼저 보여 주고,
+     아니면 빈 자리표시만 둔다. 복구 결과가 오면 진짜 상태로 다시 그린다.
+   ★ 이 값은 화면 표시에만 쓴다. 로그인 판정(AUTH.in)과 관문은 여전히 서버 답만 믿는다. */
+const AUTH_HINT='feedit:auth-hint';
+function hintName(){ try{ return String(localStorage.getItem(AUTH_HINT)||'').slice(0,40) }catch(e){ return '' } }
+function hintSave(name){ try{ if(name)localStorage.setItem(AUTH_HINT,String(name).slice(0,40)) }catch(e){} }
+function hintClear(){ try{ localStorage.removeItem(AUTH_HINT) }catch(e){} }
 /* 로그인 없이 쓸 수 없는 기능(챗봇 사용 · 트렌드 분석 · 살!말? 투표/등록)의
    공통 관문. 로그인 전이면 로그인 화면으로 보내고 false 를 돌려준다. */
 /* 로그인 관문에 걸려 중단된 동작 하나. 로그인/가입이 끝나면 그대로 이어 한다.
@@ -206,10 +217,25 @@ let emailGapTimer = 0;
    로그인·세션 복구 때 likedAfterAuth() 가 서버 목록으로 맞춘다 (2026-09-19). */
 
 /* 헤더 오른쪽 — 로그인 전에는 [로그인], 후에는 [혁진] 버튼이 마이페이지로 */
+const ME_CARET = '<svg class="meCaret" viewBox="0 0 12 12" fill="none" stroke="currentColor" ' +
+  'stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+  '<path d="M2.5 4.5L6 8l3.5-3.5"/></svg>';
 function authPaint(){
   const b = $('#mAuthBtn');
   if(!b) return;
+  b.removeAttribute('aria-busy');
+  if(!AUTH.in && !AUTH.ready){
+    /* 아직 모른다 — [로그인] 을 그리지 않는다(위 '새로고침 깜빡임' 주석) */
+    const hint = hintName();
+    b.removeAttribute('data-v');
+    b.setAttribute('aria-busy','true');
+    if(hint){ b.className = 'pill me pending'; b.innerHTML = cpEscHTML(hint) + ME_CARET; }
+    else{ b.className = 'pill authPending'; b.textContent = ''; b.setAttribute('aria-label','로그인 상태 확인 중'); }
+    return;
+  }
+  b.removeAttribute('aria-label');
   if(AUTH.in){
+    hintSave(ME.name);
     b.className = 'pill me';
     b.removeAttribute('data-v');       /* 전역 [data-v] 위임 대신 메뉴를 연다 */
     /* ★ 2026-09-19 — 닉네임 왼쪽의 프로필 원(.meAv)은 뺐다.
@@ -223,12 +249,14 @@ function authPaint(){
     /* 직업 인증 심사는 운영(ADMIN) 계정에만 보인다 */
     if(mj) mj.hidden = ME.role !== 'admin';
   }else{
+    hintClear();
     b.className = 'pill';
     b.dataset.v = 'login';
     b.textContent = '로그인';
     acctMenu(false);
   }
 }
+function cpEscHTML(t){ return String(t).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])) }
 /* 로그인 뒤 이름 버튼을 누르면 뜨는 작은 메뉴 */
 export function closeAcctMenu(){ acctMenu(false) }
 function acctMenu(on){

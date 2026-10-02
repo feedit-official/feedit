@@ -32,6 +32,8 @@ globalThis.ResizeObserver=class{observe(){}unobserve(){}disconnect(){}};
 /* ── 새로고침 직전 상태: 트렌드 분석을 보고 있었고, 로그인돼 있다 ── */
 sessionStorage.setItem('feedit.nav.v1', JSON.stringify({view:'trend',tr:'myfeed',style:null}));
 localStorage.setItem('feedit.introSeen.v1','1');
+/* 지난번 이 브라우저에서 로그인해 있던 이름 — 복구 전 헤더가 [로그인] 대신 이걸 먼저 보인다 */
+localStorage.setItem('feedit:auth-hint','진');
 
 /* 로그인 복구는 **늦게** 온다 — 이 지연이 이 버그의 전부다 */
 const USER={id:1,username:'jin',nickname:'진',email:'jin@example.com',role:'user',styles:[]};
@@ -64,6 +66,12 @@ await t('새로고침 직후 — 복구 전에는 관문을 세우지 않는다'
   assert.equal(document.body.dataset.view,'trend','트렌드 화면이 복원돼야 한다');
   assert.equal(AUTH.ready,false,'아직 판정할 때가 아니다');
   assert.equal(gateOn(),false,'복구 전에 로그인 팝업이 떴다');
+  /* ★ 2026-10-02 — 헤더가 잠깐 [로그인] 으로 보였다가 이름으로 바뀌던 깜빡임 */
+  const btn=document.getElementById('mAuthBtn');
+  assert.ok(!btn.textContent.includes('로그인'),'복구 전에 [로그인] 이 보인다');
+  assert.ok(btn.textContent.includes('진'),'지난번 이름을 먼저 보여야 한다');
+  assert.ok(btn.classList.contains('pending'));
+  assert.equal(btn.dataset.v,undefined,'복구 전에는 로그인 화면으로 가지 않는다');
 });
 
 await t('★ 복구가 끝나면 로그인 상태이므로 관문이 서지 않는다', async () => {
@@ -72,6 +80,9 @@ await t('★ 복구가 끝나면 로그인 상태이므로 관문이 서지 않�
   assert.equal(AUTH.in,true,'세션 복구가 안 됐다');
   assert.equal(AUTH.ready,true);
   assert.equal(gateOn(),false,'로그인했는데 로그인 팝업이 떴다');
+  const btn=document.getElementById('mAuthBtn');
+  assert.ok(!btn.classList.contains('pending'),'복구 뒤에도 자리표시가 남았다');
+  assert.ok(btn.classList.contains('me'));
 });
 
 await t('복구 뒤 트렌드로 다시 들어가도 조용하다', async () => {

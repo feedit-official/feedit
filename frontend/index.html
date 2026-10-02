@@ -175,7 +175,8 @@
     <div class="mHeadR mAuth" id="mHeadR">
       <!-- 로그인 전에는 [로그인], 후에는 이름 버튼 + 메뉴 (authPaint) -->
       <span class="mAuthWrap">
-        <button class="pill" id="mAuthBtn" data-v="login">로그인</button>
+        <!-- 로그인 복구가 끝나기 전에는 빈 자리표시 — [로그인] 이 잠깐 보였다 사라지지 않게 (authPaint) -->
+        <button class="pill authPending" id="mAuthBtn" aria-busy="true" aria-label="로그인 상태 확인 중"></button>
         <div class="acctMenu" id="acctMenu">
           <button type="button" id="menuMypage"><i>◧</i>내 정보</button>
           <!-- 홈페이지 피드백 — 불편사항·추가요청 / 수정사항·버그리포트 (xp_panel.js) -->
