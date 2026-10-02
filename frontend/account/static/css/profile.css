@@ -62,7 +62,7 @@
 .acct .divider[hidden]{display:none}
 /* Google · 카카오 버튼은 한 줄에 반씩 — 아주 좁은 화면에서만 위아래로 */
 .acct .socialRow{display:flex;gap:10px}
-.acct .socialRow .googleBtn{flex:1;min-width:0;white-space:nowrap}
+.acct .socialRow .googleBtn{flex:1;min-width:0;white-space:nowrap;padding:0 14px;gap:8px;font-size:13px}
 @media(max-width:360px){ .acct .socialRow{flex-direction:column} }
 .acct .googleBtn.kakaoBtn{background:#FEE500;color:rgba(0,0,0,.85);box-shadow:none}
 .acct .googleBtn.kakaoBtn:hover{box-shadow:none;filter:brightness(.97)}

@@ -199,7 +199,7 @@ function stop(){
        이제 localStorage 에 두고, 로그아웃해도 지우지 않는다.
        알림 id 는 행마다 하나뿐이라 계정이 바뀌어도 서로 겹치지 않는다.
    · 누르면 그 알림이 가리키는 곳으로 간다(openTarget). '외 N개'를 누르면 알림 목록을 연다. */
-const TOAST_MS = 6000, TOAST_KEY = 'feedit.noti.toasted.v2';
+const TOAST_MS = 4000, TOAST_KEY = 'feedit.noti.toasted.v2';
 /* ★ 토스트는 본문(홈)에 들어온 뒤부터 — 로딩 · 설명 페이지 위에는 띄우지 않는다 */
 const inMain = () => document.body.classList.contains('mainmode');
 /* 인트로를 지나 본문으로 들어오면 모아 둔 토스트를 그때 띄운다 */
@@ -208,7 +208,7 @@ const inMain = () => document.body.classList.contains('mainmode');
   const ob = new MutationObserver(() => {
     if(!inMain())return;
     ob.disconnect();
-    if(TOAST_WAIT && !document.hidden && AUTH.in){
+    if(TOAST_WAIT && !document.hidden && !chatOpen() && AUTH.in){
       const w = TOAST_WAIT; TOAST_WAIT = null;
       setTimeout(() => toastShow(w.latest, w.count), 600);
     }
@@ -216,6 +216,13 @@ const inMain = () => document.body.classList.contains('mainmode');
   ob.observe(document.body, { attributes:true, attributeFilter:['class'] });
 })();
 let TOAST_PRIMED = false, TOAST_WAIT = null;
+/* 챗봇 팝업이 떠 있으면 토스트가 그 위에 겹친다 — 닫힐 때까지 모아 둔다 */
+function chatOpen(){ const ov = $('#cpOverlay'); return !!(ov && ov.classList.contains('on')) }
+window.addEventListener('feedit:chatclose', () => {
+  if(!TOAST_WAIT || document.hidden || !inMain() || !AUTH.in) return;
+  const w = TOAST_WAIT; TOAST_WAIT = null;
+  setTimeout(() => toastShow(w.latest, w.count), 300);
+});
 const toastSeen = new Set();
 function toastLoad(){ try{ JSON.parse(localStorage.getItem(TOAST_KEY) || '[]').forEach(id => toastSeen.add(id)) }catch(e){} }
 function toastSave(){ try{ localStorage.setItem(TOAST_KEY, JSON.stringify([...toastSeen].slice(-200))) }catch(e){} }
@@ -242,14 +249,14 @@ function toastNew(){
   /* 가려진 탭이거나 아직 인트로(로딩 · 설명 페이지)면 모아 둔다 —
      본문(홈)에 들어온 뒤 한 장으로 합쳐 띄운다 */
   const pack = { latest: fresh[0], count: fresh.length + (TOAST_WAIT ? TOAST_WAIT.count : 0) };
-  if(document.hidden || !inMain()){ TOAST_WAIT = pack; return }
+  if(document.hidden || !inMain() || chatOpen()){ TOAST_WAIT = pack; return }
   TOAST_WAIT = null;
   toastShow(pack.latest, pack.count);
 }
 /* 탭으로 돌아오면: 모아 둔 토스트를 띄우고, 그동안 못 받은 알림도 바로 받아 온다 */
 document.addEventListener('visibilitychange', () => {
   if(document.hidden || !AUTH.in) return;
-  if(TOAST_WAIT){ const w = TOAST_WAIT; TOAST_WAIT = null; toastShow(w.latest, w.count) }
+  if(TOAST_WAIT && !chatOpen()){ const w = TOAST_WAIT; TOAST_WAIT = null; toastShow(w.latest, w.count) }
   notiRefresh();
 });
 const XMARK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M7 7l10 10M17 7L7 17"/></svg>';

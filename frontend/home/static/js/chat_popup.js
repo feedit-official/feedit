@@ -1703,6 +1703,8 @@ export function closeChatPopup(){
   const ov=$('#cpOverlay'); if(!ov)return;
   ov.classList.remove('on');
   document.body.style.overflow='';
+  /* 열려 있는 동안 모아 둔 알림 토스트를 이제 띄운다 (notify.js) */
+  window.dispatchEvent(new Event('feedit:chatclose'));
 }
 /* 홈 하단 예시 버튼("이거 사도 될까?" 등)에서 바로 넘어올 때 쓰는 진입점.
    {fresh:true} 면 무조건 새 대화 — 홈에서 한 줄 치는 건 새로 묻는 동작이지
