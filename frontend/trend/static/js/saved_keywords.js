@@ -164,6 +164,11 @@ function kwGo(v){
   const selected=v&&typeof v==='object'?v:null;
   if(selected)inp.value=selected.label;
   else if(v)inp.value=v;
+  /* 값을 코드로 넣은 경우(사전·최근 검색어·알림)에는 input 이벤트가 없다 —
+     예시 용어(.fsGhost)가 그 위에 겹치지 않게 입력 중 상태와 × 를 직접 맞춘다 */
+  const bar0=$('#kwBar'), clr0=$('#kwClear');
+  if(bar0)bar0.classList.toggle('typing',!!inp.value);
+  if(clr0)clr0.hidden=!inp.value;
   const typed=inp.value.trim();
   if(!typed){ kwPaintSug(); return }
   /* ★ 2026-09-23 — 친 말 그대로 간다. 연관어로 바꿔치기하지 않는다.
