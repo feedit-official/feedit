@@ -56,11 +56,24 @@ class SalmalIndexTests(unittest.TestCase):
         self.assertIsNone(result["score"])
         self.assertEqual(result["recommendation"], "판단 자료 부족")
 
-    def test_report_uses_existing_safe_block_types(self):
+    def test_report_uses_the_verdict_block(self):
+        """2026-10-02 — KPI 셋 + 근거 순위 + 빠진 신호 안내를 판정 블록 하나로 모았다.
+        빠진 신호는 가중치와 함께 블록 안에 남는다(숨기지 않는다)."""
         blocks = salmal_blocks({"score": 72, "recommendation": "살", "confidence": "보통",
-                                "coverage": 60, "signals": [], "missing": ["price"]})
-        self.assertEqual([block["type"] for block in blocks], ["kpis", "note"])
-        self.assertEqual(blocks[0]["items"][0]["v"], "72")
+                                "coverage": 60, "recommendation_allowed": True,
+                                "signals": [{"key": "trend", "label": "트렌드", "weight": 20,
+                                             "score": 81, "why": "온도 상승"}],
+                                "missing": ["price"]})
+        self.assertEqual([block["type"] for block in blocks], ["verdict"])
+        v = blocks[0]
+        self.assertEqual((v["score"], v["rec"], v["allowed"]), (72, "살", True))
+        self.assertEqual(v["signals"][0], {"key": "trend", "label": "트렌드", "weight": 20,
+                                           "score": 81, "why": "온도 상승"})
+        self.assertEqual(v["missing"], [{"key": "price", "label": "가격", "weight": 15}])
+
+    def test_no_score_still_says_so(self):
+        blocks = salmal_blocks({"score": None, "missing": ["taste"]})
+        self.assertEqual([b["type"] for b in blocks], ["note"])
 
 
 if __name__ == "__main__":

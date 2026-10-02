@@ -19,6 +19,9 @@
 /* 알파 테스트 모드 — 시연 15일 한정 (app_shell/static/js/alpha.js 와 한 쌍) */
 import { alphaChatUse } from '../../../account/static/js/account_api.js';
 import { setAlphaState } from '../../../app_shell/static/js/alpha.js';
+/* 질문 유형별 리포트 템플릿 그림 (2026-10-02) — 진단·판정·원인·비교·순위·연관·관측 부족 */
+import { TEMPLATE_BLOCKS, TEMPLATE_LABEL } from './chat_templates.js';
+export { storyHTML, tickerRange } from './chat_templates.js';
 
 /* ★ 배포된 곳에서는 같은 도메인의 /api 를 쓴다.
  *
@@ -206,8 +209,9 @@ const RP_TOOLS =
   '<button type="button" class="rpTool" data-rp-save="1" title="이미지로 저장" aria-label="리포트 이미지로 저장">' +
   RP_ICON('<path d="M12 4v11"/><polyline points="7.5 10.5 12 15 16.5 10.5"/><path d="M5 19.5h14"/>') +
   '</button></div>';
-const reportHead = count =>
-  '<div class="skillReportHead"><span>FEEDiT / LIVE REPORT</span><em>' +
+const reportHead = (count, label) =>
+  '<div class="skillReportHead"><span>FEEDiT / LIVE REPORT' +
+  (label ? ' <b class="skillReportTpl">' + esc(label) + '</b>' : '') + '</span><em>' +
   String(count).padStart(2, '0') + ' SIGNALS</em>' + RP_TOOLS + '</div>';
 
 const H = (title, meta) => (title || meta)
@@ -280,6 +284,9 @@ const BLOCK = {
 
   note: b => '<div class="note"><i>◆</i>' + esc(b.text) + '</div>',
 
+  /* 템플릿 그림 — chat_templates.js. 값은 서버 블록 그대로, 여기서는 그리기만 한다. */
+  ...TEMPLATE_BLOCKS,
+
   upsell: b => H(b.title, b.meta) +
     '<div class="kwReq"><p>' + esc(b.why || '') + '</p>' +
     '<div class="ask"><span>프로 플랜에서 ' + esc((b.unlocks || []).join(' · ')) +
@@ -295,7 +302,9 @@ const BLOCK = {
     const surfaces = new Set(['paper','soft','contrast','glass']);
     const densities = new Set(['airy','balanced','compact']);
     const kinds = new Set(['ranking','comparison','metric','direction','sources','associations',
-      'sentiment','recommendations','taste','context','salmal','evidence','links','missing']);
+      'sentiment','recommendations','taste','context','salmal','evidence','links','missing',
+      'lifecycle','market','ticker','timeline','versus','leaderboard','orbit','lowsignal']);
+    const template = Object.prototype.hasOwnProperty.call(TEMPLATE_LABEL, b.template) ? b.template : '';
     const presentations = new Set(['hero','card','chart','list','editorial','compact']);
     const emphasis = new Set(['strong','normal','quiet']);
     const accent = accents.has(b.accent) ? b.accent : 'coral';
@@ -321,8 +330,9 @@ const BLOCK = {
     }).filter(Boolean).join('');
     if(!modules) return '';
     return '<div class="skillReport skillReport--' + surface + ' skillReport--' + accent +
-      ' skillReport--' + density + '" data-layout="' + esc(b.fingerprint || '') + '">' +
-      reportHead((b.modules || []).length) +
+      ' skillReport--' + density + (template ? ' skillReport--tpl-' + template : '') +
+      '" data-layout="' + esc(b.fingerprint || '') + '">' +
+      reportHead((b.modules || []).length, template ? TEMPLATE_LABEL[template] : '') +
       '<div class="skillReportTitle">' + esc(b.title || 'FEEDiT 트렌드 브리프') + '</div>' +
       '<div class="skillCanvas">' + modules + '</div></div>';
   },

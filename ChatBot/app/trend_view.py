@@ -52,6 +52,7 @@ SENT_BANDS = (            # band = dialV>=75 ? 0 : >=55 ? 1 : >=35 ? 2 : 3
 SIGNALS = (("질문", "question_n", 0), ("구매", "purchase_n", 1), ("경험", "experience_n", 1),
            ("호평", "praise_n", 1), ("비판", "critique_n", -1), ("잡담", "chitchat_n", 0))
 PIE_WINDOWS = (("주별", 7), ("월별", 30))   # SENT_PIE_G — 기준일 포함 최근 7일 · 30일
+SERIES_DAYS = 90          # 리포트 그래프가 받는 일별 기록의 길이 (7 · 28 · 90일 전환)
 STALE_NOTE_DAYS = 2       # 마지막 집계일이 기준일보다 이만큼 넘게 이르면 '주의' 에 적는다
 
 
@@ -151,6 +152,13 @@ def trend_summary(data: dict) -> dict | None:
         "obs": {"n7": len(within(7)), "n14": len(within(14)), "n28": len(within(28))},
         "thin": m28 < THIN_SAMPLE,
         "notes": notes,
+        # ★ 리포트 그래프용 일별 기록 (2026-10-02). 화면의 언급량·온도 그래프와 같은 행이다.
+        #   행이 없는 날은 넣지 않는다 — '0건' 이 아니라 '관측 없음' 이라, 채우면 그림이 거짓말을 한다.
+        #   모델(get_metric)에는 싣지 않는다. 카드(report.build_term)만 읽는다.
+        "series": [{"d": str(r["date"])[:10],
+                    "t": None if _num(r.get("temp")) is None else round(_num(r.get("temp")), 1),
+                    "m": int(_num(r.get("mention")) or 0)}
+                   for r in within(SERIES_DAYS)],
     }
 
 

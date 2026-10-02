@@ -107,12 +107,16 @@ class VirtualFittingTests(unittest.TestCase):
 
         # ★ 2026-10-01 — 상의 옵션은 상의가 있을 때만 실린다(vton.SLOT_OF). 예전 시험은
         #   아우터 한 장에 top_closed 를 실었는데, 이제는 그 조합이 빠지는 것이 맞다.
-        result = vton.generate(
-            model_id="woman",
-            items=[{"image": "data:image/png;base64,eA==", "category": "아우터"},
-                   {"image": "data:image/png;base64,eQ==", "category": "상의"}],
-            options={"outer_layered": True, "top_closed": True},
-        )
+        # ★ 2026-10-02 — 레이어드는 아우터가 둘일 때만 실린다(vton.apply_sight). 그래서
+        #   아우터를 두 벌 넣는다. 사진 검수는 '모르겠음' 으로 고정한다(아무것도 안 뺀다).
+        with patch("app.vton.inspect", side_effect=lambda imgs: [dict(vton.UNKNOWN) for _ in imgs]):
+            result = vton.generate(
+                model_id="woman",
+                items=[{"image": "data:image/png;base64,eA==", "category": "아우터"},
+                       {"image": "data:image/png;base64,eg==", "category": "아우터"},
+                       {"image": "data:image/png;base64,eQ==", "category": "상의"}],
+                options={"outer_layered": True, "top_closed": True},
+            )
 
         self.assertEqual(result["options"], ["outer_layered", "top_closed"])
 
@@ -176,6 +180,109 @@ class EngineAndFitOptionTests(unittest.TestCase):
         both = vton.prompt(["상의"], {"fit_over": True, "fit_slim": True})
         self.assertNotIn(vton.OPTION_LINES["fit_over"], both)
         self.assertNotIn(vton.OPTION_LINES["fit_slim"], both)
+
+
+class NoInventedGarmentTests(unittest.TestCase):
+    """주지 않은 옷을 지어내지 않는다 (2026-10-02).
+
+    상의(티셔츠)만 넣고 화면 기본값(아우터 · 상의 '열어 입기')으로 만들었더니 없던
+    아우터가 그려졌다. 직접 올린 사진은 'Auto' 로 오고, 칸을 모르는 사진이 있으면
+    아우터 열기 문장이 붙었기 때문이다.
+    """
+
+    DEFAULT = {"outer_open": True, "top_open": True}
+    TEE = {"slot": "상의", "closure": "없음", "openable": "no", "layer": "얇음"}
+    SHIRT = {"slot": "상의", "closure": "버튼", "openable": "yes", "layer": "얇음"}
+
+    def _run(self, post, items, seen_rows, options=None):
+        post.return_value = Mock(status_code=200)
+        post.return_value.json.return_value = {"data": [{"b64_json": "result"}]}
+        calls = []
+
+        def look(imgs):
+            calls.append(list(imgs))
+            return [dict(seen_rows[i % len(seen_rows)]) for i in range(len(imgs))]
+
+        with patch("app.vton.inspect", side_effect=look):
+            result = vton.generate(model_id="woman", items=items,
+                                   options=self.DEFAULT if options is None else options)
+        return result, post.call_args.kwargs["data"]["prompt"], calls
+
+    def test_every_prompt_forbids_invented_garments(self):
+        for cats in (["상의"], ["하의"], ["자동 분류"], ["상의", "아우터"]):
+            with self.subTest(cats=cats):
+                self.assertIn(vton.NO_INVENT, vton.prompt(cats))
+                self.assertIn(vton.NO_INVENT, vton.prompt(cats, self.DEFAULT))
+
+    def test_outer_lines_say_they_apply_only_with_an_outer(self):
+        self.assertIn("아우터를 새로 만들지 마세요", vton.OPTION_LINES["outer_open"])
+        self.assertIn("아우터를 새로 만들지 마세요", vton.OPTION_LINES["outer_closed"])
+        self.assertIn("겉옷이나 이너를 새로 더하지 마세요", vton.OPTION_LINES["top_open"])
+
+    @patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"})
+    @patch("app.vton.requests.post")
+    def test_auto_tee_with_default_open_gets_no_outer_line(self, post):
+        result, sent, calls = self._run(
+            post, [{"image": "data:image/png;base64,eA==", "category": "자동 분류"}], [self.TEE])
+        self.assertEqual(len(calls), 1, "사진을 한 번 봐야 한다")
+        self.assertEqual(result["categories"], ["상의"])
+        self.assertNotIn(vton.OPTION_LINES["outer_open"], sent)
+        # 여밈이 없는 티셔츠뿐이라 상의 열기도 뺀다
+        self.assertNotIn(vton.OPTION_LINES["top_open"], sent)
+        self.assertEqual(result["options"], [])
+        self.assertIn(vton.NO_INVENT, sent)
+        self.assertTrue(any("앞여밈이 없어" in n for n in result["sight_notes"]))
+
+    @patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"})
+    @patch("app.vton.requests.post")
+    def test_buttoned_shirt_keeps_top_open_but_still_no_outer(self, post):
+        result, sent, _calls = self._run(
+            post, [{"image": "data:image/png;base64,eA==", "category": "자동 분류"}], [self.SHIRT])
+        self.assertIn(vton.OPTION_LINES["top_open"], sent)
+        self.assertNotIn(vton.OPTION_LINES["outer_open"], sent)
+        self.assertEqual(result["options"], ["top_open"])
+
+    @patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"})
+    @patch("app.vton.requests.post")
+    def test_unseen_photo_keeps_the_conditional_lines(self, post):
+        # 사진을 못 보면 빼지도 바꾸지도 않는다 — 문장 자체의 조건이 막는다
+        result, sent, _calls = self._run(
+            post, [{"image": "data:image/png;base64,eA==", "category": "자동 분류"}], [vton.UNKNOWN])
+        self.assertEqual(result["categories"], ["자동 분류"])
+        self.assertIn(vton.OPTION_LINES["outer_open"], sent)
+        self.assertEqual(result["sight_notes"], [])
+
+    @patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"})
+    @patch("app.vton.requests.post")
+    def test_user_chosen_slot_is_not_overridden(self, post):
+        result, _sent, _calls = self._run(
+            post, [{"image": "data:image/png;base64,eA==", "category": "아우터"}],
+            [{"slot": "상의", "closure": "지퍼", "openable": "yes", "layer": "보통"}])
+        self.assertEqual(result["categories"], ["아우터"])
+        self.assertEqual(result["options"], ["outer_open"])
+
+    @patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"})
+    @patch("app.vton.requests.post")
+    def test_no_vision_call_when_nothing_depends_on_it(self, post):
+        # 하의 · 신발만 — 열기/여미기 문장이 걸릴 칸이 없다
+        _result, _sent, calls = self._run(post, [
+            {"image": "data:image/png;base64,eA==", "category": "하의"},
+            {"image": "data:image/png;base64,eQ==", "category": "신발"}], [vton.UNKNOWN])
+        self.assertEqual(calls, [])
+        # 핏만 고른 경우도 마찬가지
+        _result, _sent, calls = self._run(post, [
+            {"image": "data:image/png;base64,eA==", "category": "자동 분류"}], [vton.UNKNOWN],
+            options={"fit_over": True})
+        self.assertEqual(calls, [])
+
+    @patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"})
+    @patch("app.vton.requests.post")
+    def test_only_the_photos_that_matter_are_looked_at(self, post):
+        _result, _sent, calls = self._run(post, [
+            {"image": "data:image/png;base64,eA==", "category": "하의"},
+            {"image": "data:image/png;base64,eQ==", "category": "상의"},
+            {"image": "data:image/png;base64,eg==", "category": "신발"}], [self.SHIRT])
+        self.assertEqual(calls, [["data:image/png;base64,eQ=="]])
 
 
 class PoseTests(unittest.TestCase):

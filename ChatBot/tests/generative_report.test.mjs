@@ -77,5 +77,71 @@ ok(safe.querySelector('.skillModule').getAttribute('style')==='grid-column:span 
 ok(/\.skillReport\b/.test(cssText) && /\.skillCanvas\b/.test(cssText), '새 캔버스 클래스가 CSS 에 있다');
 ok(/container:skill-module/.test(cssText) && /@container skill-module/.test(cssText), 'KPI 열 수를 모듈 폭으로 결정한다');
 
+console.log('\n=== 질문 유형별 템플릿 (2026-10-02) ===');
+const days=(n,f)=>Array.from({length:n},(_,i)=>{const d=new Date(Date.UTC(2026,9,2-(n-1-i)));return f(d.toISOString().slice(0,10),i)});
+const tpl=(template,blocks)=>({blocks:[{type:'generative_report',slot:'full',template,title:'제목',accent:'coral',surface:'paper',
+  density:'balanced',modules:blocks.map((block,i)=>({id:'m'+i,kind:block.type,presentation:'hero',span:12,emphasis:'strong',block}))}]});
+const draw=rep=>{const el=document.createElement('div'); el.innerHTML=api.reportHTML(rep); return el;};
+const clean=el=>!/NaN|undefined|null/.test(el.textContent)&&!/NaN|undefined/.test(el.innerHTML);
+const ticker={type:'ticker',term:'발레코어',facet:'스타일',as_of:'2026-10-02',temp:78,band:'따뜻함',verdict:'뜨거움',
+  verdict_text:'언급량이 꾸준히 오르는 중입니다.',delta_1w:6,temp_1w_ago:72,top_pct:8,direction:'오르는 중',tone:'up',ratio:1.27,
+  mention_7d:2884,mention_28d:9120,series:days(90,(d,i)=>({d,t:60+i*.2})),platforms:[{name:'유튜브',temp:84}],
+  assoc:[{name:'리본 플랫',is_new:true}],notes:[]};
+let el=draw(tpl('ticker',[ticker]));
+ok(!!el.querySelector('.skillReport--tpl-ticker .tk'), '진단 질문 — 티커가 선다');
+ok(el.querySelector('.skillReportTpl').textContent==='TICKER', '머리줄에 템플릿 이름을 적는다');
+ok(el.querySelectorAll('.tkChart').length===3 && el.querySelectorAll('.tkChart.on').length===1, '7·28·90일 그래프를 미리 그리고 하나만 켠다');
+ok(el.querySelector('.tkChart.on').dataset.range==='28', '기본은 28일');
+api.tickerRange(el.querySelector('[data-tk-range="7"]'));
+ok(el.querySelector('.tkChart.on').dataset.range==='7' && el.querySelector('.tkRangeNote.on').dataset.range==='7', '기간 버튼이 그래프와 문구를 함께 바꾼다');
+ok(el.querySelector('[data-kw="리본 플랫"]'), '같이 뜨는 말은 눌러서 물어볼 수 있다');
+const story=JSON.parse(el.querySelector('[data-rp-story]').dataset.rpStory);
+ok(story.term==='발레코어' && story.series.length===28, '스토리 버튼이 티커 값을 들고 있다');
+ok(api.storyHTML(story).includes('tkStoryCard') && api.storyHTML({temp:null})==='', '스토리 카드는 값이 있을 때만 그린다');
+ok(clean(el), '티커에 NaN · undefined 가 없다');
+const noDelta=draw(tpl('ticker',[{...ticker,delta_1w:null,temp_1w_ago:null,ratio:null,series:[]}]));
+ok(noDelta.textContent.includes('관측이 모자라') && !noDelta.querySelector('.tkChart'), '없는 지난주 대비·그래프는 0 으로 채우지 않고 말한다');
+
+el=draw(tpl('why',[{type:'timeline',term:'발레코어',window:60,points:days(60,(d,i)=>({d,m:i===30?300:20})),
+  spikes:[{d:days(60,d=>d)[30],m:300,x:15,src:'유튜브',body:'올가을 하울'}],
+  evidence:[{src:'유튜브',kind:'영상',body:'올가을 하울 <b>10벌</b>',url:'https://youtu.be/x',at:'2026-09-03',tone:'긍정'}],
+  sentiment:{pos:64,neg:12,neu:24,n:900,days:28}}]));
+ok(el.querySelectorAll('.tlBadge').length>=2 && el.querySelector('.tlMarks li'), '원인 질문 — 급상승에 번호와 설명이 붙는다');
+ok(el.querySelector('a.tlCard[href="https://youtu.be/x"][rel="noopener"]'), '근거 카드는 원문으로 간다');
+ok(!el.querySelector('.tlCard b'), '근거 본문의 태그는 글자로 남는다');
+
+el=draw(tpl('versus',[{type:'versus',a:{term:'고프코어',temp:64,delta_1w:-2,series:days(28,(d,i)=>({d,t:66-i*.1}))},
+  b:{term:'블록코어',temp:72,delta_1w:5,series:days(28,(d,i)=>({d,t:60+i*.5}))},
+  rows:[{k:'트렌드 온도',a:64,b:72,av:'64°',bv:'72°',lo:54,hi:82,better:'b'}]}]));
+ok(el.querySelector('.vsWin.b').textContent==='블록코어' && el.textContent.includes('역전'), '비교 질문 — 앞선 쪽과 역전 날짜를 적는다');
+
+el=draw(tpl('leaderboard',[{type:'leaderboard',as_of:'2026-10-02',window_days:7,short:true,
+  items:[1,2,3,4].map(r=>({rank:r,term:'용어'+r,facet:'스타일',temp:90-r,verdict:'뜨거움',band:'따뜻함',date:'2026-10-02'}))}]));
+ok(el.querySelectorAll('.lbCard').length===3 && el.querySelectorAll('.lbRow').length===1, '순위 질문 — 1~3위 카드와 나머지 줄');
+ok(el.textContent.includes('찾은 것 4개가 전부'), '요청보다 적으면 그렇다고 적는다');
+
+el=draw(tpl('verdict',[{type:'verdict',term:'리본 플랫',score:72,rec:'살',allowed:true,confidence:'보통',coverage:60,
+  signals:[{label:'트렌드',weight:20,score:85,why:'온도 상승'}],missing:[{label:'취향',weight:35}]},
+  {type:'lifecycle',term:'발레코어',stage:'확산',progress:33,age_weeks:9,weekly:[]}]));
+ok(el.querySelector('.vd--buy .vdStamp b').textContent==='살!', '판정 질문 — 살 도장');
+ok(el.querySelector('.vdRow--missing') && el.textContent.includes('자료 없음'), '빠진 신호를 숨기지 않는다');
+ok(el.querySelector('.lcLabel.on').textContent==='확산', '수명주기에 지금 단계를 표시한다');
+const hold=draw(tpl('verdict',[{type:'verdict',score:55,rec:'보류',allowed:false,confidence:'낮음',coverage:30,signals:[],missing:[]}]));
+ok(hold.querySelector('.vd--hold') && hold.textContent.includes('정하지 않았어요'), '근거가 모자라면 보류라고 말한다');
+
+el=draw(tpl('orbit',[{type:'orbit',term:'발레코어',items:[['리본 플랫',3.4,412,true],['레그워머',2.9,288,false],['랩스커트',2.6,251,false]]
+  .map(([name,lift,co,is_new])=>({name,lift,co,is_new}))}]));
+ok(el.querySelectorAll('.obBubble').length===3 && el.querySelector('.obBubble.new'), '연관 질문 — 연관 강도만큼 놓는다');
+
+el=draw(tpl('lowsignal',[{type:'lowsignal',term:'모브코어',n:9,need:20,window:28,points:[{d:'2026-09-16',m:2},{d:'2026-10-01',m:3}],
+  first_seen:'2026-09-16',sources:[{name:'유튜브',n:7}],near:['라벤더 니트']}]));
+ok(el.querySelectorAll('.lsTicks i.on').length===9 && el.querySelectorAll('.lsDot').length===2, '관측 부족 — 9/20 과 관측된 날만 점으로');
+ok(!el.querySelector('.tkTemp'), '관측이 얇으면 온도 숫자를 크게 세우지 않는다');
+
+const evil=draw(tpl('ticker',[{...ticker,term:'<img src=x onerror=alert(1)>'}]));
+ok(!evil.querySelector('img') && evil.textContent.includes('<img'), '용어 이름은 글자로만 들어간다');
+ok(/\.tk\{/.test(cssText) && /\.vdStamp\{/.test(cssText) && /\.obBubble\{/.test(cssText) && /\.lsTicks\{/.test(cssText), '템플릿 클래스가 CSS 에 있다');
+ok(/@container skill-module \(max-width:640px\)/.test(cssText), '좁은 폭에서는 모듈 폭으로 접는다');
+
 console.log(fail?`\n실패 ${fail}건`:'\n전부 통과');
 process.exit(fail?1:0);

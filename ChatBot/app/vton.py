@@ -193,12 +193,19 @@ WEAR_GUIDE = {
 OPTION_LINES = {
     "outer_layered": ("아우터가 둘 이상이면 얇고 짧은 것을 안쪽, 두껍고 긴 것을 "
                       "바깥쪽으로 두어 자연스럽게 레이어드하세요."),
-    "outer_open": ("앞여밈(지퍼·단추)이 있는 아우터는 앞을 열어 입은 상태로 표현하고 안에 "
-                   "입은 옷이 보이게 하세요. 앞여밈이 없는 아우터는 그대로 두세요."),
-    "outer_closed": ("앞여밈(지퍼·단추)이 있는 아우터는 앞을 여미거나 잠근 상태로 표현하세요."),
+    # ★ 2026-10-02 — 문장마다 "그 칸의 상품이 있을 때만" 을 못 박는다. 상의만 넣고
+    #   기본 '열어 입기' 로 보냈더니, 모델이 '열어 입은 모습' 을 만들려고 없던 아우터를
+    #   그려 넣었다. 칸을 모르는 사진('자동 분류')이 섞이면 이 문장이 그대로 실리기 때문에
+    #   (option_keys), 문장 스스로도 조건을 말해야 한다.
+    "outer_open": ("아우터 상품이 있을 때만 해당합니다 — 앞여밈(지퍼·단추)이 있는 아우터는 앞을 "
+                   "열어 입은 상태로 표현하고 안에 입은 옷이 보이게 하세요. 앞여밈이 없는 아우터는 "
+                   "그대로 두세요. 아우터 상품이 없으면 이 지시는 무시하고 아우터를 새로 만들지 마세요."),
+    "outer_closed": ("아우터 상품이 있을 때만 해당합니다 — 앞여밈(지퍼·단추)이 있는 아우터는 앞을 "
+                     "여미거나 잠근 상태로 표현하세요. 아우터 상품이 없으면 아우터를 새로 만들지 마세요."),
     "top_open": ("앞여밈(단추·지퍼)이 있는 상의는 앞을 열어 입은 상태로 표현하세요. 안에 받쳐 "
                  "입은 상의가 없으면 단추를 위쪽 한두 개만 풀어 자연스럽게 연출하세요. "
-                 "티셔츠·니트처럼 앞여밈이 없는 상의는 그대로 두고 트임을 새로 만들지 마세요."),
+                 "티셔츠·니트처럼 앞여밈이 없는 상의는 그대로 두고 트임을 새로 만들지 마세요. "
+                 "열어 입은 모습을 만들려고 겉옷이나 이너를 새로 더하지 마세요."),
     "top_closed": "앞여밈(단추·지퍼)이 있는 상의는 끝까지 여민 상태로 표현하세요.",
     # ── 핏 (2026-10-01) — 화면은 오버핏 · 정핏 · 슬림핏 세 칸, 기본 정핏.
     #   정핏은 문장을 붙이지 않는다 — 상품 사진의 핏 그대로가 정핏이고, 예전 동작이다.
@@ -240,6 +247,61 @@ def option_keys(options, categories: list[str] | None = None) -> list[str]:
 def option_lines(options, categories: list[str] | None = None) -> list[str]:
     """켜진 옵션만 문장으로."""
     return [OPTION_LINES[k] for k in option_keys(options, categories)]
+
+
+# ── 생성 직전에 사진을 본다 (2026-10-02) ─────────────────────
+#   왜 —
+#     화면에서 직접 올린 사진은 'Auto(자동 분류)' 로 온다. option_keys 는 칸을 모르는
+#     사진이 있으면 "그 사진이 아우터일 수도 있다" 며 아우터 열기 문장을 붙인다. 그
+#     결과 상의(티셔츠)만 넣고 기본 '열어 입기' 로 보냈는데 없던 아우터가 그려졌다.
+#     챗봇 코디(build_fit)는 이미 사진을 보고(fit.prune_options) 연출을 고르지만,
+#     화면에서 바로 오는 요청은 그 길을 거치지 않았다.
+#   무엇을 —
+#     연출 문장이 걸린 칸(상의 · 아우터)과 칸을 모르는 사진만 vision 에 한 번 묻는다
+#     (inspect). 칸을 모르던 사진은 본 칸으로 정하고, 여밈이 없다고 확인된 옷뿐이면 그
+#     칸의 열기/여미기를 뺀다.
+#   ★ 사용자가 고른 칸은 바꾸지 않는다 — 고른 사람이 맞다.
+#   ★ 모르면 빼지도 바꾸지도 않는다(AGENTS.md §6). 사진을 못 보면 예전 그대로 가고,
+#     문장 자체의 조건(NO_INVENT · '아우터 상품이 있을 때만')이 남아서 막는다.
+OPEN_KEYS = {"상의": ("top_open", "top_closed"), "아우터": ("outer_open", "outer_closed")}
+
+
+def sight_targets(categories: list[str], options) -> list[int]:
+    """사진을 봐야 연출을 정할 수 있는 상품의 번호(0부터). 없으면 vision 을 부르지 않는다."""
+    on = set(option_keys(options, categories))
+    if not any(k in SLOT_OF or k == "outer_layered" for k in on):
+        return []
+    want = {slot for slot, keys in OPEN_KEYS.items() if any(k in on for k in keys)}
+    return [i for i, c in enumerate(categories)
+            if c == AUTO or c in want or (c == "아우터" and "outer_layered" in on)]
+
+
+def apply_sight(categories: list[str], options, seen: dict[int, dict]
+                ) -> tuple[list[str], dict, list[str]]:
+    """본 결과(seen: 번호 → inspect 한 줄)로 칸과 연출을 정한다.
+
+    돌려주는 것: (프롬프트에 쓸 칸, 실을 옵션 {이름: True}, 무엇을 왜 바꿨나)
+    """
+    cats = list(categories)
+    notes: list[str] = []
+    for i, look in seen.items():
+        slot = (look or {}).get("slot")
+        if cats[i] == AUTO and slot in SLOT_ORDER:
+            cats[i] = slot
+            notes.append(f"{i + 1}번 상품은 사진상 {slot} 로 보고 입혔습니다.")
+    on = option_keys(options, cats)
+    for slot, keys in OPEN_KEYS.items():
+        if not any(k in on for k in keys):
+            continue
+        looks = [seen.get(i) or {} for i, c in enumerate(cats) if c == slot]
+        # 그 칸의 옷이 모두 '여밈 없음' 으로 확인됐을 때만 뺀다. 하나라도 모르면 둔다.
+        if looks and all(look.get("openable") == "no" for look in looks):
+            on = [k for k in on if k not in keys]
+            notes.append(f"{slot}에 앞여밈이 없어 {slot} 열기/여미기는 빼고 입혔습니다.")
+    if "outer_layered" in on and AUTO not in cats and cats.count("아우터") < 2:
+        on = [k for k in on if k != "outer_layered"]
+        notes.append("아우터가 한 벌이라 레이어드는 빼고 입혔습니다.")
+    return cats, {k: True for k in on}, notes
 
 
 _DATA_URL = re.compile(r"^data:(image/(?:png|jpeg|webp));base64,(.+)$", re.I | re.S)
@@ -320,6 +382,14 @@ def fetch_as_data_url(url: str, max_bytes: int = FETCH_MAX_BYTES) -> str:
     return "data:" + mime + ";base64," + base64.b64encode(raw).decode("ascii")
 
 
+# ★ 주지 않은 옷을 지어내지 않는다 (2026-10-02). 옵션과 상관없이 늘 싣는다 —
+#   상품이 없는 부위는 포즈 사진의 옷이 기준이다. 이 문장이 없을 때 '열어 입기' 같은
+#   연출 지시를 맞추려고 모델이 아우터 · 가디건을 새로 그려 넣었다.
+NO_INVENT = (f"입힐 상품으로 준 옷과 잡화만 더하세요. 상품으로 주지 않은 종류(아우터·가디건·"
+             f"조끼·모자·가방·액세서리 등)를 새로 만들어 넣지 마세요 — 상품이 없는 부위는 "
+             f"{REFERENCE_COUNT}번 사진에서 입고 있는 옷을 그대로 두세요.")
+
+
 def prompt(categories: list[str], options: dict | None = None) -> str:
     """보내는 이미지 순서를 그대로 글로 옮긴다.
 
@@ -359,6 +429,7 @@ def prompt(categories: list[str], options: dict | None = None) -> str:
          if any(k in FIT_KEYS for k in option_keys(options, cats))
          else "각 상품의 색상, 패턴, 로고, 소재 질감, 봉제선과 실루엣을 정확히 보존하세요."),
         "여러 상품은 실제 옷을 입는 순서와 레이어 관계에 맞춰 하나의 코디로 조합하세요.",
+        NO_INVENT,
     ]
     body += option_lines(options, cats)
     body += [
@@ -415,6 +486,16 @@ def generate(*, model_id: str, items: list[dict] | None = None,
     if not key:
         raise RuntimeError("OPENAI_API_KEY가 설정되지 않았습니다.")
     categories = [row["category"] for row in chosen]
+    # 연출을 정하려면 사진을 봐야 하는 상품만 vision 에 묻는다(sight_targets).
+    # 걸린 시간은 따로 남긴다 — 생성 시간을 줄이는 중이라 이 몫이 얼마인지 알아야 한다.
+    sight_started = time.monotonic()
+    targets = sight_targets(categories, options)
+    try:
+        seen = dict(zip(targets, inspect([chosen[i]["image"] for i in targets]))) if targets else {}
+    except Exception:  # noqa: BLE001 — 검수는 거드는 일이다. 실패해도 생성은 간다(예전 그대로).
+        seen = {}
+    sight_ms = int((time.monotonic() - sight_started) * 1000) if targets else 0
+    categories, options, sight_notes = apply_sight(categories, options, seen)
     started = time.monotonic()
     # ★ 기준 사진이 먼저, 상품이 나중 — prompt() 가 부르는 번호 그대로다.
     #   파일은 보내는 동안 열어 둔다(ExitStack). 하나씩 열고 닫으면 requests 가
@@ -463,6 +544,8 @@ def generate(*, model_id: str, items: list[dict] | None = None,
             "categories": categories,
             # 어떤 옵션이 실제로 프롬프트에 실렸나. 화면엔 안 뜨지만 로그로 본다.
             "options": option_keys(options, categories),
+            # 사진을 보고 바꾼 것 — 칸을 정했거나 연출을 뺀 이유. 화면 · 로그가 읽는다.
+            "sight_notes": sight_notes, "sight_ms": sight_ms,
             "item_count": len(chosen)}
 
 

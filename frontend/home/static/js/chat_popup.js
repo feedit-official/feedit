@@ -1,6 +1,6 @@
 import { $, $$, HAS_A, aAnimate } from '../../../core/static/js/dom.js';
 import { SM_ON, STYLES, LIKED, M_QUESTIONS, SM_QUESTIONS, ansCardHTML, smSwitch } from './chat.js';
-import { API_BASE, classifyFitImages, sendAnswerFeedback, isUp, askStream, reportHTML, notesHTML, followupHTML, actionsHTML, refusalHTML, requestLexicon, fillBars, MAX_IMAGES, imageFileToDataURL, bindImageDrop, wantsVirtualFit, responseCardHTML } from './chat_api.js';
+import { API_BASE, classifyFitImages, sendAnswerFeedback, isUp, askStream, reportHTML, notesHTML, followupHTML, actionsHTML, refusalHTML, requestLexicon, fillBars, MAX_IMAGES, imageFileToDataURL, bindImageDrop, wantsVirtualFit, responseCardHTML, storyHTML, tickerRange } from './chat_api.js';
 import { AUTH, ME, openStyleSelect, requireAuth } from '../../../account/static/js/profile.js';
 import { logChat, chatList, chatLoad, chatSaveTurn, chatImport, chatUpdate, chatTruncate, chatDelete } from '../../../account/static/js/account_api.js';
 
@@ -1842,6 +1842,11 @@ document.addEventListener('click', e=>{
   const generate=e.target.closest('#cpThread [data-vf-generate]');
   if(generate){ cpGenerateFit(generate); return; }
   /* 리포트 저장(PNG) · 공유 (2026-09-14) */
+  /* 리포트 템플릿 (2026-10-02) — 티커 기간 전환 · 스토리 이미지 저장 */
+  const tkRange=e.target.closest('#cpThread [data-tk-range]');
+  if(tkRange){ tickerRange(tkRange); return; }
+  const rpStory=e.target.closest('#cpThread [data-rp-story]');
+  if(rpStory){ cpStorySave(rpStory); return; }
   const rpSave=e.target.closest('#cpThread [data-rp-save]');
   if(rpSave){ cpReportSave(rpSave); return; }
   const rpShare=e.target.closest('#cpThread [data-rp-share]');
@@ -2009,11 +2014,40 @@ async function cpReportCanvas(card){
     cacheBust:true,
     /* 다른 사이트 상품 사진이 CORS 로 막혀도 통째로 실패하지 않게 빈 칸으로 둔다 */
     imagePlaceholder:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=',
-    /* 저장·공유 버튼 자체는 그림에 넣지 않는다 */
-    filter:el=>!(el&&el.classList&&el.classList.contains('rpTools')),
+    /* 저장·공유 · 스토리 버튼 자체는 그림에 넣지 않는다 */
+    filter:el=>!(el&&el.classList&&(el.classList.contains('rpTools')||el.classList.contains('tplStoryBtn'))),
   });
 }
 const cpCanvasBlob=canvas=>new Promise(done=>canvas.toBlob(done,'image/png'));
+/* 스토리 이미지 (2026-10-02) — 티커 값으로 9:16 카드를 화면 밖에 그려 1080×1920 PNG 로 저장한다.
+   ★ 카드 그림을 따로 들고 다니지 않는다 — 버튼이 들고 있는 값(서버 블록 그대로)으로 그때 그린다.
+   ★ 화면 밖 자리는 저장이 끝나면 바로 걷는다. 남겨 두면 다음 캡처에 끼어든다. */
+async function cpStorySave(btn){
+  if(btn.disabled)return;
+  let data=null;
+  try{ data=JSON.parse(btn.dataset.rpStory||'null') }catch(_e){ data=null }
+  const html=data?storyHTML(data):'';
+  if(!html){ cpToast('스토리 이미지를 만들 값이 없습니다.'); return; }
+  btn.disabled=true;
+  const stage=document.createElement('div');
+  stage.className='tkStoryStage'; stage.setAttribute('aria-hidden','true');
+  stage.innerHTML=html;
+  document.body.appendChild(stage);
+  try{
+    const { toCanvas } = await import('html-to-image');
+    const canvas=await toCanvas(stage.firstElementChild,{backgroundColor:'#1c1a17',pixelRatio:3,cacheBust:true});
+    const blob=await cpCanvasBlob(canvas);
+    if(!blob)throw new Error('empty');
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url; a.download='feedit-story-'+Date.now().toString(36)+'.png';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),4000);
+    cpToast('스토리 이미지를 저장했습니다.');
+  }catch(_e){ cpToast('스토리 이미지를 만들지 못했습니다.'); }
+  stage.remove();
+  btn.disabled=false;
+}
 async function cpReportSave(btn){
   const card=btn.closest('.skillReport'); if(!card||btn.disabled)return;
   btn.disabled=true;

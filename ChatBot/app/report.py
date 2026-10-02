@@ -87,6 +87,15 @@ def build_term(store, gate, hit: dict, as_of: str, *, with_sentiment: bool = Tru
     node["temp"] = T["temp"]
     node["temp_band"] = T["band"]
     node["temp_verdict"] = T["verdict"]
+    node["temp_verdict_text"] = T.get("verdict_text")
+    # 지난주 대비 · 일별 기록 — 리포트 템플릿(티커 · 주석 그래프 · VS)이 그림을 그린다 (2026-10-02)
+    #   ★ get_metric 과 같은 문턱 — 14일 관측이 모자라면 지난주 대비를 말하지 않는다(trend_view.may_say).
+    two_weeks = trend_view.may_say(T.get("obs") or {}).get("2주변화")
+    node["temp_1w_ago"] = T.get("temp_1w_ago") if two_weeks else None
+    node["delta_1w"] = T.get("delta_1w") if two_weeks else None
+    node["obs"] = dict(T.get("obs") or {})
+    node["thin"] = bool(T.get("thin"))
+    node["series"] = list(T.get("series") or [])
     node["pct_rank"] = T["percentile"]
     node["top_pct"] = T["top_pct"]
     node["level"] = T["level"]

@@ -63,7 +63,7 @@ def _scan(trace) -> dict[str, Any]:
                            "evidence": set(), "evidence_results": {},
                            "rank": None, "web": None, "as_of": None, "similar": None,
                            "taste": None, "season": None, "salmal": None,
-                           "no_metric": {}}
+                           "no_metric": {}, "market": {}}
     for c in (trace.calls if trace else []):
         name, args = c.get("tool"), (c.get("args") or {})
         res = c.get("result")
@@ -112,6 +112,11 @@ def _scan(trace) -> dict[str, Any]:
             got["season"] = res
         elif name == "get_salmal_index":
             got["salmal"] = res
+        elif name == "get_market" and not res.get("unavailable") and not res.get("error"):
+            # 수명주기 · 할인 · 리셀 — 축마다 마지막 결과 하나 (2026-10-02, 살말 판정 템플릿)
+            axis = str(res.get("axis") or args.get("axis") or "")
+            if axis in ("lifecycle", "discount", "resale"):
+                got["market"][axis] = res
     return got
 
 
@@ -338,45 +343,21 @@ def _season_blocks(res: dict | None) -> list[dict]:
 
 
 def salmal_blocks(res: dict | None) -> list[dict]:
-    """검증된 살말 지수와 근거를 기존 KPI·순위·안내 블록으로 표현한다."""
+    """검증된 살말 지수 → 판정 블록(도장 · 가중치 × 점수 막대) (2026-10-02).
+
+    ★ 예전엔 KPI 세 칸 + 근거 순위 + 빠진 신호 안내 셋으로 그렸다. 셋이 같은 판단의
+      다른 면이라 한 블록에 모았다 — 빠진 신호는 막대 자리에 '없음' 으로 남는다.
+    """
     if not isinstance(res, dict):
         return []
-    score = res.get("score")
-    if score is None:
+    verdict = B.b_verdict(res)
+    if verdict is None:
         return [{"type": "note", "slot": "full",
                  "text": "살말 지수를 계산할 근거가 아직 부족합니다."}]
-    recommendation = str(res.get("recommendation") or "보류")
-    confidence = str(res.get("confidence") or "낮음")
-    coverage = int(res.get("coverage") or 0)
-    rows = []
-    for signal in (res.get("signals") or [])[:5]:
-        if not isinstance(signal, dict):
-            continue
-        rows.append({"k": str(signal.get("label") or signal.get("key") or "근거"),
-                     "small": str(signal.get("why") or ""),
-                     "v": f"{round(float(signal.get('score') or 0))}점",
-                     "up": float(signal.get("score") or 0) >= 50})
-    blocks = [{"type": "kpis", "slot": "full", "items": [
-        {"k": "살말 지수", "v": str(int(score)), "unit": "%",
-         "note": "확인된 신호만 반영", "up": int(score) >= 67},
-        {"k": "추천", "v": recommendation, "unit": "",
-         "note": "살 · 말 · 보류", "up": recommendation == "살"},
-        {"k": "신뢰도", "v": confidence, "unit": "",
-         "note": f"근거 충족 {coverage}%", "up": coverage >= 50},
-    ]}]
-    if rows:
-        blocks.append({"type": "rank", "slot": "full", "title": "판단 근거",
-                       "meta": str(res.get("as_of") or ""), "rows": rows})
-    missing = res.get("missing") or []
-    if missing:
-        labels = {"taste": "취향", "behavior": "검색·찜", "trend": "트렌드",
-                  "price": "가격", "community": "커뮤니티"}
-        text = "이번 판단에 빠진 신호: " + " · ".join(labels.get(x, x) for x in missing)
-        why = (res.get("missing_why") or {}).get("taste")
-        if "taste" in missing and why:
-            text += f" (취향: {why})"
-        blocks.append({"type": "note", "slot": "full", "text": text})
-    return blocks
+    why = (res.get("missing_why") or {}).get("taste")
+    if "taste" in (res.get("missing") or []) and why:
+        verdict["missing_note"] = f"취향: {why}"
+    return [verdict]
 
 
 def _content(kind: str, block: dict | None, *, term: str | None = None,
@@ -430,6 +411,35 @@ def build(trace, store, gate, question: str = "") -> list[dict]:
 
     if got["rank"]:
         entry = _content("ranking", _rank_block(got["rank"], as_of))
+        if entry:
+            catalog.append(entry)
+        entry = _content("leaderboard", B.b_leaderboard(got["rank"]))
+        if entry:
+            catalog.append(entry)
+    # ── 템플릿 그림 (2026-10-02) ───────────────────────────
+    #   같은 노드에서 그림만 다르게 만든다. 어떤 것을 화면에 세울지는
+    #   report_skill.choose_template 이 정하고, 나머지는 버린다.
+    if len(built) == 2:
+        entry = _content("versus", B.b_versus([n for _, _, n in built]))
+        if entry:
+            catalog.append(entry)
+    for term, axes, node in built:
+        visual = [
+            (_content("ticker", B.b_ticker(node, as_of or ""), term=term)
+             if not axes or axes & {"온도", "순위", "모멘텀"} else None),
+            _content("timeline", B.b_timeline(node, evidence=term in got["evidence"]), term=term),
+            _content("orbit", B.b_orbit(node), term=term) if "연관어" in axes else None,
+            _content("lowsignal", B.b_lowsignal(node), term=term),
+        ]
+        catalog.extend(e for e in visual if e)
+    lifecycle = got["market"].get("lifecycle")
+    if lifecycle:
+        entry = _content("lifecycle", B.b_lifecycle(lifecycle),
+                         term=str(lifecycle.get("term") or "") or None)
+        if entry:
+            catalog.append(entry)
+    if got["market"].get("discount") or got["market"].get("resale"):
+        entry = _content("market", B.b_market(got["market"]))
         if entry:
             catalog.append(entry)
     # 비교 블록은 온도/순위를 실제로 요청했을 때만 만든다. 감성만 물었는데

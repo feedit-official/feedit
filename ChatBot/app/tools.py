@@ -299,12 +299,20 @@ SPECS: list[dict] = [
     ),
     _fn(
         "compose_report",
-        "순위·비교·여러 지표처럼 구조화 화면이 읽기를 실제로 돕는 답에서만, 조회가 "
-        "끝난 뒤 필요한 결과를 골라 화면을 구성하는 선택형 UI 스킬이다. 짧은 사실 확인, "
-        "인사, 간단한 설명처럼 문장만으로 충분하면 호출하지 않는다. "
-        "완성 템플릿을 고르는 도구가 아니다. 데이터 모듈의 표현 방식과 12열 폭, "
-        "강조도를 조합해 필요한 요청에만 새 캔버스를 만든다. 호출한다면 최종 문장을 "
+        "진단·판정·원인·비교·순위·연관처럼 그림이 읽기를 실제로 돕는 답에서만, 조회가 "
+        "끝난 뒤 화면을 구성하는 선택형 UI 스킬이다. 짧은 사실 확인, 인사, 용어 뜻, "
+        "간단한 설명처럼 문장만으로 충분하면 호출하지 않는다. 호출한다면 최종 문장을 "
         "쓰기 직전에 한 번만 부른다. "
+        "template 으로 질문 유형에 맞는 그림을 고른다: "
+        "ticker=한 용어 진단('요즘 어때'·'뜨고 있어'·'식었어', get_metric 온도) · "
+        "verdict=살말 판정('살까 말까'·'사도 될까', get_salmal_index, 수명주기·시세는 get_market) · "
+        "why=원인('왜 떴어'·'어디서 뜬 거야', get_metric + get_evidence) · "
+        "versus=정확히 두 대상 비교('A vs B', 두 용어 get_metric) · "
+        "leaderboard=순위('TOP'·'요즘 뭐 떠', rank_terms) · "
+        "orbit=연관('같이 뜨는 거'·'뭐랑 입어', get_metric 연관어) · "
+        "canvas=위에 맞지 않는 섞인 결과(취향·상황·추천 탐색 등)를 modules 로 직접 배치. "
+        "템플릿을 고르면 modules 는 빈 배열로 둔다. 템플릿에 필요한 결과가 없거나 관측이 "
+        "얇으면 서버가 결과에 맞는 그림(관측 부족 카드 포함)으로 바꾼다. "
         "★ 이 도구를 부르는 순간 그 모듈의 목록·수치는 **화면이 맡는다.** "
         "카드에 실은 목록을 최종 답변 본문에 다시 나열하지 마라 — 사용자가 같은 "
         "것을 두 번 읽게 된다. 본문은 맨 위 한둘만 짚고 무엇을 센 순위인지와 "
@@ -323,6 +331,11 @@ SPECS: list[dict] = [
         "근거와 설명에만 써서 데이터 카드의 시각 문법을 통일한다. "
         "HTML·CSS나 수치·상품을 인자에 쓰지 마라.",
         {
+            "template": {"type": "string", "enum": [
+                "ticker", "verdict", "why", "versus", "leaderboard", "orbit", "canvas"],
+                "description": "질문 유형에 맞는 그림. 섞인 결과면 canvas"},
+            "term": {"type": ["string", "null"],
+                     "description": "그림의 주인공 용어(정확한 표기). 순위·비교·판정이면 null 가능"},
             "title": {"type": "string", "description": "짧은 리포트 제목. 수치를 넣지 않는다"},
             "accent": {"type": "string", "enum": ["coral", "ink", "violet", "blue", "lime"]},
             "surface": {"type": "string", "enum": ["paper", "soft", "contrast", "glass"]},
@@ -335,7 +348,7 @@ SPECS: list[dict] = [
                         "kind": {"type": "string", "enum": [
                             "ranking", "comparison", "metric", "direction", "sources",
                             "associations", "sentiment", "recommendations", "taste", "salmal",
-                            "context", "evidence", "links", "missing"]},
+                            "context", "evidence", "links", "missing", "lifecycle", "market"]},
                         "term": {"type": ["string", "null"],
                                  "description": "특정 용어 모듈이면 정확한 용어, 공통이면 null"},
                         "presentation": {"type": "string", "enum": [
@@ -348,7 +361,7 @@ SPECS: list[dict] = [
                 },
             },
         },
-        ["title", "accent", "surface", "density", "modules"],
+        ["template", "term", "title", "accent", "surface", "density", "modules"],
     ),
     _fn(
         "ask_user",
@@ -1226,8 +1239,13 @@ class Toolbox:
     LIST_KINDS = {"ranking", "comparison", "recommendations", "associations",
                   "sources", "links", "evidence"}
 
+    # 템플릿이 화면에 늘어놓는 목록 — 본문이 되풀이하지 않게 알려 준다.
+    TEMPLATE_LISTS = {"leaderboard": "순위", "versus": "비교 지표", "orbit": "연관어",
+                      "why": "근거", "ticker": "플랫폼별 온도", "verdict": "판정 근거"}
+
     def t_compose_report(self, title: str, accent: str, surface: str,
-                         density: str, modules: Any) -> dict:
+                         density: str, modules: Any, template: str | None = None,
+                         term: str | None = None) -> dict:
         """모델의 UI 결정을 기록한다. 데이터는 여기서 만들지 않는다.
 
         실제 모듈 존재 여부는 agent_blocks → report_skill 이 궤적과 다시 맞춘다.
@@ -1236,7 +1254,7 @@ class Toolbox:
         allowed = {
             "kinds": {"ranking", "comparison", "metric", "direction", "sources", "salmal",
                       "associations", "sentiment", "recommendations", "taste", "context",
-                      "evidence", "links", "missing"},
+                      "evidence", "links", "missing", "lifecycle", "market"},
             "presentations": {"hero", "card", "chart", "list", "editorial", "compact"},
             "emphasis": {"strong", "normal", "quiet"},
             "accents": {"coral", "ink", "violet", "blue", "lime"},
@@ -1260,7 +1278,11 @@ class Toolbox:
                 "emphasis": (raw.get("emphasis") if raw.get("emphasis") in
                              allowed["emphasis"] else "normal"),
             })
+        template = template if template in ("ticker", "verdict", "why", "versus", "leaderboard",
+                                            "orbit", "canvas") else None
         spec = {
+            "template": template,
+            "term": (str(term).strip() or None) if term is not None else None,
             "title": str(title or "FEEDiT SIGNAL").strip()[:48],
             "accent": accent if accent in allowed["accents"] else "coral",
             "surface": surface if surface in allowed["surfaces"] else "paper",
@@ -1273,12 +1295,14 @@ class Toolbox:
         #   **도구가 직접 알려 준다** — 되풀이를 막는 재료를 손에 쥐여 주는 쪽이
         #   프롬프트로 부탁하는 것보다 확실하다(AGENTS.md §1-②).
         listed = sorted({m["kind"] for m in clean if m["kind"] in self.LIST_KINDS})
+        if template and template != "canvas":
+            listed = [self.TEMPLATE_LISTS[template]]
         note = "실제 조회 결과와 일치하는 모듈만 화면에 결합됩니다."
         if listed:
             note += (" 화면이 " + " · ".join(listed) + " 목록을 이미 보여 줍니다 — "
                      "최종 답변 본문에 같은 목록을 다시 나열하지 마세요. 맨 위 한둘만 "
                      "이름으로 짚고, 무엇을 센 것인지와 어떻게 읽어야 하는지를 쓰세요.")
-        return {"ok": True, "skill": "generative-report-v1", "spec": spec, "note": note}
+        return {"ok": True, "skill": "generative-report-v2", "spec": spec, "note": note}
 
     # ── 밖 ──────────────────────────────────────────────
     def t_inspect_product_link(self, url: str) -> dict:

@@ -28,7 +28,38 @@ from typing import Any
 KINDS = {
     "ranking", "comparison", "metric", "direction", "sources", "salmal",
     "associations", "sentiment", "recommendations", "taste", "context",
-    "evidence", "links", "missing",
+    "evidence", "links", "missing", "lifecycle", "market",
+}
+# ── 리포트 템플릿 (2026-10-02) ─────────────────────────────
+#   질문 유형마다 한눈에 읽히는 그림이 있다. 모델은 템플릿 이름만 고르고, 그 템플릿에
+#   필요한 그림(VISUAL_KINDS)이 실제 결과에 없으면 서버가 결과에 맞는 템플릿으로 바꾼다.
+#     ticker      진단   "요즘 어때?" "뜨고 있어?"        get_metric(온도)
+#     verdict     판정   "살까 말까?" "사도 될까?"         get_salmal_index (+ get_market)
+#     why         원인   "왜 떴어?" "어디서 뜬 거야?"      get_metric + get_evidence
+#     versus      비교   "A vs B" "뭐가 더 떠?"           get_metric 두 용어
+#     leaderboard 순위   "TOP 10" "요즘 뭐가 떠?"          rank_terms
+#     orbit       연관   "같이 뜨는 거?" "뭐랑 입어?"      get_metric(연관어)
+#     lowsignal   관측 부족 — 모델이 고르지 않는다. 주인공 용어의 언급이 얇으면 서버가 바꾼다.
+#     canvas      섞인 결과 — 예전 생성형 캔버스(모델이 모듈을 직접 배치)
+#   ★ 템플릿은 '그림의 문법' 이다. 값은 여전히 도구 결과에서만 나온다.
+TEMPLATES = ("ticker", "verdict", "why", "versus", "leaderboard", "orbit", "lowsignal", "canvas")
+VISUAL_KINDS = {"ticker", "timeline", "versus", "leaderboard", "orbit", "lowsignal"}
+# 템플릿의 주인공 그림 · 그 그림이 이미 보여 주므로 따로 세우지 않는 종류
+TEMPLATE_LEAD = {"ticker": "ticker", "why": "timeline", "versus": "versus",
+                 "leaderboard": "leaderboard", "orbit": "orbit", "lowsignal": "lowsignal"}
+TEMPLATE_COVERS = {
+    "ticker": {"metric", "direction", "sources", "associations"},
+    "why": {"evidence", "links", "sentiment", "metric", "direction"},
+    "versus": {"comparison", "metric", "direction", "sentiment"},
+    "leaderboard": {"ranking"},
+    "orbit": {"associations"},
+    "lowsignal": {"metric", "direction", "sources", "associations"},
+    "verdict": set(),
+}
+TEMPLATE_TITLES = {
+    "ticker": "{term} 지금 온도", "why": "{term}, 왜 지금일까", "versus": "{term} 비교",
+    "leaderboard": "지금 뜨는 흐름", "orbit": "{term}{wa} 같이 뜨는 것",
+    "lowsignal": "{term}, 아직 관측 중", "verdict": "{term} 살까 말까",
 }
 PRESENTATIONS = {"hero", "card", "chart", "list", "editorial", "compact"}
 EMPHASIS = {"strong", "normal", "quiet"}
@@ -207,6 +238,141 @@ def _module_payload(module: dict) -> dict:
     return payload
 
 
+def _wa(word: str) -> str:
+    ch = (word or "").strip()[-1:]
+    if not ch or not ("가" <= ch <= "힣"):
+        return "와"
+    return "과" if (ord(ch) - 0xAC00) % 28 else "와"
+
+
+def _lead(catalog: list[dict], kind: str, term: str | None) -> dict | None:
+    rows = [c for c in catalog if c.get("kind") == kind]
+    if term:
+        exact = [c for c in rows if str(c.get("term") or "") == term]
+        if exact:
+            return exact[0]
+    return rows[0] if rows else None
+
+
+def _verdict(catalog: list[dict]) -> dict | None:
+    return next((c for c in catalog if c.get("kind") == "salmal"
+                 and (c.get("block") or {}).get("type") == "verdict"), None)
+
+
+def choose_template(spec: dict | None, catalog: list[dict]) -> tuple[str, dict | None]:
+    """(템플릿 이름, 주인공 콘텐츠). 모델이 고른 것을 먼저 보되 결과가 정한다.
+
+    ★ 질문 문장을 보지 않는다. 무엇을 조회했고 무엇이 돌아왔는지(카탈로그)만 본다 —
+      같은 질문이라도 데이터가 얇으면 다른 그림이 맞다(AGENTS.md §6).
+    """
+    spec = spec or {}
+    want = str(spec.get("template") or "")
+    focus = str(spec.get("term") or "").strip() or None
+
+    def lead_of(name: str) -> dict | None:
+        if name == "verdict":
+            return _verdict(catalog)
+        kind = TEMPLATE_LEAD.get(name)
+        return _lead(catalog, kind, focus) if kind else None
+
+    def thin(content: dict | None) -> dict | None:
+        """주인공 용어의 관측이 얇으면 그 용어의 관측 부족 카드."""
+        if not content or not content.get("term"):
+            return None
+        return next((c for c in catalog if c.get("kind") == "lowsignal"
+                     and c.get("term") == content.get("term")), None)
+
+    # 예전 스펙(템플릿 없이 모듈만) — 모델이 직접 배치한 캔버스를 존중한다.
+    if want == "canvas" or (not want and spec.get("modules")):
+        return "canvas", None
+    if want in TEMPLATES and want != "canvas":
+        hit = lead_of(want)
+        if hit:
+            if want in ("ticker", "why", "orbit"):
+                low = thin(hit)
+                if low:
+                    return "lowsignal", low
+            return want, hit
+    # 결과로 고른다 — 판정 → 순위 → 비교 → 원인(근거를 조회했을 때만) → 진단 → 연관
+    if _verdict(catalog):
+        return "verdict", _verdict(catalog)
+    for name in ("leaderboard", "versus"):
+        hit = lead_of(name)
+        if hit:
+            return name, hit
+    timeline = lead_of("why")
+    if timeline and (timeline.get("block") or {}).get("evidence"):
+        return ("lowsignal", thin(timeline)) if thin(timeline) else ("why", timeline)
+    for name in ("ticker", "orbit"):
+        hit = lead_of(name)
+        if hit:
+            return ("lowsignal", thin(hit)) if thin(hit) else (name, hit)
+    return "canvas", None
+
+
+def _template_canvas(name: str, lead: dict, catalog: list[dict], spec: dict | None) -> dict:
+    """템플릿 하나 = 주인공 그림(12열) + 그 그림이 보여 주지 않는 결과(보조 모듈)."""
+    spec = spec or {}
+    covers = TEMPLATE_COVERS.get(name, set())
+    term = str(lead.get("term") or "")
+    modules: list[dict] = []
+    used: set[str] = set()
+
+    def add(content: dict, span: int, presentation: str = "hero", emphasis: str = "strong"):
+        used.add(content["id"])
+        modules.append({"content": content, "presentation": presentation,
+                        "span": span, "emphasis": emphasis})
+
+    add(lead, 12)
+    if name == "verdict":
+        # 살말 판정 옆에는 수명주기와 시세가 선다 — 같은 판단의 근거라서.
+        side = [c for c in catalog if c.get("kind") in ("lifecycle", "market")]
+        for c in side:
+            add(c, 7 if (len(side) == 2 and c.get("kind") == "lifecycle") else
+                (5 if len(side) == 2 else 12), "card", "normal")
+    elif name in ("ticker", "why", "lowsignal"):
+        life = _lead(catalog, "lifecycle", term or None)
+        if life:
+            add(life, 12, "card", "normal")
+    for c in catalog:
+        kind = c.get("kind")
+        # 주인공 그림이 보여 주는 것은 그 용어의 것만 가린다. 비교·순위는 대상 전체가 주인공이다.
+        covered = kind in covers and (name in ("versus", "leaderboard") or not c.get("term")
+                                      or str(c.get("term")) == term)
+        if c["id"] in used or kind in VISUAL_KINDS or covered:
+            continue
+        # 다른 용어의 같은 종류는 둔다 — 비교 템플릿이 아닌데 둘째 용어를 조회했다면 보여 준다.
+        block_type = str((c.get("block") or {}).get("type") or "")
+        span = 12 if block_type in ("rank", "note", "table") or kind in ("missing", "salmal") else 6
+        add(c, span, BLOCK_DEFAULT_PRESENTATION.get(block_type, "card"),
+            "quiet" if kind in ("missing", "links") else "normal")
+    _normalize_notes(modules)
+    _pack_rows(modules)
+
+    title = str(spec.get("title") or "").strip()[:48]
+    if not title or title.casefold().replace(" ", "") == "feeditsignal":
+        if name == "versus":
+            block = lead.get("block") or {}
+            pair = [str((block.get(k) or {}).get("term") or "") for k in ("a", "b")]
+            title = f"{pair[0]} vs {pair[1]}" if all(pair) else "나란히 보기"
+        else:
+            title = TEMPLATE_TITLES.get(name, "{term}").format(term=term or "", wa=_wa(term))
+            title = title.strip(" ,") or _fallback_title(catalog)
+    accent = _pick(spec.get("accent"), ACCENTS, "coral")
+    surface = _pick(spec.get("surface"), SURFACES, "paper")
+    density = _pick(spec.get("density"), DENSITIES, "balanced")
+    serial = json.dumps({"template": name, "modules": [
+        (m["content"]["id"], m["span"]) for m in modules]}, ensure_ascii=False, sort_keys=True)
+    return {
+        "type": "generative_report", "slot": "full", "title": title[:48],
+        "template": name, "accent": accent, "surface": surface, "density": density,
+        # model = 모델이 고른 템플릿 그대로 · auto = 결과에 맞춰 서버가 바꿈 · fallback = 디자인 호출 없음
+        "source": ("model" if spec.get("template") == name else "auto" if spec else "fallback"),
+        "fingerprint": hashlib.sha1(serial.encode("utf-8")).hexdigest()[:10],
+        "modules": [_module_payload(m) for m in modules],
+    }
+
+
 def build(catalog: list[dict], trace) -> dict | None:
     """검증된 콘텐츠 카탈로그와 모델의 UI 스펙을 하나의 캔버스로 결합한다."""
     catalog = [c for c in catalog if isinstance(c, dict) and c.get("id") and c.get("block")]
@@ -214,6 +380,13 @@ def build(catalog: list[dict], trace) -> dict | None:
         return None
 
     spec = design_from(trace)
+    name, lead = choose_template(spec, catalog)
+    if name != "canvas" and lead:
+        return _template_canvas(name, lead, catalog, spec)
+    # 캔버스 — 그림 전용 종류는 빼고 예전처럼 조립한다(같은 값을 두 모양으로 세우지 않게).
+    catalog = [c for c in catalog if c.get("kind") not in VISUAL_KINDS]
+    if not catalog:
+        return None
     fallback_title = _fallback_title(catalog)[:48]
     modules: list[dict] = []
     used: set[str] = set()
@@ -278,7 +451,7 @@ def build(catalog: list[dict], trace) -> dict | None:
     fingerprint = hashlib.sha1(serial.encode("utf-8")).hexdigest()[:10]
 
     return {
-        "type": "generative_report", "slot": "full", "title": title,
+        "type": "generative_report", "slot": "full", "title": title, "template": "canvas",
         "accent": accent, "surface": surface, "density": density,
         "source": source, "fingerprint": fingerprint,
         "modules": [_module_payload(m) for m in modules],
