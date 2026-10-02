@@ -124,11 +124,13 @@ def b_assoc(t: dict) -> dict | None:
     a = t.get("associations") or []
     if not a:
         return None
-    return {"type": "rank", "slot": "left", "title": "같이 언급되는 말",
+    return {"type": "rank", "slot": "left", "title": "연관어",
             "meta": f"{len(a)}개",
             "rows": [{"k": x["canonical"],
                       "small": x.get("facet_name", "") + (" · NEW" if x.get("is_new") else ""),
-                      "v": f"{int(x['co_count']):,}회", "up": True} for x in a[:6]]}
+                      "v": (f"{int(x['co_count']):,}회" if x.get("co_count") else
+                            "검색 신호" if "search" in (x.get("basis") or []) else "언급 수 없음"),
+                      "up": True} for x in a[:6]]}
 
 
 def b_assoc_axis(t: dict) -> dict | None:

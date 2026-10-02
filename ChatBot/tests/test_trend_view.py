@@ -76,6 +76,14 @@ class FakeApi:
         self.calls.append(("sentiment", term, brand))
         return FX[term]["sentiment"]
 
+    def assoc(self, term):
+        self.calls.append(("assoc", term))
+        return {"status": "ok", "data": {"items": [{
+            "term": "티셔츠", "facet": "ITEM", "facet_ko": "아이템",
+            "cooccurrence": 49, "lift": 2.6, "score": 91,
+            "change": "new",
+        }]}}
+
 
 class Gate:
     def facet_of(self, term):
@@ -201,6 +209,36 @@ class GetMetricTests(unittest.TestCase):
         self.box(api).t_get_metric("팬츠", ["온도"])
         self.assertEqual([c[0] for c in api.calls], ["trend"])
 
+    def test_associations_use_the_page_api_without_losing_temperature(self):
+        api = FakeApi()
+        out = self.box(api).t_get_metric("팬츠", ["온도", "연관어"])
+        self.assertTrue(out["has_metric"])
+        self.assertEqual(out["온도"]["temp"], 70)
+        self.assertEqual(out["연관어"][0]["assoc_canonical"], "티셔츠")
+        self.assertEqual(out["연관어"][0]["co_count"], 49)
+        self.assertIn(("assoc", "팬츠"), api.calls)
+
+    def test_association_failure_does_not_hide_temperature(self):
+        class AssocDown(FakeApi):
+            def assoc(self, term):
+                return {"status": "error", "reason": "연관어 서버 오류"}
+
+        out = self.box(AssocDown()).t_get_metric("팬츠", ["온도", "연관어"])
+        self.assertTrue(out["has_metric"])
+        self.assertEqual(out["온도"]["temp"], 70)
+        self.assertEqual(out["연관어"], {"unavailable": "연관어 서버 오류"})
+
+    def test_evidence_failure_does_not_hide_temperature(self):
+        class EvidenceDown(Store):
+            def term_evidence(self, key, limit=3):
+                raise RuntimeError("근거 조회 실패")
+
+        out = Toolbox(EvidenceDown(), Gate(), trend=FakeApi()).t_get_metric(
+            "팬츠", ["온도", "근거"])
+        self.assertTrue(out["has_metric"])
+        self.assertEqual(out["온도"]["temp"], 70)
+        self.assertIn("읽지 못했습니다", out["근거"]["unavailable"])
+
 
 class SayRuleTests(unittest.TestCase):
     def test_percentile_scale_is_0_to_100(self):
@@ -240,6 +278,35 @@ class CardTests(unittest.TestCase):
         card = blocks.b_sentiment_signal(node)
         self.assertEqual([r["k"] for r in card["rows"]], ["질문", "구매", "경험", "호평", "비판", "잡담"])
         self.assertEqual(card["rows"][1]["v"], "0건")
+
+    def test_optional_evidence_failure_keeps_metric_card(self):
+        class EvidenceDown(Store):
+            def term_evidence(self, key, limit=3):
+                raise RuntimeError("근거 조회 실패")
+
+        hit = {"term_key": "item:팬츠", "canonical": "팬츠", "facet": "item"}
+        node = report.build_term(EvidenceDown(), Gate(), hit, "2026-09-29",
+                                 with_assoc=True, with_evidence=True)
+        self.assertTrue(node["available"])
+        self.assertEqual(node["temp"], 70)
+        self.assertEqual(node["associations"][0]["canonical"], "티셔츠")
+        self.assertEqual(node["evidence"], [])
+
+    def test_api_errors_are_not_labeled_as_missing_measurements(self):
+        class AxesDown(FakeApi):
+            def assoc(self, term):
+                return {"status": "error", "reason": "연관어 조회 오류"}
+
+            def sentiment(self, term, brand=False):
+                return {"status": "error", "reason": "긍부정 조회 오류"}
+
+        hit = {"term_key": "item:팬츠", "canonical": "팬츠", "facet": "item"}
+        node = report.build_term(Store(), Gate(), hit, "2026-09-29",
+                                 with_assoc=True, api=AxesDown())
+        self.assertTrue(node["available"])
+        reasons = dict(node["coverage"]["reasons"])
+        self.assertEqual(reasons["NO_ASSOC"], "연관어 조회 오류")
+        self.assertEqual(reasons["NO_SENTIMENT"], "긍부정 조회 오류")
 
 
 if __name__ == "__main__":

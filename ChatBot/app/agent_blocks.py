@@ -395,7 +395,8 @@ def build(trace, store, gate, question: str = "") -> list[dict]:
                 store, gate,
                 {"term_key": key, "canonical": term,
                  "facet": _facet_of(key, got["facets"].get(term))},
-                as_of or "", with_sentiment="긍부정" in axes)
+                as_of or "", with_sentiment="긍부정" in axes,
+                with_assoc="연관어" in axes, with_evidence=term in got["evidence"])
         except Exception:                       # noqa: BLE001
             # 저장소 재조회가 실패해도 도구가 이미 돌려준 값은 버리지 않는다.
             node = None

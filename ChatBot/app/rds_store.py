@@ -179,6 +179,8 @@ class RDSStore:
         )
 
     def term_evidence(self, term_key: str, limit: int = 3) -> list[dict]:
+        # 0068 dropped text_term_mention.evidence_status. Recorded mention
+        # context and sentence extraction below are the current evidence path.
         from .textclean import sentence_with
         rows = self.q(
             """SELECT lower(s.code) source_code,d.document_type doc_kind,d.body,
@@ -192,7 +194,7 @@ class RDSStore:
                  LEFT JOIN content.content_item ci ON ci.id=d.content_item_id
                  LEFT JOIN commerce.product_source ps ON ps.id=d.product_source_id
                 WHERE t.canonical_name=%s AND d.body IS NOT NULL
-                  AND tm.evidence_status IN ('EXACT','EXPANDED','LEGACY')
+                  AND tm.mention_text IS NOT NULL
                 ORDER BY tm.confidence DESC NULLS LAST,d.created_at DESC LIMIT 60""",
             (_term(term_key),),
         )

@@ -888,7 +888,7 @@ class Toolbox:
 
         온도·모멘텀·순위·출처별·긍부정은 화면이 부르는 /api/trend · /api/sentiment 를
         같은 인자로 불러 화면과 같은 규칙으로 요약한다(trend_view.py).
-        연관어·근거는 아직 지표 표를 직접 읽는다.
+        연관어는 화면의 /api/assoc 를 읽는다. 원문 근거만 RDS 에서 읽는다.
 
         ★ 예전엔 표를 직접 읽어 화면과 판단이 갈렸다(trend_view.py 머리말의 표).
           · 브랜드는 '측정 자료 없음'(화면은 온도 83°)
@@ -897,7 +897,8 @@ class Toolbox:
         """
         want = set(axes or [])
         view = trend_view.term_view(term, self.gate.facet_of(term),
-                                    with_sentiment="긍부정" in want, api=self._trend_api())
+                                    with_sentiment="긍부정" in want,
+                                    with_assoc="연관어" in want, api=self._trend_api())
         if view["status"] == "error":
             # ★ 표를 직접 읽어 대신 채우지 않는다. 화면과 다른 숫자가 다시 나간다.
             #   has_metric 을 False 로 두지 않는다 — '없다' 가 아니라 '못 읽었다' 다.
@@ -972,13 +973,17 @@ class Toolbox:
         if "출처별" in want:
             out["출처별"] = view["platforms"] or {"unavailable": "플랫폼별 온도가 아직 없습니다."}
         if "연관어" in want:
-            out["연관어"] = self.store.term_assoc(self._key(term), limit=8)
+            out["연관어"] = ({"unavailable": view["assoc_unavailable"]}
+                          if view.get("assoc_unavailable") else view.get("associations") or [])
         if "긍부정" in want:
             # ★ 화면 긍부정 탭과 같은 값 — 최근 28일 합계, 20건 미만이면 '판단 보류'.
             #   (2026-09-09 의 '표본 문턱' 은 그대로다. 문턱의 자리만 화면과 맞췄다.)
             out["긍부정"] = view.get("sentiment") or {"unavailable": "긍부정 지표가 아직 없습니다."}
         if "근거" in want:
-            out["근거"] = self.store.term_evidence(self._key(term), limit=3)
+            try:
+                out["근거"] = self.store.term_evidence(self._key(term), limit=3)
+            except Exception as exc:  # noqa: BLE001 - preserve the verified metric axes
+                out["근거"] = {"unavailable": f"원문 근거를 읽지 못했습니다 ({type(exc).__name__})."}
 
         # ★ 이 조건에서 써도 되는 문장. 모델이 판단을 지어내기 전에 준다.
         out["말할_수_있는_것"] = _say_rule(T["percentile"], d["tone"] if d else None,

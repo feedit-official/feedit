@@ -67,6 +67,16 @@ class TextDocument(models.Model):
         verbose_name="언어",
     )
 
+    # 0062 migration added this column for actual comment/review dates.
+    # Keep the ORM model in sync: /api/sentiment reads this field for reviews.
+    source_published_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        db_index=True,
+        verbose_name="원문 작성일시",
+        help_text="수집일이 아니라 댓글·리뷰가 실제 작성된 시각",
+    )
+
     analysis_metadata = models.JSONField(
         default=dict,
         blank=True,

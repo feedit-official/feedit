@@ -189,7 +189,7 @@ class MarketHTTPAdapter(SalmalHTTPAdapter):
 
 
 # ══════════════════════════════════════════════════════════════
-#  ★ 2026-10-01 트렌드 온도 · 긍부정 — 트렌드 분석 화면이 부르는 주소를 **같은 인자로** 부른다.
+#  ★ 트렌드 온도 · 연관어 · 긍부정 — 트렌드 분석 화면과 같은 주소를 부른다.
 #
 #    챗봇이 analysis.term_metric_daily 를 직접 읽던 때 화면과 세 군데가 갈렸다.
 #      ① 지표 버전: 챗봇은 한 버전(feedit-unified-text-v1)에 못 박았고, /api/trend 는
@@ -246,6 +246,9 @@ class TrendHTTPAdapter(SalmalHTTPAdapter):
 
     def trend(self, term: str) -> dict:
         return self._payload("trend", {"term": str(term or "").strip(), "days": TREND_DAYS})
+
+    def assoc(self, term: str) -> dict:
+        return self._payload("assoc", {"term": str(term or "").strip()})
 
     def sentiment(self, term: str, brand: bool = False) -> dict:
         params = {"term": str(term or "").strip(), "days": SENTIMENT_DAYS}

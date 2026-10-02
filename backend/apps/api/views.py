@@ -234,7 +234,10 @@ SENTIMENT_DOC_TYPES = ("COMMENT", "REVIEW")
 
 def _published_date(metadata, fallback=None):
     raw = metadata.get("published_at") if isinstance(metadata, dict) else None
-    parsed = parse_datetime(str(raw)) if raw else None
+    try:
+        parsed = parse_datetime(str(raw)) if raw else None
+    except ValueError:
+        parsed = None
     if parsed:
         return parsed.date()
     if fallback:

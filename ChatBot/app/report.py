@@ -45,6 +45,7 @@ def _josa(word: str, with_b: str, without_b: str) -> str:
 
 
 def build_term(store, gate, hit: dict, as_of: str, *, with_sentiment: bool = True,
+               with_assoc: bool = False, with_evidence: bool = False,
                api=None) -> dict:
     """term 하나에 대해 우리가 아는 전부를 모은다. 플랜 자르기는 하지 않는다.
 
@@ -52,17 +53,20 @@ def build_term(store, gate, hit: dict, as_of: str, *, with_sentiment: bool = Tru
       (trend_view.term_view). 예전엔 지표 표를 직접 읽어서, 같은 답 안에서 문장은
       "상위 1%" 카드는 "상위 82%" 처럼 서로 다른 말을 했다. get_metric 과 같은
       어댑터·같은 캐시를 쓰므로 한 턴의 문장과 카드가 같은 응답에서 나온다.
-      연관어·근거는 아직 지표 표를 직접 읽는다.
+      연관어도 분석 화면의 API 를 읽는다. 근거는 필요할 때만 저장소에서 읽는다.
     """
     key = hit["term_key"]
     view = trend_view.term_view(hit["canonical"], hit.get("facet"),
-                                with_sentiment=with_sentiment, api=api)
+                                with_sentiment=with_sentiment, with_assoc=with_assoc, api=api)
     T = view.get("trend") if view.get("status") == "ok" else None
     sentiment = view.get("sentiment") if T else None
-    if sentiment and sentiment.get("unavailable"):
+    sentiment_issue = sentiment.get("unavailable") if isinstance(sentiment, dict) else None
+    if sentiment_issue:
         sentiment = None
-    assoc = store.term_assoc(key) if T else []
+    assoc = view.get("associations") or []
     cov = assess(T, sentiment, len(assoc), view.get("reason"))
+    issues = {"NO_ASSOC": view.get("assoc_unavailable"), "NO_SENTIMENT": sentiment_issue}
+    cov.reasons = [(code, issues.get(code) or message) for code, message in cov.reasons]
 
     node = {
         "canonical": hit["canonical"],
@@ -116,10 +120,11 @@ def build_term(store, gate, hit: dict, as_of: str, *, with_sentiment: bool = Tru
     if cov.can_assoc:
         node["associations"] = [{"canonical": a["assoc_canonical"],
                                  "facet": a["assoc_facet"],
-                                 "facet_name": FACET_KO.get(a["assoc_facet"], a["assoc_facet"]),
+                                 "facet_name": a.get("facet_name") or FACET_KO.get(a["assoc_facet"], a["assoc_facet"]),
                                  "co_count": a["co_count"],
                                  "lift": a["lift"], "score": a["score_v"],
-                                 "is_new": bool(a["is_new"])} for a in assoc]
+                                 "is_new": bool(a["is_new"]),
+                                 "basis": a.get("basis") or []} for a in assoc]
     if cov.can_sentiment:
         # 화면 긍부정 탭과 같은 값 — 최근 28일 합계와 판정(trend_view.sentiment_summary).
         node["sentiment"] = sentiment
@@ -127,12 +132,16 @@ def build_term(store, gate, hit: dict, as_of: str, *, with_sentiment: bool = Tru
     # 근거는 '원문 통짜'가 아니라 판정에 실제로 쓰인 짧은 대목이다 (store.term_evidence 주석)
     # url 은 원문으로 돌아갈 수 있을 때만 채워진다(store.evidence_link).
     # 없는 것을 None 인 채로 들고 온다 — 여기서 지어 채우면 화면의 링크가 거짓이 된다.
+    try:
+        evidence = store.term_evidence(key) if with_evidence else []
+    except Exception:  # noqa: BLE001 - optional proof must not erase verified temperature
+        evidence = []
     node["evidence"] = [{"source": SOURCE_KO.get(e["source_code"], e["source_code"]),
                          "kind": DOC_KO.get(e["doc_kind"], e["doc_kind"]),
                          "body": e["body"], "at": e["at"],
                          "tone": e.get("sentiment"), "origin": e.get("origin"),
                          "url": e.get("url")}
-                        for e in store.term_evidence(key)]
+                        for e in evidence]
     return node
 
 

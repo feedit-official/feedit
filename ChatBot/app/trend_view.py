@@ -180,6 +180,27 @@ def platforms(data: dict) -> list[dict]:
     return out
 
 
+def association_items(data: dict, limit: int = 8) -> list[dict]:
+    """Map the analytics page's /api/assoc items to the chatbot's existing contract."""
+    out = []
+    for item in (data.get("items") or [])[:limit]:
+        if not isinstance(item, dict) or not item.get("term"):
+            continue
+        facet = str(item.get("facet") or "").lower()
+        score = item.get("score")
+        out.append({
+            "assoc_canonical": item["term"],
+            "assoc_facet": facet,
+            "facet_name": item.get("facet_ko"),
+            "co_count": int(_num(item.get("cooccurrence")) or 0),
+            "lift": _num(item.get("lift")),
+            "score_v": _num(score if score is not None else item.get("percentile")),
+            "is_new": item.get("change") == "new",
+            "basis": item.get("basis") or [],
+        })
+    return out
+
+
 # ══════════════════════════════════════════════════════════
 #  긍부정
 # ══════════════════════════════════════════════════════════
@@ -285,6 +306,7 @@ def is_brand(facet: Any) -> bool:
 
 
 def term_view(term: str, facet_hint: str | None = None, *, with_sentiment: bool = True,
+              with_assoc: bool = False,
               api=None) -> dict:
     """용어 하나의 온도·플랫폼·(선택)긍부정. 화면과 같은 주소·같은 규칙.
 
@@ -318,6 +340,16 @@ def term_view(term: str, facet_hint: str | None = None, *, with_sentiment: bool 
     if summary is None:
         return {"status": "empty", "reason": "이 용어는 아직 측정된 지표가 없습니다."}
     view: dict[str, Any] = {"status": "ok", "trend": summary, "platforms": platforms(data)}
+
+    if with_assoc:
+        try:
+            araw = api.assoc(term) or {}
+        except Exception as exc:  # noqa: BLE001 - an optional axis must not erase the trend
+            araw = {"status": "error", "reason": f"연관어 데이터를 읽지 못했습니다 ({type(exc).__name__})."}
+        view["associations"] = (association_items(araw.get("data") or {})
+                                if araw.get("status") == "ok" else [])
+        if araw.get("status") not in ("ok", "empty"):
+            view["assoc_unavailable"] = araw.get("reason") or "연관어 데이터를 읽지 못했습니다."
 
     if with_sentiment:
         brand = is_brand(data.get("facet")) or is_brand(facet_hint)
