@@ -173,6 +173,35 @@ class RememberedStyleTests(unittest.TestCase):
         self.assertEqual(got["items"][0]["style"], "블록코어")
         self.assertEqual(got["styles_from"], "대화")     # 무엇을 기준으로 골랐나
 
+    def test_profile_gender_is_the_default_and_wearer_overrides_it(self):
+        # 2026-10-02 — "여자친구랑 데이트할 때 뭐 입지?" 는 본인(남자)이 입을 옷이다.
+        #   질문 글자가 아니라 회원정보 성별이 기본이고, 다른 사람의 옷이라고 분명히
+        #   말했을 때만 모델이 wearer 로 바꾼다.
+        rows = {"티셔츠": [{"name": "셔츠", "image": "https://image.msscdn.net/a.jpg"}]}
+        market = ProposeTests.FakeMarket(rows)
+        box = tools.Toolbox(Mock(), Mock(), ctx={"recent_styles": ["클래식"], "gender": "MALE"},
+                            market=market)
+        got = box.t_propose_fit(styles=[], slots=["상의"], kinds=[], options=[], why="",
+                                wearer="self")
+        self.assertEqual(market.asked[0]["gender"], "MALE")
+        self.assertEqual(got["gender"], "MALE")
+        market.asked.clear()
+        got = box.t_propose_fit(styles=[], slots=["상의"], kinds=[], options=[], why="",
+                                wearer="FEMALE")                     # 여자친구 선물
+        self.assertEqual(market.asked[0]["gender"], "FEMALE")
+        self.assertEqual(got["gender"], "FEMALE")
+        # 회원정보에 성별이 없으면 거르지 않는다(추측하지 않는다)
+        market = ProposeTests.FakeMarket(rows)
+        box = tools.Toolbox(Mock(), Mock(), ctx={"recent_styles": ["클래식"]}, market=market)
+        box.t_propose_fit(styles=[], slots=["상의"], kinds=[], options=[], why="", wearer="self")
+        self.assertNotIn("gender", market.asked[0])
+
+    def test_propose_fit_spec_requires_wearer(self):
+        spec = [s for s in tools.SPECS if s.get("name") == "propose_fit"][0]
+        self.assertIn("wearer", spec["parameters"]["required"])
+        self.assertEqual(spec["parameters"]["properties"]["wearer"]["enum"],
+                         ["self", "FEMALE", "MALE"])
+
     def test_asked_item_words_are_used_before_the_default_table(self):
         market = ProposeTests.FakeMarket({
             "트랙 재킷": [{"name": "아디다스 트랙 재킷",

@@ -725,11 +725,20 @@ const CP_IC_RESEND=CP_SVG('<path d="M3.5 9.5h10a5.5 5.5 0 1 1 0 11H8"/><polyline
 const CP_IC_EDIT=CP_SVG('<path d="M4.5 19.5h4L19.6 8.4a2.05 2.05 0 0 0-2.9-2.9L5.5 16.6z"/><path d="M15.2 7l2.8 2.8"/>');
 const CP_IC_COPY=CP_SVG('<rect x="9.5" y="9.5" width="10.5" height="10.5" rx="2.2"/><path d="M5.5 14.5V6a2 2 0 0 1 2-2h7"/>');
 const CP_IC_DOWN=CP_SVG('<path d="M12 4v11"/><polyline points="7.5 10.5 12 15 16.5 10.5"/><path d="M5 19.5h14"/>');
+/* 회원정보의 성별 — 챗봇에는 이것만 보낸다. 질문 글자로 성별을 정하지 않는다:
+   "여자친구랑 데이트할 때 뭐 입지?" 는 남자가 입을 옷이다. 다른 사람이 입을 옷이라고
+   분명히 말했는지는 챗봇(propose_fit 의 wearer)이 문장 전체를 보고 정한다. */
+function cpMyGender(){
+  return AUTH.in&&(ME.gender==='FEMALE'||ME.gender==='MALE')?ME.gender:'';
+}
+/* 사진을 직접 올린 입혀보기의 첫 모델. "남자 모델로" 처럼 입을 사람을 말했으면 그쪽,
+   아니면 회원정보. 여자친구·남자친구(여친·남친)는 데이트 상대라 입을 사람이 아니다 —
+   먼저 지운다. 틀리면 위젯에서 바로 바꿀 수 있다. */
 function cpFitGender(text){
-  const asked=String(text||'');
+  const asked=String(text||'').replace(/(여자|남자)\s*친구|여친|남친/g,' ');
   if(/(여자|여성|우먼|\bfemale\b)/i.test(asked)) return 'FEMALE';
   if(/(남자|남성|맨즈|\bmale\b)/i.test(asked)) return 'MALE';
-  return AUTH.in&&(ME.gender==='FEMALE'||ME.gender==='MALE')?ME.gender:'';
+  return cpMyGender();
 }
 function cpFitModel(text){
   return cpFitGender(text)==='MALE'?'man':'woman';
@@ -1351,7 +1360,7 @@ async function cpAskLive(c,aiMsg,text,images){
                        모든 사용자를 비로그인으로 보고 취향 도구를 막았다. 취향 값 자체는
                        taste_context 로 가고, 챗봇은 이 id 로 다른 데이터를 조회하지 않는다. */
                     user_id:(AUTH.in&&ME.id!=null)?String(ME.id):undefined,
-                    gender:cpFitGender(text)||undefined,
+                    gender:cpMyGender()||undefined,
                     taste_context:cpTasteContext(c),
                     /* 승인된 코디. 이것이 있는 턴에만 서버가 build_fit 을 부를 수 있다. */
                     fit_proposal:aiMsg.fitProposal||undefined,

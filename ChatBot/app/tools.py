@@ -432,7 +432,11 @@ SPECS: list[dict] = [
         "options 는 켤 연출만 적는다(적지 않은 것은 모델이 알아서 그린다). "
         "outer_layered 는 아우터가 둘일 때만, top_open·top_closed 는 여밈이 있는 상의에만 "
         "성립한다 — 어긋나면 서버가 떼어내고 사유를 돌려준다. "
-        "결과의 items 에 있는 상품만 말해라. 사진 없는 상품은 담기지 않는다.",
+        "결과의 items 에 있는 상품만 말해라. 사진 없는 상품은 담기지 않는다. "
+        "wearer 는 누가 입을 옷인가다. 사용자 본인이 입을 옷이면 self — 서버가 회원정보의 "
+        "성별로 상품과 모델을 고른다. '여자친구 선물로', '남자 코디로' 처럼 **다른 성별의 사람이 "
+        "입을 옷**이라고 분명히 말했을 때만 FEMALE 또는 MALE 을 적는다. '여자친구랑 데이트할 때 "
+        "입을 옷' 은 본인이 입을 옷이다(self).",
         {"styles": {"type": "array", "items": {"type": "string"},
                     "description": "고를 기준이 되는 스타일 이름 (예: 블록코어)"},
          "slots": {"type": "array",
@@ -446,8 +450,10 @@ SPECS: list[dict] = [
                                "enum": ["outer_layered", "outer_open", "outer_closed",
                                         "top_open", "top_closed"]},
                      "description": "켤 연출만. 없으면 빈 배열"},
-         "why": {"type": "string", "description": "이 조합을 고른 이유 한 문장"}},
-        ["styles", "slots", "kinds", "options", "why"],
+         "why": {"type": "string", "description": "이 조합을 고른 이유 한 문장"},
+         "wearer": {"type": "string", "enum": ["self", "FEMALE", "MALE"],
+                    "description": "입을 사람. 본인이면 self, 다른 성별의 옷을 분명히 말했을 때만 FEMALE/MALE"}},
+        ["styles", "slots", "kinds", "options", "why", "wearer"],
     ),
     # ★ 2026-10-01 — "입혀볼 수 있는 스타일이 뭐가 있어?" 의 답. 예전엔 이 질문에
     #   맞는 도구가 없어 모델이 트렌드 순위(rank_terms)를 뒤졌고, 그날 언급된 스타일이
@@ -1059,7 +1065,7 @@ class Toolbox:
         return self.market
 
     def t_propose_fit(self, styles: Any = None, slots: Any = None, kinds: Any = None,
-                      options: Any = None, why: str = "") -> dict:
+                      options: Any = None, why: str = "", wearer: str = "self") -> dict:
         from . import fit
 
         asked = [str(s).strip() for s in (styles or []) if str(s or "").strip()]
@@ -1078,8 +1084,11 @@ class Toolbox:
         #   "위 스타일대로 입혀 줘" 에 "어떤 스타일로요?" 를 되묻던 자리다.
         if not picked:
             picked = [str(s) for s in (self.ctx.get("recent_styles") or [])]
-        found = fit.propose(self._market_api(), picked, slots, kinds,
-                            gender=self.ctx.get("gender"))
+        # ★ 성별 (2026-10-02) — 기본은 회원정보의 성별(ctx.gender · 화면이 ME.gender 를 보낸다).
+        #   질문 글자로 정하지 않는다: "여자친구랑 데이트할 때 뭐 입지?" 는 남자가 입을 옷이다.
+        #   다른 사람의 옷이라고 분명히 말했을 때만 모델이 wearer 로 바꾼다.
+        gender = wearer if wearer in ("FEMALE", "MALE") else self.ctx.get("gender")
+        found = fit.propose(self._market_api(), picked, slots, kinds, gender=gender)
         if "unavailable" in found:
             out = {**found, **self._fit_choices()}
             if skipped:

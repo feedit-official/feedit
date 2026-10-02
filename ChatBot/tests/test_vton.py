@@ -263,26 +263,86 @@ class NoInventedGarmentTests(unittest.TestCase):
 
     @patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"})
     @patch("app.vton.requests.post")
-    def test_no_vision_call_when_nothing_depends_on_it(self, post):
-        # 하의 · 신발만 — 열기/여미기 문장이 걸릴 칸이 없다
-        _result, _sent, calls = self._run(post, [
-            {"image": "data:image/png;base64,eA==", "category": "하의"},
-            {"image": "data:image/png;base64,eQ==", "category": "신발"}], [vton.UNKNOWN])
-        self.assertEqual(calls, [])
-        # 핏만 고른 경우도 마찬가지
-        _result, _sent, calls = self._run(post, [
-            {"image": "data:image/png;base64,eA==", "category": "자동 분류"}], [vton.UNKNOWN],
-            options={"fit_over": True})
-        self.assertEqual(calls, [])
-
-    @patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"})
-    @patch("app.vton.requests.post")
-    def test_only_the_photos_that_matter_are_looked_at(self, post):
+    def test_every_photo_is_looked_at_once(self, post):
+        # 2026-10-02 오후 — 착용 컷인지 알려면 모든 상품 사진을 봐야 한다. 한 번의 호출로 같이 본다.
         _result, _sent, calls = self._run(post, [
             {"image": "data:image/png;base64,eA==", "category": "하의"},
             {"image": "data:image/png;base64,eQ==", "category": "상의"},
             {"image": "data:image/png;base64,eg==", "category": "신발"}], [self.SHIRT])
-        self.assertEqual(calls, [["data:image/png;base64,eQ=="]])
+        self.assertEqual(calls, [["data:image/png;base64,eA==", "data:image/png;base64,eQ==",
+                                  "data:image/png;base64,eg=="]])
+        # 연출이 하나도 없어도 본다 — 착용 컷 표시는 연출과 상관이 없다
+        _result, _sent, calls = self._run(post, [
+            {"image": "data:image/png;base64,eA==", "category": "하의"}], [vton.UNKNOWN],
+            options={})
+        self.assertEqual(len(calls), 1)
+
+
+class WornPhotoTests(unittest.TestCase):
+    """상품 사진에 다른 사람이 찍혀 있어도 우리 모델에게 입힌다 (2026-10-02 오후).
+
+    상의 칸에 '남자가 흰 셔츠를 입고 의자에 앉은 사진' 을 넣고 여성 모델로 만들었더니,
+    그 사진의 남자 · 배경 그대로 바지와 신발만 바뀐 그림이 나왔다.
+    """
+
+    WORN_SHIRT = {"slot": "상의", "closure": "버튼", "openable": "yes", "layer": "얇음",
+                  "worn": "yes"}
+    FLAT = {"slot": "신발", "closure": "모르겠음", "openable": "unknown", "layer": "모르겠음",
+            "worn": "no"}
+
+    def test_every_prompt_says_item_photos_are_only_samples(self):
+        for cats in (["상의"], ["하의", "신발"], ["자동 분류"]):
+            with self.subTest(cats=cats):
+                sent = vton.prompt(cats)
+                self.assertIn(vton.ITEM_ONLY, sent)
+                self.assertIn("상품 사진 속 인물이나 배경이 결과에 나오면 안 됩니다", sent)
+        self.assertIn("8번째 이미지부터", vton.ITEM_ONLY)        # 번호가 references() 와 맞다
+        self.assertIn("7번 사진", vton.ITEM_ONLY)
+
+    def test_worn_photo_is_named_in_the_prompt(self):
+        sent = vton.prompt(["상의", "신발"], None, [True, False])
+        self.assertIn("8번째 이미지는 상의(다른 사람이 입고 찍힌 사진입니다 — 상의만 가져오고", sent)
+        self.assertNotIn("9번째 이미지는 신발(다른 사람", sent)
+        auto = vton.prompt(["자동 분류"], None, [True])
+        self.assertIn("종류를 먼저 판별(다른 사람이 입고 찍힌 사진입니다 — 그 옷만 가져오고", auto)
+        # 모르면 집어 말하지 않는다 — 일반 문장(ITEM_ONLY)만 남는다
+        self.assertNotIn("다른 사람이 입고 찍힌", vton.prompt(["상의"], None, None))
+
+    @patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"})
+    @patch("app.vton.requests.post")
+    def test_generate_marks_worn_photos_from_sight(self, post):
+        post.return_value = Mock(status_code=200)
+        post.return_value.json.return_value = {"data": [{"b64_json": "result"}]}
+        rows = [self.WORN_SHIRT, self.FLAT]
+        with patch("app.vton.inspect", side_effect=lambda imgs: [dict(r) for r in rows[:len(imgs)]]):
+            result = vton.generate(model_id="woman", items=[
+                {"image": "data:image/png;base64,eA==", "category": "상의"},
+                {"image": "data:image/png;base64,eQ==", "category": "신발"}],
+                options={"top_open": True})
+        sent = post.call_args.kwargs["data"]["prompt"]
+        self.assertIn("8번째 이미지는 상의(다른 사람이 입고 찍힌 사진", sent)
+        self.assertEqual(result["worn"], [1])
+        self.assertTrue(any("사람이 입고 찍힌 사진이라 옷만" in n for n in result["sight_notes"]))
+        # 기준 사진 일곱 장이 상품보다 먼저 나간다 — 모델 사진이 빠지지 않았다
+        files = post.call_args.kwargs["files"]
+        self.assertEqual(len(files), vton.REFERENCE_COUNT + 2)
+        self.assertEqual([f[1][0] for f in files[-2:]], ["item-1.png", "item-2.png"])
+
+    @patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"})
+    @patch("app.vton.requests.post")
+    def test_failed_sight_still_sends_the_general_guard(self, post):
+        post.return_value = Mock(status_code=200)
+        post.return_value.json.return_value = {"data": [{"b64_json": "result"}]}
+        with patch("app.vton.inspect", side_effect=RuntimeError("vision down")):
+            result = vton.generate(model_id="woman", items=[
+                {"image": "data:image/png;base64,eA==", "category": "상의"}])
+        sent = post.call_args.kwargs["data"]["prompt"]
+        self.assertIn(vton.ITEM_ONLY, sent)
+        self.assertEqual(result["worn"], [])
+
+    def test_inspect_asks_for_worn(self):
+        self.assertIn("worn", vton.UNKNOWN)
+        self.assertIn("worn 은 사람이 실제로 입고", vton._INSPECT_INSTRUCTIONS)
 
 
 class PoseTests(unittest.TestCase):

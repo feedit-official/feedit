@@ -606,6 +606,12 @@ await t('저장된 성별이 VTON 기본 모델을 고르고, 상품 출처 링�
   assert.equal(CP.cpFitFromServer({items:[]},'Female 코디').model,'woman');
   assert.equal(CP.cpFitFromServer({items:[]},'Male 코디').model,'man');
   assert.equal(CP.cpFitFromServer({items:[],gender:'MALE'},'이 코디로 입혀보기').model,'man');
+  /* 데이트 상대는 입을 사람이 아니다 — "여자친구랑 데이트" 를 FEMALE 로 읽지 않는다 */
+  P.ME.gender='MALE';
+  assert.equal(CP.cpFitFromServer({items:[]},'주말에 여자친구랑 데이트할 때 입을 옷').model,'man');
+  assert.equal(CP.cpFitFromServer({items:[]},'여친이랑 데이트 코디').model,'man');
+  P.ME.gender='FEMALE';
+  assert.equal(CP.cpFitFromServer({items:[]},'남자친구랑 전시회 갈 때 입을 옷').model,'woman');
   P.ME.gender='';
 });
 

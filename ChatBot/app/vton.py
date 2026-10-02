@@ -257,9 +257,9 @@ def option_lines(options, categories: list[str] | None = None) -> list[str]:
 #     챗봇 코디(build_fit)는 이미 사진을 보고(fit.prune_options) 연출을 고르지만,
 #     화면에서 바로 오는 요청은 그 길을 거치지 않았다.
 #   무엇을 —
-#     연출 문장이 걸린 칸(상의 · 아우터)과 칸을 모르는 사진만 vision 에 한 번 묻는다
-#     (inspect). 칸을 모르던 사진은 본 칸으로 정하고, 여밈이 없다고 확인된 옷뿐이면 그
-#     칸의 열기/여미기를 뺀다.
+#     상품 사진을 vision 에 한 번 묻는다(inspect · 오후부터는 전부 — sight_targets 주석).
+#     칸을 모르던 사진은 본 칸으로 정하고, 여밈이 없다고 확인된 옷뿐이면 그 칸의
+#     열기/여미기를 빼고, 사람이 입고 찍힌 사진은 프롬프트가 번호를 집어 옷만 가져오게 한다.
 #   ★ 사용자가 고른 칸은 바꾸지 않는다 — 고른 사람이 맞다.
 #   ★ 모르면 빼지도 바꾸지도 않는다(AGENTS.md §6). 사진을 못 보면 예전 그대로 가고,
 #     문장 자체의 조건(NO_INVENT · '아우터 상품이 있을 때만')이 남아서 막는다.
@@ -267,13 +267,16 @@ OPEN_KEYS = {"상의": ("top_open", "top_closed"), "아우터": ("outer_open", "
 
 
 def sight_targets(categories: list[str], options) -> list[int]:
-    """사진을 봐야 연출을 정할 수 있는 상품의 번호(0부터). 없으면 vision 을 부르지 않는다."""
-    on = set(option_keys(options, categories))
-    if not any(k in SLOT_OF or k == "outer_layered" for k in on):
-        return []
-    want = {slot for slot, keys in OPEN_KEYS.items() if any(k in on for k in keys)}
-    return [i for i, c in enumerate(categories)
-            if c == AUTO or c in want or (c == "아우터" and "outer_layered" in on)]
+    """생성 전에 볼 상품 사진의 번호(0부터) — 전부다.
+
+    ★ 2026-10-02 (오후) — 예전에는 연출(열기/여미기 · 레이어드)이 걸린 사진만 봤다.
+      그런데 상품 사진에 **다른 사람이 입고 찍힌 사진**(착용 컷 · 인스타 · 연예인 코디)이
+      들어오면, 생성 모델이 그 사진의 장면을 바탕으로 삼아 우리 모델을 통째로 버렸다
+      (셔츠 착용 사진의 남자에게 바지 · 신발만 갈아 신긴 결과). 어느 사진이 착용 컷인지
+      알아야 프롬프트가 그 사진을 콕 집어 "옷만 가져오라" 고 말할 수 있다. 사진은 한
+      번의 호출로 같이 본다 — 생성(수십 초) 앞에 붙는 몇 초다(sight_ms 로 잰다).
+    """
+    return list(range(len(categories)))
 
 
 def apply_sight(categories: list[str], options, seen: dict[int, dict]
@@ -385,12 +388,26 @@ def fetch_as_data_url(url: str, max_bytes: int = FETCH_MAX_BYTES) -> str:
 # ★ 주지 않은 옷을 지어내지 않는다 (2026-10-02). 옵션과 상관없이 늘 싣는다 —
 #   상품이 없는 부위는 포즈 사진의 옷이 기준이다. 이 문장이 없을 때 '열어 입기' 같은
 #   연출 지시를 맞추려고 모델이 아우터 · 가디건을 새로 그려 넣었다.
+# ── 상품 사진 속 사람 (2026-10-02 오후) ───────────────────────
+#   상의 칸에 '남자가 흰 셔츠를 입고 의자에 앉은 사진' 을 넣고 여성 모델로 만들었더니,
+#   결과가 그 사진 그대로였다 — 같은 남자 · 같은 배경에 바지와 신발만 바뀌었다. 우리
+#   모델 사진 일곱 장과 프롬프트가 통째로 무시된 것처럼 보였다.
+#   원인: 상품 사진도 '사람이 찍힌 완성된 장면' 이면 생성 모델이 그것을 고칠 바탕으로
+#   고를 수 있다. 프롬프트는 상품 사진에 사람이 있을 수 있다는 말을 한 번도 하지 않았다.
+#   ★ 인스타 · 연예인 코디를 입혀 보는 흐름은 거의 언제나 착용 컷이다 — 예외가 아니다.
+ITEM_ONLY = (f"{REFERENCE_COUNT + 1}번째 이미지부터의 상품 사진은 옷 견본일 뿐입니다. 상품 사진에 "
+             "사람이 입고 있어도 그 사람은 다른 사람입니다 — 그 사진의 얼굴, 머리, 체형, 자세, "
+             "배경, 조명, 구도는 하나도 쓰지 말고, 칸으로 지정한 옷만 떼어 오세요. 그 사람이 함께 "
+             "입은 다른 옷도 가져오지 마세요. 결과 사진의 인물은 반드시 1~6번의 사람이고, 자세와 "
+             f"배경과 구도는 {REFERENCE_COUNT}번 사진입니다. 상품 사진의 장면을 결과의 바탕으로 "
+             "쓰면 안 됩니다.")
 NO_INVENT = (f"입힐 상품으로 준 옷과 잡화만 더하세요. 상품으로 주지 않은 종류(아우터·가디건·"
              f"조끼·모자·가방·액세서리 등)를 새로 만들어 넣지 마세요 — 상품이 없는 부위는 "
              f"{REFERENCE_COUNT}번 사진에서 입고 있는 옷을 그대로 두세요.")
 
 
-def prompt(categories: list[str], options: dict | None = None) -> str:
+def prompt(categories: list[str], options: dict | None = None,
+           worn: list[bool] | None = None) -> str:
     """보내는 이미지 순서를 그대로 글로 옮긴다.
 
     ★ 번호가 references() 의 순서와 한 칸도 어긋나면 안 된다 —
@@ -399,15 +416,23 @@ def prompt(categories: list[str], options: dict | None = None) -> str:
         7     이번 컷의 자세와 구도
         8~    입힐 상품
       기준 사진을 늘리거나 줄이면 MASTER_COUNT 와 이 문장을 같이 고쳐야 한다.
+    worn 은 상품마다 '사람이 입고 찍힌 사진인가' (inspect 의 worn == "yes"). 그런 사진은
+    번호를 집어 옷만 가져오라고 한 번 더 말한다.
     """
     cats = [c if c in CATEGORIES else AUTO for c in categories]
     first = REFERENCE_COUNT + 1                 # 상품이 시작하는 번호
-    item_guide = ", ".join(
-        (f"{i + first}번째 이미지는 사진을 보고 종류를 먼저 판별"
-         if category == AUTO
-         else f"{i + first}번째 이미지는 {category} — {WEAR_GUIDE[category]}")
-        for i, category in enumerate(cats)
-    )
+    worn = list(worn or [])
+
+    def guide(i: int, category: str) -> str:
+        head = f"{i + first}번째 이미지는 " + ("사진을 보고 종류를 먼저 판별" if category == AUTO
+                                              else category)
+        if i < len(worn) and worn[i]:
+            what = "그 옷" if category == AUTO else category
+            head += (f"(다른 사람이 입고 찍힌 사진입니다 — {what}만 가져오고 그 사람과 "
+                     "배경은 쓰지 마세요)")
+        return head if category == AUTO else f"{head} — {WEAR_GUIDE[category]}"
+
+    item_guide = ", ".join(guide(i, category) for i, category in enumerate(cats))
     body = [
         f"1번부터 {REFERENCE_COUNT}번까지는 모두 같은 한 사람을 찍은 기준 사진입니다. "
         "새로운 인물을 만들지 말고 이 사람을 그대로 쓰세요.",
@@ -423,6 +448,7 @@ def prompt(categories: list[str], options: dict | None = None) -> str:
         f"{REFERENCE_COUNT}번은 이번 컷의 기준입니다. 자세, 팔다리 위치, 얼굴 방향, "
         "카메라 각도, 화면 안에서의 크기와 위치, 배경과 조명을 이 사진 그대로 두세요.",
         f"{first}번째 이미지부터가 입힐 상품입니다. {item_guide}.",
+        ITEM_ONLY,
         # ★ 핏을 골랐으면 '실루엣 보존' 을 빼고 말한다 — 같은 프롬프트 안에서 "실루엣을
         #   그대로" 와 "오버핏으로" 가 맞서면 모델이 어느 쪽도 제대로 하지 않는다.
         ("각 상품의 색상, 패턴, 로고, 소재 질감, 봉제선을 정확히 보존하세요."
@@ -434,7 +460,8 @@ def prompt(categories: list[str], options: dict | None = None) -> str:
     body += option_lines(options, cats)
     body += [
         f"바꾸는 것은 옷뿐입니다. 얼굴, 머리, 체형, 자세, 배경, 조명은 "
-        f"기준 사진 그대로 두세요 — 특히 얼굴이 다른 사람처럼 보이면 안 됩니다.",
+        f"기준 사진 그대로 두세요 — 특히 얼굴이 다른 사람처럼 보이면 안 되고, "
+        f"상품 사진 속 인물이나 배경이 결과에 나오면 안 됩니다.",
         f"사진처럼 자연스러운 전신 패션 화보로 만들고 {REFERENCE_COUNT}번 이미지와 "
         "같은 구도를 유지하세요.",
     ]
@@ -496,6 +523,10 @@ def generate(*, model_id: str, items: list[dict] | None = None,
         seen = {}
     sight_ms = int((time.monotonic() - sight_started) * 1000) if targets else 0
     categories, options, sight_notes = apply_sight(categories, options, seen)
+    worn = [(seen.get(i) or {}).get("worn") == "yes" for i in range(len(chosen))]
+    if any(worn):
+        sight_notes.append(", ".join(f"{i + 1}번" for i, w in enumerate(worn) if w) +
+                           " 상품은 사람이 입고 찍힌 사진이라 옷만 가져오게 했습니다.")
     started = time.monotonic()
     # ★ 기준 사진이 먼저, 상품이 나중 — prompt() 가 부르는 번호 그대로다.
     #   파일은 보내는 동안 열어 둔다(ExitStack). 하나씩 열고 닫으면 requests 가
@@ -512,7 +543,7 @@ def generate(*, model_id: str, items: list[dict] | None = None,
             "https://api.openai.com/v1/images/edits",
             headers={"Authorization": f"Bearer {key}"},
             data={"model": image_model,
-                  "prompt": prompt(categories, options),
+                  "prompt": prompt(categories, options, worn),
                   "size": SIZE, "quality": QUALITY,
                   "output_format": OUTPUT_FORMAT,
                   "output_compression": OUTPUT_COMPRESSION,
@@ -546,6 +577,8 @@ def generate(*, model_id: str, items: list[dict] | None = None,
             "options": option_keys(options, categories),
             # 사진을 보고 바꾼 것 — 칸을 정했거나 연출을 뺀 이유. 화면 · 로그가 읽는다.
             "sight_notes": sight_notes, "sight_ms": sight_ms,
+            # 사람이 입고 찍힌 상품 사진의 번호(1부터) — 결과가 그 장면을 닮았는지 볼 때 쓴다.
+            "worn": [i + 1 for i, w in enumerate(worn) if w],
             "item_count": len(chosen)}
 
 
@@ -559,9 +592,9 @@ def generate(*, model_id: str, items: list[dict] | None = None,
 SLOTS = list(SLOT_ORDER)
 
 _INSPECT_INSTRUCTIONS = (
-    "FEEDiT 착장 합성용 검수기입니다. 각 사진에 담긴 의류·잡화를 보고 세 가지만 "
+    "FEEDiT 착장 합성용 검수기입니다. 각 사진에 담긴 의류·잡화를 보고 네 가지만 "
     "고르세요 — 어느 칸에 들어가는지, 앞을 열 수 있는 옷인지, 겹쳐 입을 때 얇은 "
-    "쪽인지.\n"
+    "쪽인지, 사람이 입고 찍힌 사진인지.\n"
     "- 상의: 티셔츠·셔츠·니트·블라우스·후디 등 상체에 입는 옷\n"
     "- 하의: 바지·스커트·반바지 등 하체에 입는 옷\n"
     "- 아우터: 코트·재킷·점퍼·가디건 등 겉에 걸치는 옷\n"
@@ -576,6 +609,9 @@ _INSPECT_INSTRUCTIONS = (
     "openable 은 앞을 열어 입은 모습으로 그릴 수 있는 옷인지입니다. 여밈이 보이면 "
     "yes, 머리로 입는 옷이면 no, 판단이 안 서면 unknown.\n"
     "layer 는 겹쳐 입을 때의 두께감입니다. 안 보이면 '모르겠음'.\n"
+    "worn 은 사람이 실제로 입고(신고·쓰고) 찍힌 사진인지입니다. 착용 컷·거리 사진·셀카처럼 "
+    "사람의 몸이나 얼굴이 보이면 yes, 옷만 놓였거나 걸린 사진·마네킹이면 no, 판단이 안 서면 "
+    "unknown.\n"
     "★ 지어내지 마세요. 사진에 보이는 것만 보고 고르고, 확실하지 않으면 "
     "'모르겠음'·unknown·'자동 분류' 를 고르세요. 브랜드·가격·트렌드는 판단하지 "
     "마세요.\n"
@@ -586,9 +622,11 @@ _CLASSIFY_INSTRUCTIONS = _INSPECT_INSTRUCTIONS
 CLOSURES = ["지퍼", "버튼", "스냅", "없음", "모르겠음"]
 OPENABLE = ["yes", "no", "unknown"]
 LAYERS = ["얇음", "보통", "두꺼움", "모르겠음"]
+WORN = ["yes", "no", "unknown"]
 # 사진을 못 봤을 때의 값. ★ 빈칸이 아니라 "모른다" 다 — 아래 fit.prune_options 가
 #   "모르면 연출을 빼지도 넣지도 않는다" 를 이 값으로 판단한다.
-UNKNOWN = {"slot": AUTO, "closure": "모르겠음", "openable": "unknown", "layer": "모르겠음"}
+UNKNOWN = {"slot": AUTO, "closure": "모르겠음", "openable": "unknown", "layer": "모르겠음",
+           "worn": "unknown"}
 
 
 def _inspect_schema():
@@ -599,14 +637,15 @@ def _inspect_schema():
            "properties": {"slot": {"type": "string", "enum": SLOTS + [AUTO]},
                           "closure": {"type": "string", "enum": CLOSURES},
                           "openable": {"type": "string", "enum": OPENABLE},
-                          "layer": {"type": "string", "enum": LAYERS}},
-           "required": ["slot", "closure", "openable", "layer"]}
+                          "layer": {"type": "string", "enum": LAYERS},
+                          "worn": {"type": "string", "enum": WORN}},
+           "required": ["slot", "closure", "openable", "layer", "worn"]}
     return llm.strict_schema("feedit_vton_items",
                              {"items": {"type": "array", "items": row}}, ["items"])
 
 
 def inspect(images: list[str]) -> list[dict]:
-    """사진 순서대로 {slot, closure, openable, layer} 를 돌려준다.
+    """사진 순서대로 {slot, closure, openable, layer, worn} 을 돌려준다.
 
     ★ 실패하면 전부 UNKNOWN 이다. 예전 classify() 가 못 판별한 사진을 '자동 분류' 로
       남겨 생성 프롬프트가 스스로 판별하게 넘긴 것과 같은 태도 — 모르는 것을 아는
@@ -619,7 +658,7 @@ def inspect(images: list[str]) -> list[dict]:
     if not rows or not llm.available():
         return fallback
     content: list[dict] = [{"type": "input_text",
-                            "text": "각 사진의 칸·여밈·두께를 순서대로 골라 주세요."}]
+                            "text": "각 사진의 칸·여밈·두께·착용 여부를 순서대로 골라 주세요."}]
     for u in rows:
         content.append({"type": "input_image", "image_url": u})
     got = llm.respond(_INSPECT_INSTRUCTIONS, [{"role": "user", "content": content}],
@@ -636,6 +675,7 @@ def inspect(images: list[str]) -> list[dict]:
             "closure": row.get("closure") if row.get("closure") in CLOSURES else "모르겠음",
             "openable": row.get("openable") if row.get("openable") in OPENABLE else "unknown",
             "layer": row.get("layer") if row.get("layer") in LAYERS else "모르겠음",
+            "worn": row.get("worn") if row.get("worn") in WORN else "unknown",
         })
     return out
 
