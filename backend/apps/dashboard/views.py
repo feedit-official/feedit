@@ -46,6 +46,7 @@ from django.db.models import (
     Count,
     Max,
     Min,
+    Prefetch,
     Q,
     Value,
     When,
@@ -118,6 +119,7 @@ from apps.core.models import (
     TermCandidate,
     TermMetricDaily,
     TextDocument,
+    TextTermMention,
 )
 
 @login_required(login_url="/admin-dashboard/login/")
@@ -2125,7 +2127,21 @@ def _text_page(request, codes, title, description, url_name):
             "product_source",
             "product_source__product",
         )
-        .prefetch_related("term_mentions__term")
+        .prefetch_related(Prefetch(
+            "term_mentions",
+            queryset=TextTermMention.objects.select_related("term").only(
+                "id",
+                "document_id",
+                "term_id",
+                "mention_text",
+                "mention_role",
+                "sentiment_score",
+                "intent_code",
+                "confidence",
+                "term__id",
+                "term__canonical_name",
+            ),
+        ))
     )
 
     if selected_type:
