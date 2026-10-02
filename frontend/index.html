@@ -328,17 +328,24 @@
           <span style="font-family:var(--num);font-size:10px;letter-spacing:.24em;color:var(--pink-2)">2026.08 · W2</span>
           <!-- 금주의 리포트에서만 뜬다 — 엑셀로 저장 · 링크로 공유 (trend/static/js/report_export.js) -->
           <div class="trHeadActs" id="trHeadActs" hidden>
-            <button type="button" class="trAct" id="trDownloadBtn" title="엑셀로 저장" aria-label="엑셀로 저장">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path d="M12 3v12"/><path d="M7.5 11l4.5 4.5 4.5-4.5"/><path d="M4.5 20h15"/>
-              </svg><span>다운로드</span>
-            </button>
             <button type="button" class="trAct" id="trShareBtn" title="링크 공유" aria-label="링크 공유">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <circle cx="18" cy="5.5" r="2.6"/><circle cx="6" cy="12" r="2.6"/><circle cx="18" cy="18.5" r="2.6"/>
                 <path d="M8.3 10.7l7.4-3.9M8.3 13.3l7.4 3.9"/>
-              </svg><span>공유</span>
+              </svg>
             </button>
+            <div class="trMenuWrap">
+              <button type="button" class="trAct" id="trDownloadBtn" title="다운로드" aria-label="다운로드" aria-haspopup="menu" aria-expanded="false">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M12 3v12"/><path d="M7.5 11l4.5 4.5 4.5-4.5"/><path d="M4.5 20h15"/>
+                </svg>
+              </button>
+              <div class="trMenu" id="trDlMenu" role="menu" hidden>
+                <button type="button" role="menuitem" data-dl-fmt="xlsx">엑셀 <em>.xlsx</em></button>
+                <button type="button" role="menuitem" data-dl-fmt="pdf">PDF <em>.pdf</em></button>
+                <button type="button" role="menuitem" data-dl-fmt="png">이미지 <em>.png</em></button>
+              </div>
+            </div>
           </div>
         </div>
         <div class="trTabs" id="trTabs"></div>

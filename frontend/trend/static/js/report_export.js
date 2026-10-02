@@ -143,6 +143,59 @@ export function saveBlob(blob, filename){
   setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
 
+/* ── 이미지 · PDF ──
+   화면에 떠 있는 리포트를 그림으로 찍어 PNG 로 주거나, 같은 그림을 한 페이지 PDF 로 만든다.
+   라이브러리는 이 기능을 처음 쓸 때만 CDN 에서 받는다(평소 페이지 로딩에는 영향 없음).
+   글자가 그림이 되므로 한글 폰트가 PDF 에 들어가지 않아도 깨지지 않는다. */
+const H2C_SRC = 'https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js';
+const JSPDF_SRC = 'https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js';
+const _scripts = {};
+function loadScript(src){
+  if (!_scripts[src]) _scripts[src] = new Promise((ok, fail) => {
+    const el = document.createElement('script');
+    el.src = src; el.async = true;
+    el.onload = ok;
+    el.onerror = () => { delete _scripts[src]; el.remove(); fail(new Error('라이브러리를 불러오지 못했습니다')) };
+    document.head.appendChild(el);
+  });
+  return _scripts[src];
+}
+
+/* el 을 캔버스로 찍는다. ignore 로 넘긴 선택자(저장 버튼 등)는 그림에서 뺀다. */
+export async function captureElement(el, { ignore = '' } = {}){
+  await loadScript(H2C_SRC);
+  const bg = getComputedStyle(document.body).backgroundColor;
+  return window.html2canvas(el, {
+    scale: 2,
+    useCORS: true,
+    backgroundColor: bg && bg !== 'rgba(0, 0, 0, 0)' ? bg : '#f1efea',
+    scrollX: 0, scrollY: -window.scrollY,
+    ignoreElements: n => !!(ignore && n.matches && n.matches(ignore)),
+  });
+}
+
+export function canvasToPng(canvas){
+  return new Promise((ok, fail) => canvas.toBlob(
+    b => b ? ok(b) : fail(new Error('이미지를 만들지 못했습니다')), 'image/png'));
+}
+
+/* 한 페이지 PDF — 폭은 A4(210mm)로 두고, 높이를 그림 길이에 맞춰 잘리는 곳 없이 한 장에 담는다 (여백 8mm) */
+export async function canvasToPdf(canvas){
+  await loadScript(JSPDF_SRC);
+  const M = 8, W = 210 - M * 2;
+  const imgH = canvas.height * W / canvas.width;
+  const pageW = 210, pageH = imgH + M * 2;
+  const portrait = pageH >= pageW;
+  const pdf = new window.jspdf.jsPDF({ unit:'mm', orientation: portrait ? 'p' : 'l',
+    format: portrait ? [pageW, pageH] : [pageH, pageW] });
+  /* 리포트 지면색으로 바탕을 채워 여백이 흰색으로 따로 놀지 않게 한다 */
+  const bg = getComputedStyle(document.body).backgroundColor.match(/\d+/g) || [241, 239, 234];
+  pdf.setFillColor(+bg[0], +bg[1], +bg[2]);
+  pdf.rect(0, 0, pageW, pageH, 'F');
+  pdf.addImage(canvas.toDataURL('image/jpeg', 0.92), 'JPEG', M, M, W, imgH);
+  return pdf.output('blob');
+}
+
 /* ── 공유 링크 ──
    받는 사람이 열었을 때 금주의 리포트가 곧바로 서도록 주소에 화면과 탭을 적는다.
    (app_shell/static/js/router.js 의 resumeNav 가 이 두 값을 읽는다)

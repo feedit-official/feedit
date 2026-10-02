@@ -17,7 +17,7 @@ import { jobBadgeHTML, jobPlanText, jobShown } from '../../../account/static/js/
 import { smBarFill, svRender } from './discount_resale.js';
 import { trCountUp } from './count_up.js';
 import { trDial, wkAnimate } from './weekly_report.js';
-import { buildXlsx, reportShareUrl, saveBlob, shareLink } from './report_export.js';
+import { buildXlsx, canvasToPdf, canvasToPng, captureElement, reportShareUrl, saveBlob, shareLink } from './report_export.js';
 import { trSideOpen } from '../../../app_shell/static/js/router.js';
 import { weeklyReport, weeklyVideos, savedProducts, setSavedProduct } from '../../../account/static/js/account_api.js';
 
@@ -1102,6 +1102,7 @@ export function trRender(id){
      금주의 리포트와 같은 계산(wkRange)으로 오늘이 속한 주를 적는다. */
   /* 저장 · 공유 버튼은 금주의 리포트에서만 선다 */
   const acts=$('#trHeadActs'); if(acts)acts.hidden=(id!=='report');
+  if(id!=='report'){ const m=$('#trDlMenu'); if(m)m.hidden=true }
   const wkSpan=$('.trHead>span');
   if(wkSpan){
     wkSpan.hidden=(id==='report');
@@ -2433,21 +2434,52 @@ function wkSheets(){
   return [{name:'금주의 리포트', rows, widths:[22, 42, 12, 34]}];
 }
 
-document.addEventListener('click', async e=>{
-  const dl=e.target.closest&&e.target.closest('#trDownloadBtn');
-  if(dl){
-    /* 아직 데이터를 기다리는 중이면 빈 파일을 주지 않는다 */
-    if(WR.state==='loading'){ trToast('리포트를 아직 불러오는 중입니다. 잠시 뒤 다시 눌러 주세요.'); return }
-    const rp=wkRange();
-    const name='FEEDiT_금주의리포트_'+rp[0].replace('.','-')+'_'+rp[1].split(' · ')[0]+'.xlsx';
+/* 다운로드 — 아이콘을 누르면 엑셀 · PDF · 이미지 중 고르는 드롭다운이 열린다 */
+const wkMenu=()=>$('#trDlMenu');
+function wkMenuSet(open){
+  const m=wkMenu(), b=$('#trDownloadBtn'); if(!m)return;
+  m.hidden=!open;
+  if(b)b.setAttribute('aria-expanded',open?'true':'false');
+}
+function wkFileBase(){
+  const rp=wkRange();
+  return 'FEEDiT_금주의리포트_'+rp[0].replace('.','-')+'_'+rp[1].split(' · ')[0];
+}
+async function wkDownload(fmt){
+  /* 아직 데이터를 기다리는 중이면 빈 파일을 주지 않는다 */
+  if(WR.state==='loading'){ trToast('리포트를 아직 불러오는 중입니다. 잠시 뒤 다시 눌러 주세요.'); return }
+  const base=wkFileBase();
+  if(fmt==='xlsx'){
     try{
-      saveBlob(buildXlsx(wkSheets()), name);
+      saveBlob(buildXlsx(wkSheets()), base+'.xlsx');
       trToast('엑셀 파일로 저장했습니다.');
     }catch(err){
       trToast('엑셀 파일을 만들지 못했습니다 ('+(err&&err.message||err)+').');
     }
     return;
   }
+  const label=fmt==='pdf'?'PDF':'이미지';
+  const items=$$('#trDlMenu button'); items.forEach(b=>b.disabled=true);
+  trToast(label+'를 만드는 중입니다…');
+  try{
+    /* 제목부터 리포트 본문까지 — 저장·공유 버튼은 그림에서 뺀다 */
+    const canvas=await captureElement($('.trMain'),{ignore:'#trHeadActs'});
+    if(fmt==='pdf')saveBlob(await canvasToPdf(canvas), base+'.pdf');
+    else saveBlob(await canvasToPng(canvas), base+'.png');
+    trToast(label+' 파일로 저장했습니다.');
+  }catch(err){
+    trToast(label+' 파일을 만들지 못했습니다 ('+(err&&err.message||err)+').');
+  }finally{ items.forEach(b=>b.disabled=false) }
+}
+document.addEventListener('keydown', e=>{ if(e.key==='Escape')wkMenuSet(false) });
+document.addEventListener('click', async e=>{
+  const t=e.target.closest?e.target:null;
+  const dl=t&&t.closest('#trDownloadBtn');
+  if(dl){ const m=wkMenu(); wkMenuSet(!!m&&m.hidden); return }
+  const pick=t&&t.closest('[data-dl-fmt]');
+  if(pick){ wkMenuSet(false); wkDownload(pick.dataset.dlFmt); return }
+  /* 메뉴 밖을 누르면 닫는다 */
+  if(wkMenu()&&!wkMenu().hidden)wkMenuSet(false);
   const sh=e.target.closest&&e.target.closest('#trShareBtn');
   if(sh){
     const rp=wkRange();
