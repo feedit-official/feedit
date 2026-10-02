@@ -32,6 +32,12 @@ def integer_value(value):
         return None
 
 
+def non_negative_count(value):
+    """Normalize a platform counter without turning invalid data into a real zero."""
+    parsed = integer_value(value)
+    return parsed if parsed is None or parsed >= 0 else None
+
+
 def review_datetime(value):
     if isinstance(value, datetime):
         result = value
@@ -157,6 +163,11 @@ class AblyIngestion:
         product.save(update_fields=["source_name", "source_brand", "source_category", "product_url",
                                    "thumbnail_url", "style_no", "attributes", "last_seen_at", "updated_at"])
         snapshot = row.get("snapshot") or {}
+        raw_sales_count = snapshot.get("sales_count")
+        sales_count = non_negative_count(raw_sales_count)
+        platform_metrics = dict(snapshot)
+        if raw_sales_count is not None and sales_count is None:
+            platform_metrics["raw_sales_count"] = raw_sales_count
         import hashlib
         import json
         scope_keys = ("filter", "market_type_sno", "category_sno", "period", "age_tags")
@@ -169,9 +180,9 @@ class AblyIngestion:
                       "discount_rate": decimal_value(snapshot.get("discount_rate")),
                       "rank_position": (row.get("ranking") or {}).get("rank"),
                       "ranking_context": ranking, "review_count": snapshot.get("review_count"),
-                      "sales_count": snapshot.get("sales_count"),
+                      "sales_count": sales_count,
                       "stock_status": "SOLD_OUT" if snapshot.get("is_sold_out") else "AVAILABLE" if snapshot.get("is_buyable") else None,
-                      "platform_metrics": snapshot})
+                      "platform_metrics": platform_metrics})
         counts = {"product_source_id": product.id, "product_created": int(created),
                   "product_updated": int(not created), "snapshot_created": int(snapshot_created),
                   "brand_created": int(brand is not None and brand_created),

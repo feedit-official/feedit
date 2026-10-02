@@ -33,7 +33,7 @@ from datetime import timedelta
 
 from django.db import connection
 from django.db.models import Avg, Case, Count, Exists, F, FloatField, IntegerField, Max, Min, OuterRef, Q, Subquery, Sum, Value, When, Window
-from django.db.models.functions import Cast, Coalesce, Ln, RowNumber, TruncDate
+from django.db.models.functions import Cast, Coalesce, Greatest, Ln, RowNumber, TruncDate
 from django.http import JsonResponse
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
@@ -97,6 +97,13 @@ def _ok(data, **extra):
 
 def _empty(reason, **extra):
     return JsonResponse({"status": "empty", "reason": reason, **extra, "data": None})
+
+
+def _safe_log_metric(expression):
+    """Return ln(1 + count), treating missing or invalid negative counts as zero."""
+    zero = Value(0.0, output_field=FloatField())
+    safe_count = Greatest(Coalesce(expression, zero), zero)
+    return Ln(safe_count + Value(1.0, output_field=FloatField()))
 
 
 def _num(v, nd=None):
@@ -3099,9 +3106,9 @@ def products(request):
             extra.update({"_rv": last("review_count"), "_lk": last("like_count"),
                           "_sl": last("sales_count"), "_rt": last("rating")})
             extra["_key"] = (
-                Coalesce(Ln(F("_rv") + 1.0), zero) * 1.0
-                + Coalesce(Ln(F("_lk") + 1.0), zero) * 0.8
-                + Coalesce(Ln(F("_sl") + 1.0), zero) * 0.8
+                _safe_log_metric(F("_rv")) * 1.0
+                + _safe_log_metric(F("_lk")) * 0.8
+                + _safe_log_metric(F("_sl")) * 0.8
                 + Coalesce(F("_rt"), zero) * 0.6
                 + Coalesce(disc, zero) * 0.03
                 + Case(When(thumbnail_url__isnull=False, then=Value(0.5)), default=zero, output_field=FloatField())
