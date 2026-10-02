@@ -12,6 +12,7 @@ import { entryOf, prime, primeUrl, sentimentUrl, stateOf, stateOfUrl, summaryOf,
 import { gChart, gDraw } from './chart_engine.js';
 import { paintStockPriceChart } from './stock_price_chart.js';
 import { kwWire } from './saved_keywords.js';
+import './dict_popup.js';
 import { rkChip, rkPaintAv } from '../../../account/static/js/rank.js';
 import { jobBadgeHTML, jobPlanText, jobShown } from '../../../account/static/js/job.js';
 import { smBarFill, svRender } from './discount_resale.js';
@@ -29,7 +30,7 @@ function trTabsRender(id){
   if(kwMode){
     el.hidden=false;
     /* 할인률 파트의 챗바와 완전히 같은 골격(.fsWrap/.fsRow/.fsBar).
-       세부 검색 버튼만 빼고, 안에서 굴러가는 예시 질문만 파트별로 다르다. */
+       세부 검색 버튼 대신 사전 버튼만 둔다. */
     el.innerHTML=
       '<div class="fsWrap kwWrap">'+
         '<div class="fsRow">'+
@@ -39,10 +40,9 @@ function trTabsRender(id){
               'placeholder="소재 · 아이템 · 스타일 · 브랜드로 검색">'+
             '<span class="fsGhost"><span class="fsQ" id="kwQ"></span></span>'+
             '<button class="fsClear" id="kwClear" type="button"'+(KW.q?'':' hidden')+'>×</button>'+
-            /* 엔터 말고 눌러서도 조회할 수 있게. 돌 때는 이 자리가 로딩 표시가 된다. */
-            '<button class="kwGoBtn" id="kwGoBtn" type="button" aria-label="조회">'+
-              '<span class="kwGoIc">⌕</span></button>'+
           '</div>'+
+          /* 세부 검색 버튼 자리 — 여기는 사전 버튼 하나 */
+          '<div class="fsSide"><button class="fsMore fsDictBtn" type="button" data-dict-open>사전</button></div>'+
         '</div>'+
         '<div class="fsSug" id="kwSug" hidden></div>'+
       '</div>';
@@ -1138,6 +1138,9 @@ export function trRender(id){
     }
     /* 탭마다 허용 축이 달라질 경우 보이지 않는 조건을 제거한다. */
     if(useSearch&&fsDropDisallowed())fsChipsPaint();
+    /* 수명주기는 세부 검색 없이 검색창과 사전만, 할인률·리세일은 사전 없이 세부 검색만 쓴다 */
+    const mb=$('#fsMore'); if(mb)mb.hidden=(id==='life');
+    const db=$('#trSearch [data-dict-open]'); if(db)db.hidden=(id!=='life');
     const fi=$('#fsInput');
     if(fi)fi.placeholder=id==='stock'?'상품명을 입력하고 Enter · 또는 찜에서 선택':
       id==='resale'?'상품명 · 모델번호를 검색하세요 (예: 살로몬 XT-6)':
@@ -1165,7 +1168,7 @@ export function trRender(id){
       '먼저 볼 대상을 고르세요',
       id==='resale'
         ? '상품명이나 모델번호로 표준상품을 고르세요.\n세부 검색에서는 브랜드 전체 흐름도 볼 수 있습니다.'
-        : '위 검색에서 카테고리나 브랜드를 좁혀 주세요.\n고른 것에 맞춰 지표를 불러옵니다.');
+        : '위 검색창이나 사전에서 스타일·소재·아이템·브랜드를 골라 주세요.\n고른 것에 맞춰 지표를 불러옵니다.');
     return;
   }
 

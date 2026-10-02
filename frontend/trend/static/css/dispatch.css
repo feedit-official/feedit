@@ -146,7 +146,7 @@
   padding:10px 4px 10px 12px;text-align:left}
 .kwHistGo .fc{flex:0 0 auto;font-family:var(--num);font-size:8.5px;letter-spacing:.1em;
   padding:4px 7px;border-radius:5px;background:rgba(10,10,10,.06);color:var(--pink-2)}
-.kwHistGo .lb{flex:1;min-width:0;font-size:13.5px;letter-spacing:-.02em;color:var(--pink-0);
+.kwHistGo .lb{display:block;flex:1;min-width:0;font-size:13.5px;letter-spacing:-.02em;color:var(--pink-0);
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .kwHistDel{flex:0 0 auto;width:26px;height:26px;margin-right:8px;border-radius:50%;
   display:grid;place-items:center;font-size:14px;line-height:1;

@@ -3,32 +3,9 @@ import { prime, primeUrl, sentimentUrl } from './live_data.js';
 import { FIDX, fsExact, fsMatch, fsNorm } from '../../../style/static/js/search.js';
 import { KW, trToast } from './render_helpers.js';
 import { markTried, trRender } from './dispatch.js';
+import { KW_HOT, kwHotLoad } from './hot_terms.js';
 import { logSearch } from '../../../account/static/js/account_api.js';
 
-/* 예시 단어 — 홈의 HOT TREND TOP 10 과 같은 순위(/api/trend?rank=hot)를 그대로 쓴다.
-   이 검색바에는 질문이 아니라 용어를 넣는다. 챗봇 질문 예시는 홈 챗바 몫이다.
-   못 불러오면 지어내지 않고 비워 둔다(placeholder 만 보인다). 홈과 같이 30분마다 다시 확인한다. */
-var KW_HOT=[], kwHotAt=0, kwHotJob=null;
-const KW_HOT_TTL=30*60*1000, KW_HOT_RETRY=30*1000;   /* 실패하면 30초 뒤에 다시 */
-function kwHotLoad(){
-  if(kwHotJob)return kwHotJob;
-  if(Date.now()-kwHotAt<(KW_HOT.length?KW_HOT_TTL:KW_HOT_RETRY))return Promise.resolve();
-  kwHotAt=Date.now();
-  return kwHotJob=kwHotFetch().finally(()=>{ kwHotJob=null });
-}
-async function kwHotFetch(){
-  try{
-    const r=await fetch('/api/trend?rank=hot&limit=8',{headers:{Accept:'application/json'}});
-    const j=await r.json();
-    if(r.ok&&j&&j.status==='ok'){
-      const d=j.data||{};
-      /* 홈과 같은 뽑기 — 상승 8 + 하락 2 */
-      const terms=[...(d.rising||[]).slice(0,8),...(d.falling||[]).slice(0,2)]
-        .map(x=>x&&x.term).filter(Boolean);
-      if(terms.length)KW_HOT=terms;
-    }
-  }catch(e){}
-}
 /* 할인률 챗바(fsQStep)와 같은 타임라인 — 문구만 HOT 용어다 */
 var kwQI=0, kwQBooked=false;
 function kwQStep(){

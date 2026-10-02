@@ -189,11 +189,14 @@
    두고, 세부 검색 버튼만 오른쪽 바깥에 띄운다. */
 #trSearch .fsRow{position:relative;height:50px;align-items:center}
 #trSearch .fsRow .fsBar{width:100%;height:50px;flex:1 1 auto;align-self:center;box-sizing:border-box}
-/* 세부 검색 버튼 — 검색바와 같은 50px. 늘어나지 않게 값으로 못박는다 */
-#trSearch .fsRow .fsMore{position:absolute;left:calc(100% + 10px);top:0;bottom:0;
-  height:50px;min-height:50px;max-height:50px;align-self:center;box-sizing:border-box}
+/* 오른쪽 버튼 묶음(세부 검색 · 사전) — 검색바와 같은 50px. 늘어나지 않게 값으로 못박는다.
+   언급량·온도 / 연관어 / 긍부정(.kwWrap)도 같은 자리에 사전 버튼을 둔다. */
+.fsRow{position:relative}
+.kwWrap .fsRow{height:50px;align-items:center}
+.fsSide{position:absolute;left:calc(100% + 10px);top:0;bottom:0;display:flex;gap:8px;align-items:center}
+.fsSide .fsMore{height:50px;min-height:50px;max-height:50px;box-sizing:border-box}
 @media(max-width:1180px){
-  #trSearch .fsRow .fsMore{position:static}
+  .fsSide{position:static}
 }
 .fsBar{
   flex:1;min-width:0;position:relative;display:flex;align-items:center;gap:10px;
@@ -218,8 +221,8 @@
 .fsGhost i{font-style:normal}
 .fsGhost b{font-weight:500;color:var(--pink-1)}
 /* EDIT 검색바의 예시 용어는 질문보다 한 톤 더 연하게 */
-#kwQ,#kwQ b{color:rgba(10,10,10,.42)}
-#kwQ b{display:inline-block}   /* 용어만 깜빡이도록 transform 이 먹게 */
+#kwQ,#kwQ b,#fsQ,#fsQ b{color:rgba(10,10,10,.42)}
+#kwQ b,#fsQ b{display:inline-block}   /* 용어만 깜빡이도록 transform 이 먹게 */
 .fsBar.typing .fsGhost{opacity:0}
 .fsClear{width:22px;height:22px;padding:0;border-radius:50%;flex:0 0 22px;
   background:rgba(10,10,10,.06);color:var(--pink-1);font-size:13px;line-height:1;
@@ -233,6 +236,7 @@
   font-size:13px;letter-spacing:-.02em;white-space:nowrap;
   transition:background .3s,transform .3s var(--ease);
 }
+.fsMore[hidden]{display:none}
 .fsMore u{text-decoration:none;font-size:10px;opacity:.7;
   transition:transform .3s var(--ease)}
 .fsMore:hover{background:var(--coral)}
@@ -256,7 +260,8 @@
   padding:4px 7px;border-radius:5px;background:rgba(10,10,10,.06);color:var(--pink-2);
 }
 .fsSug .sg.on .fc{background:var(--coral);color:#fff}
-.fsSug .sg .lb{flex:1;min-width:0;font-size:13.5px;letter-spacing:-.02em;
+/* chat_report.css 의 전역 .lb{display:flex;flex-direction:column} 이 새어 들어와 강조 글자(em)가 줄바꿈되던 것을 막는다 */
+.fsSug .sg .lb{display:block;flex:1;min-width:0;font-size:13.5px;letter-spacing:-.02em;
   color:var(--pink-0);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .fsSug .sg .lb em{font-style:normal;color:var(--coral);font-weight:600}
 .fsSug .sg .pt{flex:0 0 auto;font-size:11px;color:var(--pink-2);
@@ -703,4 +708,21 @@
   .stockPickerRate>.dzSaveBtn{min-width:104px;padding:6px 8px;font-size:10px}
   .stockPicker .wlBody{grid-template-columns:repeat(2,minmax(0,1fr))}
   .stockPicker .dzWishlist{height:320px}
+}
+
+/* ── 사전 팝업 (2026-10-02) ──
+   틀과 칸은 세부 검색 팝업(.fsPopBg/.fsPop/.fsCols/.fsCol/.fsList)을 그대로 쓴다.
+   다른 점은 칸이 7개(term_type 별)이고, 칸을 통틀어 용어를 하나만 고른다는 것이다. */
+.fsPop.dictPop{width:min(1120px,100%)}
+.dictPop .fsCols{--fsN:7;grid-template-columns:repeat(7,minmax(130px,1fr));overflow-x:auto}
+.dictPop .fsPopHead h3{color:var(--pink-0)}
+.dictCol{min-height:0;display:flex;flex-direction:column;border-right:1px solid var(--pink-3)}
+.dictCol:last-child{border-right:none}
+.dictPop .fsColH{display:flex;justify-content:space-between;align-items:center;gap:6px;
+  font-family:inherit;font-size:11px;letter-spacing:-.01em;color:var(--pink-1);font-weight:600}
+.dictPop .fsColH em{font-style:normal;font-family:var(--num);font-size:9px;letter-spacing:.06em;
+  color:var(--pink-2);font-weight:400}
+.dictPop .fsList button span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media(max-width:820px){
+  .dictPop .fsCols{grid-template-columns:repeat(7,150px)}
 }

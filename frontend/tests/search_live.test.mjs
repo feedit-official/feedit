@@ -70,7 +70,6 @@ const bar = () => { document.getElementById('trTabs').innerHTML =
   '<span class="fsIc">◎</span><input type="text" id="kwInput">'+
   '<span class="fsGhost"><span class="fsQ" id="kwQ"></span></span>'+
   '<button class="fsClear" id="kwClear" hidden>×</button>'+
-  '<button class="kwGoBtn" id="kwGoBtn"><span class="kwGoIc">⌕</span></button>'+
   '</div></div><div class="fsSug" id="kwSug" hidden></div></div>';
   document.getElementById('trTabs').classList.add('kwmode');
   sk.kwWire('temp');
@@ -87,16 +86,6 @@ await t('★ 엔터를 누르면 조회가 돈다', async () => {
   assert.ok(fetched.some(u=>String(u).includes('/api/trend')), `호출 없음: ${fetched}`);
   assert.equal(document.getElementById('kwBar').classList.contains('busy'), false,
     '끝나면 꺼져야 한다');
-});
-
-await t('★ 조회 버튼 클릭도 같다', async () => {
-  const inp = bar(); fetched = [];
-  inp.value = '새틴';
-  document.getElementById('kwGoBtn').dispatchEvent(new dom.window.MouseEvent('click',{bubbles:true}));
-  assert.equal(document.getElementById('kwGoBtn').disabled, true, '두 번 못 누르게 잠근다');
-  await new Promise(r=>setTimeout(r,120));
-  assert.ok(fetched.some(u=>String(u).includes('%EC%83%88%ED%8B%B4')||String(u).includes('새틴')),
-    `새틴을 안 물어봄: ${fetched}`);
 });
 
 await t('사전에 없는 말은 조회하지 않는다', async () => {

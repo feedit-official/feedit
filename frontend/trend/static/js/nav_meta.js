@@ -6,8 +6,8 @@ export const S_FEED=[{id:'myfeed',ic:'◧',t:'내 피드'},{id:'report',ic:'◔'
    리세일 시세 지수=±(웃돈이 붙는지 빠지는지, 플러스마이너스 — 다른 기호보다 작아 보여
    .sItem[data-tr="resale"] .ic 에서만 font-size 를 키운다), 수명주기=∞(정점 없이 계속 도는 순환) */
 export const S_EDIT=[{id:'temp',ic:'℃',t:'언급량 · 온도'},{id:'assoc',ic:'◎',t:'연관어'},
-              {id:'sentiment',ic:'⇅',t:'긍부정'},{id:'stock',ic:'%',t:'할인률 변화'},
-              {id:'resale',ic:'±',t:'리세일 지수'},{id:'life',ic:'∞',t:'수명주기'}];
+              {id:'sentiment',ic:'⇅',t:'긍부정'},{id:'life',ic:'∞',t:'수명주기'},
+              {id:'stock',ic:'%',t:'할인률 변화'},{id:'resale',ic:'±',t:'리세일 지수'}];
 export const TR_META={
   myfeed   :['내 피드','취향 벡터와 최근 행동을 합쳐 오늘 볼 만한 것만 골랐습니다. 왜 골랐는지는 카드마다 한 줄로 붙습니다.'],
   report   :['금주의 리포트',''],

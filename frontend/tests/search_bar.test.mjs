@@ -43,18 +43,10 @@ t('엔터가 조회로 이어진다', () => {
   assert.match(saved, /kwGo\(KW\.sug\[KW\.cur\]\); else kwGo\(\);/);
 });
 
-// ── 조회 버튼 ────────────────────────────────────────────
-t('★ 챗바 끝에 조회 버튼이 있다', () => {
-  assert.match(dispatch, /id="kwGoBtn"/);
-  assert.match(dispatch, /aria-label="조회"/);
-});
-
-t('조회 버튼이 눌리면 조회한다', () => {
-  assert.match(saved, /go\.addEventListener\('click',\(\)=>\{ if\(!go\.disabled\)kwGo\(\) \}\)/);
-});
-
-t('조회 중에는 두 번 못 누르게 잠근다', () => {
-  assert.match(saved, /if\(btn\)btn\.disabled=!!on/);
+// ── 돋보기 버튼은 없다 — 오른쪽에 사전 버튼이 선다 ─────────
+t('★ 검색바 안에 조회 버튼이 없고 사전 버튼이 있다', () => {
+  assert.doesNotMatch(dispatch, /id="kwGoBtn"/);
+  assert.match(dispatch, /data-dict-open/);
 });
 
 // ── 조회 중 표시 ─────────────────────────────────────────

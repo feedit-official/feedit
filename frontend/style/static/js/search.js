@@ -1,6 +1,7 @@
 import { $, $$, HAS_A, aAnimate, aSpring, aStagger, aTimeline } from '../../../core/static/js/dom.js';
 import { kwHideSug } from '../../../trend/static/js/saved_keywords.js';
 import { trRender } from '../../../trend/static/js/dispatch.js';
+import { KW_HOT, kwHotLoad } from '../../../trend/static/js/hot_terms.js';
 
 /* ══════════════════════════════════════════════════════
    패션 특화 검색 — 종합 검색이 아니다.
@@ -179,16 +180,21 @@ export async function fsLoadDictionary() {
     if (!j || j.status !== 'ok' || !Array.isArray(j.data)) {
       return { added: 0, reason: (j && j.reason) || '사전을 못 받았습니다.' };
     }
-    const seen = new Set(FIDX.map((o) => o.f + '|' + o.label));
+    const seen = new Map(FIDX.map((o) => [o.f + '|' + o.label, o]));
     let added = 0;
     for (const row of j.data) {
       const label = String(row.label || '').trim();
       if (!label) continue;
       const f = fsAxisOf(row.facet);
       const k = f + '|' + label;
-      if (seen.has(k)) continue;
-      seen.add(k);
-      FIDX.push({ f, label, key: label.replace(/\s/g, '').toLowerCase(), src: 'db' });
+      /* 영어 이름 — 'gold' 를 쳐도 한글 용어 '골드' 가 연관어로 뜬다. 박아 둔 항목에도 붙인다. */
+      const enKey = fsNorm(row.en);
+      const had = seen.get(k);
+      if (had) { if (enKey && enKey !== had.key) had.enKey = enKey; continue; }
+      const o = { f, label, key: label.replace(/\s/g, '').toLowerCase(), src: 'db' };
+      if (enKey && enKey !== o.key) o.enKey = enKey;
+      seen.set(k, o);
+      FIDX.push(o);
       added++;
     }
     FDICT_LOADED = added > 0 || j.data.length > 0;
@@ -213,6 +219,8 @@ export function fsMatch(q,limit){
     if(!fsSearchOk(o.f))return;       /* 이 탭에서 못 거는 축은 후보에도 안 띄운다 */
     let i=o.key.indexOf(n);
     if(i<0&&an)i=o.key.indexOf(fsNorm(an));
+    /* 한글 이름에 안 걸리면 영어 이름으로 본다 — 한글 일치보다는 뒤에 세운다 */
+    if(i<0&&o.enKey){ const e=o.enKey.indexOf(n); if(e>=0)i=50+e }
     if(i<0)return;
     /* 앞에서 걸릴수록, 짧을수록 위로 */
     hit.push({o,rank:i*100+o.label.length+(o.f==='아이템명'?20:0)});
@@ -258,6 +266,9 @@ export function fsExact(q){
     const ranked=fsMatch(q,20).find(o=>fsNorm(o.label)===n);
     return ranked||literal[0];
   }
+  /* 영어 이름이 정확히 같은 어휘 ('gold' → 골드) */
+  const en=FIDX.filter(o=>fsSearchOk(o.f)&&o.enKey===n);
+  if(en.length)return fsMatch(q,20).find(o=>o.enKey===n)||en[0];
   /* ② 친 말이 사전에 없을 때만 별칭이 가리키는 대표 이름으로 옮겨 간다 ('진' → 데님) */
   const al=FALIAS[String(q||'').trim()]||FALIAS[n];
   const an=al?fsNorm(al):null;
@@ -334,25 +345,25 @@ export function fsRemove(ax,v){
 }
 export function fsCount(){ let n=0; for(const k in FS.pick)n+=FS.pick[k].length; return n }
 
-const FS_Q=[
-  ['고프코어 테크 셸','할인률 언제부터 올랐어?'],
-  ['살로몬 XT-6','리세일 지수 아직 버텨?'],
-  ['새틴','수명주기 어디쯤이야?'],
-  ['스투시 후디','지금 사도 되는 시점이야?'],
-  ['삼바','정점 지났어?']
-];
 var fsQI=0, fsQBooked=false;
 
+/* 예시 용어 — 언급량·온도 검색바와 같은 HOT TREND 용어(hot_terms.js)를 같은 모양으로 굴린다 */
 function fsQStep(){
   const line=$('#fsQ'); if(!line)return;
-  const q=FS.id==='stock'?['상품명','할인률을 확인해 보세요']:FS_Q[fsQI%FS_Q.length]; fsQI++;
-  const paint=()=>{ line.innerHTML='<i>“<b>'+q[0]+'</b>&nbsp;'+q[1]+'”</i>' };
+  const job=kwHotLoad();   /* 30분이 지났으면 조용히 다시 읽는다 */
+  if(!KW_HOT.length){ job.then(()=>{ if(KW_HOT.length&&!line.querySelector('b'))fsQStep() }); return }
+  const q=KW_HOT[fsQI%KW_HOT.length]; fsQI++;
+  /* '예 : ' 는 고정하고 용어만 바뀐다 */
+  let term=line.querySelector('b');
+  const first=!term;
+  if(first){ line.innerHTML='<i>예 : <b></b></i>'; term=line.querySelector('b') }
+  const paint=()=>{ term.textContent=q };
   if(!HAS_A){ paint(); return }
-  if(!line.firstElementChild){ paint();
-    aAnimate(line,{opacity:[0,1],translateY:[8,0],duration:520,ease:'out(3)'}); return }
+  if(first){ paint();
+    aAnimate(term,{opacity:[0,1],translateY:[8,0],duration:520,ease:'out(3)'}); return }
   const t=aTimeline();
-  t.add(line,{opacity:[1,0],translateY:[0,-8],duration:260,ease:'in(2)',onComplete:paint},0)
-   .add(line,{opacity:[0,1],translateY:[8,0],duration:520,
+  t.add(term,{opacity:[1,0],translateY:[0,-8],duration:260,ease:'in(2)',onComplete:paint},0)
+   .add(term,{opacity:[0,1],translateY:[8,0],duration:520,
       ease:aSpring({stiffness:94,damping:16})},260);
 }
 function fsQTick(){
@@ -917,7 +928,7 @@ function fsClosePop(){
 function fsStockPageHTML(ax){
   if(FS.id!=='stock'||ax!=='상품명'||!fsStockHasMore)return '';
   return '<div class="fsPageNav" data-stock-tail>'+
-    (FS.loading?'상품을 더 불러오는 중입니다…':'스크롤하면 더 불러옵니다')+'</div>';
+    (FS.loading?'불러오는 중…':'스크롤하면 더 불러옵니다')+'</div>';
 }
 /* 칸을 끝까지 내렸을 때 다음 묶음을 이어 받는다 */
 export function fsStockScrollMore(host){
@@ -937,7 +948,7 @@ function fsColHTML(col){
   const ax=col.ax;
   if(FS.id==='resale'&&ax==='아이템명'){
     const q=(FS.colq[ax]||'').trim();
-    if(FS.resaleModalLoading)return '<div class="hint">개별 상품을 찾는 중입니다...</div>';
+    if(FS.resaleModalLoading)return '<div class="hint">불러오는 중…</div>';
     if(!FS.resaleModalItems.length)return '<div class="hint">'+(q?'‘'+fsEsc(q)+'’으로 찾은 중고상품이 없습니다.':'이 조건에 연결된 중고상품이 없습니다.')+'</div>';
     return FS.resaleModalItems.map((o,k)=>{
       const on=!!(FS.resaleItem&&FS.resaleItem.id===Number(o.id)&&FS.resaleItem.type===o.type);
@@ -954,7 +965,7 @@ function fsColHTML(col){
   /* 조건이 바뀌어 다시 세는 동안에는 지난 목록을 그대로 두지 않는다 —
      새 조건과 상관없는 이름이 잠깐 비친다. */
   if(FS.id!=='stock'&&ax==='아이템명'&&(FS.loading||fsItemSig!==fsPickSig()))
-    return '<div class="hint">상품명을 불러오는 중입니다...</div>';
+    return '<div class="hint">불러오는 중…</div>';
   const {list,from}=fsOptsFor(ax);
   const q=fsNorm(FS.colq[ax]||'');
   const hit=q?list.filter(o=>fsNorm(o.label).indexOf(q)>=0):[...list];
@@ -967,7 +978,7 @@ function fsColHTML(col){
   if(!hit.length){
     let why = '';
     if (FS.loading && (!FS.opts || !Object.keys(FS.opts).length)) {
-      why = '정보를 불러오는 중입니다...';
+      why = '불러오는 중…';
     } else {
       why=q
         ? '‘'+fsEsc(FS.colq[ax])+'’ 로 찾은 것이 없습니다.'
@@ -1061,7 +1072,7 @@ export function fsPaintPop(){
    진짜로 좁혀진 건지, 서버를 못 봐서 박아 둔 목록인지 그대로 적는다. */
 function fsPaintState(){
   const el=$('#fsState'); if(!el)return;
-  if(FS.loading){ el.className='fsState load'; el.textContent='후보를 세는 중…'; return }
+  if(FS.loading){ el.className='fsState load'; el.textContent='불러오는 중…'; return }
   if(FS.err){ el.className='fsState warn'; el.textContent=FS.err; return }
   if(FS.opts&&FS.narrowed){
     el.className='fsState';
