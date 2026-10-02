@@ -10,7 +10,6 @@ from django.db.models import Q
 from django.utils import timezone
 
 from apps.core.models import CrawlRun, CrawlTarget
-from collection.common.runner import run_target
 
 
 logger = logging.getLogger(__name__)
@@ -69,6 +68,10 @@ def run_live_target(
     )
 
     try:
+        # The API imports this task module during Django admin startup. Load the
+        # collector only when a crawl runs; the API image has no crawl deps.
+        from collection.common.runner import run_target
+
         result = run_target(
             target_id=target_id,
         )
