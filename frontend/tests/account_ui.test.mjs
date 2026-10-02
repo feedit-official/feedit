@@ -24,7 +24,7 @@ globalThis.MutationObserver=class{observe(){} disconnect(){} takeRecords(){retur
 
 const asked=[];
 const user={username:'feedit01',email:'feedit01',nickname:'피딧회원',initial:'피',birth_date:'2000-01-02',
-  height:170,weight:60,avatar:0,role:'user',job:'',major:'',bio:'',styles:[],saved_count:0,vote_count:0};
+  height:170,weight:60,gender:'FEMALE',avatar:0,role:'user',job:'',major:'',bio:'',styles:[],saved_count:0,vote_count:0};
 const reply=payload=>({ok:true,status:200,text:async()=>JSON.stringify(payload),json:async()=>payload});
 globalThis.fetch=async (url,opts={})=>{
   asked.push({url:String(url),opts});
@@ -63,6 +63,10 @@ assert.equal(document.getElementById('suEmailMsg').textContent,'이메일 인증
 document.getElementById('signupForm').dispatchEvent(new dom.window.Event('submit',{bubbles:true,cancelable:true}));
 await new Promise(resolve=>setTimeout(resolve,20));
 assert.equal(asked.some(x=>x.url.includes('/api/auth/signup')),false,'필수 동의 전에는 가입 요청을 보내지 않아야 한다');
+assert.equal(document.getElementById('signupErr').textContent,'성별을 선택해 주세요.');
+document.querySelector('input[name="suGender"][value="FEMALE"]').checked=true;
+document.getElementById('signupForm').dispatchEvent(new dom.window.Event('submit',{bubbles:true,cancelable:true}));
+await new Promise(resolve=>setTimeout(resolve,20));
 assert.equal(document.getElementById('signupErr').textContent,'만 14세 이상만 가입할 수 있습니다.');
 document.getElementById('suAgeAgree').checked=true;
 document.getElementById('suTermsAgree').checked=true;
@@ -74,6 +78,8 @@ const call=asked.find(x=>x.url.includes('/api/auth/signup'));
 assert.ok(call,'회원가입 API를 호출해야 한다');
 assert.equal(JSON.parse(call.opts.body).username,'feedit01');
 assert.equal(JSON.parse(call.opts.body).email,'feedit01@example.com','인증을 마친 이메일을 함께 보낸다');
+assert.equal(JSON.parse(call.opts.body).gender,'FEMALE');
+assert.equal(profile.ME.gender,'FEMALE');
 assert.equal(profile.AUTH.in,true,'DB 가입 성공 뒤에만 로그인 상태가 된다');
 assert.equal(document.getElementById('mAuthBtn').textContent.includes('피딧회원'),true);
 assert.ok(document.getElementById('styleSelectModal').classList.contains('on'),'기존 스타일 선택 디자인을 이어서 보여 준다');

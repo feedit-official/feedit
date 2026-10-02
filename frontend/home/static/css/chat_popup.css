@@ -384,6 +384,13 @@
 .cpFitKind svg{flex:0 0 auto}
 .cpFitKind.auto{font-family:var(--num);font-weight:600;letter-spacing:.04em;color:#4a4845}
 .cpFitKind:hover,.cpFitKind.on{background:var(--paper)}
+.cpFitProductName{
+  display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;
+  width:100%;font-size:11px;font-weight:600;line-height:1.35;color:var(--pink-0);
+}
+.cpFitShop,.cpFitSource{display:block;width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;line-height:1.45;color:#6d6b67}
+.cpFitShop{color:var(--coral-ink);text-decoration:underline;text-underline-offset:2px}
+.cpFitShop:hover{color:var(--pink-0)}
 .cpFitSlot.addSlot .cpFitAdd{box-sizing:border-box;background:transparent;border:1.5px dashed #cfcbc4}
 .cpFitSlot.addSlot .cpFitAdd:hover{border-color:var(--coral);box-shadow:none;color:var(--coral)}
 .cpFitSlot.addSlot .cpFitAdd:hover .cpFitPlus{color:var(--coral)}

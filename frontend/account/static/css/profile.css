@@ -308,6 +308,25 @@
    양쪽을 모두 잡는다. 한쪽만 잡으면 모달에서 em 이 인라인으로 풀려
    입력칸 아래로 흘러내린다. */
 .acct .cPair, .acctModal .cPair{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.acct .cBodyGenderRow, .acctModal .cBodyGenderRow{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:14px;align-items:start}
+.acct .cBodyGenderRow .cField, .acctModal .cBodyGenderRow .cField{min-width:0;margin-bottom:0}
+.acct .cGenderField, .acctModal .cGenderField{min-width:0;margin:0;padding:0;border:0}
+.acct .cGenderField legend, .acctModal .cGenderField legend{padding:0;margin-bottom:7px}
+.acct .cGenderChoices, .acctModal .cGenderChoices{display:flex;gap:6px}
+.acct .cGenderChoice, .acctModal .cGenderChoice{
+  display:flex;align-items:center;justify-content:center;gap:4px;min-width:0;flex:1;height:46px;
+  border-radius:10px;box-shadow:inset 0 0 0 1px var(--pink-3);font-size:12px;
+  color:var(--pink-1);cursor:pointer;background:#fff;transition:box-shadow .2s,background .2s,color .2s;
+}
+.acct .cGenderChoice span, .acctModal .cGenderChoice span{font-size:17px;line-height:1}
+.acct .cGenderChoice input, .acctModal .cGenderChoice input{position:absolute;width:1px;height:1px;opacity:0}
+.acct .cGenderChoice:has(input:checked), .acctModal .cGenderChoice:has(input:checked){
+  background:var(--pink-0);color:#fff;box-shadow:none;
+}
+.acct .cGenderChoice:has(input:focus-visible), .acctModal .cGenderChoice:has(input:focus-visible){outline:2px solid var(--coral);outline-offset:2px}
+@media(max-width:480px){
+  .acct .cBodyGenderRow, .acctModal .cBodyGenderRow{grid-template-columns:1fr;gap:12px}
+}
 .acct .cUnit, .acctModal .cUnit{position:relative;display:block}
 .acct .cUnit .cInput, .acctModal .cUnit .cInput{
   width:100%;padding-right:36px;appearance:textfield;-moz-appearance:textfield}

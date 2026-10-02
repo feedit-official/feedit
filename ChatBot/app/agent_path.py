@@ -95,6 +95,7 @@ def _fit(trace, tool: str) -> dict | None:
     if not got:
         return None
     return {"items": got.get("items") or [], "options": got.get("options") or [],
+            "gender": got.get("gender"),
             "styles": got.get("styles") or [], "why": got.get("why") or "",
             "dropped": got.get("dropped") or [],
             "missing_slots": got.get("missing_slots") or []}
@@ -119,6 +120,7 @@ def _approved_fit(ctx: dict | None) -> dict | None:
     if not items:
         return None
     return {"items": items, "options": list(proposal.get("options") or []),
+            "gender": proposal.get("gender"),
             "styles": list(proposal.get("styles") or []), "why": proposal.get("why") or "",
             "dropped": [], "missing_slots": [], "inspected": False}
 

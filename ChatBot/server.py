@@ -689,13 +689,15 @@ class Handler(BaseHTTPRequestHandler):
             # 화면 컨텍스트 — 새 경로가 "이거 어때?" 를 푸는 재료.
             #   없으면 없는 대로 돈다(도구 목록만 줄어든다).
             extra = {k: req.get(k) for k in
-                     ("screen_term", "salmal_card_id", "user_id", "region", "taste_context",
+                     ("screen_term", "salmal_card_id", "user_id", "region", "taste_context", "gender",
                       # 승인된 코디 — 이것이 있는 턴에만 build_fit 이 도구 목록에 있다
                       # (tools.specs_for). 승인을 거치지 않으면 확정할 코디가 없다.
                       "fit_proposal")
                      if req.get(k)}
             if isinstance(extra.get("taste_context"), dict):
                 extra["taste_context"] = clean_taste_context(extra["taste_context"])
+            if extra.get("gender") not in ("FEMALE", "MALE"):
+                extra.pop("gender", None)
             # ★ 도구를 부를 때마다 사용자의 말로 흘려보낸다 (설계도 부록 10).
             #   답이 완성될 때까지 화면이 비어 있으면 3초만 지나도 고장난 것처럼
             #   보인다. 같은 시간이라도 무엇을 보고 있는지 알면 기다림이 된다.

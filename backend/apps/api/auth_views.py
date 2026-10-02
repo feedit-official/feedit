@@ -89,6 +89,13 @@ def _body_profile(height, weight):
     return h, w, segment
 
 
+def _gender(value):
+    gender = str(value or "").strip().upper()
+    if gender not in ("", "FEMALE", "MALE"):
+        raise ValueError("성별은 Female 또는 Male 중에서 선택해 주세요.")
+    return gender or None
+
+
 def _profile(user, create=False):
     if create:
         profile, _ = AppUser.objects.get_or_create(
@@ -125,6 +132,7 @@ def _user_payload(user, profile):
         "height": meta.get("height"),
         "weight": meta.get("weight"),
         "body_type": profile.body_type,
+        "gender": profile.gender,
         "bio": meta.get("bio") or "",
         "avatar": int(meta.get("avatar") or 0),
         "job": meta.get("job") or "",
@@ -375,6 +383,7 @@ def _create_account(request, *, username, nickname, password, email, data, body,
     비밀번호는 Django 기본 해시(PBKDF2-SHA256)로만 저장된다.
     """
     height, weight, body_type = body
+    gender = _gender(data.get("gender"))
     birth_date = str(data.get("birth_date") or "").strip()
     birth_year = int(birth_date[:4]) if re.fullmatch(r"\d{4}-\d{2}-\d{2}", birth_date) else None
     with transaction.atomic():
@@ -400,6 +409,7 @@ def _create_account(request, *, username, nickname, password, email, data, body,
             nickname=nickname,
             birth_year=birth_year,
             body_type=body_type,
+            gender=gender,
             profile_metadata=meta,
         )
         _save_styles(profile, data.get("styles"))
@@ -692,6 +702,7 @@ def profile(request):
             data.get("height", (profile_obj.profile_metadata or {}).get("height")),
             data.get("weight", (profile_obj.profile_metadata or {}).get("weight")),
         )
+        gender = _gender(data.get("gender", profile_obj.gender))
         new_password = str(data.get("password") or "")
         if new_password:
             validate_password(new_password, user=request.user)
@@ -708,6 +719,7 @@ def profile(request):
                 if re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(meta.get("birth_date") or "")) else None
             )
             profile_obj.body_type = body_type
+            profile_obj.gender = gender
             profile_obj.profile_metadata = meta
             profile_obj.save()
             request.user.first_name = nickname

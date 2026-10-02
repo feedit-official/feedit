@@ -1078,7 +1078,8 @@ class Toolbox:
         #   "위 스타일대로 입혀 줘" 에 "어떤 스타일로요?" 를 되묻던 자리다.
         if not picked:
             picked = [str(s) for s in (self.ctx.get("recent_styles") or [])]
-        found = fit.propose(self._market_api(), picked, slots, kinds)
+        found = fit.propose(self._market_api(), picked, slots, kinds,
+                            gender=self.ctx.get("gender"))
         if "unavailable" in found:
             out = {**found, **self._fit_choices()}
             if skipped:
@@ -1160,6 +1161,7 @@ class Toolbox:
                                f"사진상 {look['slot']} 로 보입니다.")
         return {"ready": True,
                 "items": fit.layer_order(items, seen),
+                "gender": proposal.get("gender"),
                 "options": sorted(k for k, v in on.items() if v),
                 "dropped": dropped,
                 "note": "화면의 착장 칸을 채웠다. 생성은 사용자가 누를 때 일어난다."}

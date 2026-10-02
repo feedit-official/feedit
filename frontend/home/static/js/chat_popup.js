@@ -263,6 +263,12 @@ let cpActiveRun=null;
 function cpEsc(s){
   return String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 }
+function cpShopUrl(raw){
+  try{
+    const url=new URL(String(raw||''));
+    return url.protocol==='https:'||url.protocol==='http:'?url.href:'';
+  }catch(_){ return '' }
+}
 const cpMode =()=>SM_ON?'salmal':'general';
 
 /* ── 팝업 챗바 이미지 첨부 ─────────────────────────────
@@ -719,8 +725,14 @@ const CP_IC_RESEND=CP_SVG('<path d="M3.5 9.5h10a5.5 5.5 0 1 1 0 11H8"/><polyline
 const CP_IC_EDIT=CP_SVG('<path d="M4.5 19.5h4L19.6 8.4a2.05 2.05 0 0 0-2.9-2.9L5.5 16.6z"/><path d="M15.2 7l2.8 2.8"/>');
 const CP_IC_COPY=CP_SVG('<rect x="9.5" y="9.5" width="10.5" height="10.5" rx="2.2"/><path d="M5.5 14.5V6a2 2 0 0 1 2-2h7"/>');
 const CP_IC_DOWN=CP_SVG('<path d="M12 4v11"/><polyline points="7.5 10.5 12 15 16.5 10.5"/><path d="M5 19.5h14"/>');
+function cpFitGender(text){
+  const asked=String(text||'');
+  if(/(여자|여성|우먼|\bfemale\b)/i.test(asked)) return 'FEMALE';
+  if(/(남자|남성|맨즈|\bmale\b)/i.test(asked)) return 'MALE';
+  return AUTH.in&&(ME.gender==='FEMALE'||ME.gender==='MALE')?ME.gender:'';
+}
 function cpFitModel(text){
-  return /(남자|남성|맨즈|male)/i.test(String(text||''))?'man':'woman';
+  return cpFitGender(text)==='MALE'?'man':'woman';
 }
 function cpNewFit(images,text){
   const attached=(images||[]).slice(0,VF_MAX);
@@ -749,13 +761,17 @@ function cpNewFit(images,text){
    필요가 없다. 사용자가 그 자리에서 보고 끌 수 있다. */
 export function cpFitFromServer(fit,text){
   const f=cpNewFit([],text||'');
+  if(fit&&fit.gender==='MALE') f.model='man';
+  else if(fit&&fit.gender==='FEMALE') f.model='woman';
   const rows=(fit&&Array.isArray(fit.items)?fit.items:[]).slice(0,VF_MAX)
     .filter(it=>it&&(it.image||it.image_url))
     .map(it=>({category:VF_CATEGORIES.includes(it.slot)?it.slot:VF_CATEGORIES[0],
                /* 사진은 주소로 보낸다 — 서버가 받아 온다(vton.fetch_as_data_url).
                   브라우저가 CDN 을 직접 fetch 하면 CORS 로 막힌다. */
                image:'', imageUrl:String(it.image||it.image_url||''),
-               name:String(it.name||''), auto:false}));
+               name:String(it.name||''), brand:String(it.brand||''),
+               source:String(it.source||''), sourceLabel:String(it.source_label||''),
+               url:cpShopUrl(it.url), auto:false}));
   if(rows.length)f.items=rows;
   f.options=cpFitOptions((fit&&fit.options||[]).reduce((o,k)=>(o[k]=true,o),{}));
   f.sorting=false;
@@ -818,6 +834,8 @@ function cpFitItems(f){
             /* 서버가 고른 상품 사진의 주소. 사용자가 올린 사진에는 없다. */
             imageUrl:String(row.imageUrl||''),
             name:String(row.name||''),
+            brand:String(row.brand||''), source:String(row.source||''),
+            sourceLabel:String(row.sourceLabel||''), url:cpShopUrl(row.url),
             /* 예전 자료에는 auto 가 없다 — 없으면 '자동 분류'로 본다 */
             auto:row.auto===undefined?!row.category:Boolean(row.auto)};
   });
@@ -940,6 +958,12 @@ function cpFitSetupHTML(f,items){
   const slots=items.map((item,index)=>{
     const kind=item.auto?VF_AUTO:item.category;
     const src=item.image||item.imageUrl;
+    const source=item.sourceLabel||item.source;
+    const identity=item.name?'<span class="cpFitProductName" title="'+cpEsc(item.name)+'">'+cpEsc(item.name)+'</span>':'';
+    const shop=item.url?'<a class="cpFitShop" href="'+cpEsc(item.url)+'" target="_blank" rel="noopener noreferrer" '+
+      'aria-label="'+cpEsc(item.name||'상품')+' · '+cpEsc(source||'판매처')+'에서 상품 보기">'+
+      cpEsc([item.brand,source].filter(Boolean).join(' · ')||'상품 페이지')+' ↗</a>'
+      :source?'<span class="cpFitSource">'+cpEsc([item.brand,source].filter(Boolean).join(' · '))+'</span>':'';
     return '<div class="cpFitSlot">'+
       '<button type="button" class="cpFitItem'+(src?' has':'')+'" data-vf-pick="'+index+'" '+
         'aria-label="'+(index+1)+'번 칸에 사진 '+(src?'바꾸기':'넣기')+'">'+
@@ -951,7 +975,7 @@ function cpFitSetupHTML(f,items){
       '<button type="button" class="cpFitKind'+(kind===VF_AUTO?' auto':'')+(f.kindOpen===index?' on':'')+'" '+
         'data-vf-kind="'+index+'" aria-haspopup="dialog" aria-expanded="'+(f.kindOpen===index)+'" '+
         'aria-label="'+(index+1)+'번 칸 종류: '+cpEsc(kind)+'">'+
-        '<span>'+cpEsc(vfKindName(kind))+'</span>'+VF_SVG(VF_IC.chevron,11)+'</button>'+
+        '<span>'+cpEsc(vfKindName(kind))+'</span>'+VF_SVG(VF_IC.chevron,11)+'</button>'+identity+shop+
       '<input type="file" data-vf-file="'+index+'" accept="image/png,image/jpeg,image/webp" hidden></div>';
   }).join('');
   /* 칸 늘리기 — 아홉 칸(서버 MAX_ITEMS)이 차면 사라진다 */
@@ -1327,6 +1351,7 @@ async function cpAskLive(c,aiMsg,text,images){
                        모든 사용자를 비로그인으로 보고 취향 도구를 막았다. 취향 값 자체는
                        taste_context 로 가고, 챗봇은 이 id 로 다른 데이터를 조회하지 않는다. */
                     user_id:(AUTH.in&&ME.id!=null)?String(ME.id):undefined,
+                    gender:cpFitGender(text)||undefined,
                     taste_context:cpTasteContext(c),
                     /* 승인된 코디. 이것이 있는 턴에만 서버가 build_fit 을 부를 수 있다. */
                     fit_proposal:aiMsg.fitProposal||undefined,
@@ -1830,7 +1855,8 @@ document.addEventListener('click', e=>{
       const rows=cpFitItems(m.fit);
       if(rows[index]){
         if(rows.length>1)rows.splice(index,1);
-        else{ rows[0].image=''; rows[0].imageUrl=''; rows[0].name='';
+        else{ rows[0].image=''; rows[0].imageUrl=''; rows[0].name=''; rows[0].brand='';
+              rows[0].source=''; rows[0].sourceLabel=''; rows[0].url='';
               rows[0].category=VF_CATEGORIES[0]; rows[0].auto=true }
         m.fit.result=''; m.fit.status=''; m.fit.stateKind=''; cpFitRender(m);
       }
@@ -1884,7 +1910,7 @@ document.addEventListener('change',async e=>{
     /* 새로 넣은 사진은 Auto 로 시작한다 (2026-10-01) — 예전엔 auto 를 내려 버려서,
        칸이 처음 받은 이름('상의')이 사진과 상관없이 그대로 프롬프트에 실렸다.
        Auto 면 서버가 사진을 보고 정하고, 틀리면 칸 아래 이름을 눌러 고친다. */
-    try{ const item=cpFitItems(m.fit)[index]; item.image=await imageFileToDataURL(picked); item.imageUrl=''; item.name=''; item.auto=true; m.fit.kindOpen=-1; m.fit.result=''; m.fit.status=''; m.fit.stateKind=''; }
+    try{ const item=cpFitItems(m.fit)[index]; item.image=await imageFileToDataURL(picked); item.imageUrl=''; item.name=''; item.brand=''; item.source=''; item.sourceLabel=''; item.url=''; item.auto=true; m.fit.kindOpen=-1; m.fit.result=''; m.fit.status=''; m.fit.stateKind=''; }
     catch(_err){ m.fit.status='이미지를 읽지 못했습니다.'; m.fit.stateKind='error'; }
     cpFitRender(m);
   }

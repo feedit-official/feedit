@@ -89,7 +89,7 @@ class ChatEngine:
             ctx["asked_before"] = max(history.count_asks(past_a),
                                       history.count_asks(self.memory.recent(conversation_id)))
             # 화면에서 넘어온 것들. 없으면 없는 대로 — 도구 목록만 줄어든다.
-            for k in ("screen_term", "salmal_card_id", "user_id", "region", "taste_context"):
+            for k in ("screen_term", "salmal_card_id", "user_id", "region", "taste_context", "gender"):
                 v = extra.get(k) if extra else None
                 if v:
                     ctx[k] = v

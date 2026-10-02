@@ -582,5 +582,32 @@ await t('챗봇이 고른 연출(top_closed)은 상의 슬라이드를 여며 �
   assert.equal(Number(g.options.outer_open) + Number(g.options.outer_closed), 1);
 });
 
+await t('저장된 성별이 VTON 기본 모델을 고르고, 상품 출처 링크가 착장 카드에 나온다', () => {
+  P.ME.gender='MALE';
+  const fit=CP.cpFitFromServer({items:[{
+    slot:'상의',image:'https://image.msscdn.net/a.jpg',name:'트랙 재킷',
+    brand:'아디다스',source:'MUSINSA',source_label:'무신사',
+    url:'https://www.musinsa.com/products/123',
+  }]},'이 코디로 입혀보기');
+  assert.equal(fit.model,'man');
+  const c=CP.cpNewConvo();
+  c.messages.push({role:'ai',html:'',fit});
+  CP.cpRenderThread();
+  assert.equal(thread().querySelector('.cpFitProductName').textContent,'트랙 재킷');
+  const link=thread().querySelector('.cpFitShop');
+  assert.equal(link.href,'https://www.musinsa.com/products/123');
+  assert.match(link.textContent,/아디다스 · 무신사/);
+  assert.equal(link.rel,'noopener noreferrer');
+  const unsafe=CP.cpFitFromServer({items:[{slot:'상의',image:'https://image.msscdn.net/a.jpg',
+    name:'의심 상품',url:'javascript:alert(1)'}]},'');
+  assert.equal(unsafe.items[0].url,'');
+  P.ME.gender='FEMALE';
+  assert.equal(CP.cpFitFromServer({items:[]},'').model,'woman');
+  assert.equal(CP.cpFitFromServer({items:[]},'Female 코디').model,'woman');
+  assert.equal(CP.cpFitFromServer({items:[]},'Male 코디').model,'man');
+  assert.equal(CP.cpFitFromServer({items:[],gender:'MALE'},'이 코디로 입혀보기').model,'man');
+  P.ME.gender='';
+});
+
 console.log(`\n${pass}개 통과 · ${fail}개 실패`);
 process.exit(fail ? 1 : 0);

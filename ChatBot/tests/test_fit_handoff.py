@@ -11,7 +11,7 @@ sys.modules.setdefault("requests", Mock())
 sys.modules.setdefault("psycopg", Mock())
 sys.modules.setdefault("psycopg.rows", Mock(dict_row=None))
 
-from app import fit, tools, vton
+from app import adapters, agent_path, fit, tools, vton
 
 
 class ToolGateTests(unittest.TestCase):
@@ -105,10 +105,38 @@ class ProposeTests(unittest.TestCase):
         got = fit.propose(self.FakeMarket({}), [], None)
         self.assertIn("unavailable", got)
 
+    def test_gender_is_sent_to_product_search(self):
+        market = self.FakeMarket({"티셔츠": [{"name": "공용 상의",
+                                             "image": "https://image.msscdn.net/a.jpg"}]})
+        got = fit.propose(market, ["블록코어"], ["상의"], gender="FEMALE")
+        self.assertEqual(got["items"][0]["name"], "공용 상의")
+        self.assertEqual(market.asked[0]["gender"], "FEMALE")
+        self.assertEqual(got["gender"], "FEMALE")
+        market.asked.clear()
+        fit.propose(market, ["블록코어"], ["상의"], gender="INVALID")
+        self.assertNotIn("gender", market.asked[0])
+
     def test_same_slot_twice_is_kept(self):
         # '아우터' 둘이 레이어드의 조건이다 — 중복을 막으면 레이어드를 만들 수 없다.
         self.assertEqual(fit._normalize_slots(["아우터", "아우터"]), ["아우터", "아우터"])
         self.assertEqual(fit._normalize_slots(["없는칸"]), fit.DEFAULT_SLOTS)
+
+    def test_approved_item_keeps_shop_provenance(self):
+        proposal = fit.clean_proposal({"gender": "FEMALE", "items": [{
+            "slot": "상의", "image": "https://image.msscdn.net/a.jpg",
+            "name": "트랙 재킷", "brand": "아디다스", "source": "MUSINSA",
+            "source_label": "무신사", "url": "https://www.musinsa.com/products/123",
+        }]})
+        self.assertEqual(proposal["items"][0]["source_label"], "무신사")
+        self.assertEqual(proposal["items"][0]["url"], "https://www.musinsa.com/products/123")
+        self.assertEqual(proposal["gender"], "FEMALE")
+        self.assertEqual(adapters._sel({"style": "블록코어", "gender": "FEMALE"})["gender"],
+                         "FEMALE")
+        trace = Mock(calls=[{"tool": "propose_fit", "result": {
+            **proposal, "gender": "FEMALE"}}])
+        card = agent_path._fit(trace, "propose_fit")
+        self.assertEqual(card["items"][0]["url"], proposal["items"][0]["url"])
+        self.assertEqual(card["gender"], "FEMALE")
 
 
 class RememberedStyleTests(unittest.TestCase):

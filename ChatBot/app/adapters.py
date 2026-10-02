@@ -41,7 +41,7 @@ class SalmalHTTPAdapter:
 #    계산 규칙을 챗봇에 따로 두지 않는다(화면과 답이 달라지는 걸 막는다).
 #    무신사 · 지그재그 · 에이블리(할인) / 무신사 유즈드 · 크림(리세일)이 모두 여기로 들어온다.
 # ══════════════════════════════════════════════════════════════
-_SEL_KEYS = ("brand", "kind", "style", "item")
+_SEL_KEYS = ("brand", "kind", "style", "item", "gender")
 # 상품 조회 한 칸의 상한(초). 병렬로 불러도 가장 느린 칸이 한 바퀴를 정한다.
 PRODUCTS_TIMEOUT = 4.0
 # 스타일 목록(/api/facets)은 전체 상품을 세서 3~5초 걸린다(2026-10-01 운영 실측, 캐시 없이
@@ -131,7 +131,7 @@ class MarketHTTPAdapter(SalmalHTTPAdapter):
         if "unavailable" in data:
             return []
         rows = _slim_list(data.get("items"),
-                          ("name", "brand", "image", "url", "product_source_id",
+                          ("name", "brand", "image", "url", "product_source_id", "source_label",
                            # source 는 사진 주소를 온전하게 만드는 데 쓴다
                            # (fit.absolute_image — 상대 경로가 27,424건 있다)
                            "category", "source"),

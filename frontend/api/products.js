@@ -1,4 +1,4 @@
-/* GET /api/products?style=고프코어&limit=16&offset=0
+/* GET /api/products?style=고프코어&gender=FEMALE&limit=16&offset=0
  *
  * 상품 목록 — 지금 RDS 에 **실제로 들어 있는** 데이터다.
  * 2026-09-02 실측으로 commerce.product 3,375건 · product_source 3,375건.
@@ -32,6 +32,9 @@ export default async function handler(req, res) {
   const kw = (url.searchParams.get('q') || '').trim();
   const brand = (url.searchParams.get('brand') || '').trim();
   const style = (url.searchParams.get('style') || '').trim();
+  const gender = (url.searchParams.get('gender') || '').trim().toUpperCase();
+  if (gender && gender !== 'FEMALE' && gender !== 'MALE')
+    return failed(res, '성별은 FEMALE 또는 MALE 중에서 선택해 주세요.');
   const categoryGroup = (url.searchParams.get('category_group') || '').trim().toLowerCase();
   const limit = Math.min(200, Math.max(1, Number(url.searchParams.get('limit') || 40)));
   const offset = Math.min(1000000, Math.max(0, Number(url.searchParams.get('offset') || 0)));
@@ -61,6 +64,12 @@ export default async function handler(req, res) {
 
   const where = ["ps.status = 'ACTIVE'"];
   const args = [];
+  if (gender) {
+    /* 수집 원본의 명시적 성별과 공용 상품만. 숫자 코드와 빈 값은 추측하지 않는다. */
+    const own = gender === 'FEMALE' ? 'W|F|WOMEN|FEMALE' : 'M|MEN|MALE';
+    args.push(`(^|[,:[:space:]])(${own}|U|UNISEX)([,:[:space:]]|$)`);
+    where.push(`COALESCE(NULLIF(ps.gender_scope, ''), p.gender_scope, '') ~* $${args.length}`);
+  }
   if (kw) {
     args.push(`%${kw}%`);
     where.push(`(p.canonical_name ILIKE $${args.length} OR ps.source_name ILIKE $${args.length})`);

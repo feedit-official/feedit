@@ -16,7 +16,7 @@ export const ME={name:'FEEDiT 사용자',mail:'',initial:'F',
           xp:0,              /* 누적 경험치 — 서버가 기록으로 계산한다 (backend/apps/api/xp.py) */
           xpFixed:false,     /* 운영 계정 — 경험치를 세지 않고 최고 레벨로 고정 */
           xpInfo:null,       /* 오늘 · 이번 주 내역 (경험치 창 · 마이페이지 요약) */
-          height:'',weight:'',   /* 체형 — 가입·정보수정에서 받는다 */
+          height:'',weight:'',gender:'',   /* 체형·성별 — 가입·정보수정에서 받는다 */
           plan:'FREE',saved:0,
           role:'user',       /* 서버가 admin(슈퍼유저·스태프) 또는 user 로 준다 */
           job:'',            /* 승인된 직업(job.js JOBS id). 비어 있거나 승인 전이면 Basic 으로 보인다 */
@@ -57,6 +57,7 @@ function applyAccount(user){
   ME.birth=user.birth_date||'';
   ME.height=user.height==null?'':String(user.height);
   ME.weight=user.weight==null?'':String(user.weight);
+  ME.gender=user.gender==='FEMALE'||user.gender==='MALE'?user.gender:'';
   ME.bio=user.bio||'';
   ME.ava=Number.isFinite(+user.avatar)?+user.avatar:0;
   ME.role=user.role||'user';
@@ -79,7 +80,7 @@ function applyAccount(user){
    예전엔 값을 그대로 두어서, 로그아웃 뒤 트렌드 분석(로그인 안내 뒤편)에
    앞 계정의 이름·취향 피드가 그대로 비쳤다. */
 function resetAccount(){
-  Object.assign(ME,{id:null,name:'FEEDiT 사용자',mail:'',initial:'F',xp:0,xpFixed:false,xpInfo:null,height:'',weight:'',
+  Object.assign(ME,{id:null,name:'FEEDiT 사용자',mail:'',initial:'F',xp:0,xpFixed:false,xpInfo:null,height:'',weight:'',gender:'',
     plan:'FREE',saved:0,role:'user',job:'',jobRequest:null,major:'',votes:0,bio:'',birth:'',ava:0});
   ME.styles.clear();
   try{ document.dispatchEvent(new CustomEvent('feedit:account')) }catch(e){}
@@ -766,6 +767,7 @@ export function acctBoot(){
         if(b) msg = b;
       }
     }
+    if(!msg && !sf.querySelector('input[name="suGender"]:checked')) msg = '성별을 선택해 주세요.';
     if(!msg) msg = jobFieldCheck('su', null);
     if(!msg && !$('#suAgeAgree').checked) msg = '만 14세 이상만 가입할 수 있습니다.';
     if(!msg && !$('#suTermsAgree').checked) msg = '이용약관에 동의해 주세요.';
@@ -779,6 +781,7 @@ export function acctBoot(){
         birth_date:$('#suBirth').value||'',
         height:$('#suHeight').value||null,
         weight:$('#suWeight').value||null,
+        gender:sf.querySelector('input[name="suGender"]:checked').value,
       };
       /* 소셜 가입은 서버 세션에 보관된 Google·카카오 신원으로 계정을 만든다 —
          아이디·비밀번호는 보내지 않는다. 아이디 가입은 인증을 마친 이메일을 함께 보낸다. */
@@ -943,6 +946,7 @@ if(suW) suW.addEventListener('input', bodyHint);
     $('#editBirth').value = ME.birth || '';
     $('#editHeight').value = ME.height || '';
     $('#editWeight').value = ME.weight || '';
+    $$('#editProfileForm input[name="editGender"]').forEach(r => { r.checked = r.value===ME.gender; });
     /* ★ 2026-09-23 — 비밀번호 칸은 열 때마다 반드시 비운다.
        예전에는 그대로 남아 있었다. 저장이 한 번 실패해 닫았다가 다시 열면
        아까 친 비밀번호가 칸에 그대로 있고, 다음 저장 때 같이 올라가
@@ -987,6 +991,7 @@ if(suW) suW.addEventListener('input', bodyHint);
       const data=await saveAccount({
         nickname:nick, birth_date:$('#editBirth').value||'',
         height:$('#editHeight').value||null, weight:$('#editWeight').value||null,
+        gender:ef.querySelector('input[name="editGender"]:checked')?.value||null,
         password:pw||'',
       });
       applyAccount(data.user);

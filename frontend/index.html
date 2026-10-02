@@ -825,16 +825,24 @@
           <label class="cLabel" for="suBirth">생년월일</label>
           <input class="cInput" id="suBirth" type="date">
         </div>
-        <!-- 체형 — 살!말? 세그먼트를 나눌 때 쓰인다 -->
-        <div class="cField">
-          <label class="cLabel">체형 <span>추천·살!말? 세그먼트에 쓰여요</span></label>
-          <div class="cPair">
-            <span class="cUnit"><input class="cInput" id="suHeight" type="number" inputmode="numeric"
-              min="120" max="220" placeholder="키"><em>cm</em></span>
-            <span class="cUnit"><input class="cInput" id="suWeight" type="number" inputmode="numeric"
-              min="30" max="200" placeholder="몸무게"><em>kg</em></span>
+        <div class="cBodyGenderRow">
+          <div class="cField">
+            <label class="cLabel">체형 <span>추천에 쓰여요</span></label>
+            <div class="cPair">
+              <span class="cUnit"><input class="cInput" id="suHeight" type="number" inputmode="numeric"
+                min="120" max="220" placeholder="키"><em>cm</em></span>
+              <span class="cUnit"><input class="cInput" id="suWeight" type="number" inputmode="numeric"
+                min="30" max="200" placeholder="몸무게"><em>kg</em></span>
+            </div>
+            <p class="fieldMsg" id="suBodyMsg"></p>
           </div>
-          <p class="fieldMsg" id="suBodyMsg"></p>
+          <fieldset class="cGenderField">
+            <legend class="cLabel">성별 <span>코디 추천에 쓰여요</span></legend>
+            <div class="cGenderChoices">
+              <label class="cGenderChoice"><input type="radio" name="suGender" value="FEMALE"><span aria-hidden="true">♀</span>Female</label>
+              <label class="cGenderChoice"><input type="radio" name="suGender" value="MALE"><span aria-hidden="true">♂</span>Male</label>
+            </div>
+          </fieldset>
         </div>
         <!-- 직업 — 선택 입력. 서류를 올리면 관리자 승인 후 배지가 달린다 (account/static/js/job.js) -->
         <div class="cField jobField">
@@ -979,14 +987,23 @@
         <label class="cLabel" for="editBirth">생년월일</label>
         <input class="cInput" id="editBirth" type="date">
       </div>
-      <div class="cField" style="margin:16px 0 0">
-        <label class="cLabel">체형</label>
-        <div class="cPair">
-          <span class="cUnit"><input class="cInput" id="editHeight" type="number" inputmode="numeric"
-            min="120" max="220" placeholder="키"><em>cm</em></span>
-          <span class="cUnit"><input class="cInput" id="editWeight" type="number" inputmode="numeric"
-            min="30" max="200" placeholder="몸무게"><em>kg</em></span>
+      <div class="cBodyGenderRow" style="margin:16px 0 0">
+        <div class="cField">
+          <label class="cLabel">체형</label>
+          <div class="cPair">
+            <span class="cUnit"><input class="cInput" id="editHeight" type="number" inputmode="numeric"
+              min="120" max="220" placeholder="키"><em>cm</em></span>
+            <span class="cUnit"><input class="cInput" id="editWeight" type="number" inputmode="numeric"
+              min="30" max="200" placeholder="몸무게"><em>kg</em></span>
+          </div>
         </div>
+        <fieldset class="cGenderField">
+          <legend class="cLabel">성별</legend>
+          <div class="cGenderChoices">
+            <label class="cGenderChoice"><input type="radio" name="editGender" value="FEMALE"><span aria-hidden="true">♀</span>Female</label>
+            <label class="cGenderChoice"><input type="radio" name="editGender" value="MALE"><span aria-hidden="true">♂</span>Male</label>
+          </div>
+        </fieldset>
       </div>
         <!-- 직업 — 선택 입력. 서류를 올리면 관리자 승인 후 배지가 달린다 (account/static/js/job.js) -->
       <div class="cField jobField" style="margin:16px 0 0">

@@ -44,12 +44,13 @@ class AuthApiTests(TestCase):
     def test_signup_hashes_password_and_login_keeps_session(self):
         self.verify_email("feedit01@example.com")
         r = self.post("/api/auth/signup", {"username": "feedit01", "nickname": "피딧", "password": "Secret!234",
-                                           "email": "feedit01@example.com"})
+                                           "email": "feedit01@example.com", "gender": "FEMALE"})
         self.assertEqual(r.status_code, 201, r.content)
         user = User.objects.get(username="feedit01")
         self.assertNotEqual(user.password, "Secret!234")
         self.assertTrue(user.check_password("Secret!234"))
         self.assertTrue(AppUser.objects.filter(user=user).exists())
+        self.assertEqual(user.feedit_profile.gender, "FEMALE")
 
         self.csrf = r.json()["data"]["csrf_token"]
         self.post("/api/auth/logout", {})
@@ -61,6 +62,16 @@ class AuthApiTests(TestCase):
         me = self.c.get("/api/auth/me").json()["data"]
         self.assertTrue(me["authenticated"])
         self.assertEqual(me["user"]["nickname"], "피딧")
+        self.assertEqual(me["user"]["gender"], "FEMALE")
+        changed = self.post("/api/auth/profile", {"nickname": "피딧", "gender": "MALE"})
+        self.assertEqual(changed.status_code, 200, changed.content)
+        user.feedit_profile.refresh_from_db()
+        self.assertEqual(user.feedit_profile.gender, "MALE")
+        self.assertEqual(changed.json()["data"]["user"]["gender"], "MALE")
+        invalid = self.post("/api/auth/profile", {"nickname": "피딧", "gender": "UNKNOWN"})
+        self.assertEqual(invalid.status_code, 400)
+        user.feedit_profile.refresh_from_db()
+        self.assertEqual(user.feedit_profile.gender, "MALE")
 
     def test_signup_requires_verified_email(self):
         body = {"username": "feedit02", "nickname": "피딧", "password": "Secret!234", "email": "a@example.com"}

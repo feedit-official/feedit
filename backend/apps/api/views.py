@@ -3028,13 +3028,18 @@ def lifecycle(request):
 
 @require_GET
 def products(request):
-    """GET /api/products?style=고프코어&limit=16&offset=0 — 태그된 상품 목록.
+    """GET /api/products?style=고프코어&gender=FEMALE&limit=16 — 태그된 상품 목록.
 
     스타일은 자동 태깅 결과(`commerce.product_term` · term_type='STYLE')로 고른다.
     한 상품에 스타일이 여러 개 달릴 수 있어, 그중 하나라도 맞으면 포함한다.
     화면에서 쓸 수 있게 원본 상품 이미지와 최신 가격도 같이 돌려준다.
+    gender 를 주면 수집 원본에 적힌 해당 성별·공용 상품만 반환한다.
     """
     kw = (request.GET.get("q") or "").strip()
+    gender = (request.GET.get("gender") or "").strip().upper()
+    if gender and gender not in ("FEMALE", "MALE"):
+        return JsonResponse({"status": "error", "reason": "성별은 FEMALE 또는 MALE 중에서 선택해 주세요.",
+                             "data": None}, status=400)
     brand = (request.GET.get("brand") or "").strip()
     category_group = (request.GET.get("category_group") or "").strip().lower()
     limit = _int(request, "limit", 40, 1, 200)
@@ -3043,6 +3048,16 @@ def products(request):
     # brand 는 기존 API 의 영문 대소문자 무시 동작을 유지하려고 아래에서 따로 건다.
     product_sel = {**sel, "brand": []}
     qs = _selected_sources(product_sel).filter(status="ACTIVE").distinct()
+    if gender:
+        # 수집 원본의 M/W/U 및 MEN/WOMEN/UNISEX 표기만 쓴다.
+        # 알 수 없는 숫자 코드나 빈 값은 다른 성별 옷으로 추측하지 않는다.
+        own = "W|F|WOMEN|FEMALE" if gender == "FEMALE" else "M|MEN|MALE"
+        pattern = rf"(^|[,:[:space:]])({own}|U|UNISEX)([,:[:space:]]|$)"
+        qs = qs.filter(
+            Q(gender_scope__iregex=pattern)
+            | (Q(gender_scope__isnull=True) | Q(gender_scope=""))
+            & Q(product__gender_scope__iregex=pattern)
+        )
     if kw:
         qs = qs.filter(Q(source_name__icontains=kw) | Q(product__canonical_name__icontains=kw))
     if brand:
@@ -3128,7 +3143,7 @@ def products(request):
             "source_category__source_category_name",
         ),
     ).values(
-        "id", "product_id", "_name", "_brand", "_category", "source__code",
+        "id", "product_id", "_name", "_brand", "_category", "source__code", "source__name",
         "product_url", "thumbnail_url", "market_type", *sort_fields,
     ).order_by(*ordering)[offset:offset + limit + 1])
     if not rows:
@@ -3150,6 +3165,7 @@ def products(request):
         items.append({
             "id": r["product_id"] or r["id"], "product_source_id": r["id"],
             "name": r["_name"], "brand": r["_brand"], "source": r["source__code"],
+            "source_label": r["source__name"],
             "url": r["product_url"],
             # 상대 경로로 저장된 사진에 베이스를 붙인다(images.absolute_image_url).
             # 전체의 38%가 그 모양이라, 그대로 내보내면 카드 사진이 안 뜬다.

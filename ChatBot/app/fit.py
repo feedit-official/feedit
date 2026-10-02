@@ -135,7 +135,7 @@ def resolve_styles(names, gate) -> tuple[list[str], list[dict]]:
 #   ★ 브라우저를 거쳐 온 값이다. 우리가 적은 칸만, 길이를 잘라 받는다. 사진 주소는
 #     build_fit 이 허용 호스트로 한 번 더 거른다(vton.image_host_allowed).
 _PROPOSAL_KEYS = ("name", "brand", "image", "url", "slot", "style", "kind", "price",
-                  "product_source_id", "source", "category")
+                  "product_source_id", "source", "source_label", "category")
 
 
 def clean_proposal(raw) -> dict | None:
@@ -163,6 +163,8 @@ def clean_proposal(raw) -> dict | None:
            "options": [str(o) for o in (raw.get("options") or []) if str(o) in vton.OPTION_LINES],
            "styles": [str(s).strip()[:30] for s in (raw.get("styles") or [])
                       if str(s or "").strip()][:4]}
+    if raw.get("gender") in ("FEMALE", "MALE"):
+        out["gender"] = raw["gender"]
     why = str(raw.get("why") or "").strip()[:200]
     if why:
         out["why"] = why
@@ -180,7 +182,8 @@ def _normalize_slots(slots) -> list[str]:
     return (rows or list(DEFAULT_SLOTS))[:MAX_SLOTS]
 
 
-def propose(market, styles, slots=None, kinds=None, limit: int = 3) -> dict:
+def propose(market, styles, slots=None, kinds=None, limit: int = 3,
+            gender: str | None = None) -> dict:
     """스타일 태그로 슬롯별 상품을 한 점씩 고른다. 생성하지 않는다.
 
     ★ 슬롯 조회는 서로 독립이다 — 차례로 물으면 한 바퀴가 어댑터 timeout×칸 수가
@@ -189,6 +192,7 @@ def propose(market, styles, slots=None, kinds=None, limit: int = 3) -> dict:
       사용자는 눌러 보고 나서야 안다.
     """
     names = [str(s or "").strip() for s in (styles or []) if str(s or "").strip()]
+    gender = gender if gender in ("FEMALE", "MALE") else None
     if not names:
         return {"unavailable": "어떤 스타일로 고를지 정해지지 않았습니다."}
     picks = _normalize_slots(slots)
@@ -204,7 +208,10 @@ def propose(market, styles, slots=None, kinds=None, limit: int = 3) -> dict:
         words = [w for w in [asked[index]] if w] + SLOT_KINDS[slot][:2]
         for style in names[:2]:
           for word in words[:2]:
-            rows = market.products({"style": style, "kind": word}, limit=limit)
+            sel = {"style": style, "kind": word}
+            if gender:
+                sel["gender"] = gender
+            rows = market.products(sel, limit=limit)
             got = []
             for row in (rows or []):
                 # 사진을 온전한 주소로 만든다. 못 만들면 담지 않는다 —
@@ -226,6 +233,8 @@ def propose(market, styles, slots=None, kinds=None, limit: int = 3) -> dict:
                                f"{empty} 칸에서 찾지 못했습니다."}
     missed = [s for s, rows in zip(picks, found) if not rows]
     out = {"items": items, "styles": names, "slots": picks}
+    if gender:
+        out["gender"] = gender
     if missed:
         # 없는 칸을 조용히 빼지 않는다 — 결측을 숨기지 않는 리포트 원칙과 같은 자리.
         out["missing_slots"] = sorted(set(missed))
