@@ -902,6 +902,12 @@ window.addEventListener('resize',()=>cpFitSizeItems());
    4K 로 올리면서 결과를 webp 로 받게 됐는데(vton.OUTPUT_FORMAT), 여기만 .png 로
    박혀 있어 내려받은 파일이 이름과 속이 다른 채로 저장됐다. 서버가 format 을
    안 보내던 옛 대화도 있으니 data URL 에서 직접 읽고, 그것도 없으면 png 로 둔다. */
+/* 결과 사진의 가로:세로 — 태그 점을 사진 위 비율 그대로 찍으려면 감싸는 틀이 사진과
+   같은 비율이어야 한다. 서버가 준 size(예: 2480x3312), 없으면 3/4. */
+function cpFitRatio(f){
+  const hit=/^(\d+)x(\d+)$/.exec(String(f&&f.size||''));
+  return hit?hit[1]+' / '+hit[2]:'3 / 4';
+}
 function cpFitExt(f){
   const named=String(f&&f.format||'').toLowerCase();
   if(named==='webp'||named==='jpeg'||named==='png')return named==='jpeg'?'jpg':named;
@@ -957,6 +963,72 @@ function cpFitDockHTML(f){
     '<div class="cpDockGroup">'+layer+'</div>'+sep+
     '<div class="cpDockGroup">'+engines+'</div>'+go+'</div></div>';
 }
+/* ── 상품 출처 (2026-10-02) ──────────────────────────────────
+   ① 칸 사진 위 판매처 배지 · ② 위젯 아래 '코디 상품' 줄 · ③ 결과 사진 위 쇼핑 태그.
+   출처가 있는 상품(서버가 고른 추천 상품)만 다룬다. 사용자가 직접 올린 사진에는 판매처가
+   없다 — 지어내지 않고 줄 · 태그에서 뺀다. */
+function cpFitSourceName(item){ return String(item&&(item.sourceLabel||item.source)||'').trim(); }
+function cpFitIsShop(item){ return Boolean(item&&(item.image||item.imageUrl)&&(item.url||cpFitSourceName(item))); }
+function cpFitShopLabel(item){
+  return cpEsc(item.name||'상품')+' · '+cpEsc(cpFitSourceName(item)||'판매처')+'에서 상품 보기';
+}
+/* ② 코디 상품 줄 — 인스타 'Shop the look' 처럼 한 줄에 상품 카드. 카드를 누르면 판매처로. */
+function cpFitLookHTML(f,items){
+  const rows=items.map((item,i)=>({item,i})).filter(r=>cpFitIsShop(r.item));
+  if(!rows.length)return '';
+  const cards=rows.map(({item,i})=>{
+    const src=item.image||item.imageUrl, source=cpFitSourceName(item);
+    const body='<span class="cpFitLookImg"><img src="'+cpEsc(src)+'" alt="" loading="lazy"></span>'+
+      '<span class="cpFitLookText">'+
+        '<small>'+cpEsc(item.brand||vfKindName(item.auto?VF_AUTO:item.category))+'</small>'+
+        '<b>'+cpEsc(item.name||vfKindName(item.auto?VF_AUTO:item.category))+'</b>'+
+        (source?'<em>'+cpEsc(source)+(item.url?' ↗':'')+'</em>':'')+
+      '</span>';
+    return item.url
+      ?'<a class="cpFitLookCard" data-vf-look="'+i+'" href="'+cpEsc(item.url)+'" target="_blank" rel="noopener noreferrer" '+
+        'aria-label="'+cpFitShopLabel(item)+'">'+body+'</a>'
+      :'<div class="cpFitLookCard" data-vf-look="'+i+'">'+body+'</div>';
+  }).join('');
+  return '<div class="cpFitLook" data-vf-id="look"><div class="cpFitLookHead"><b>코디 상품</b>'+
+    '<span>'+rows.length+'</span>'+(f.tags&&f.tags.length&&f.result?'<em>사진 위 점을 눌러도 볼 수 있어요</em>':'')+'</div>'+
+    '<div class="cpFitLookRow">'+cards+'</div></div>';
+}
+/* ③ 결과 사진 위 쇼핑 태그 — 서버(vton.locate)가 준 점. 점을 누르면 그 상품 카드가 뜬다. */
+function cpFitTagsHTML(f,items){
+  const tags=(Array.isArray(f.tags)?f.tags:[]).filter(t=>t&&cpFitIsShop(items[t.item]));
+  if(!tags.length)return '';
+  /* 점이 겹치면 아래로 비켜 놓는다 — 두 점이 한 점처럼 보이면 하나를 못 누른다 */
+  const placed=[];
+  const spots=tags.map(t=>{
+    let x=Math.min(.96,Math.max(.04,+t.x||0)), y=Math.min(.96,Math.max(.04,+t.y||0));
+    while(placed.some(p=>Math.abs(p.x-x)<.05&&Math.abs(p.y-y)<.04)) y=Math.min(.96,y+.05);
+    placed.push({x,y});
+    return {...t,x,y};
+  });
+  const open=spots.find(t=>t.item===f.tagOpen);
+  const dots=spots.map(t=>{
+    const item=items[t.item], on=t.item===f.tagOpen;
+    return '<button type="button" class="cpFitTag'+(on?' on':'')+'" data-vf-tag="'+t.item+'" '+
+      'style="left:'+(t.x*100).toFixed(1)+'%;top:'+(t.y*100).toFixed(1)+'%" aria-expanded="'+on+'" '+
+      'aria-label="'+cpEsc(vfKindName(item.auto?VF_AUTO:item.category))+' · '+cpEsc(item.name||'상품')+' 보기"><i></i></button>';
+  }).join('');
+  let card='';
+  if(open){
+    const item=items[open.item], source=cpFitSourceName(item), src=item.image||item.imageUrl;
+    /* 점 오른쪽에 펴되, 사진 오른쪽 가장자리면 왼쪽으로. 위아래 끝이면 안쪽으로 붙인다. */
+    const tx=open.x>.55?'calc(-100% - 16px)':'16px';
+    const ty=open.y<.18?'-14px':open.y>.82?'calc(-100% + 14px)':'-50%';
+    card='<div class="cpFitTagCard" role="dialog" aria-label="'+cpEsc(item.name||'상품')+'" '+
+      'style="left:'+(open.x*100).toFixed(1)+'%;top:'+(open.y*100).toFixed(1)+'%;transform:translate('+tx+','+ty+')">'+
+      '<span class="cpFitTagImg"><img src="'+cpEsc(src)+'" alt=""></span>'+
+      '<span class="cpFitTagText"><small>'+cpEsc([item.brand,source].filter(Boolean).join(' · '))+'</small>'+
+        '<b>'+cpEsc(item.name||vfKindName(item.category))+'</b>'+
+        (item.url?'<a href="'+cpEsc(item.url)+'" target="_blank" rel="noopener noreferrer" aria-label="'+cpFitShopLabel(item)+'">'+
+          cpEsc(source||'판매처')+'에서 보기 ↗</a>':'')+
+      '</span></div>';
+  }
+  return '<div class="cpFitTags">'+dots+card+'</div>';
+}
 /* 왼쪽 설정 칸 — 펼친 모습 */
 function cpFitSetupHTML(f,items){
   const models='<div class="cpFitModels m-'+(f.model==='man'?'man':'woman')+'" role="radiogroup" aria-label="모델">'+
@@ -967,24 +1039,23 @@ function cpFitSetupHTML(f,items){
   const slots=items.map((item,index)=>{
     const kind=item.auto?VF_AUTO:item.category;
     const src=item.image||item.imageUrl;
-    const source=item.sourceLabel||item.source;
+    const source=cpFitSourceName(item);
     const identity=item.name?'<span class="cpFitProductName" title="'+cpEsc(item.name)+'">'+cpEsc(item.name)+'</span>':'';
-    const shop=item.url?'<a class="cpFitShop" href="'+cpEsc(item.url)+'" target="_blank" rel="noopener noreferrer" '+
-      'aria-label="'+cpEsc(item.name||'상품')+' · '+cpEsc(source||'판매처')+'에서 상품 보기">'+
-      cpEsc([item.brand,source].filter(Boolean).join(' · ')||'상품 페이지')+' ↗</a>'
-      :source?'<span class="cpFitSource">'+cpEsc([item.brand,source].filter(Boolean).join(' · '))+'</span>':'';
+    /* ① 판매처는 사진 위 배지로 — 글자를 읽지 않아도 '어디 상품' 인지 보인다 (2026-10-02).
+       사러 가는 길은 아래 '코디 상품' 줄과 결과 사진의 태그가 맡는다. */
+    const srcTag=(src&&source)?'<span class="cpFitSrcTag" aria-hidden="true">'+cpEsc(source)+'</span>':'';
     return '<div class="cpFitSlot">'+
       '<button type="button" class="cpFitItem'+(src?' has':'')+'" data-vf-pick="'+index+'" '+
         'aria-label="'+(index+1)+'번 칸에 사진 '+(src?'바꾸기':'넣기')+'">'+
         (src?'<img class="cpFitItemImg" src="'+cpEsc(src)+'" alt="'+cpEsc(item.name||vfKindName(kind))+'">'
             :'<span class="cpFitPlus">'+VF_SVG(VF_IC.plus,18)+'</span>')+
-        '<span class="cpFitBadge" aria-hidden="true">'+vfKindIcon(kind,15)+'</span></button>'+
+        srcTag+'<span class="cpFitBadge" aria-hidden="true">'+vfKindIcon(kind,15)+'</span></button>'+
       '<button type="button" class="cpFitRemove" data-vf-remove="'+index+'" aria-label="'+(index+1)+'번 칸 빼기">'+
         VF_SVG(VF_IC.close,12)+'</button>'+
       '<button type="button" class="cpFitKind'+(kind===VF_AUTO?' auto':'')+(f.kindOpen===index?' on':'')+'" '+
         'data-vf-kind="'+index+'" aria-haspopup="dialog" aria-expanded="'+(f.kindOpen===index)+'" '+
         'aria-label="'+(index+1)+'번 칸 종류: '+cpEsc(kind)+'">'+
-        '<span>'+cpEsc(vfKindName(kind))+'</span>'+VF_SVG(VF_IC.chevron,11)+'</button>'+identity+shop+
+        '<span>'+cpEsc(vfKindName(kind))+'</span>'+VF_SVG(VF_IC.chevron,11)+'</button>'+identity+
       '<input type="file" data-vf-file="'+index+'" accept="image/png,image/jpeg,image/webp" hidden></div>';
   }).join('');
   /* 칸 늘리기 — 아홉 칸(서버 MAX_ITEMS)이 차면 사라진다 */
@@ -1067,7 +1138,9 @@ function cpFitHTML(m){
   const engine=cpFitEngineOf(f);
   const engineSpec=VF_ENGINES.find(e=>e.v===engine);
   const stage=f.loading?'<div class="cpFitLoader" aria-label="착용 이미지 생성 중"><i class="cpStar">✧</i></div>':
-    f.result?'<img class="cpFitResult" src="'+cpEsc(f.result)+'" alt="AI 모델 착용 결과">':
+    f.result?'<div class="cpFitShot" style="aspect-ratio:'+cpFitRatio(f)+'">'+
+      '<img class="cpFitResult" src="'+cpEsc(f.result)+'" alt="AI 모델 착용 결과" data-vf-tagclose="1">'+
+      cpFitTagsHTML(f,items)+'</div>':
     '<div class="cpFitResultEmpty">완성된 착용 이미지가<br>여기에 나타납니다.</div>';
   /* 무엇으로 몇 초 걸렸나 (2026-10-01) — 엔진을 고르는 이유가 시간이라, 결과마다 남긴다. */
   const made=(f.result&&!f.loading&&f.made&&f.made.label)
@@ -1092,7 +1165,7 @@ function cpFitHTML(m){
         save+
         '<div class="cpFitStage">'+stage+state+'</div>'+
         cpFitDockHTML(f)+
-      '</div></div></section>';
+      '</div></div>'+cpFitLookHTML(f,items)+'</section>';
 }
 /* 사용자가 친 문장을 상품명 자리에 쓸 수 있는지. 주소가 섞여 있으면 쓰지 않는다 —
    "https://… 이거 사도 될까?" 에서 주소를 떼어 내도 남는 말은 상품명이 아니다. */
@@ -1762,6 +1835,21 @@ document.addEventListener('click', e=>{
     }
     return;
   }
+  /* ③ 결과 사진 위 태그 — 누르면 그 상품 카드, 한 번 더 누르거나 사진을 누르면 닫는다. */
+  const tag=e.target.closest('#cpThread [data-vf-tag]');
+  if(tag){
+    const m=cpAIMessageFor(tag); if(!m||!m.fit)return;
+    const i=Number(tag.dataset.vfTag);
+    m.fit.tagOpen=m.fit.tagOpen===i?-1:i;
+    cpFitRender(m);
+    return;
+  }
+  const tagClose=e.target.closest('#cpThread [data-vf-tagclose]');
+  if(tagClose){
+    const m=cpAIMessageFor(tagClose);
+    if(m&&m.fit&&m.fit.tagOpen>=0){ m.fit.tagOpen=-1; cpFitRender(m); }
+    return;
+  }
   /* 왼쪽 설정 칸 접기·펼치기 (2026-10-01). 접힌 칸의 작은 네모를 눌러도 펼친다.
      종류 고르기 판은 같이 닫는다 — 접힌 칸에는 판을 띄울 자리가 없다. */
   const side=e.target.closest('#cpThread [data-vf-side]');
@@ -1934,24 +2022,37 @@ async function cpGenerateFitMessage(m){
      프롬프트에 "2번째 이미지는 하의" 처럼 제대로 실린다. (2026-09-13) */
   if(m.fit._sort){ try{ await m.fit._sort }catch(e){ /* 분류 실패는 넘어간다 */ } }
   if(!m.fit||m.fit.loading)return;
-  const items=cpFitItems(m.fit).filter(item=>item.image||item.imageUrl)
-    .map(item=>(item.image
-      ?{image:item.image,category:item.auto?VF_AUTO:item.category}
-      /* 서버가 고른 상품 사진 — 주소만 보낸다. 받는 쪽은 vton._items 다. */
-      :{image_url:item.imageUrl,category:item.auto?VF_AUTO:item.category}));
+  const rows=cpFitItems(m.fit);
+  /* 보낸 순서 → 칸 번호. 결과의 태그(index)는 보낸 순서로 온다. */
+  const sent=rows.map((item,i)=>i).filter(i=>rows[i].image||rows[i].imageUrl);
+  const items=sent.map(i=>rows[i]).map(item=>({
+      ...(item.image?{image:item.image}
+        /* 서버가 고른 상품 사진 — 주소만 보낸다. 받는 쪽은 vton._items 다. */
+        :{image_url:item.imageUrl}),
+      category:item.auto?VF_AUTO:item.category,
+      /* 이름 — 결과 사진에서 이 옷 자리를 찾을 때(vton.locate) 쓴다 */
+      name:item.name||''}));
+  /* 결과 사진 위 태그는 판매처가 있는 상품이 있을 때만 — vision 이 한 번 더 든다. */
+  const wantTags=sent.some(i=>cpFitIsShop(rows[i]));
   if(!items.length){ m.fit.status='아이템 사진이 하나 이상 필요합니다.'; m.fit.stateKind='error'; cpFitRender(m); return; }
-  m.fit.loading=true; m.fit.status=''; m.fit.stateKind='loading'; m.fit.made=null; cpFitRender(m);
+  m.fit.loading=true; m.fit.status=''; m.fit.stateKind='loading'; m.fit.made=null;
+  m.fit.tags=[]; m.fit.tagOpen=-1; cpFitRender(m);
   try{
     const engine=cpFitEngineOf(m.fit);
     const t0=Date.now();
     const res=await fetch(API_BASE+'/v1/virtual-fitting',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({items,model_id:m.fit.model,options:cpFitOptionsOf(m.fit),engine})});
+      body:JSON.stringify({items,model_id:m.fit.model,options:cpFitOptionsOf(m.fit),engine,
+                           tags:wantTags})});
     const raw=await res.text();
     let data;
     try{ data=JSON.parse(raw); }
     catch(_parseError){ throw new Error('입혀보기 서버 응답을 확인하지 못했습니다. 배포 설정을 확인해 주세요.'); }
     if(!res.ok||!data.ok)throw new Error(data.message||'착용 이미지를 만들지 못했습니다.');
     m.fit.result=data.image; m.fit.format=data.format||''; m.fit.status=''; m.fit.stateKind='success';
+    m.fit.size=String(data.size||'');
+    m.fit.tags=(Array.isArray(data.tags)?data.tags:[])
+      .filter(t=>t&&Number.isInteger(t.index)&&sent[t.index]!==undefined&&isFinite(t.x)&&isFinite(t.y))
+      .map(t=>({item:sent[t.index],x:+t.x,y:+t.y}));
     /* 서버가 실제로 쓴 엔진을 따른다 — 옛 서버는 engine 을 모르니 Sunburst 로 만든다.
        시간은 화면이 기다린 시간(중계·전송 포함)이다. 사용자가 느끼는 시간이 그것이다. */
     const used=VF_ENGINES.find(e=>e.v===data.engine)||VF_ENGINES.find(e=>e.v===VF_DEFAULT_ENGINE);

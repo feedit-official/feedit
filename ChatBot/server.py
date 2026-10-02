@@ -612,6 +612,9 @@ class Handler(BaseHTTPRequestHandler):
                     # 생성 엔진 (2026-10-01) — sunburst(기본, 화질) · flare(빠르게).
                     # 모르는 이름이나 빈 값은 기본 엔진으로 간다(vton.engine_of).
                     engine=str(req.get("engine") or "") or None,
+                    # 결과 사진 위 쇼핑 태그 (2026-10-02) — 판매처가 있는 상품이 있을 때만
+                    # 화면이 켠다. vision 한 번이 더 들어 사진 직접 올린 경우는 끈다.
+                    tags=req.get("tags") is True,
                 )
             except (ValueError, RuntimeError) as exc:
                 return self._json(400, {"ok": False, "error": type(exc).__name__,

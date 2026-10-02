@@ -453,6 +453,58 @@ class IsolateTests(unittest.TestCase):
         self.assertEqual(result["isolated"], [1])
 
 
+class LocateTagTests(unittest.TestCase):
+    """결과 사진 위 쇼핑 태그 (2026-10-02) — 상품마다 한 점, 못 찾으면 빼고 지어내지 않는다."""
+
+    def test_points_are_kept_in_item_order_and_bad_ones_dropped(self):
+        got = {"items": [{"point": [0.5, 0.3]}, {"point": []}, {"point": [1.4, 0.2]},
+                         {"point": [0.45, 0.82]}]}
+        with patch("app.llm.available", return_value=True), \
+             patch("app.llm.respond", return_value=got) as respond:
+            tags = vton.locate("eA==", [("아우터", "블레이저"), ("상의", "셔츠"),
+                                        ("하의", "슬랙스"), ("신발", "더비")])
+        self.assertEqual(tags, [{"index": 0, "x": 0.5, "y": 0.3},
+                                {"index": 3, "x": 0.45, "y": 0.82}])
+        listing = respond.call_args.args[1][0]["content"][0]["text"]
+        self.assertIn("1. 아우터 — 블레이저", listing)        # 무엇을 찾는지 이름까지 알려 준다
+
+    def test_failure_means_no_tags(self):
+        with patch("app.llm.available", return_value=True), \
+             patch("app.llm.respond", side_effect=RuntimeError("down")):
+            self.assertEqual(vton.locate("eA==", [("상의", "셔츠")]), [])
+        with patch("app.llm.available", return_value=True), \
+             patch("app.llm.respond", return_value=None):
+            self.assertEqual(vton.locate("eA==", [("상의", "셔츠")]), [])
+        self.assertEqual(vton.locate("", [("상의", "셔츠")]), [])
+
+    @unittest.skipUnless(HAS_PIL, "Pillow 없음")
+    def test_result_is_shrunk_before_vision(self):
+        import base64
+        import io
+        from PIL import Image
+        buf = io.BytesIO()
+        Image.new("RGB", (2480, 3312), (200, 200, 200)).save(buf, format="WEBP")
+        small = vton._small_data_url(base64.b64encode(buf.getvalue()).decode())
+        self.assertTrue(small.startswith("data:image/jpeg;base64,"))
+        img = Image.open(io.BytesIO(base64.b64decode(small.split(",", 1)[1])))
+        self.assertEqual(max(img.size), vton.LOCATE_SIDE)
+
+    @patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"})
+    @patch("app.vton.requests.post")
+    def test_generate_locates_only_when_asked(self, post):
+        post.return_value = Mock(status_code=200)
+        post.return_value.json.return_value = {"data": [{"b64_json": "cmVzdWx0"}]}
+        items = [{"image": "data:image/png;base64,eA==", "category": "상의", "name": "옥스퍼드 셔츠"}]
+        with patch("app.vton.inspect", side_effect=lambda imgs, hints=None: [dict(vton.UNKNOWN)]), \
+             patch("app.vton.locate", return_value=[{"index": 0, "x": 0.5, "y": 0.4}]) as loc:
+            off = vton.generate(model_id="woman", items=items)
+            self.assertEqual(off["tags"], [])
+            loc.assert_not_called()
+            on = vton.generate(model_id="woman", items=items, tags=True)
+        self.assertEqual(on["tags"], [{"index": 0, "x": 0.5, "y": 0.4}])
+        self.assertEqual(loc.call_args.args, ("cmVzdWx0", [("상의", "옥스퍼드 셔츠")]))
+
+
 class PoseTests(unittest.TestCase):
     """포즈 풀 (2026-09-14).
 

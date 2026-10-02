@@ -451,6 +451,9 @@
 .cpFitDl svg{width:16px;height:16px}
 .cpFitStage{position:relative;flex:1 1 auto;min-height:0;display:flex;align-items:center;justify-content:center;padding-top:14px}
 .cpFitResult{display:block;height:100%;width:auto;max-width:100%;object-fit:contain;border-radius:0}
+/* 결과 사진 틀 — 사진과 같은 비율(인라인 aspect-ratio)이라 태그 점의 % 가 사진 위 자리 그대로다 */
+.cpFitShot{position:relative;height:100%;max-width:100%}
+.cpFitShot .cpFitResult{width:100%;height:100%}
 .cpFitResultEmpty{text-align:center;color:rgba(255,255,255,.5);font-size:12px;line-height:1.6}
 .cpFitState{position:absolute;left:12px;right:12px;bottom:8px;margin:0;text-align:center;color:rgba(255,255,255,.72);font-size:11px;line-height:1.45}
 .cpFitState.error{color:#ff9e89}.cpFitState.success{color:#fff}
@@ -621,3 +624,87 @@
   transition:opacity .22s,transform .22s;
 }
 .cpToast.on{opacity:1;transform:translate(-50%,0)}
+
+
+/* ══════════════════════════════════════════════════════
+   2026-10-02 — 상품 출처: ① 칸 배지 · ② 코디 상품 줄 · ③ 결과 사진 태그
+   ══════════════════════════════════════════════════════ */
+/* ① 칸 사진 위 판매처 — 오른쪽 위. 오른쪽 아래는 종류 그림, 왼쪽 위는 빼기 버튼 자리다
+   (칸이 74px 안팎이라 아래에 나란히 두면 '무…' 로 잘린다). */
+.cpFitSrcTag{
+  position:absolute;right:5px;top:5px;max-width:calc(100% - 10px);box-sizing:border-box;padding:3px 7px;
+  border-radius:999px;background:var(--pink-0);color:#fff;font-size:9.5px;font-weight:700;line-height:1.2;
+  letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none;
+}
+.cpFitProductName{-webkit-line-clamp:1;font-weight:500;color:#4a4845}
+
+/* ② 코디 상품 줄 — 위젯 맨 아래 페이퍼 띠. 카드를 누르면 판매처로 간다. */
+.cpFitLook{border-top:1px solid #ebe8e2;background:#faf8f5;padding:12px 16px 14px}
+.cpFitLookHead{display:flex;align-items:baseline;gap:8px;margin-bottom:9px}
+.cpFitLookHead b{font-size:12.5px;font-weight:700;letter-spacing:-.02em}
+.cpFitLookHead span{font-family:var(--num);font-size:11px;font-weight:600;color:#c2401f}
+.cpFitLookHead em{margin-left:auto;font-style:normal;font-size:10.5px;color:#8f8b84}
+.cpFitLookRow{
+  display:flex;gap:8px;overflow-x:auto;overscroll-behavior-x:contain;scroll-snap-type:x proximity;
+  padding-bottom:2px;scrollbar-width:thin;scrollbar-color:#cfcbc4 transparent;
+}
+.cpFitLookCard{
+  flex:0 0 auto;width:212px;box-sizing:border-box;display:flex;align-items:center;gap:10px;padding:7px 10px 7px 7px;
+  border-radius:12px;background:#fff;border:1px solid #ebe8e2;color:var(--pink-0);text-decoration:none;
+  scroll-snap-align:start;transition:border-color .18s,box-shadow .18s,transform .18s;
+}
+a.cpFitLookCard:hover{border-color:var(--pink-0);box-shadow:0 4px 14px rgba(10,10,10,.08);transform:translateY(-1px)}
+.cpFitLookImg{flex:0 0 auto;width:46px;height:46px;border-radius:9px;background:#f5f3ef;display:grid;place-items:center;overflow:hidden}
+.cpFitLookImg img{max-width:100%;max-height:100%;object-fit:contain}
+.cpFitLookText{min-width:0;display:flex;flex-direction:column;gap:1px}
+.cpFitLookText small{font-size:10px;color:#8f8b84;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cpFitLookText b{font-size:12px;font-weight:600;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cpFitLookText em{font-style:normal;font-size:10.5px;font-weight:700;color:#c2401f;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* ③ 결과 사진 위 태그 — 흰 점 + 코럴 물결. 누른 점은 코럴로 찬다. */
+/* 생성 정보 알약(.cpFitMade)보다 위 — 신발 태그가 사진 맨 아래에서 알약에 깔리지 않게 */
+.cpFitTags{position:absolute;inset:0;z-index:3;pointer-events:none}
+.cpFitTag{
+  position:absolute;width:30px;height:30px;margin:-15px 0 0 -15px;padding:0;border-radius:50%;
+  background:transparent;display:grid;place-items:center;pointer-events:auto;
+}
+.cpFitTag i{
+  position:relative;width:14px;height:14px;border-radius:50%;background:#fff;
+  box-shadow:0 0 0 2px rgba(28,26,23,.55),0 2px 8px rgba(0,0,0,.28);transition:background .18s,transform .18s;
+}
+.cpFitTag i::after{
+  content:"";position:absolute;inset:-6px;border-radius:50%;border:2px solid rgba(255,107,74,.85);
+  animation:cpTagPulse 2.2s ease-out infinite;
+}
+.cpFitTag:hover i,.cpFitTag.on i{background:var(--coral);transform:scale(1.15)}
+.cpFitTag.on i::after{animation:none;opacity:0}
+@keyframes cpTagPulse{0%{transform:scale(.6);opacity:.9}80%,100%{transform:scale(1.5);opacity:0}}
+@media (prefers-reduced-motion:reduce){.cpFitTag i::after{animation:none;opacity:.6}}
+.cpFitTagCard{
+  position:absolute;z-index:4;width:218px;box-sizing:border-box;display:flex;gap:10px;padding:8px 11px 8px 8px;
+  border-radius:12px;background:#fff;color:var(--pink-0);box-shadow:0 10px 30px rgba(0,0,0,.28);
+  pointer-events:auto;animation:cpFitFade .2s var(--ease);
+}
+.cpFitTagImg{flex:0 0 auto;width:52px;height:52px;border-radius:9px;background:#f5f3ef;display:grid;place-items:center;overflow:hidden}
+.cpFitTagImg img{max-width:100%;max-height:100%;object-fit:contain}
+.cpFitTagText{min-width:0;display:flex;flex-direction:column;gap:2px;justify-content:center}
+.cpFitTagText small{font-size:10px;color:#8f8b84;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cpFitTagText b{font-size:12px;font-weight:600;line-height:1.3;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}
+.cpFitTagText a{margin-top:2px;font-size:11px;font-weight:700;color:#c2401f;text-decoration:none}
+.cpFitTagText a:hover{text-decoration:underline;text-underline-offset:2px}
+/* 줄의 카드에 올리면 사진 위 같은 상품의 점이 커진다 — 둘이 같은 상품이라는 것을 눈으로 잇는다 */
+.cpFit:has([data-vf-look="0"]:hover) [data-vf-tag="0"] i{background:var(--coral);transform:scale(1.3)}
+.cpFit:has([data-vf-look="1"]:hover) [data-vf-tag="1"] i{background:var(--coral);transform:scale(1.3)}
+.cpFit:has([data-vf-look="2"]:hover) [data-vf-tag="2"] i{background:var(--coral);transform:scale(1.3)}
+.cpFit:has([data-vf-look="3"]:hover) [data-vf-tag="3"] i{background:var(--coral);transform:scale(1.3)}
+.cpFit:has([data-vf-look="4"]:hover) [data-vf-tag="4"] i{background:var(--coral);transform:scale(1.3)}
+.cpFit:has([data-vf-look="5"]:hover) [data-vf-tag="5"] i{background:var(--coral);transform:scale(1.3)}
+.cpFit:has([data-vf-look="6"]:hover) [data-vf-tag="6"] i{background:var(--coral);transform:scale(1.3)}
+.cpFit:has([data-vf-look="7"]:hover) [data-vf-tag="7"] i{background:var(--coral);transform:scale(1.3)}
+.cpFit:has([data-vf-look="8"]:hover) [data-vf-tag="8"] i{background:var(--coral);transform:scale(1.3)}
+@container vf (max-width:620px){
+  .cpFitLook{padding:11px 12px 12px}
+  .cpFitLookHead em{display:none}
+  .cpFitLookCard{width:188px}
+  .cpFitTagCard{width:190px}
+}

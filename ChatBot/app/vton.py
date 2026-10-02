@@ -451,6 +451,79 @@ def isolate(raw: bytes, ext: str, look: dict | None) -> tuple[bytes, str, bool]:
         return raw, ext, False
 
 
+# ── 결과 사진 위 쇼핑 태그 (2026-10-02) ─────────────────────
+#   결과를 보고 마음에 든 순간 "이 재킷 어디 거야?" 에 답하려면, 사진 위 옷 자리에 점을
+#   찍어야 한다. 포즈가 매번 달라 칸마다 정해 둔 자리로는 맞지 않는다 — 만든 사진을
+#   vision 이 한 번 보고 상품마다 한 점을 준다.
+#   ★ 큰 결과(2480x3312)를 그대로 보내지 않는다. 긴 변 1024 로 줄여 보낸다(Pillow 가
+#     없으면 원본). 점 하나 찍는 데 4K 는 필요 없고, 기다림만 길어진다.
+#   ★ 안 보이는 상품은 점을 찍지 않는다(빈 배열). 모르면 지어내지 않는다.
+LOCATE_SIDE = 1024
+_LOCATE_INSTRUCTIONS = (
+    "FEEDiT 착용 사진의 쇼핑 태그를 찍습니다. 사진 속 인물이 입은 상품마다, 그 상품 위의 "
+    "한 점을 고르세요 — 그 옷의 가운데쯤, 다른 옷과 겹치지 않고 그 상품이 분명히 보이는 "
+    "자리입니다. 사진 폭·높이를 1로 본 [x, y] 비율입니다(왼쪽 위가 0, 0).\n"
+    "상품이 사진에서 보이지 않거나 어디인지 확실하지 않으면 빈 배열을 주세요. "
+    "지어내지 마세요.\n"
+    "items 배열은 주어진 상품과 같은 순서, 같은 개수로 돌려주세요."
+)
+
+
+def _locate_schema():
+    from . import llm
+    row = {"type": "object", "additionalProperties": False,
+           "properties": {"point": {"type": "array", "items": {"type": "number"}}},
+           "required": ["point"]}
+    return llm.strict_schema("feedit_vton_tags",
+                             {"items": {"type": "array", "items": row}}, ["items"])
+
+
+def _small_data_url(encoded: str) -> str:
+    """결과(base64)를 긴 변 LOCATE_SIDE 의 JPEG data URL 로. 못 줄이면 원본 그대로."""
+    try:
+        import io
+        from PIL import Image
+        img = Image.open(io.BytesIO(base64.b64decode(encoded)))
+        img.load()
+        img = img.convert("RGB")
+        img.thumbnail((LOCATE_SIDE, LOCATE_SIDE))
+        out = io.BytesIO()
+        img.save(out, format="JPEG", quality=85)
+        return "data:image/jpeg;base64," + base64.b64encode(out.getvalue()).decode()
+    except Exception:  # noqa: BLE001 — Pillow 가 없거나 못 읽으면 원본을 보낸다
+        return "data:" + MIME.get(OUTPUT_FORMAT, "image/png") + ";base64," + encoded
+
+
+def locate(encoded: str, items: list[tuple[str, str]]) -> list[dict]:
+    """결과 사진에서 상품마다 한 점. [{"index", "x", "y"}] — 못 찾은 상품은 빠진다."""
+    from . import llm
+
+    if not encoded or not items or not llm.available():
+        return []
+    listing = "\n".join(f"{i + 1}. {cat}" + (f" — {name}" if name else "")
+                         for i, (cat, name) in enumerate(items))
+    content = [{"type": "input_text", "text": "상품 목록:\n" + listing},
+               {"type": "input_image", "image_url": _small_data_url(encoded)}]
+    try:
+        got = llm.respond(_LOCATE_INSTRUCTIONS, [{"role": "user", "content": content}],
+                          _locate_schema(), timeout=20, **llm.role("vision"))
+    except Exception:  # noqa: BLE001 — 태그는 거드는 일이다. 실패하면 태그 없이 간다.
+        return []
+    rows = (got or {}).get("items")
+    if not isinstance(rows, list):
+        return []
+    out = []
+    for i, row in enumerate(rows[:len(items)]):
+        point = (row or {}).get("point") if isinstance(row, dict) else None
+        try:
+            x, y = (float(v) for v in point)
+        except (TypeError, ValueError):
+            continue
+        if 0.0 <= x <= 1.0 and 0.0 <= y <= 1.0:
+            out.append({"index": i, "x": round(x, 4), "y": round(y, 4)})
+    return out
+
+
 def prompt(categories: list[str], options: dict | None = None,
            worn: list[bool] | None = None, who: str | None = None,
            cut: list[bool] | None = None) -> str:
@@ -545,7 +618,9 @@ def _items(items: list[dict] | None, image_data_url: str | None,
             continue
         cat = str(row.get("category") or AUTO)
         clean.append({"image": str(row["image"]),
-                      "category": cat if cat in CATEGORIES else AUTO})
+                      "category": cat if cat in CATEGORIES else AUTO,
+                      # 상품 이름 — 결과 사진에서 옷 자리를 찾을 때(locate) 무엇을 찾는지 알려 준다.
+                      "name": str(row.get("name") or "").strip()[:80]})
     if not clean:
         raise ValueError("입혀볼 아이템 사진이 필요합니다.")
     return clean
@@ -554,7 +629,7 @@ def _items(items: list[dict] | None, image_data_url: str | None,
 def generate(*, model_id: str, items: list[dict] | None = None,
              image_data_url: str | None = None, category: str | None = None,
              options: dict | None = None, pose: str | None = None,
-             engine: str | None = None) -> dict:
+             engine: str | None = None, tags: bool = False) -> dict:
     model = MODELS.get(model_id)
     engine = engine_of(engine)
     image_model = ENGINES[engine]["model"]
@@ -631,10 +706,17 @@ def generate(*, model_id: str, items: list[dict] | None = None,
     if not encoded:
         raise RuntimeError("생성된 이미지를 받지 못했습니다.")
     mime = MIME.get(OUTPUT_FORMAT, "image/png")
+    elapsed_ms = int((time.monotonic() - started) * 1000)
+    # 결과 사진 위 쇼핑 태그 — 화면이 원할 때만(판매처가 있는 상품이 있을 때) 찾는다.
+    tag_started = time.monotonic()
+    found = locate(encoded, [(c, row["name"]) for c, row in zip(categories, chosen)]) if tags else []
+    tag_ms = int((time.monotonic() - tag_started) * 1000) if tags else 0
     return {"image": "data:" + mime + ";base64," + encoded, "model": image_model,
             "engine": engine, "engine_label": ENGINES[engine]["label"],
             # 요청을 보내고 받기까지 — 엔진별로 얼마나 걸리는지 재는 자리다.
-            "elapsed_ms": int((time.monotonic() - started) * 1000),
+            "elapsed_ms": elapsed_ms,
+            # 결과 사진에서 상품이 보이는 자리(0~1 비율). index 는 보낸 상품 순서(0부터).
+            "tags": found, "tag_ms": tag_ms,
             "model_label": model["label"],
             "size": SIZE, "quality": QUALITY, "format": OUTPUT_FORMAT,
             # 어느 포즈가 뽑혔나 — 같은 자세를 한 번 더 내고 싶을 때 이 이름을
