@@ -1156,8 +1156,7 @@ export function trRender(id){
   if (KW_TABS.indexOf(id) >= 0 && !KW.q) {
     body.innerHTML = trEmpty(
       '무엇의 ' + (TR_META[id] ? TR_META[id][0] : '지표') + '을(를) 볼까요?',
-      '위 검색창에 스타일·소재·아이템·브랜드를 넣어 주세요.\n' +
-      '예: 발레코어 · 새틴 · 엄브로');
+      '위 검색창에 스타일·소재·아이템·브랜드를 넣어 주세요.');
     return;
   }
   if (SEARCH_TABS.indexOf(id) >= 0 && id !== 'stock' && !fsItem()) {

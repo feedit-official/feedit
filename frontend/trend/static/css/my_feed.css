@@ -217,6 +217,9 @@
 }
 .fsGhost i{font-style:normal}
 .fsGhost b{font-weight:500;color:var(--pink-1)}
+/* EDIT 검색바의 예시 용어는 질문보다 한 톤 더 연하게 */
+#kwQ,#kwQ b{color:rgba(10,10,10,.42)}
+#kwQ b{display:inline-block}   /* 용어만 깜빡이도록 transform 이 먹게 */
 .fsBar.typing .fsGhost{opacity:0}
 .fsClear{width:22px;height:22px;padding:0;border-radius:50%;flex:0 0 22px;
   background:rgba(10,10,10,.06);color:var(--pink-1);font-size:13px;line-height:1;

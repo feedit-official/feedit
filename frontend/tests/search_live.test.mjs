@@ -35,7 +35,9 @@ globalThis.localStorage = dom.window.localStorage;
 let fetched = [];
 globalThis.fetch = async (u) => { fetched.push(u);
   await new Promise(r=>setTimeout(r,30));
-  const payload = {status:'empty', reason:'적재 전입니다.'};
+  const payload = String(u).includes('rank=hot')
+    ? {status:'ok', data:{rising:[{term:'발레코어'},{term:'스트릿웨어'}], falling:[{term:'고프코어'}]}}
+    : {status:'empty', reason:'적재 전입니다.'};
   return {
     ok:true,
     status:200,
@@ -111,12 +113,16 @@ await t('빈 입력으로 엔터를 눌러도 안 죽는다', async () => {
   await new Promise(r=>setTimeout(r,30));
 });
 
-await t('예시 질문이 실제로 그려진다', async () => {
+await t('예시 단어가 HOT TREND 용어로 그려진다', async () => {
   bar();
-  await new Promise(r=>setTimeout(r,60));
+  await new Promise(r=>setTimeout(r,120));
   const q = document.getElementById('kwQ');
-  assert.ok(q.innerHTML.length > 0, '예시 질문이 비어 있다');
+  assert.ok(q.innerHTML.length > 0, '예시 단어가 비어 있다');
   assert.match(q.innerHTML, /<b>/, '키워드가 강조돼야 한다');
+  assert.ok(q.textContent.startsWith('예 : '), `'예 : ' 로 시작해야 한다: ${q.textContent}`);
+  const term = q.querySelector('b').textContent;
+  assert.ok(['발레코어','스트릿웨어','고프코어'].includes(term), `HOT 용어가 아님: ${term}`);
+  assert.ok(!/[?？]|뜨거워|중이야/.test(q.textContent), '질문 문구가 섞이면 안 된다');
 });
 
 console.log(`\n${pass}개 통과 · ${fail}개 실패`);

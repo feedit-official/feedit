@@ -5,31 +5,48 @@ import { KW, trToast } from './render_helpers.js';
 import { markTried, trRender } from './dispatch.js';
 import { logSearch } from '../../../account/static/js/account_api.js';
 
-/* 예시 질문 — 스타일 룩 · 아이템 위주. 전부 사전에 실제로 있는 말이라 그대로 검색된다. */
-const KW_Q={
-  temp:[['발레코어','지금 얼마나 뜨거워?'],['스트릿','아직 오르는 중이야?'],
-        ['스투시 후디','언제 정점 찍었어?'],['고프코어','어느 플랫폼이 제일 뜨거워?'],
-        ['삼바 OG','작년보다 많이 언급돼?']],
-  assoc:[['발레코어','뭐랑 같이 언급돼?'],['아메카지','어떤 아이템이 많이 나와?'],
-         ['카고 팬츠','같이 입는 게 뭐야?'],['블록코어','새로 붙은 연관어 있어?'],
-         ['디트로이트 자켓','어떤 룩으로 소비돼?']],
-  sentiment:[['발레코어','사려는 사람 많아?'],['스투시 후디','반응 어때?'],
-             ['트랙 자켓','부정 반응은 뭐야?'],['그런지','가격 부담 얘기 많아?'],
-             ['발레 플랫','재입고 문의 늘었어?']]
-};
-/* 할인률 챗바(fsQStep)와 같은 타임라인 — 문구만 파트별로 다르다 */
+/* 예시 단어 — 홈의 HOT TREND TOP 10 과 같은 순위(/api/trend?rank=hot)를 그대로 쓴다.
+   이 검색바에는 질문이 아니라 용어를 넣는다. 챗봇 질문 예시는 홈 챗바 몫이다.
+   못 불러오면 지어내지 않고 비워 둔다(placeholder 만 보인다). 홈과 같이 30분마다 다시 확인한다. */
+var KW_HOT=[], kwHotAt=0, kwHotJob=null;
+const KW_HOT_TTL=30*60*1000, KW_HOT_RETRY=30*1000;   /* 실패하면 30초 뒤에 다시 */
+function kwHotLoad(){
+  if(kwHotJob)return kwHotJob;
+  if(Date.now()-kwHotAt<(KW_HOT.length?KW_HOT_TTL:KW_HOT_RETRY))return Promise.resolve();
+  kwHotAt=Date.now();
+  return kwHotJob=kwHotFetch().finally(()=>{ kwHotJob=null });
+}
+async function kwHotFetch(){
+  try{
+    const r=await fetch('/api/trend?rank=hot&limit=8',{headers:{Accept:'application/json'}});
+    const j=await r.json();
+    if(r.ok&&j&&j.status==='ok'){
+      const d=j.data||{};
+      /* 홈과 같은 뽑기 — 상승 8 + 하락 2 */
+      const terms=[...(d.rising||[]).slice(0,8),...(d.falling||[]).slice(0,2)]
+        .map(x=>x&&x.term).filter(Boolean);
+      if(terms.length)KW_HOT=terms;
+    }
+  }catch(e){}
+}
+/* 할인률 챗바(fsQStep)와 같은 타임라인 — 문구만 HOT 용어다 */
 var kwQI=0, kwQBooked=false;
 function kwQStep(){
   const line=$('#kwQ'); if(!line)return;
-  const arr=KW_Q[KW.part]||KW_Q.temp;
-  const q=arr[kwQI%arr.length]; kwQI++;
-  const paint=()=>{ line.innerHTML='<i>“<b>'+q[0]+'</b>&nbsp;'+q[1]+'”</i>' };
+  const job=kwHotLoad();   /* 30분이 지났으면 조용히 다시 읽는다 */
+  if(!KW_HOT.length){ job.then(()=>{ if(KW_HOT.length&&!line.querySelector('b'))kwQStep() }); return }
+  const q=KW_HOT[kwQI%KW_HOT.length]; kwQI++;
+  /* '예 : ' 는 고정하고 용어만 바뀐다 — 첫 용어가 준비됐을 때 한 번만 깐다 */
+  let term=line.querySelector('b');
+  const first=!term;
+  if(first){ line.innerHTML='<i>예 : <b></b></i>'; term=line.querySelector('b') }
+  const paint=()=>{ term.textContent=q };
   if(!HAS_A){ paint(); return }
-  if(!line.firstElementChild){ paint();
-    aAnimate(line,{opacity:[0,1],translateY:[8,0],duration:520,ease:'out(3)'}); return }
+  if(first){ paint();
+    aAnimate(term,{opacity:[0,1],translateY:[8,0],duration:520,ease:'out(3)'}); return }
   const t=aTimeline();
-  t.add(line,{opacity:[1,0],translateY:[0,-8],duration:260,ease:'in(2)',onComplete:paint},0)
-   .add(line,{opacity:[0,1],translateY:[8,0],duration:520,
+  t.add(term,{opacity:[1,0],translateY:[0,-8],duration:260,ease:'in(2)',onComplete:paint},0)
+   .add(term,{opacity:[0,1],translateY:[8,0],duration:520,
       ease:aSpring({stiffness:94,damping:16})},260);
 }
 function kwQTick(){
