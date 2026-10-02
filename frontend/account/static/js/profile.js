@@ -76,6 +76,8 @@ function applyAccount(user){
   /* 이름·직업·소개가 바뀌었음을 알린다 — 트렌드 머리·사이드바가 받아 다시 칠한다 */
   try{ document.dispatchEvent(new CustomEvent('feedit:account')) }catch(e){}
 }
+/* 다른 모듈이 서버에서 받은 사용자 응답을 그대로 반영할 때 (알림의 성별 고르기 등) */
+export function applyAccountUser(user){ applyAccount(user) }
 /* ★ 2026-09-20 — 로그아웃하면 ME 를 로그인 전 기본값으로 되돌린다.
    예전엔 값을 그대로 두어서, 로그아웃 뒤 트렌드 분석(로그인 안내 뒤편)에
    앞 계정의 이름·취향 피드가 그대로 비쳤다. */

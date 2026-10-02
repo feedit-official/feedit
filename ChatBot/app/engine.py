@@ -16,6 +16,8 @@ LLM 이 하지 않는 것
 """
 from __future__ import annotations
 
+import re
+
 from . import (agent_blocks, agent_path, context, fit, followup, history, llm, mdclean,
                plans, polish, product_link, report, report_skill, salmal_index,
                websearch)
@@ -24,6 +26,11 @@ from .lexicon_gate import LexiconGate
 from .nlu import classify
 from .intents import is_salmal_question, is_greeting, GENERAL_CODES, SALMAL_CODES
 from .store import ReadOnlyStore, default_store
+
+# 사진만으로는 답이 끝나지 않는 질문 — 상품 · 트렌드 값이 필요하다(_vision_ask).
+_PHOTO_NEEDS_TOOLS = re.compile(
+    r"추천|어울|코디|매치|매칭|같이\s*입|비슷|찾아|상품|요즘|트렌드|유행|인기|핫|뜨는|"
+    r"가격|얼마|어디서|순위|지수|온도|대신|대체|살\s*만|브랜드")
 
 
 class ChatEngine:
@@ -60,12 +67,12 @@ class ChatEngine:
                     "message": "질문은 500자 이하로 입력해 주세요."}
 
         # ── 이미지 첨부 (2026-09-10) ─────────────────────────
-        #   사진이 오면 지표 게이트·도구 루프(아래 두 경로 전부)를 타지 않는다.
-        #   사진 속 옷이 어떤 스타일인지는 우리 DB 값이 아니라 모델이 보고
-        #   설명하는 것이라, 애초에 도구가 값을 내줄 수 있는 질문이 아니다.
-        #   ②어투 다듬기 · ③웹검색처럼 "LLM이 거들 뿐인 자리" 하나를 새로 둔다.
+        #   사진이 오면 먼저 비전 모델이 본다. 사진 속 옷이 어떤 스타일인지는 우리 DB 값이
+        #   아니라 모델이 보고 설명하는 것이다. 질문이 상품 · 트렌드를 더 묻는다면
+        #   (2026-10-02) 본 것을 앞 턴으로 붙여 도구 루프로 넘긴다 — _vision_ask 참고.
         if imgs:
-            return self._vision_ask(q, mode, imgs, conversation_id, extra, on_progress)
+            return self._vision_ask(q, mode, imgs, conversation_id, extra, on_progress,
+                                    history_in=history_in, cancel_check=cancel_check)
 
         # ── 새 경로 (2026-09-09) ────────────────────────────
         #   FEEDIT_CHAT_ORCHESTRATOR=1 이면 도구 루프로 간다.
@@ -76,39 +83,8 @@ class ChatEngine:
         #     두 경로를 같은 질문으로 돌려 비교한 뒤 기본값을 바꾸면 된다.
         #     끄면(변수 없음) 예전과 완전히 같은 길로 간다.
         if agent_path.enabled() and self.use_llm:
-            past_a = (history.sanitize(history_in) if history_in
-                      else self.memory.recent(conversation_id))
-            ctx = {"mode": mode}
-            # ★ 되묻기 예산 (15번). **서버 기억**에서도 센다.
-            #   클라이언트가 보내는 history 에는 되묻기 턴이 빠진다 —
-            #   chat_popup 은 report 이벤트가 올 때만 turn 을 남기는데,
-            #   되묻기는 kind="meta" 라 report 를 보내지 않기 때문이다.
-            #   그쪽만 보면 예산이 영원히 0 이라 상한이 걸리지 않는다.
-            #   둘 중 큰 쪽을 쓴다 — 서버가 재시작하면 기억이 비지만,
-            #   그때 한 번 더 되묻는 것은 감당할 수 있는 실패다.
-            ctx["asked_before"] = max(history.count_asks(past_a),
-                                      history.count_asks(self.memory.recent(conversation_id)))
-            # 화면에서 넘어온 것들. 없으면 없는 대로 — 도구 목록만 줄어든다.
-            for k in ("screen_term", "salmal_card_id", "user_id", "region", "taste_context", "gender"):
-                v = extra.get(k) if extra else None
-                if v:
-                    ctx[k] = v
-            # ★ 승인된 코디 (2026-10-01). server.py 는 받아서 넘겼는데 여기 목록에 없어
-            #   버려졌다 — "이 코디로 입혀보기" 를 눌러도 build_fit 이 목록에 오르지 못하고
-            #   모델이 "어떤 코디를 입혀볼까요?" 를 되물었다. 걸러서 넣는다(fit.clean_proposal).
-            proposal = fit.clean_proposal(extra.get("fit_proposal")) if extra else None
-            if proposal:
-                ctx["fit_proposal"] = proposal
-            # ★ 이 대화에서 이미 보여 준 코디 (2026-10-02) — 상품(seen) · 근거 기사(refs) ·
-            #   상황(occasion). '다른 룩' 이 같은 룩이 되지 않게 도구와 모델이 본다.
-            ctx.update(fit.clean_memory(extra.get("fit_memory")) if extra else {})
-            out = agent_path.ask(q, store=self.store, gate=self.gate, mode=mode,
-                                 history=past_a, ctx=ctx, salmal=self.salmal,
-                                 taste=self.taste, on_progress=on_progress,
-                                 cancel_check=cancel_check)
-            self._remember(conversation_id, q, out.get("intent") or "agent", mode,
-                           out.get("terms") or [], follow=out.get("followup"))
-            return out
+            return self._agent_ask(q, mode, conversation_id, history_in, extra,
+                                   on_progress, cancel_check)
 
         # 앞 턴. 클라이언트가 보낸 것이 있으면 그쪽을 믿는다 —
         # 사용자의 세션 목록이 원본이고, 서버 메모리는 프로세스가 죽으면 사라진다.
@@ -245,10 +221,55 @@ class ChatEngine:
                     return out
         return out
 
+
+    # ── 새 경로 본체 (도구 루프) ──────────────────────
+    def _agent_ask(self, q: str, mode: str, conversation_id: str | None,
+                   history_in: list | None, extra: dict | None, on_progress=None,
+                   cancel_check=None, extra_turns: list | None = None,
+                   visual: dict | None = None) -> dict:
+        """도구 루프로 답한다. extra_turns 는 history 끝에 덧붙일 턴 —
+        사진 질문이 '방금 본 사진' 을 앞 턴처럼 넘길 때 쓴다(_vision_ask)."""
+        past_a = (history.sanitize(history_in) if history_in
+                  else self.memory.recent(conversation_id))
+        if extra_turns:
+            past_a = list(past_a) + list(extra_turns)
+        ctx = {"mode": mode}
+        # ★ 되묻기 예산 (15번). **서버 기억**에서도 센다.
+        #   클라이언트가 보내는 history 에는 되묻기 턴이 빠진다 —
+        #   chat_popup 은 report 이벤트가 올 때만 turn 을 남기는데,
+        #   되묻기는 kind="meta" 라 report 를 보내지 않기 때문이다.
+        #   그쪽만 보면 예산이 영원히 0 이라 상한이 걸리지 않는다.
+        #   둘 중 큰 쪽을 쓴다 — 서버가 재시작하면 기억이 비지만,
+        #   그때 한 번 더 되묻는 것은 감당할 수 있는 실패다.
+        ctx["asked_before"] = max(history.count_asks(past_a),
+                                  history.count_asks(self.memory.recent(conversation_id)))
+        # 화면에서 넘어온 것들. 없으면 없는 대로 — 도구 목록만 줄어든다.
+        for k in ("screen_term", "salmal_card_id", "user_id", "region", "taste_context", "gender"):
+            v = extra.get(k) if extra else None
+            if v:
+                ctx[k] = v
+        # ★ 승인된 코디 (2026-10-01). server.py 는 받아서 넘겼는데 여기 목록에 없어
+        #   버려졌다 — "이 코디로 입혀보기" 를 눌러도 build_fit 이 목록에 오르지 못하고
+        #   모델이 "어떤 코디를 입혀볼까요?" 를 되물었다. 걸러서 넣는다(fit.clean_proposal).
+        proposal = fit.clean_proposal(extra.get("fit_proposal")) if extra else None
+        if proposal:
+            ctx["fit_proposal"] = proposal
+        # ★ 이 대화에서 이미 보여 준 코디 (2026-10-02) — 상품(seen) · 근거 기사(refs) ·
+        #   상황(occasion). '다른 룩' 이 같은 룩이 되지 않게 도구와 모델이 본다.
+        ctx.update(fit.clean_memory(extra.get("fit_memory")) if extra else {})
+        out = agent_path.ask(q, store=self.store, gate=self.gate, mode=mode,
+                             history=past_a, ctx=ctx, salmal=self.salmal,
+                             taste=self.taste, on_progress=on_progress,
+                             cancel_check=cancel_check)
+        self._remember(conversation_id, q, out.get("intent") or "agent", mode,
+                       out.get("terms") or [], visual=visual, follow=out.get("followup"))
+        return out
+
     # ── 이미지 첨부 ───────────────────────────────────
     def _vision_ask(self, q: str, mode: str, images: list[str],
                      conversation_id: str | None, extra: dict | None = None,
-                     on_progress=None) -> dict:
+                     on_progress=None, *, history_in: list | None = None,
+                     cancel_check=None) -> dict:
         """사진을 보고 답한다. 값은 도구에서만 나온다는 원칙(AGENTS.md §2)이
         지표·가격 같은 우리 DB 값 얘기라, 사진 속 옷을 설명하는 이 자리에는
         해당하지 않는다 — greeting·smalltalk처럼 LLM이 그대로 답을 만드는
@@ -298,6 +319,31 @@ class ChatEngine:
         visual_context = history.sanitize_visual(visual) or {}
         visual_terms = self._vision_terms(visual_context)
         answer = str(visual_context.get("summary") or "사진을 확인했습니다.")
+        # ★ 사진 + 데이터가 필요한 질문 (2026-10-02).
+        #   "이거랑 어울리는 바지 추천해줘" · "이 스타일 요즘 유행이야?" 는 사진 설명만으로
+        #   답이 끝나지 않는다. 본 것을 '방금 본 사진' 턴으로 앞에 붙여 도구 루프에 넘긴다 —
+        #   [최근 이미지 분석] 줄로 아이템·색·소재가 모델에게 가고(orchestrator._ctx_block),
+        #   상품 · 트렌드 값은 지금처럼 도구에서만 나온다. 도구 루프가 실패하면 사진 설명만
+        #   돌려준다(아래 원래 답).
+        if q and _PHOTO_NEEDS_TOOLS.search(q) and agent_path.enabled() and self.use_llm \
+                and not (cancel_check and cancel_check()):
+            seen_turn = history.make_turn("[사진]", "vision.image", mode, visual_terms,
+                                          visual_context)
+            if on_progress:
+                on_progress("사진 속 아이템으로 찾아보는 중")
+            try:
+                out = self._agent_ask(q, mode, conversation_id, history_in, extra,
+                                      on_progress, cancel_check, extra_turns=[seen_turn],
+                                      visual=visual_context)
+            except Exception:                          # noqa: BLE001 — 사진 설명은 이미 있다
+                out = None
+            if out and out.get("ok") and out.get("kind") != "meta":
+                out["headline"] = mdclean.to_html(answer) + (out.get("headline") or "")
+                out["visual_context"] = visual_context
+                known = {t.get("canonical") for t in out.get("terms") or []}
+                out["terms"] = list(out.get("terms") or []) + [
+                    t for t in visual_terms if t.get("canonical") not in known]
+                return out
         self._remember(conversation_id, q or "[사진]", "vision.image", mode,
                        visual_terms, visual_context)
         # report 이벤트가 와야 프런트가 이 턴의 history를 저장한다. 블록은 비어 있어

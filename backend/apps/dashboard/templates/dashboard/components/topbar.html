@@ -17,7 +17,7 @@
       
       <a href="{% url 'dashboard:trend_metrics' %}" class="btn {% if url_name == 'trend_metrics' or url_name == 'term_metrics' or url_name == 'product_metrics' or url_name == 'product_snapshot' %}on{% endif %}">데이터분석</a>
       
-      <a href="{% url 'dashboard:service_users' %}" class="btn {% if url_name == 'feedback_list' or url_name == 'report_list' or url_name == 'service_users' or url_name == 'service_events' or url_name == 'service_votes' or url_name == 'service_comments' %}on{% endif %}">서비스</a>
+      <a href="{% url 'dashboard:service_users' %}" class="btn {% if url_name == 'feedback_list' or url_name == 'report_list' or url_name == 'service_users' or url_name == 'service_events' or url_name == 'service_votes' or url_name == 'service_comments' or url_name == 'service_notices' %}on{% endif %}">서비스</a>
 
       <a href="{% url 'dashboard:database_overview' %}" class="btn {% if url_name == 'database_overview' or url_name == 'database_query' %}on{% endif %}">데이터베이스</a>
 

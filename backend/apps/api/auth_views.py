@@ -41,6 +41,7 @@ from apps.core.models import (
 )
 
 from . import email_verify, google_auth, kakao_auth
+from . import notification_service
 from .activity_views import active_saved_count, active_vote_count
 from .badges import badge_states
 from .job_views import job_request_public
@@ -732,6 +733,34 @@ def profile(request):
     except (ValidationError, ValueError) as exc:
         messages = exc.messages if isinstance(exc, ValidationError) else [str(exc)]
         return _error(" ".join(messages))
+    if profile_obj.gender:
+        notification_service.clear_gender_prompt(profile_obj)
+    return JsonResponse(_auth_payload(request, request.user, profile_obj))
+
+
+@require_POST
+def gender(request):
+    """POST /api/auth/gender  {"gender": "FEMALE" | "MALE"}  (2026-10-02)
+
+    알림의 '성별을 알려 주세요' 에서 고른다. 성별 하나만 바꾼다 — /auth/profile 은
+    닉네임 · 키 · 몸무게를 같이 다시 검사해서, 예전 기준으로 가입한 계정은 성별만
+    고르려 해도 다른 칸 때문에 막힐 수 있다.
+    """
+    if not request.user.is_authenticated:
+        return _error("로그인이 필요합니다.", status=401)
+    data = _json(request)
+    if data is None:
+        return _error("요청 형식이 올바른 JSON이 아닙니다.")
+    try:
+        value = _gender(data.get("gender"))
+    except ValueError as exc:
+        return _error(str(exc))
+    if value is None:
+        return _error("성별을 골라 주세요.")
+    profile_obj = _profile(request.user, create=True)
+    profile_obj.gender = value
+    profile_obj.save(update_fields=["gender", "updated_at"])
+    notification_service.clear_gender_prompt(profile_obj)
     return JsonResponse(_auth_payload(request, request.user, profile_obj))
 
 

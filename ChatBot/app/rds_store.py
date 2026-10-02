@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import os
+import queue
+import threading
 from decimal import Decimal
 from typing import Any
 
@@ -31,26 +33,94 @@ def _term(term_key: str) -> str:
     return str(term_key or "").split(":", 1)[-1]
 
 
+# ★ 연결을 몇 개 돌려 쓴다 (2026-10-02 — 기수 30명 동시 테스트에서 렉).
+#   예전에는 연결 하나를 모든 요청 스레드가 같이 썼다. psycopg 연결은 한 번에 쿼리 하나만
+#   돌리므로, 서른 명이 동시에 물으면 모든 RDS 조회가 한 줄로 서서 차례를 기다렸다.
+#   이제 최대 POOL_SIZE 개까지 열어 두고 빌려 쓴 뒤 돌려준다. 다 빌려 갔으면 잠깐 기다린다.
+POOL_SIZE = max(1, int(os.getenv("FEEDIT_RDS_POOL", "4") or 4))
+POOL_WAIT = 10        # 초 — 이보다 오래 빈 연결이 없으면 하나 더 연다(상한을 넘더라도 답은 낸다)
+
+
 class RDSStore:
     def __init__(self, version: str = METRIC_VERSION):
         self.version = version
         self._conn = None
+        self._idle: queue.LifoQueue = queue.LifoQueue()
+        self._opened = 0
+        self._lock = threading.Lock()
+
+    @staticmethod
+    def _connect():
+        return psycopg.connect(
+            host=os.getenv("DB_HOST"), port=os.getenv("DB_PORT", "5432"),
+            dbname=os.getenv("DB_NAME"), user=os.getenv("DB_USER"),
+            password=os.getenv("DB_PASSWORD"), row_factory=dict_row,
+            autocommit=True, connect_timeout=6,
+            options="-c statement_timeout=8000",
+        )
 
     def conn(self):
+        """예전 호출용 — 연결 하나를 돌려준다(쿼리는 q() 가 빌려 쓰는 연결로 돈다)."""
         if self._conn is None or self._conn.closed:
-            self._conn = psycopg.connect(
-                host=os.getenv("DB_HOST"), port=os.getenv("DB_PORT", "5432"),
-                dbname=os.getenv("DB_NAME"), user=os.getenv("DB_USER"),
-                password=os.getenv("DB_PASSWORD"), row_factory=dict_row,
-                autocommit=True, connect_timeout=6,
-                options="-c statement_timeout=8000",
-            )
+            self._conn = self._connect()
         return self._conn
 
+    def _borrow(self):
+        while True:
+            try:
+                c = self._idle.get_nowait()
+            except queue.Empty:
+                break
+            if not c.closed:
+                return c
+            with self._lock:
+                self._opened -= 1
+        with self._lock:
+            room = self._opened < POOL_SIZE
+            if room:
+                self._opened += 1
+        if room:
+            try:
+                return self._connect()
+            except Exception:
+                with self._lock:
+                    self._opened -= 1
+                raise
+        try:
+            c = self._idle.get(timeout=POOL_WAIT)
+            if not c.closed:
+                return c
+            with self._lock:
+                self._opened -= 1
+        except queue.Empty:
+            pass
+        with self._lock:
+            self._opened += 1
+        return self._connect()
+
+    def _give_back(self, c, broken: bool):
+        if broken or c.closed or self._idle.qsize() >= POOL_SIZE:
+            try:
+                c.close()
+            except Exception:  # noqa: BLE001
+                pass
+            with self._lock:
+                self._opened -= 1
+            return
+        self._idle.put(c)
+
     def q(self, sql: str, args=()) -> list[dict[str, Any]]:
-        with self.conn().cursor() as cursor:
-            cursor.execute(sql, args)
-            return [{k: _plain(v) for k, v in row.items()} for row in cursor.fetchall()]
+        c = self._borrow()
+        broken = False
+        try:
+            with c.cursor() as cursor:
+                cursor.execute(sql, args)
+                return [{k: _plain(v) for k, v in row.items()} for row in cursor.fetchall()]
+        except (psycopg.OperationalError, psycopg.InterfaceError):
+            broken = True                     # 끊긴 연결은 돌려놓지 않는다 — 다음 요청이 새로 연다
+            raise
+        finally:
+            self._give_back(c, broken)
 
     def one(self, sql: str, args=()) -> dict | None:
         rows = self.q(sql, args)

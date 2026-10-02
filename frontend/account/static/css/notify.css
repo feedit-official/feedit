@@ -180,3 +180,18 @@
 @media (hover:none){ .ntX{opacity:1} }
 @media (max-width:560px){ .notiToasts{top:auto;bottom:16px;right:16px} }
 @media (prefers-reduced-motion:reduce){ .notiToast,.notiToast.out{transition:opacity .2s ease;transform:none} }
+
+/* ── 성별 고르기 (2026-10-02) — 알림에서 여는 작은 창 ─────────────
+   VTON 모델 칸과 같은 색 — 여성 핑크 · 남성 하늘 (chat_popup.css .cpFitGender) */
+.genderAsk .genderAskLead{margin:-8px 0 18px;font-size:13px;line-height:1.6;color:var(--pink-1)}
+.genderAskChoices{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.genderAskBtn{display:flex;flex-direction:column;align-items:center;gap:4px;padding:20px 12px 16px;border-radius:16px;
+  background:var(--paper,#f1efea);box-shadow:inset 0 0 0 1px var(--pink-3);transition:box-shadow .2s,transform .2s,background .2s}
+.genderAskBtn span{font-size:24px;line-height:1}
+.genderAskBtn b{font-size:15px;color:var(--pink-0);letter-spacing:.02em}
+.genderAskBtn em{font-style:normal;font-size:11.5px;color:var(--pink-1)}
+.genderAskBtn.g-woman span{color:#b0245c}
+.genderAskBtn.g-man span{color:#1b6aa0}
+.genderAskBtn.g-woman:hover,.genderAskBtn.g-woman:focus-visible,.genderAskBtn.g-woman.on{background:#ffe1ec;box-shadow:inset 0 0 0 1.5px #ff7aa8;transform:translateY(-1px)}
+.genderAskBtn.g-man:hover,.genderAskBtn.g-man:focus-visible,.genderAskBtn.g-man.on{background:#dcf0fc;box-shadow:inset 0 0 0 1.5px #48aee9;transform:translateY(-1px)}
+.genderAsk .fieldMsg:empty{display:none}

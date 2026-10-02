@@ -114,10 +114,17 @@ services:
         python manage.py collectstatic --noinput &&
         gunicorn config.wsgi:application
         --bind 0.0.0.0:8000
-        --workers 3
+        --workers ${GUNICORN_WORKERS:-3}
+        --threads ${GUNICORN_THREADS:-4}
+        --worker-class gthread
         --timeout 60
         --access-logfile -
         --error-logfile -
+    # ★ 워커당 스레드 4개 (2026-10-02 — 기수 30명 동시 테스트에서 렉).
+    #   예전 기본 sync 워커 3개는 **한 번에 요청 3개**만 받았다. 나머지는 줄을 서서
+    #   버셀 중계(8~10초)에 끊기거나 챗봇 도구 조회(4~8초)가 시간 초과로 비었다.
+    #   요청 대부분이 RDS 왕복을 기다리는 일이라 스레드로 겹쳐 받는 것이 맞다 — 3×4=12개.
+    #   메모리를 더 쓰지 않는다(같은 프로세스). 값은 .env 의 GUNICORN_WORKERS · GUNICORN_THREADS.
 
     # ★ DNS 를 명시한다 — compose.chat.yml 과 같은 이유.
     #   Ubuntu 호스트의 /etc/resolv.conf 는 systemd-resolved 스텁(127.0.0.53)을

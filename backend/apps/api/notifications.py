@@ -36,6 +36,12 @@ TERM_ADDED = "TERM_ADDED"
 JOB_REVIEW = "JOB_REVIEW"
 VOTE_COMMENT = "VOTE_COMMENT"
 OPS_ALERT = "OPS_ALERT"   # 운영 계정만 — 설정 칸이 없어 끌 수 없다(SETTING_FIELD 에 없음)
+# 운영자가 관리자 화면에서 보내는 공지 (2026-10-02). 종류별 끄기 칸은 없고, '알림 전체 끄기'
+# 를 한 사람에게는 가지 않는다(notification_service.allowed 가 전체 끄기를 먼저 본다).
+ADMIN_NOTICE = "ADMIN_NOTICE"
+# 성별이 비어 있는 회원에게 한 번 — 가상 피팅 모델 · 코디 추천이 성별을 쓴다 (2026-10-02)
+PROFILE_GENDER = "PROFILE_GENDER"
+PROFILE_GENDER_KEY = "PROFILE_GENDER"
 
 # 종류 → NotificationSetting 의 칸 이름
 SETTING_FIELD = {
@@ -252,3 +258,82 @@ def weekly_report_text(week_start):
         "일요일이 왔어요.",
         "금주의 리포트를 확인해 보세요.",
     )
+
+
+# ── 성별 요청 (2026-10-02) ──────────────────────────────────
+def gender_prompt_text():
+    """가입할 때 성별을 받기 전(2026-10-02 이전)에 가입한 회원에게 한 번 보낸다."""
+    return ("성별을 알려 주세요.",
+            "코디 입혀보기 모델과 추천 코디를 성별에 맞춰 드려요.\n"
+            "눌러서 바로 고를 수 있어요.")
+
+
+# ── 운영 공지 (관리자 화면에서 보내는 알림 · 상단 띠 공지) ─────────
+NOTICE_TITLE_MAX = 60     # 알림 목록 한 줄 · 토스트에 들어가는 길이
+NOTICE_BODY_MAX = 300
+TICKER_MAX = 140
+# 눌렀을 때 갈 수 있는 화면 — 프런트 goView 가 아는 이름만 (없는 화면이면 공백 페이지가 된다)
+NOTICE_LINKS = {
+    "": "이동 없음",
+    "home": "홈",
+    "trend": "트렌드 분석",
+    "salmal": "살!말?",
+    "style": "스타일",
+    "price": "가격",
+    "mypage": "마이페이지",
+}
+
+
+def _one_line(value):
+    return " ".join(str(value or "").split())
+
+
+def clean_notice(title, body="", link=""):
+    """관리자가 쓴 알림 → (title, body, link). 틀리면 ValueError(사람이 읽을 문장).
+
+    본문은 줄바꿈을 살린다 — 알림 목록이 \n 을 줄로 그린다(notify.js bodyHTML).
+    """
+    t = _one_line(title)
+    if not t:
+        raise ValueError("제목을 입력해 주세요.")
+    if len(t) > NOTICE_TITLE_MAX:
+        raise ValueError(f"제목은 {NOTICE_TITLE_MAX}자 이하로 입력해 주세요.")
+    lines = [_one_line(x) for x in str(body or "").replace("\r", "").split("\n")]
+    b = "\n".join(lines).strip("\n")
+    while "\n\n\n" in b:
+        b = b.replace("\n\n\n", "\n\n")
+    if len(b) > NOTICE_BODY_MAX:
+        raise ValueError(f"본문은 {NOTICE_BODY_MAX}자 이하로 입력해 주세요.")
+    l = str(link or "").strip()
+    if l not in NOTICE_LINKS:
+        raise ValueError("이동 화면이 올바르지 않습니다.")
+    return t, b, l
+
+
+def clean_ticker(message, link=""):
+    """상단 띠 공지 → (message, link). 한 줄로 흐르니 줄바꿈은 걷는다."""
+    m = _one_line(message)
+    if not m:
+        raise ValueError("공지 문구를 입력해 주세요.")
+    if len(m) > TICKER_MAX:
+        raise ValueError(f"공지 문구는 {TICKER_MAX}자 이하로 입력해 주세요.")
+    l = str(link or "").strip()
+    if l not in NOTICE_LINKS:
+        raise ValueError("이동 화면이 올바르지 않습니다.")
+    return m, l
+
+
+def parse_recipients(text):
+    """'12, 진, @민지\n34' → (ids, nicknames). 숫자는 회원 번호, 나머지는 닉네임으로 본다."""
+    ids, names = [], []
+    for raw in str(text or "").replace(",", "\n").replace(";", "\n").split("\n"):
+        word = raw.strip().lstrip("@#").strip()
+        if not word:
+            continue
+        if word.isdigit():
+            n = int(word)
+            if n not in ids:
+                ids.append(n)
+        elif word not in names:
+            names.append(word[:40])
+    return ids, names

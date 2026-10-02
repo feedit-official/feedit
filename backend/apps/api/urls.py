@@ -40,6 +40,7 @@ urlpatterns = [
     path("auth/logout", auth_views.logout, name="auth-logout"),
     path("auth/withdraw", auth_views.withdraw, name="auth-withdraw"),   # 회원 탈퇴 (계정·기록 삭제)
     path("auth/profile", auth_views.profile, name="auth-profile"),
+    path("auth/gender", auth_views.gender, name="auth-gender"),                     # 성별만 (알림에서)
     path("auth/job-request", job_views.job_request, name="auth-job-request"),        # 직업 인증 신청
     path("auth/job-requests", job_views.job_requests, name="auth-job-requests"),     # (관리자) 목록
     path("auth/job-review", job_views.job_review, name="auth-job-review"),           # (관리자) 승인·반려
@@ -60,6 +61,7 @@ urlpatterns = [
     path("auth/notifications", notification_views.notifications, name="auth-notifications"),
     path("auth/notification-settings", notification_views.notification_settings,
          name="auth-notification-settings"),
+    path("auth/announcements", notification_views.announcements, name="auth-announcements"),  # 상단 띠 공지 (공개)
     path("auth/term-request", notification_views.term_request, name="auth-term-request"),                       # 챗봇 대화 기록 (chat_views.py)
 
     # ── 프론트 읽기 전용 ──

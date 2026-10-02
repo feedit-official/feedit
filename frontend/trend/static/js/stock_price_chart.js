@@ -18,7 +18,22 @@ export function paintStockPriceChart(host, rows) {
     return;
   }
 
-  const width = 760, height = 280, left = 68, right = 18, top = 22, bottom = 38;
+  /* ★ 실제 폭으로 그린다 (2026-10-02) — 760 고정 viewBox 를 늘리면 큰 모니터에서 축 글씨가
+     부풀고 번졌다(chart_engine.gPaint 와 같은 이유). 폭을 못 재면 예전 값으로 그려 늘린다. */
+  const live = Math.round(host.clientWidth || 0);
+  const width = live >= 280 ? live : 760;
+  const height = live >= 280 ? Math.round(Math.min(330, Math.max(240, width * .34))) : 280;
+  const left = 68, right = 18, top = 22, bottom = 38;
+  host._spRows = rows; host._spW = live >= 280 ? width : 0;
+  if (!host._spRO && typeof ResizeObserver !== 'undefined') {
+    host._spRO = new ResizeObserver(() => {
+      const w = Math.round(host.clientWidth || 0);
+      if (w < 280 || Math.abs(w - (host._spW || 0)) <= 4) return;
+      cancelAnimationFrame(host._spRaf);
+      host._spRaf = requestAnimationFrame(() => { if (host.isConnected) paintStockPriceChart(host, host._spRows); });
+    });
+    host._spRO.observe(host);
+  }
   const times = points.map(point => Date.parse(point.date + 'T00:00:00Z'));
   const from = times[0], span = times[times.length - 1] - from || 1;
   const values = points.flatMap(point => point.list == null ? [point.sale] : [point.sale, point.list]);

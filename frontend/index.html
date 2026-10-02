@@ -706,6 +706,9 @@
 <!-- ===== 챗봇 팝업 (일반 모드 / 살말 모드 공용 — 프로필·대화 목록만 갈아입는다) ===== -->
 <div class="modalOverlay cpOverlay" id="cpOverlay">
   <div class="modalShell cpShell">
+    <!-- 입혀보기를 어디서 열지 — 이 대화 / 새 대화 (chat_popup.js cpChooseWhere). 팝업 전체 위에 뜬다.
+         cpBox 안에 두면 좁은 화면에서 상자가 옆으로 밀려 있을 때 함께 밀린다 — 바깥 껍데기에 단다 -->
+    <div class="cpWhere" id="cpWhere" hidden></div>
     <div class="cpBox" id="cpBox">
       <aside class="cpSide">
         <div class="cpProfile">
@@ -736,6 +739,8 @@
         <!-- 살말 모드에서 즐겨입는 스타일이 비어 있을 때만 뜬다(취향 = 판단의 35%) -->
         <div class="cpTaste" id="cpTaste" hidden></div>
         <div class="cpInputWrap">
+          <!-- 답하는 중에 들어온 다음 질문 (chat_popup.js cpQueue) -->
+          <div class="cpQueue" id="cpQueue" aria-live="polite" hidden></div>
           <div class="imgAttach cpImgAttach" id="cpImgAttach" hidden></div>
           <div class="cpInputRow">
             <button type="button" class="imgAddBtn cpImgAddBtn" id="cpImgAdd" aria-label="이미지 첨부"><i>+</i></button>
@@ -1143,6 +1148,20 @@
     <div class="modalHead"><h3 id="stFitTitle">Virtual Fitting</h3>
       <button type="button" class="modalClose" id="stFitClose" aria-label="닫기"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
     <div class="infFeed" id="stFitGrid"></div>
+  </div>
+</div>
+
+<!-- ── 성별 고르기 (알림 '성별을 알려 주세요' 에서 연다 · notify.js openGenderAsk) ── -->
+<div class="acctModal genderAsk" id="genderAskModal" role="dialog" aria-modal="true" aria-labelledby="genderAskTitle">
+  <div class="modalCard">
+    <div class="modalHead"><h3 id="genderAskTitle">성별을 알려 주세요</h3>
+      <button type="button" class="modalClose" data-gender-close aria-label="닫기"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+    <p class="genderAskLead">코디 입혀보기 모델과 추천 코디를 성별에 맞춰 드려요.<br>마이페이지 &gt; 프로필 수정에서 언제든 바꿀 수 있어요.</p>
+    <div class="genderAskChoices">
+      <button type="button" class="genderAskBtn g-woman" data-gender="FEMALE"><span aria-hidden="true">♀</span><b>Female</b><em>여성</em></button>
+      <button type="button" class="genderAskBtn g-man" data-gender="MALE"><span aria-hidden="true">♂</span><b>Male</b><em>남성</em></button>
+    </div>
+    <p class="fieldMsg" id="genderAskMsg" role="alert"></p>
   </div>
 </div>
 

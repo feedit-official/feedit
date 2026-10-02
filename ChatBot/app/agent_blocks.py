@@ -207,6 +207,8 @@ def _rank_block(res: dict, as_of: str) -> dict | None:
                      "small": small,
                      "v": (f"{temp}점" if temp is not None else "—"),
                      "up": (temp is not None and float(temp) >= 65)})
+    # 오른쪽 숫자가 무엇인지 — 순위의 기준이 곧 그 값이다 (2026-10-02)
+    meta = "트렌드 온도순" + (f" · {meta}" if meta else "")
     return {"type": "rank", "slot": "full", "title": "지금 뜨는 것",
             "meta": meta, "rows": rows}
 
@@ -245,8 +247,10 @@ def _similar_block(res: dict, as_of: str) -> dict | None:
         title = f"{axis} 축에서 지금 높은 것"
     else:
         title = f"{base}{_wa(base)} 비슷한 것" if base else "비슷한 것"
+    # 오른쪽 '점' 이 무엇인지 — 연관 정도가 아니라 그 용어의 트렌드 온도다 (2026-10-02)
+    meta = " · ".join(x for x in ("점 = 트렌드 온도", as_of or "") if x)
     return {"type": "rank", "slot": "full", "title": title,
-            "meta": as_of or "", "rows": rows}
+            "meta": meta, "rows": rows}
 
 
 def _wa(word: str) -> str:

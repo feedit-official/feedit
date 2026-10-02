@@ -562,12 +562,37 @@ await t('질문 없이 바로 빈 착장 위젯을 연다', async () => {
                '살말 팝업으로 열리지 않았다');
 });
 
-await t('팝업 버튼이 독립 착장을 연다', async () => {
+await t('팝업 버튼이 독립 착장을 연다 — 살!말? 대화 안이면 이 대화/새 대화를 먼저 묻는다', async () => {
   const count = () => CP.cpStore().convos.length;
+  const where = () => document.querySelector('#cpWhere');
   const before = count();
   click(document.querySelector('#cpVtonQuick'));
   await wait(40);
+  const asked = !where().hidden;
+  if (asked) {
+    assert.equal(count(), before, '고르기 전에는 아무것도 만들지 않는다');
+    click(where().querySelector('[data-where="new"]'));
+    await wait(40);
+  }
   assert.equal(count(), before + 1, '팝업 버튼이 새 착장을 열지 않았다');
+  /* 이제 살!말? 대화 안 — 다시 누르면 묻고, '이 대화에서' 는 대화를 늘리지 않는다 */
+  const c = CP.cpStore().convos.find(x => x.id === CP.cpStore().activeId);
+  const fits = () => c.messages.filter(m => m.fit).length;
+  const had = fits();
+  click(document.querySelector('#cpVtonQuick'));
+  await wait(40);
+  assert.equal(where().hidden, false, '살!말? 대화 안에서는 어디서 열지 묻는다');
+  assert.match(where().textContent, /이 대화에서/);
+  click(where().querySelector('[data-where="here"]'));
+  await wait(40);
+  assert.equal(where().hidden, true);
+  assert.equal(count(), before + 1, '이 대화에서 열면 대화가 늘지 않는다');
+  assert.equal(fits(), had + 1, '이 대화 아래에 착장 칸이 하나 더 열린다');
+  /* × 는 취소 */
+  click(document.querySelector('#cpVtonQuick')); await wait(20);
+  click(where().querySelector('[data-where="close"]')); await wait(20);
+  assert.equal(fits(), had + 1);
+  assert.equal(count(), before + 1);
 });
 
 /* 챗봇이 고른 연출이 슬라이드에 그대로 선다 (2026-10-01).
@@ -719,6 +744,53 @@ await t('결과 뒤 다른 룩 제안 — 상황을 잇고, 보여 준 상품과
   own.messages.push({role:'ai',html:'',fit:{...CP.cpFitFromServer({items:[]},''),fromServer:false,result:'data:image/png;base64,eA=='}});
   CP.cpRenderThread();
   assert.equal(thread().querySelector('.cpFitNext'),null);
+});
+
+await t('답 아래 [입혀보기] 는 한 번에 반응한다 — 열린 착장 칸을 접지 않고 바로 만든다', async () => {
+  fitBody=null;
+  const fit=CP.cpFitFromServer({items:[{slot:'상의',image:'https://image.msscdn.net/a.jpg',name:'셔츠',
+    url:'https://www.musinsa.com/products/31'}],styles:['미니멀']},'');
+  const c=CP.cpNewConvo();
+  c.messages.push({role:'me',text:'데이트룩'});
+  c.messages.push({role:'ai',html:'<p>코디</p>',fit,actionsHtml:
+    '<div class="act"><button class="pill ghost actBtn" data-virtual-fit="1"><span>입혀보기</span></button></div>'});
+  CP.cpRenderThread();
+  assert.ok(thread().querySelector('.cpFit'),'답과 함께 칸이 열려 있다');
+  click(thread().querySelector('[data-virtual-fit]')); await wait(60);
+  assert.ok(thread().querySelector('.cpFit'),'첫 누름에 칸이 닫히면 안 된다');
+  assert.ok(fitBody&&fitBody.items.length===1,'첫 누름에 바로 만든다');
+  /* 이미 만든 뒤에는 다시 만들지 않는다 — 칸만 보여 준다 */
+  fitBody=null;
+  click(thread().querySelector('[data-virtual-fit]')); await wait(30);
+  assert.equal(fitBody,null);
+  assert.ok(thread().querySelector('.cpFit'));
+});
+
+await t('답하는 중에 들어온 질문은 끊지 않고 대기열에 넣었다가, 답이 끝나면 이어서 묻는다', async () => {
+  CP.openChatWith('발레코어 요즘 어때?', null, {fresh:true});
+  const c=CP.cpStore().convos.find(x=>x.id===CP.cpStore().activeId);
+  /* 첫 답이 도는 중 — 칩을 누르거나 새로 친 질문 */
+  CP.openChatWith('그럼 비슷한 스타일은?', null);
+  assert.equal(CP.cpQueueSize(),1,'바로 보내지 않고 기다린다');
+  const box=document.querySelector('#cpQueue');
+  assert.equal(box.hidden,false);
+  assert.match(box.textContent,/그럼 비슷한 스타일은\?/);
+  assert.deepEqual(c.messages.filter(m=>m.role==='me').map(m=>m.text),['발레코어 요즘 어때?'],
+    '대기 중인 질문은 아직 대화에 들어가지 않는다');
+  /* 첫 답이 끝나면 이어서 묻는다 */
+  for(let i=0;i<40&&CP.cpQueueSize();i++) await wait(30);
+  await wait(200);
+  assert.equal(CP.cpQueueSize(),0);
+  assert.equal(box.hidden,true);
+  assert.deepEqual(c.messages.filter(m=>m.role==='me').map(m=>m.text),
+    ['발레코어 요즘 어때?','그럼 비슷한 스타일은?']);
+  /* × 로 빼면 묻지 않는다 */
+  CP.openChatWith('하나', null);
+  CP.openChatWith('뺄 질문', null);
+  click(document.querySelector('#cpQueue [data-q-drop]'));
+  assert.equal(CP.cpQueueSize(),0);
+  await wait(400);
+  assert.ok(!c.messages.some(m=>m.text==='뺄 질문'));
 });
 
 console.log(`\n${pass}개 통과 · ${fail}개 실패`);

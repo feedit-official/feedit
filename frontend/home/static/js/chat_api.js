@@ -78,6 +78,47 @@ function loadImage(file){
   });
 }
 
+/* 요청 본문 상한 — api/_v1/chat.js 의 MAX_BODY_BYTES 와 같은 값 (버셀 함수 한도 4.5MB 아래).
+   사진 여러 장이 이 값을 넘으면 보내기 전에 한 단계씩 더 줄인다. 줄여도 넘으면
+   보내지 않고 사람이 읽을 수 있는 말로 멈춘다 — 서버까지 가서 조용히 끊기지 않게. */
+export const MAX_CHAT_BODY = 4_300_000;
+const SHRINK_STEPS = [[960, 0.74], [720, 0.66], [560, 0.6]];
+
+function bodyBytes(text){
+  try{ return new TextEncoder().encode(text).length }catch(e){ return String(text||'').length }
+}
+function shrinkDataURL(url, dim, quality){
+  return new Promise((resolve)=>{
+    const img = new Image();
+    img.onload = () => {
+      const w0 = img.naturalWidth || img.width, h0 = img.naturalHeight || img.height;
+      const scale = Math.min(1, dim / Math.max(w0, h0 || 1));
+      const cv = document.createElement('canvas');
+      cv.width = Math.max(1, Math.round(w0 * scale)); cv.height = Math.max(1, Math.round(h0 * scale));
+      const ctx = cv.getContext && cv.getContext('2d');
+      if(!ctx){ resolve(url); return; }
+      ctx.drawImage(img, 0, 0, cv.width, cv.height);
+      try{ resolve(cv.toDataURL('image/jpeg', quality)) }catch(e){ resolve(url) }
+    };
+    img.onerror = () => resolve(url);
+    img.src = url;
+  });
+}
+/* payload 를 JSON 으로 만들고, 상한을 넘으면 사진을 줄여 다시 만든다. */
+export async function chatBody(payload){
+  let body = JSON.stringify(payload);
+  const imgs = payload && Array.isArray(payload.images) ? payload.images : null;
+  if(bodyBytes(body) <= MAX_CHAT_BODY || !imgs || !imgs.length) return body;
+  for(const [dim, q] of SHRINK_STEPS){
+    const smaller = await Promise.all(imgs.map(u => shrinkDataURL(u, dim, q)));
+    body = JSON.stringify({...payload, images: smaller});
+    if(bodyBytes(body) <= MAX_CHAT_BODY) return body;
+  }
+  const err = new Error('사진 용량이 너무 커서 보내지 못했습니다. 사진 수를 줄여 다시 보내 주세요.');
+  err.tooLarge = true;
+  throw err;
+}
+
 export async function imageFileToDataURL(file){
   const img = await loadImage(file);
   const scale = Math.min(1, IMG_MAX_DIM / Math.max(img.naturalWidth || img.width, img.naturalHeight || img.height));
@@ -151,7 +192,7 @@ export async function askStream(payload, on, options={}){
 
   const res = await fetch(API_BASE + '/v1/chat', {
     method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify(payload), signal:options.signal
+    body: await chatBody(payload), signal:options.signal
   });
   if(!res.ok || !res.body) throw new Error('HTTP ' + res.status);
 
@@ -438,7 +479,10 @@ export function refusalHTML(err){
     /* 링크 상품을 못 이은 경우엔 등록 요청을 붙이지 않는다 — 등록할 말이
        상품명(영문 전체)이라 사전 항목이 될 수 없다. 대신 한 단어를 되묻는
        문장이 message 에 이미 들어 있다. (2026-09-13) */
-    (err.reason === 'LINK_NOT_IDENTIFIED' ? '' :
+    /* ★ 사전에 없는 말일 때만 붙인다 (2026-10-02). 예전에는 사진 분석 실패 · 서버 오류 ·
+       용량 초과에도 '패션 용어가 맞다면 등록을 요청해 주세요' 가 붙어, 무엇이 잘못됐는지
+       오히려 흐렸다. reason 이 비어 있는 옛 응답은 예전처럼 붙인다. */
+    (err.reason && err.reason !== 'NOT_IN_LEXICON' ? '' :
     /* JS 훅은 클래스가 아니라 data 속성으로 단다.
        CSS 에 없는 클래스를 붙이면 "이건 스타일이 있나" 를 매번 확인해야 한다.
        버튼 모양은 .kwReq .ask button 이 이미 갖고 있다. */

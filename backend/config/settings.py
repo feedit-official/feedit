@@ -105,6 +105,11 @@ DATABASES = {
         "OPTIONS": {
             "options": '-c search_path=dictionary,"$user",public',
         },
+        # ★ 연결을 다시 쓴다 (2026-10-02 — 동시 접속 렉). 예전 기본값 0 은 요청마다 RDS 에
+        #   새로 접속(TLS 포함)했다. 60초 동안 살려 두고, 꺼낼 때 살아 있는지 먼저 본다.
+        #   gunicorn 스레드 하나가 연결 하나를 쥔다(워커 3 × 스레드 4 = 최대 12).
+        "CONN_MAX_AGE": int(os.getenv("DB_CONN_MAX_AGE", "60")),
+        "CONN_HEALTH_CHECKS": True,
     }
 }
 

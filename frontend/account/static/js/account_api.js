@@ -80,6 +80,15 @@ export const jobReviewDecide = ({ userId, approve, reason = '' }) =>
 export const saveAccount = data =>
   request('profile', { method:'POST', body:data });
 
+/* 성별만 저장 — 알림의 '성별을 알려 주세요' 에서 (2026-10-02).
+   /profile 은 닉네임 · 키 · 몸무게까지 다시 검사해, 예전 기준 계정은 다른 칸 때문에 막힐 수 있다. */
+export const saveGender = gender =>
+  request('gender', { method:'POST', body:{ gender } });
+
+/* 상단 띠 공지 — 로그인 없이 본다. 실패는 조용히 빈 목록(띠가 안 뜰 뿐이다) */
+export const liveAnnouncements = () =>
+  request('announcements').then(d => (d && Array.isArray(d.items)) ? d.items : []).catch(() => []);
+
 /* term 을 주면 그 키워드 태그가 붙은 영상만 찾는다 (금주의 리포트 · 가장 많이 검색한 키워드) */
 export const weeklyVideos = (term = '') =>
   request('weekly-videos' + (term ? '?term=' + encodeURIComponent(term) : ''));

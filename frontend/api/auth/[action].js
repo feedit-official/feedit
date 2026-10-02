@@ -15,6 +15,8 @@ const ALLOWED = new Set(['me', 'signup', 'login', 'logout', 'withdraw', 'profile
   'xp', 'site-feedback',
   // 알림 · 알림 설정 · 용어 등재 요청 (backend/apps/api/notification_views.py)
   'notifications', 'notification-settings', 'term-request',
+  // 상단 띠 공지(로그인 없이) · 성별만 저장(알림에서) — 2026-10-02
+  'announcements', 'gender',
   // 알파 테스트 계정 (해커톤 시연 15일 한정 · backend/apps/api/alpha_views.py)
   //   이 함수는 경로의 첫 조각만 보고 넘기므로 'alpha/quota' 같은 두 조각 주소는 쓰지 않는다.
   'alpha', 'alpha-quota', 'alpha-chat-use']);

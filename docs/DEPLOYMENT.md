@@ -54,6 +54,9 @@ docker compose --env-file .env -f docker/compose.chat.yml up -d --build
 | `DJANGO_SECURE_COOKIES` | 관리자 HTTPS 확인 후 `1`; 세션·CSRF 쿠키만 Secure 처리 |
 | `DJANGO_SECURE_SSL_REDIRECT` | 모든 API 클라이언트를 HTTPS로 전환한 뒤 `1`; 그전에는 `0` |
 | `DJANGO_HSTS_SECONDS` | 최초 0, 안정화 뒤 300 → 86400 → 31536000 순으로 증가 |
+| `GUNICORN_WORKERS`, `GUNICORN_THREADS` | API 동시 처리. 기본 3 × 4 (gthread). 이전 sync 3개는 동시 요청 3개가 한계였다 (2026-10-02) |
+| `DB_CONN_MAX_AGE` | Django RDS 연결 재사용(초), 기본 60. 0 이면 요청마다 새로 접속 |
+| `FEEDIT_RDS_POOL` | 챗봇 RDS 연결 수, 기본 4. 예전에는 연결 하나를 모든 요청이 나눠 썼다 |
 
 `FEEDIT_PUBLIC_BETA`의 코드 기본값은 1입니다. 공유 토큰·플랜 정책이 비베타 모드와 달라집니다. 알파 계정(`FEEDIT_ALPHA_MODE`, `FEEDIT_ALPHA_UNTIL`, `FEEDIT_ALPHA_CHAT_QUOTA`)과 별도 정책이므로 각각 확인합니다. 화면의 사용량 차감만으로 서버 비용 제한이 강제된다고 간주하지 않습니다.
 

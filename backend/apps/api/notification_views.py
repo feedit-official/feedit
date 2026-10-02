@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from django.http import JsonResponse
 from django.utils import timezone
-from django.views.decorators.http import require_http_methods
+from django.views.decorators.http import require_GET, require_http_methods
 
 from apps.core.models import Notification, NotificationSetting, TermRequest
 
@@ -77,6 +77,8 @@ def notifications(request):
         # ★ 운영 계정은 직업 인증 심사 대기 건수를 알림으로 받는다
         if request.user.is_superuser or request.user.is_staff:
             service.notify_admin_job_pending(profile)
+        # 성별이 비어 있으면 한 번 묻는다 (2026-10-02) — 가입에서 성별을 받기 전의 회원
+        service.ensure_gender_prompt(profile)
         rows = list(_mine(profile).order_by("-created_at", "-id")[:LIST_LIMIT])
         return _ok({"items": [_row(r) for r in rows], "unread": _unread(profile),
                     "setting": _setting_payload(profile)})
@@ -105,6 +107,17 @@ def notifications(request):
         n = rows.update(deleted_at=now, read_at=now)
         return _ok({"deleted": n, "unread": _unread(profile)})
     return _error("op 는 read · read_all · delete · delete_all 중 하나여야 합니다.")
+
+
+# ── 상단 띠 공지 (2026-10-02) ──────────────────────────────
+
+@require_GET
+def announcements(request):
+    """GET /api/auth/announcements — 지금 걸린 실시간 공지. 로그인 없이도 본다.
+
+    화면(ticker.js)이 30초마다 부른다. 값은 15초 캐시(service.live_announcements).
+    """
+    return _ok({"items": service.live_announcements()})
 
 
 # ── 알림 설정 ──────────────────────────────────────────────

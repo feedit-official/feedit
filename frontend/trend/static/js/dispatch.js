@@ -1418,7 +1418,7 @@ export function trRender(id){
               yoy===null?'1년치가 모여야 나옵니다':'같은 날 언급량 차이',yoy===null||yoy>=0?1:0)+
         kpi('신규 진입 키워드',newKw?trEsc(newKw.term):'–','',newKw?'최근 7일 새로 감지 · '+Math.round(newKw.temp||0)+'°':'최근 7일 새로 잡힌 말 없음',1)+'</div>'+
       '<div class="trGrid">'+
-        '<div class="panelC"><div class="gHead"><h3>언급량 · 온도 추이</h3></div>'+
+        '<div class="panelC"><div class="gHead"><h3>'+trEsc(kw)+' · 언급량 지수 · 트렌드 온도 추이</h3></div>'+
           /* ★ 2026-09-22 — 기본 단위를 '일별' 로. 차트 엔진 기본값은 'w'(26주) 라
              그대로 두면 최근 1주가 아니라 반년치가 뜬다. 여기서 못 박는다.
              사용자가 주별·월별을 누르면 그때 바뀐다(토글은 그대로 동작). */
@@ -1657,9 +1657,9 @@ export function trRender(id){
       kpi('가장 뜨거운 축', trEsc(topCat), '', '축별 동시 언급 문서 합산 1위', 1) +
       kpi('축당 평균 다양성', (ALL.length / cats.length).toFixed(1), '개', '핵심 연관어 수', 1) + '</div>' +
       '<div class="trGrid">' +
-      '<div class="panelC"><div class="gHead"><h3>연관어 수 추이</h3></div>' +
+      '<div class="panelC"><div class="gHead"><h3>' + trEsc(kw) + ' · 연관어 수 추이</h3></div>' +
       '<div data-chart="assocMain"></div>' +
-      '<div class="note"><i>◆</i>연관어 수가 온도보다 먼저 꺾이면 화제성은 남았지만 다양성이 좁아지고 있다는 신호입니다.</div></div>' +
+      '<div class="note"><i>◆</i>날마다 ' + trEsc(kw) + josa(kw, '과', '와') + ' 함께 언급된 연관어의 개수입니다. 이 수가 트렌드 온도보다 먼저 꺾이면 화제성은 남았지만 다양성이 좁아지고 있다는 신호입니다.</div></div>' +
       '<div class="panelC"><div class="ph"><h3>축별 비중</h3><em>KEYWORDS</em></div>' +
       '<table class="mTable"><tr><th>축</th><th></th><th>키워드 수</th></tr>' +
       catTotals.map(c => {

@@ -384,6 +384,15 @@ def actions_for(rep: dict, mode: str = "general") -> list[dict]:
     return acts
 
 
+class _Server(ThreadingHTTPServer):
+    """요청마다 스레드 하나. 대기열(listen backlog)만 넉넉히 (2026-10-02).
+
+    기본값 5 는 기수 30명이 한꺼번에 질문 · 입혀보기를 누르면 접속 자체가 밀려
+    거절될 수 있다. 실제 처리는 스레드라 줄 길이만 늘리면 된다."""
+    request_queue_size = 128
+    daemon_threads = True
+
+
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
     server_version = "feedit-chat/dev"
@@ -484,7 +493,16 @@ class Handler(BaseHTTPRequestHandler):
 
     def _client_ip(self) -> str:
         """앞단(Caddy)이 붙여 주는 X-Forwarded-For 의 **맨 앞**이 진짜 손님이다.
-        뒤쪽은 중간 프록시라 그걸 쓰면 전원이 한 IP 로 묶여 다 같이 막힌다."""
+        뒤쪽은 중간 프록시라 그걸 쓰면 전원이 한 IP 로 묶여 다 같이 막힌다.
+
+        ★ 버셀 중계를 거치면 (2026-10-02) 운영 nginx 가 X-Forwarded-For 를 '버셀 함수 IP' 로
+          덮어써, 30명이 IP 몇 개를 같이 쓰며 분당 횟수 제한을 나눠 먹었다. 중계가 손님 IP 를
+          X-FEEDiT-Client-IP 로 따로 보낸다. **공유 토큰이 맞는 요청에서만** 믿는다 —
+          토큰 없이 밖에서 지어 보낸 값으로 제한을 피할 수 없게."""
+        relayed = (self.headers.get("X-FEEDiT-Client-IP") or "").strip()
+        if relayed and CHAT_TOKEN and _token_ok(self.headers.get("X-FEEDiT-Token")) \
+                and re.fullmatch(r"[0-9A-Fa-f:.]{3,45}", relayed):
+            return relayed
         fwd = self.headers.get("X-Forwarded-For") or ""
         return (fwd.split(",")[0].strip() or self.client_address[0])
 
@@ -790,7 +808,7 @@ def main():
     # ★ 여기서 실패해도(RDS 가 잠깐 안 닿는 등) 죽지 않는다. 죽으면 컨테이너가
     #   재시작을 반복하고 앞단 nginx 는 502 만 돌려줘 원인이 안 보인다(2026-09-18).
     #   떠 있으면 /v1/health 가 실패 종류를 말하고, 다음 요청 때 엔진을 다시 만든다.
-    srv = ThreadingHTTPServer((HOST, port), Handler)
+    srv = _Server((HOST, port), Handler)
     print(f"feedit-chat  http://{HOST}:{port}")
     try:
         e = engine()

@@ -1,5 +1,5 @@
 from django.urls import path
-from . import dictionary_views, operations_views, service_views, views
+from . import dictionary_views, notice_views, operations_views, service_views, views
 
 
 app_name = "dashboard"
@@ -43,6 +43,11 @@ urlpatterns = [
     path("service/events/", operations_views.service_events, name="service_events"),
     path("service/votes/", operations_views.service_votes, name="service_votes"),
     path("service/comments/", operations_views.service_comments, name="service_comments"),
+    # 알림 보내기 · 실시간 공지 (2026-10-02)
+    path("service/notices/", notice_views.notices, name="service_notices"),
+    path("service/notices/send/", notice_views.notice_send, name="notice_send"),
+    path("service/notices/ticker/", notice_views.ticker_create, name="ticker_create"),
+    path("service/notices/ticker/<int:pk>/end/", notice_views.ticker_end, name="ticker_end"),
 
     path("database/", operations_views.database_overview, name="database_overview"),
     path("database/query/", operations_views.database_query, name="database_query"),

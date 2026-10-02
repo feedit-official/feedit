@@ -517,6 +517,15 @@ a.tlCard:hover{box-shadow:inset 0 0 0 1px var(--tpl-ink)}
 .vsSide.b .vsName{flex-direction:row-reverse}.vsSide.b .vsName i{background:var(--coral)}
 .vsTemp{font-family:var(--num);font-size:50px;font-weight:600;line-height:.95;letter-spacing:-.04em}
 .vsTemp small{font-size:22px;vertical-align:top}
+/* 무슨 숫자인지 (2026-10-02) — 큰 숫자 바로 밑에 지표 이름 */
+.vsMetric{font-size:10.5px;letter-spacing:.06em;color:var(--tpl-cap);margin-top:-2px}
+.vsChartHead{display:flex;align-items:center;flex-wrap:wrap;gap:6px 12px;margin-top:4px;font-size:11.5px;color:var(--tpl-cap)}
+.vsChartHead>b{font-size:12px;color:var(--tpl-ink);font-weight:700}
+.vsKey{display:inline-flex;align-items:center;gap:5px;font-style:normal;font-size:11px;font-weight:600;color:var(--tpl-ink)}
+.vsKey i{width:8px;height:8px;border-radius:50%;background:var(--tpl-ink)}
+.vsKey.b{color:var(--tpl-coral-ink)}.vsKey.b i{background:var(--coral)}
+.vsChartHead .vsKey.a{margin-left:auto}
+.vsRow--head .vsKey{margin-left:8px;font-size:10.5px}
 .vsMeta{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.vsSide.b .vsMeta{justify-content:flex-end}
 .vsMeta .tplDelta{font-size:15px}
 .vsBadge{width:48px;height:48px;justify-self:center;border-radius:50%;background:var(--tpl-ink);color:#fff;display:grid;
@@ -554,7 +563,9 @@ a.tlCard:hover{box-shadow:inset 0 0 0 1px var(--tpl-ink)}
 .lbCard:hover{transform:translateY(-2px)}
 .lbCard .lbRank{font-family:var(--num);font-size:38px;font-weight:700;line-height:1;letter-spacing:-.04em}
 .lbCard .lbName{font-size:16px;font-weight:700;word-break:keep-all}
-.lbCard .lbTemp{font-family:var(--num);font-size:26px;font-weight:600;letter-spacing:-.03em}
+.lbCard .lbTemp{font-family:var(--num);font-size:26px;font-weight:600;letter-spacing:-.03em;display:flex;align-items:baseline;gap:6px}
+.lbCard .lbTemp small{font-family:inherit;font-size:10.5px;font-weight:500;letter-spacing:.02em;opacity:.62}
+.lbRowsHead{display:flex;justify-content:space-between;padding:0 4px 6px;font-size:10.5px;color:var(--tpl-cap)}
 .lbMeta{display:flex;align-items:center;flex-wrap:wrap;gap:6px;font-size:11px;color:var(--tpl-cap)}
 .lbCard--top{background:var(--tpl-ink);color:#fff}
 .lbCard--top .lbRank{color:var(--coral)}.lbCard--top .lbMeta{color:rgba(255,255,255,.72)}

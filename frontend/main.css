@@ -22,6 +22,7 @@
 @import './account/static/css/profile.css';
 @import './account/static/css/xp.css';   /* 경험치 창 · 홈페이지 피드백 */
 @import './account/static/css/notify.css';
+@import './app_shell/static/css/ticker.css';
 @import './home/static/css/chat_popup.css';
 @import './account/static/css/job.css';
 @import './app_shell/static/css/responsive.css';

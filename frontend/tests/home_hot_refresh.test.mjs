@@ -48,6 +48,11 @@ let CARDS = cards([[1, '살로몬 XT-6', 12, 75], [2, '아크테릭스 베타', 
 const calls = [];
 globalThis.fetch = async (u, opt = {}) => {
   const url = String(u);
+  /* 상단 실시간 공지(ticker.js)도 화면이 보이면 다시 묻는다 — 이 시험이 세는 것(HOT · 살말)과는 따로다 */
+  if (url.startsWith('/api/auth/announcements')) {
+    const text = JSON.stringify({ status: 'ok', data: { items: [] } });
+    return { ok: true, status: 200, text: async () => text, json: async () => JSON.parse(text) };
+  }
   calls.push({ url, cache: opt.cache });
   let body = null;
   if (url.startsWith('/api/trend?rank=hot')) body = HOT;
