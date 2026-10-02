@@ -308,7 +308,7 @@
   overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;
   scrollbar-width:thin;scrollbar-color:#cfcbc4 transparent;
 }
-.cpFitFull{box-sizing:border-box;padding:18px;display:flex;flex-direction:column;gap:12px}
+.cpFitFull{box-sizing:border-box;padding:18px;display:flex;flex-direction:column;gap:12px;min-height:100%}
 /* 접기 ↔ 펼치기로 새로 들어온 쪽만 한 번 서서히 나타난다(cpMorph 가 붙인다).
    예전엔 .cpFitFull 자체에 걸려 있어 옵션을 바꿀 때마다 다시 돌며 깜빡였다. */
 .cpFitIn{animation:cpFitFade .3s var(--ease)}
@@ -414,7 +414,9 @@
 .cpFitSheetList button svg{flex:0 0 auto}
 .cpFitSheetList button:hover{background:#f7f5f1}
 .cpFitSheetList button.on{background:var(--paper);font-weight:700}
-.cpFitWarn{margin:0;display:flex;gap:6px;font-size:11.5px;line-height:1.5;color:#6d6b67}
+/* Auto 안내는 설정 칸 맨 아래 (2026-10-02) — 옷 칸 바로 밑에 애매하게 끼어 있었다.
+   margin-top:auto 로 남는 높이를 위에 두고 바닥에 붙는다. */
+.cpFitWarn{margin:auto 0 0;padding-top:12px;border-top:1px solid #f1efea;display:flex;gap:6px;font-size:11.5px;line-height:1.5;color:#6d6b67}
 .cpFitWarn svg{flex:0 0 auto;margin-top:2px;color:#c2401f;stroke-width:1.8}
 .cpFitWarn.busy{color:var(--pink-1)}
 
@@ -644,9 +646,13 @@
 .cpFitLookHead b{font-size:12.5px;font-weight:700;letter-spacing:-.02em}
 .cpFitLookHead span{font-family:var(--num);font-size:11px;font-weight:600;color:#c2401f}
 .cpFitLookHead em{margin-left:auto;font-style:normal;font-size:10.5px;color:#8f8b84}
+/* ★ 가로 스크롤 칸은 위아래로 넘치는 것도 자른다(overflow-x:auto → overflow-y 도 잘림).
+   카드가 마우스오버에 1px 떠오르면 위 테두리 · 그림자가 칸 경계에 걸려 잘렸다 (2026-10-02).
+   안쪽에 여유(위 6 · 아래 14 · 옆 4px)를 두고 같은 만큼 바깥 여백을 당겨, 자리는 그대로 두고 잘리지 않게 한다. */
 .cpFitLookRow{
   display:flex;gap:8px;overflow-x:auto;overscroll-behavior-x:contain;scroll-snap-type:x proximity;
-  padding-bottom:2px;scrollbar-width:thin;scrollbar-color:#cfcbc4 transparent;
+  padding:6px 4px 14px;margin:-6px -4px -12px;scroll-padding-inline:4px;
+  scrollbar-width:thin;scrollbar-color:#cfcbc4 transparent;
 }
 .cpFitLookCard{
   flex:0 0 auto;width:212px;box-sizing:border-box;display:flex;align-items:center;gap:10px;padding:7px 10px 7px 7px;
@@ -769,12 +775,18 @@ a.cpFitLookCard:hover{border-color:var(--pink-0);box-shadow:0 4px 14px rgba(10,1
    대화 칸 오른쪽에 여백이 많이 남았다. 독이 사진 아래 한 줄을 차지하던 만큼 사진이
    위아래로 커진다. 좁으면(≤ 900px) 예전처럼 사진 아래 가로 독이다.
    ══════════════════════════════════════════════════════ */
-.cpFit{max-width:1120px}
+/* 2026-10-02 (2차) — 오른쪽으로 더(1120 → 1240px), 설정 칸도 넓혀(280 → 320px) 옷 칸 사진을 키운다. */
+.cpFit{max-width:1240px}
 @container vf (min-width:900px){
-  .cpFitGrid{height:min(640px,max(480px,78vh))}
-  .cpFitOutput{display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-rows:minmax(0,1fr)}
-  .cpFitStage{grid-column:1;grid-row:1;min-height:0;height:100%;box-sizing:border-box;padding:14px 0 14px 14px}
-  .cpFitDockWrap{grid-column:2;grid-row:1;align-items:center;padding:14px 14px 14px 12px}
+  .cpFitGrid{height:min(660px,max(500px,80vh));grid-template-columns:320px minmax(0,1fr)}
+  .cpFitFull{padding:20px}
+  .cpFitItems{gap:10px 12px}
+  /* 사진과 독을 한 묶음으로 가운데 — 독을 사진 바로 옆에 붙인다(2026-10-02 2차).
+     예전엔 사진이 남는 폭 가운데, 독은 오른쪽 끝이라 둘 사이가 휑했다. */
+  .cpFitOutput{display:flex;flex-direction:row;justify-content:center;align-items:stretch;gap:18px;padding:0 18px}
+  .cpFitStage{flex:0 1 auto;min-width:0;min-height:0;height:100%;box-sizing:border-box;padding:16px 0}
+  .cpFitStage:not(:has(.cpFitShot)){flex:1 1 auto}
+  .cpFitDockWrap{flex:0 0 auto;align-items:center;padding:16px 0}
   .cpFitDock{flex-direction:column;flex-wrap:nowrap;width:94px;padding:6px;gap:3px;border-radius:18px}
   .cpDockGroup{flex-direction:column}
   .cpDockSep{width:auto;height:1px;margin:3px 10px}
@@ -783,5 +795,14 @@ a.cpFitLookCard:hover{border-color:var(--pink-0);box-shadow:0 4px 14px rgba(10,1
   .cpDockEngine{flex-direction:column}
   .cpDockEng{width:100%;flex-direction:row;gap:6px;padding:8px 0}
   .cpDockGo{flex:0 0 auto;width:100%;margin:5px 0 0;min-height:68px;flex-direction:column;gap:3px;font-size:13px}
-  .cpFitDl{right:124px}
 }
+
+/* 모델 위 성별 표시 — 고른 쪽 이름을 알약으로 */
+.cpFitModelHead{display:flex;align-items:center;justify-content:space-between}
+.cpFitModelHead b{font-size:12px;font-weight:700}
+.cpFitModelHead .cpFitGender{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:999px;
+  font-family:inherit;font-size:11px;font-weight:700;letter-spacing:-.01em;background:var(--pink-0);color:#fff}
+.cpFitModelHead .cpFitGender::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--coral)}
+
+/* 저장 버튼 — 결과 사진 오른쪽 위 (2026-10-02) */
+.cpFitShot .cpFitDl{top:10px;right:10px;z-index:4}

@@ -979,13 +979,15 @@ function cpFitIsShop(item){ return Boolean(item&&(item.image||item.imageUrl)&&(i
 function cpFitShopLabel(item){
   return cpEsc(item.name||'상품')+' · '+cpEsc(cpFitSourceName(item)||'판매처')+'에서 상품 보기';
 }
-/* ② 코디 상품 줄 — 인스타 'Shop the look' 처럼 한 줄에 상품 카드. 카드를 누르면 판매처로. */
+/* ② 코디 상품 줄 — 인스타 'Shop the look' 처럼 한 줄에 상품 카드. 카드를 누르면 판매처로.
+   ★ 상품 사진은 referrer 없이 부른다 (2026-10-02). 크림 사진(네이버 pstatic)은 다른 사이트에서
+     온 요청을 막아 카드 사진이 빈 칸으로 떴다. 칸 사진 · 태그 카드도 같다. */
 function cpFitLookHTML(f,items){
   const rows=items.map((item,i)=>({item,i})).filter(r=>cpFitIsShop(r.item));
   if(!rows.length)return '';
   const cards=rows.map(({item,i})=>{
     const src=item.image||item.imageUrl, source=cpFitSourceName(item);
-    const body='<span class="cpFitLookImg"><img src="'+cpEsc(src)+'" alt="" loading="lazy"></span>'+
+    const body='<span class="cpFitLookImg"><img src="'+cpEsc(src)+'" alt="" loading="lazy" referrerpolicy="no-referrer"></span>'+
       '<span class="cpFitLookText">'+
         '<small>'+cpEsc(item.brand||vfKindName(item.auto?VF_AUTO:item.category))+'</small>'+
         '<b>'+cpEsc(item.name||vfKindName(item.auto?VF_AUTO:item.category))+'</b>'+
@@ -1063,7 +1065,7 @@ function cpFitTagsHTML(f,items){
     /* 점 오른쪽에 펴되, 사진 오른쪽 가장자리면 왼쪽으로. 위아래 끝이면 안쪽으로 붙인다. */
     const side=t.x>.55?' l':'', edge=t.y<.18?' top':t.y>.82?' bottom':'';
     const card='<div class="cpFitTagCard'+side+edge+'" role="tooltip">'+
-      '<span class="cpFitTagImg"><img src="'+cpEsc(src)+'" alt="" loading="lazy"></span>'+
+      '<span class="cpFitTagImg"><img src="'+cpEsc(src)+'" alt="" loading="lazy" referrerpolicy="no-referrer"></span>'+
       '<span class="cpFitTagText"><small>'+cpEsc([item.brand,source].filter(Boolean).join(' · '))+'</small>'+
         '<b>'+cpEsc(item.name||vfKindName(item.category))+'</b>'+
         (item.url?'<a href="'+cpEsc(item.url)+'" target="_blank" rel="noopener noreferrer" aria-label="'+cpFitShopLabel(item)+'">'+
@@ -1094,7 +1096,7 @@ function cpFitSetupHTML(f,items){
     return '<div class="cpFitSlot">'+
       '<button type="button" class="cpFitItem'+(src?' has':'')+'" data-vf-pick="'+index+'" '+
         'aria-label="'+(index+1)+'번 칸에 사진 '+(src?'바꾸기':'넣기')+'">'+
-        (src?'<img class="cpFitItemImg" src="'+cpEsc(src)+'" alt="'+cpEsc(item.name||vfKindName(kind))+'">'
+        (src?'<img class="cpFitItemImg" src="'+cpEsc(src)+'" alt="'+cpEsc(item.name||vfKindName(kind))+'" referrerpolicy="no-referrer">'
             :'<span class="cpFitPlus">'+VF_SVG(VF_IC.plus,18)+'</span>')+
         srcTag+'<span class="cpFitBadge" aria-hidden="true">'+vfKindIcon(kind,15)+'</span></button>'+
       '<button type="button" class="cpFitRemove" data-vf-remove="'+index+'" aria-label="'+(index+1)+'번 칸 빼기">'+
@@ -1124,7 +1126,10 @@ function cpFitSetupHTML(f,items){
     ?'<p class="cpFitWarn busy">사진이 어떤 옷인지 확인하는 중입니다…</p>'
     :'<p class="cpFitWarn">'+VF_SVG(VF_IC.warn,14)+
       '<span>Auto 분류는 정확하지 않을 수 있습니다.<br>칸 아래 이름을 눌러 직접 고를 수 있어요.</span></p>';
-  return '<div class="cpFitFull" data-vf-id="full">'+models+
+  /* 모델 위 성별 표시 (2026-10-02) — 사진만으로는 지금 누구로 입히는지 한눈에 안 들어온다 */
+  const who=f.model==='man'?'남성':'여성';
+  const modelHead='<div class="cpFitModelHead"><b>모델</b><span class="cpFitGender g-'+(f.model==='man'?'man':'woman')+'">'+who+'</span></div>';
+  return '<div class="cpFitFull" data-vf-id="full">'+modelHead+models+
     '<div class="cpFitClothesHead"><b>옷</b><span>'+items.length+' / '+VF_MAX+'</span></div>'+
     '<div class="cpFitClothes"><div class="cpFitItems">'+slots+add+'</div>'+sheet+'</div>'+note+'</div>';
 }
@@ -1137,7 +1142,7 @@ function cpFitMiniHTML(f,items){
     items.map((item,i)=>{
       const kind=item.auto?VF_AUTO:item.category, src=item.image||item.imageUrl;
       return '<button type="button" class="cpMiniSq" data-vf-side="1" aria-label="'+(i+1)+'번 칸 · '+cpEsc(vfKindName(kind))+' — 눌러서 설정 펼치기">'+
-        (src?'<img src="'+cpEsc(src)+'" alt="">':vfKindIcon(kind,18))+'</button>';
+        (src?'<img src="'+cpEsc(src)+'" alt="" referrerpolicy="no-referrer">':vfKindIcon(kind,18))+'</button>';
     }).join('')+
     (items.length<VF_MAX?'<button type="button" class="cpMiniSq add" data-vf-side="1" aria-label="칸 추가 — 눌러서 설정 펼치기">'+VF_SVG(VF_IC.plus,16)+'</button>':'')+
     '</div>';
@@ -1184,10 +1189,16 @@ function cpFitHTML(m){
   const open=f.side!=='closed';
   const engine=cpFitEngineOf(f);
   const engineSpec=VF_ENGINES.find(e=>e.v===engine);
+  /* 결과 저장 — data URL 을 그대로 내려받는다. 서버를 한 번 더 부르지 않는다.
+     ★ 2026-10-02 — 사진 오른쪽 위에 얹는다. 예전엔 결과 칸 오른쪽 위에 떠 있어 사진과
+       떨어져 보였고, 세로 독을 세운 뒤엔 독 옆 빈자리에 혼자 남았다. */
+  const save=(f.result&&!f.loading)
+    ?'<a class="cpFitDl" href="'+cpEsc(f.result)+'" download="feedit-fitting-'+cpEsc(f.key)+'.'+cpFitExt(f)+'"'+
+     ' title="이미지 저장" aria-label="착용 이미지 저장">'+CP_IC_DOWN+'</a>':'';
   const stage=f.loading?'<div class="cpFitLoader" aria-label="착용 이미지 생성 중"><i class="cpStar">✧</i></div>':
     f.result?'<div class="cpFitShot" style="aspect-ratio:'+cpFitRatio(f)+'">'+
       '<img class="cpFitResult" src="'+cpEsc(f.result)+'" alt="AI 모델 착용 결과" data-vf-tagclose="1">'+
-      cpFitTagsHTML(f,items)+'</div>':
+      cpFitTagsHTML(f,items)+save+'</div>':
     '<div class="cpFitResultEmpty">완성된 착용 이미지가<br>여기에 나타납니다.</div>';
   /* 무엇으로 몇 초 걸렸나 (2026-10-01) — 엔진을 고르는 이유가 시간이라, 결과마다 남긴다. */
   const made=(f.result&&!f.loading&&f.made&&f.made.label)
@@ -1196,10 +1207,6 @@ function cpFitHTML(m){
   const state=(!f.loading&&f.stateKind==='error')
     ?'<p class="cpFitState error">'+cpEsc(f.status||'')+
      '<button type="button" class="cpFitRetry" data-vf-retry="1">다시 시도</button></p>':made;
-  /* 결과 저장 — data URL 을 그대로 내려받는다. 서버를 한 번 더 부르지 않는다. */
-  const save=(f.result&&!f.loading)
-    ?'<a class="cpFitDl" href="'+cpEsc(f.result)+'" download="feedit-fitting-'+cpEsc(f.key)+'.'+cpFitExt(f)+'"'+
-     ' title="이미지 저장" aria-label="착용 이미지 저장">'+CP_IC_DOWN+'</a>':'';
   return '<section class="cpFit'+(open?'':' side-closed')+'" data-fit-key="'+cpEsc(f.key)+'">'+
     '<div class="cpFitHead">'+
       '<button type="button" class="cpFitSideBtn" data-vf-side="1" aria-expanded="'+open+'" '+
@@ -1209,7 +1216,6 @@ function cpFitHTML(m){
       '<aside class="cpFitSetup">'+(open?cpFitSetupHTML(f,items):cpFitMiniHTML(f,items))+'</aside>'+
       '<div class="cpFitOutput">'+
         '<span class="cpFitEngineTag">'+VF_SVG(VF_IC[engine],12)+'<span>'+cpEsc(engineSpec.name)+'</span></span>'+
-        save+
         '<div class="cpFitStage">'+stage+state+'</div>'+
         cpFitDockHTML(f)+
       '</div></div>'+cpFitLookHTML(f,items)+cpFitNextHTML(f)+'</section>';
