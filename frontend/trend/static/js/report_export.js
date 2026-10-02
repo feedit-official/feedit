@@ -25,10 +25,10 @@ function crc32(bytes){
   for (let i = 0; i < bytes.length; i++) c = CRC[(c ^ bytes[i]) & 0xFF] ^ (c >>> 8);
   return (c ^ -1) >>> 0;
 }
-const utf8 = s => new TextEncoder().encode(s);
+export const utf8 = s => new TextEncoder().encode(s);
 
 /* files: [{name, data(Uint8Array)}] → .xlsx 한 덩어리 */
-function zipStore(files){
+export function zipStore(files){
   const chunks = [], central = [];
   let offset = 0;
   files.forEach(f => {
@@ -67,9 +67,9 @@ function zipStore(files){
 }
 
 /* ── 시트 XML ── */
-const xmlEsc = s => String(s == null ? '' : s)
+export const xmlEsc = s => String(s == null ? '' : s)
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-const colName = i => {
+export const colName = i => {
   let s = '', n = i + 1;
   while (n > 0){ const r = (n - 1) % 26; s = String.fromCharCode(65 + r) + s; n = ((n - r) / 26) | 0 }
   return s;

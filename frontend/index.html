@@ -325,8 +325,9 @@
               </div>
             </div>
           </div>
-          <span style="font-family:var(--num);font-size:10px;letter-spacing:.24em;color:var(--pink-2)">2026.08 · W2</span>
-          <!-- 금주의 리포트에서만 뜬다 — 엑셀로 저장 · 링크로 공유 (trend/static/js/report_export.js) -->
+          <!-- 오른쪽 위 — 공유 · 다운로드 아이콘이 맨 위, 그 아래 주차.
+               금주의 리포트와 EDIT 6탭(지표가 뜬 뒤)에서 선다 (trend/static/js/report_export.js · metric_export.js) -->
+          <div class="trHeadR">
           <div class="trHeadActs" id="trHeadActs" hidden>
             <button type="button" class="trAct" id="trShareBtn" title="이미지 공유" aria-label="이미지 공유">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -346,6 +347,8 @@
                 <button type="button" role="menuitem" data-dl-fmt="png">이미지 <em>.png</em></button>
               </div>
             </div>
+          </div>
+          <span class="trWeek" id="trWeek" style="font-family:var(--num);font-size:10px;letter-spacing:.24em;color:var(--pink-2)">2026.08 · W2</span>
           </div>
         </div>
         <div class="trTabs" id="trTabs"></div>

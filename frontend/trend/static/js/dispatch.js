@@ -19,6 +19,7 @@ import { smBarFill, svRender } from './discount_resale.js';
 import { trCountUp } from './count_up.js';
 import { trDial, wkAnimate } from './weekly_report.js';
 import { buildXlsx, canvasToPdf, canvasToPng, captureElement, saveBlob, shareImage } from './report_export.js';
+import { metricXlsx } from './metric_export.js';
 import { trSideOpen } from '../../../app_shell/static/js/router.js';
 import { weeklyReport, weeklyVideos, savedProducts, setSavedProduct } from '../../../account/static/js/account_api.js';
 
@@ -1100,10 +1101,12 @@ export function trRender(id){
   const kk=$('#trKicker'); if(kk)kk.hidden=(id!=='report');
   /* ★ 2026-09-19 — 헤더의 주차 표시가 '2026.08 · W2' 로 박혀 있었다.
      금주의 리포트와 같은 계산(wkRange)으로 오늘이 속한 주를 적는다. */
-  /* 저장 · 공유 버튼은 금주의 리포트에서만 선다 */
-  const acts=$('#trHeadActs'); if(acts)acts.hidden=(id!=='report');
-  if(id!=='report'){ const m=$('#trDlMenu'); if(m)m.hidden=true }
-  const wkSpan=$('.trHead>span');
+  /* 저장 · 공유 버튼 — 금주의 리포트, 그리고 EDIT 6탭은 검색한 지표가 화면에 떴을 때만 선다.
+     값이 도착하면 trRender 가 다시 불리므로 그때 켜진다. */
+  const showActs=id==='report'||!!metricCtx(id);
+  const acts=$('#trHeadActs'); if(acts)acts.hidden=!showActs;
+  if(!showActs){ const m=$('#trDlMenu'); if(m)m.hidden=true }
+  const wkSpan=$('#trWeek');
   if(wkSpan){
     wkSpan.hidden=(id==='report');
     const rg=wkRange();
@@ -2437,6 +2440,75 @@ function wkSheets(){
   return [{name:'금주의 리포트', rows, widths:[22, 42, 12, 34]}];
 }
 
+/* ══════════════ EDIT 지표 — 저장 · 공유 (2026-10-02) ══════════════
+   언급량·온도 / 연관어 / 긍부정 / 수명주기 / 할인률 변화 / 리세일 지수에서
+   검색한 지표가 뜨면 오른쪽 위 아이콘이 선다. 엑셀은 metric_export.js 가 기획 리포트 양식으로 만들고,
+   이미지 · PDF 는 금주의 리포트와 같은 방식으로 화면을 찍는다.
+   값은 화면이 이미 받아 둔 캐시만 쓴다 — 아직 없으면 null(버튼을 세우지 않는다). */
+const METRIC_TABS=['temp','assoc','sentiment','life','stock','resale'];
+const METRIC_NAME={temp:'언급량온도',assoc:'연관어',sentiment:'긍부정',life:'수명주기',stock:'할인율변화',resale:'리세일지수'};
+function metricCtx(id){
+  if(METRIC_TABS.indexOf(id)<0)return null;
+  const rp=wkRange(), period=rp[0].replace('.','-')+'-'+rp[1].split(' · ')[0];
+  const src=u=>location.origin+u;
+  if(id==='temp'||id==='assoc'||id==='sentiment'){
+    const kw=KW.q; if(!kw)return null;
+    if(id==='temp'){
+      const st=stateOf(kw), S=summaryOf(kw);
+      if(st.status!=='ok'||!S||S.temp===null)return null;
+      return {id,kw,period,entry:st,summary:S,search:stateOfUrl(searchUrl(kw)),
+        source:src('/api/trend?term='+encodeURIComponent(kw)+'&days=400')};
+    }
+    const url=id==='assoc'?'/api/assoc?term='+encodeURIComponent(kw):sentimentUrl(kw,KW.f);
+    const st=stateOfUrl(url);
+    if(st.status!=='ok'||!st.data)return null;
+    if(id==='assoc'&&!(st.data.items||[]).length)return null;
+    if(id==='sentiment'&&!(st.data.series||[]).length)return null;
+    return {id,kw,period,data:st.data,trend:stateOf(kw),source:src(url)};
+  }
+  if(id==='stock'?!FS.stockItem:!fsItem())return null;
+  const url=editUrl(id), st=stateOfUrl(url);
+  if(st.status!=='ok'||!st.data)return null;
+  if(id==='stock'&&!st.data.product)return null;
+  if(id==='life'&&['태동','확산','정점','쇠퇴'].indexOf(st.data.stage)<0)return null;
+  return {id,period,data:st.data,label:fsSelectionLabel()||st.data.label||fsItemFull(),
+    mode:RESALE_MODE,source:src(url)};
+}
+/* 이미지 · PDF 파일 이름 — 엑셀과 같은 규칙 */
+function metricFileBase(ctx){
+  const who=ctx.kw||(ctx.id==='stock'&&ctx.data.product&&ctx.data.product.name)||
+    (ctx.id==='resale'&&ctx.data.product&&(ctx.data.product.model_code||ctx.data.product.name))||ctx.label||'';
+  return 'FEEDiT_'+METRIC_NAME[ctx.id]+'_'+String(who).replace(/[\\/:*?"<>|\s]+/g,'_').slice(0,40)+'_'+ctx.period;
+}
+/* 찍을 때 빼는 것 — 저장·공유 버튼, 검색 추천 목록 */
+const METRIC_SHOT_IGNORE='#trHeadActs, .fsSug, .fsClear';
+async function metricDownload(fmt){
+  const ctx=metricCtx(TR_CUR);
+  if(!ctx){ trToast('먼저 검색해 지표를 띄워 주세요.'); return }
+  if(fmt==='xlsx'){
+    try{
+      const out=metricXlsx(ctx);
+      saveBlob(out.blob, out.filename);
+      trToast('엑셀 파일로 저장했습니다.');
+    }catch(err){
+      trToast('엑셀 파일을 만들지 못했습니다 ('+(err&&err.message||err)+').');
+    }
+    return;
+  }
+  const label=fmt==='pdf'?'PDF':'이미지';
+  const items=$$('#trDlMenu button'); items.forEach(b=>b.disabled=true);
+  trToast(label+'를 만드는 중입니다…');
+  try{
+    const canvas=await captureElement($('.trMain'),{ignore:METRIC_SHOT_IGNORE});
+    const base=metricFileBase(ctx);
+    if(fmt==='pdf')saveBlob(await canvasToPdf(canvas), base+'.pdf');
+    else saveBlob(await canvasToPng(canvas), base+'.png');
+    trToast(label+' 파일로 저장했습니다.');
+  }catch(err){
+    trToast(label+' 파일을 만들지 못했습니다 ('+(err&&err.message||err)+').');
+  }finally{ items.forEach(b=>b.disabled=false) }
+}
+
 /* 다운로드 — 아이콘을 누르면 엑셀 · PDF · 이미지 중 고르는 드롭다운이 열린다 */
 const wkMenu=()=>$('#trDlMenu');
 function wkMenuSet(open){
@@ -2480,10 +2552,26 @@ document.addEventListener('click', async e=>{
   const dl=t&&t.closest('#trDownloadBtn');
   if(dl){ const m=wkMenu(); wkMenuSet(!!m&&m.hidden); return }
   const pick=t&&t.closest('[data-dl-fmt]');
-  if(pick){ wkMenuSet(false); wkDownload(pick.dataset.dlFmt); return }
+  if(pick){ wkMenuSet(false); (TR_CUR==='report'?wkDownload:metricDownload)(pick.dataset.dlFmt); return }
   /* 메뉴 밖을 누르면 닫는다 */
   if(wkMenu()&&!wkMenu().hidden)wkMenuSet(false);
   const sh=e.target.closest&&e.target.closest('#trShareBtn');
+  if(sh&&TR_CUR!=='report'){
+    /* EDIT 지표 — 화면을 PNG 로 찍어 공유한다 */
+    const ctx=metricCtx(TR_CUR);
+    if(!ctx){ trToast('먼저 검색해 지표를 띄워 주세요.'); return }
+    if(sh.disabled)return;
+    sh.disabled=true;
+    trToast('공유할 이미지를 만드는 중입니다…');
+    try{
+      const png=captureElement($('.trMain'),{ignore:METRIC_SHOT_IGNORE}).then(canvasToPng);
+      const msg=await shareImage(png, metricFileBase(ctx)+'.png', 'FEEDiT '+(TR_META[TR_CUR]?TR_META[TR_CUR][0]:'지표'));
+      if(msg)trToast(msg.replace('리포트 이미지','지표 이미지'));
+    }catch(err){
+      trToast('이미지를 만들지 못했습니다 ('+(err&&err.message||err)+').');
+    }finally{ sh.disabled=false }
+    return;
+  }
   if(sh){
     if(WR.state==='loading'){ trToast('리포트를 아직 불러오는 중입니다. 잠시 뒤 다시 눌러 주세요.'); return }
     if(sh.disabled)return;
