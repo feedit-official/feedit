@@ -5437,3 +5437,54 @@ KREAM 주소를 대표로 고르던 문제도 확인했다. 무신사 계열 이
   전체 `manage.py test apps` 실패 목록은 손대기 전 HEAD 와 똑같다(이메일 설정 등 환경 탓 42건).
 - 렌더: 관리자 화면 1440px, 상단 공지 띠 1440/390px, 성별 창, 대기열, 이 대화/새 대화 선택 카드(390px 에서 상자가 밀려도 가운데).
 - 기존 실패(HEAD 와 같음): `chat_history_db` · `discount_product_ui` · `google_login_ui` · `legal_pages` · `products_gender_api` · `resale_product_ui` · `term_request_ui`.
+
+## 2026-10-03 12:25 KST — Claude (Opus 5.5) · 요금제(프리 · 프로 · 비즈니스) — 베타 이후에만 켜지게
+
+### 무엇을 왜 고쳤나
+
+- 요금제 화면은 표만 있고 실제로 아무것도 막지 않았다. 챗봇 서버의 플랜 게이트(`ChatBot/app/plans.py`)는 있었지만
+  **요청이 스스로 적은 plan 을 믿었고**(화면은 늘 `FREE` 를 보냈다), Django 에는 요금제 개념이 없었다.
+- 지금은 베타라 동작을 바꾸면 안 된다. 그래서 **스위치 하나**(`FEEDIT_PUBLIC_BETA`, 기존 챗봇 변수 · 기본 1)로
+  Django · 챗봇 · 화면이 함께 바뀌게 했다. 변수가 없어도 베타다 — 운영 `.env` 는 그대로 두면 된다.
+- 결제가 없으므로 프로 · 비즈니스는 **신청 → 운영 계정 승인**, 해지(프리로)는 승인 없이 바로.
+
+### 무엇이 생겼나
+
+- 서버 `backend/apps/api/plan_policy.py`(표 · 판정, DB 없음) · `plan_views.py`(신청 · 취소 · 해지 · 관리자 목록/승인/반려/되돌리기 · 챗봇 하루 횟수).
+  요금제 값은 `app_user.profile_metadata`(`plan` · `plan_request` · `plan_history` · `plan_chat`) — 새 표 없음.
+  로그인 응답 `user.billing`, 로그인 전 `/me` 의 `billing` 에 상태를 싣는다. 기존 `user.plan` 칸은 뜻을 바꾸지 않았다.
+- 챗봇 하루 횟수: 베타 이후 화면이 `POST /api/auth/plan-chat-use` 로 먼저 센다(프리 하루 20회 · 429). 통과하면 Django 가
+  서명한 짧은 확인증(`plan_ticket`, HMAC · 10분)을 주고, 챗봇은 **그 확인증만** 믿는다. 없거나 틀리면 FREE + IP 로 한 번 더 센다.
+  확인증이 있으면 IP 가 아니라 계정으로 센다(같은 IP 의 다른 사람이 횟수를 나눠 먹지 않게).
+- 화면 `account/static/js/plan.js`: 서버가 `enforced:true` 를 줄 때만 막는다. `billing` 이 없으면(옛 서버) 막지 않는다.
+  · 트렌드 분석 EDIT — 프리는 언급량·온도만. 나머지 다섯 탭은 사이드바 `PRO` 표시 + 본문 안내(지표를 받으러 가지도 않는다).
+  · 리포트 내보내기 — 트렌드 EDIT/금주의 리포트 저장 · 공유, 챗봇 리포트 이미지 저장 · 공유 · 스토리 이미지.
+  · 요금제 화면 — 카드 누르면 신청/해지/신청 취소 창(`#planModal`), 카드에 '이용 중 · 오늘 AI 챗 n/20회' · '신청 심사 중'.
+    머리글('베타 기간엔…')과 자주 묻는 질문의 프리 제한 문구는 베타 이후에만 표에 맞게 바뀐다.
+  · 운영 계정 메뉴 '요금제 신청 심사'(`#planReviewModal`) — 베타 이후에만 보인다. 승인 · 반려(사유) · 프리로 되돌리기.
+- 알림 종류 `PLAN_REVIEW`(결과 · 운영 계정의 신청 대기 N건). `migrations/0070` — choices 만 바뀌어 DB 변화 없음(손으로 씀).
+- 알파: 베타 이후에는 발급 중단 · 배너 없음 · 알파 계정은 프리로 본다. 베타 동안 알파 동작은 그대로.
+- 버셀 `auth/[action].js` 허용 목록에 `plan` · `plan-request` · `plan-requests` · `plan-review` · `plan-chat-use`.
+
+### 어떻게 확인했나
+
+- `python -m unittest apps.api.test_plan_policy` 17건 통과(DB 없이).
+- Django 뷰 `apps.api.test_plan_views` 7건 통과 — 로컬 임시 PostgreSQL 17 컨테이너(운영 RDS · 터널 아님)에서 0001~0070 마이그레이션을 새로 적용해 돌렸다.
+  pgvector 가 없는 이미지라 컨테이너 안에만 이름만 같은 `vector` 타입을 만들어 넣었다(벡터 연산은 시험하지 않음).
+  `manage.py test apps.api apps.dashboard apps.core` 실패 목록은 손대기 전 HEAD 와 **똑같다**(39건, 기존 실패) · 229 → 253건.
+  `makemigrations core --check` 에 알림 종류는 나오지 않는다(나오는 것은 다른 작업자의 기존 모델 변경).
+- 챗봇 `tests.test_plan_ticket` 9건 — Django 서명 코드를 직접 불러와 챗봇이 검사하는지, 실제 `/v1/chat` 을 띄워
+  베타=BUSINESS · 베타 이후=확인증 요금제 · 프리 21번째 429 · 다른 계정은 통과를 봤다. `tests/run.sh`(jsdom) 결과 HEAD 와 같음.
+- 화면 새 `tests/plan_ui.test.mjs` 66건 — 베타(카드 안내만 · 잠금 없음 · 알파 주소 · 확인증 없음)와 베타 이후(잠금 · 신청 · 해지 · 하루 한도 · 관리자 심사),
+  다시 베타로 돌아가면 원래대로. 나머지 `npm test` 파일별 통과/실패가 HEAD 와 같다(기존 실패 6개: `discount_product_ui` 등, 실패 내용도 같음).
+  `vite build` 통과. 브라우저(1440px · 375px)로 요금제 카드 · 신청 창 · 잠금 안내 · 심사 목록을 봤다 — 375px 에서 '프로' 가 세로로 쪼개져 줄바꿈 규칙을 더했다.
+
+### 남은 것 · 주의
+
+- **트렌드 지표 API 자체는 요금제로 막지 않는다.** `/api/assoc` 등은 버셀 엣지에서 캐시되는 공용 데이터라 사람마다 다르게 줄 수 없다.
+  화면 잠금은 안내이고, 개발자도구로 주소를 직접 부르면 데이터는 보인다. 돈이 드는 챗봇만 서버가 막는다.
+- **데이터 API 연동(비즈니스)은 권한 값(`features.data_api`)만 있다.** 외부에 내줄 데이터 API 자체는 이 저장소에 없다.
+- 베타 이후 프리의 챗봇 답에서는 챗봇의 기존 규칙(`ChatBot/app/plans.py` GATE)대로 연관어 · 구매의향 등 PRO 지표가 빠진다(새로 정한 것이 아니다).
+- '리포트 내보내기' 에 공유(이미지)까지 넣었다. 공유를 프리에 열고 싶으면 `dispatch.js` · `chat_popup.js` 의 `planGuard('report_export')` 자리만 빼면 된다.
+- 자주 묻는 질문의 '랭킹은 TOP 10까지' 는 베타 동안 그대로 두었다(요금제 표에 없는 제한이다).
+- 베타 종료 순서는 `docs/DEPLOYMENT.md` '베타 종료 — 요금제 켜기'.

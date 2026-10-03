@@ -45,6 +45,8 @@ from . import notification_service
 from .activity_views import active_saved_count, active_vote_count
 from .badges import badge_states
 from .job_views import job_request_public
+from . import plan_policy
+from .plan_views import billing_state
 from .xp_service import mark_visit, xp_state
 
 
@@ -144,6 +146,9 @@ def _user_payload(user, profile):
         # 요금제 — 운영 계정은 ADMIN, 그 밖은 profile_metadata.plan (없으면 FREE).
         #   알파 테스트용 TEST 플랜은 같은 칸에 "TEST" 로 넣을 예정이다.
         "plan": "ADMIN" if user.is_superuser else (meta.get("plan") or "FREE"),
+        # 요금제 상태 (plan_policy.py · 2026-10-03). 베타 동안은 enforced=false · features 전부 열림 —
+        #   화면은 enforced 가 true 일 때만 막는다. 위 "plan" 칸은 예전 뜻(표시용) 그대로 둔다.
+        "billing": billing_state(user, profile),
         "styles": styles,
         # 찜·투표 수는 기록 API(activity_views)가 남긴 '현재 상태' 기준으로 센다.
         "saved_count": active_saved_count(profile),
@@ -281,6 +286,8 @@ def me(request):
                 "google_pending": _social_pending_public(request, "google"),
                 "kakao_enabled": kakao_auth.is_configured(),
                 "kakao_pending": _social_pending_public(request, "kakao"),
+                # 요금제 화면이 베타인지 알아야 한다 (로그인 전에도) — plan_policy.py
+                "billing": plan_policy.guest_state(),
                 "user": None,
             },
         })

@@ -9,6 +9,8 @@ const ALLOWED = new Set(['me', 'signup', 'login', 'logout', 'withdraw', 'profile
   'event', 'vote', 'vote-comment', 'vote-report', 'saved', 'weekly-report',
   // 직업 인증 신청 · 관리자 심사 (backend/apps/api/job_views.py)
   'job-request', 'job-requests', 'job-review',
+  // 요금제 신청 · 관리자 승인 · 챗봇 하루 횟수 (backend/apps/api/plan_views.py · 2026-10-03)
+  'plan', 'plan-request', 'plan-requests', 'plan-review', 'plan-chat-use',
   // 챗봇 대화 기록 (backend/apps/api/chat_views.py)
   'chats',
   // 경험치 · 홈페이지 피드백 (backend/apps/api/xp_views.py)

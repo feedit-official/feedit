@@ -3,6 +3,7 @@ import { SM_ON, STYLES, LIKED, M_QUESTIONS, SM_QUESTIONS, ansCardHTML, smSwitch 
 import { API_BASE, classifyFitImages, sendAnswerFeedback, isUp, askStream, reportHTML, notesHTML, followupHTML, actionsHTML, refusalHTML, requestLexicon, fillBars, MAX_IMAGES, imageFileToDataURL, bindImageDrop, wantsVirtualFit, responseCardHTML, storyHTML, tickerRange } from './chat_api.js';
 import { AUTH, ME, openStyleSelect, requireAuth } from '../../../account/static/js/profile.js';
 import { logChat, chatList, chatLoad, chatSaveTurn, chatImport, chatUpdate, chatTruncate, chatDelete } from '../../../account/static/js/account_api.js';
+import { planGuard } from '../../../account/static/js/plan.js';
 
 /* ══════════════════════════════════════════════════════
    챗봇 팝업 — 일반 모드 · 살말 모드
@@ -1708,7 +1709,7 @@ function cpAskInto(c,text,key,images,fit){
         aiMsg.pending=false; aiMsg.html='<p>답변 생성을 중단했습니다.</p>';
         aiMsg.cardHtml=''; aiMsg.followHtml=''; aiMsg.cueHtml=''; aiMsg.actionsHtml='';
         if(cpActiveConvo()===c)cpRenderThread();
-      }else if(e&&(e.alphaQuota||e.tooLarge)){   /* 알파 횟수 소진 · 사진 용량 초과 — 목업으로 떨어지지 않고 사유를 말한다 */
+      }else if(e&&(e.alphaQuota||e.planQuota||e.tooLarge)){   /* 알파 · 요금제 하루 횟수 소진 · 사진 용량 초과 — 목업으로 떨어지지 않고 사유를 말한다 */
         /* 알파 테스트 계정의 챗봇 횟수 소진 — 목업 답으로 떨어지면 안 된다.
            (시연 15일 한정. chat_api.js 의 같은 표식과 한 쌍) */
         aiMsg.pending=false; aiMsg.cardHtml=''; aiMsg.followHtml='';
@@ -2185,12 +2186,14 @@ document.addEventListener('click', e=>{
   /* 리포트 템플릿 (2026-10-02) — 티커 기간 전환 · 스토리 이미지 저장 */
   const tkRange=e.target.closest('#cpThread [data-tk-range]');
   if(tkRange){ tickerRange(tkRange); return; }
+  /* 요금제 (2026-10-03) — 리포트 내보내기(이미지 저장 · 공유 · 스토리)는 프로부터.
+     베타 동안 planGuard 는 언제나 통과한다. */
   const rpStory=e.target.closest('#cpThread [data-rp-story]');
-  if(rpStory){ cpStorySave(rpStory); return; }
+  if(rpStory){ if(planGuard('report_export',cpToast))cpStorySave(rpStory); return; }
   const rpSave=e.target.closest('#cpThread [data-rp-save]');
-  if(rpSave){ cpReportSave(rpSave); return; }
+  if(rpSave){ if(planGuard('report_export',cpToast))cpReportSave(rpSave); return; }
   const rpShare=e.target.closest('#cpThread [data-rp-share]');
-  if(rpShare){ cpReportShare(rpShare); return; }
+  if(rpShare){ if(planGuard('report_export',cpToast))cpReportShare(rpShare); return; }
   /* 탭 리포트(구조안 02) — 서버 왕복 없이 그 카드 안에서만 전환한다. */
   const tb=e.target.closest('#cpThread [data-tab]');
   if(tb){

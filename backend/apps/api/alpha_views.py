@@ -30,6 +30,7 @@ from django.http import JsonResponse
 from django.views.decorators.http import require_GET, require_POST
 
 from .auth_views import _auth_payload, _create_account, _error, _json, _profile
+from . import plan_policy
 
 
 ALPHA_PLAN = "TEST"
@@ -65,6 +66,10 @@ def alpha_enabled() -> bool:
     """지금 새 알파 계정을 발급해도 되는가."""
     if not _flag("FEEDIT_ALPHA_MODE"):
         return False
+    # 베타가 끝나 요금제가 걸리면(plan_policy.enforced) 알파 계정도 끝이다 (2026-10-03).
+    # 베타 동안에는 이 줄이 아무것도 바꾸지 않는다.
+    if plan_policy.enforced():
+        return False
     until = _until()
     if until is None:
         return True
@@ -80,7 +85,9 @@ def is_alpha(profile) -> bool:
 def quota_state(profile) -> dict:
     """프론트가 배너에 그릴 값. 알파 계정이 아니면 제한 없음으로 답한다."""
     limit = chat_quota()
-    if not is_alpha(profile):
+    # 베타가 끝나면 알파 계정은 프리 요금제로 본다 — 챗봇 횟수는 요금제의 하루 한도가 맡고,
+    # '알파테스트 계정 · 모든 기능 이용 가능' 배너도 더 띄우지 않는다 (2026-10-03).
+    if not is_alpha(profile) or plan_policy.enforced():
         return {"alpha": False, "limit": None, "used": 0, "remaining": None}
     used = int((profile.profile_metadata or {}).get("alpha_chat_used") or 0)
     return {
@@ -177,7 +184,8 @@ def alpha_chat_use(request):
     if not request.user.is_authenticated:
         return _error("로그인이 필요합니다.", status=401)
     profile = _profile(request.user, create=True)
-    if not is_alpha(profile):
+    # 베타 이후에는 요금제의 하루 한도(plan_views.plan_chat_use)가 센다 — 여기서 또 막지 않는다
+    if not is_alpha(profile) or plan_policy.enforced():
         return JsonResponse({"status": "ok", "data": quota_state(profile)})
 
     limit = chat_quota()

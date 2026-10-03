@@ -7,8 +7,8 @@
 from django.urls import path
 
 from . import (
-    activity_views, alpha_views, auth_views, chat_views, job_views, notification_views, salmal_views, views,
-    xp_views,
+    activity_views, alpha_views, auth_views, chat_views, job_views, notification_views, plan_views, salmal_views,
+    views, xp_views,
 )
 from .crawl_views import (
     CrawlRunDetailAPIView,
@@ -44,6 +44,12 @@ urlpatterns = [
     path("auth/job-request", job_views.job_request, name="auth-job-request"),        # 직업 인증 신청
     path("auth/job-requests", job_views.job_requests, name="auth-job-requests"),     # (관리자) 목록
     path("auth/job-review", job_views.job_review, name="auth-job-review"),           # (관리자) 승인·반려
+    # ── 요금제 (plan_views.py · 2026-10-03) — 베타(FEEDIT_PUBLIC_BETA) 동안은 신청을 받지 않는다 ──
+    path("auth/plan", plan_views.plan, name="auth-plan"),                            # 내 요금제 · 오늘 챗봇 사용량
+    path("auth/plan-request", plan_views.plan_request, name="auth-plan-request"),    # 신청 · 해지 · 신청 취소
+    path("auth/plan-requests", plan_views.plan_requests, name="auth-plan-requests"),  # (관리자) 목록
+    path("auth/plan-review", plan_views.plan_review, name="auth-plan-review"),       # (관리자) 승인·반려·해지
+    path("auth/plan-chat-use", plan_views.plan_chat_use, name="auth-plan-chat-use"),  # 챗봇 한 번 — 횟수 · 확인증
     path("auth/weekly-videos", auth_views.weekly_videos, name="auth-weekly-videos"),
     # ── 사용자 활동 기록 · 금주의 리포트 (activity_views.py) ──
     path("auth/event", activity_views.event, name="auth-event"),                    # 검색 · 챗봇 사용

@@ -324,6 +324,53 @@ def notify_job_review(profile, job, approved, reason="", requested_at=""):
         return None
 
 
+def notify_plan_review(profile, plan, status, reason="", key_at=""):
+    """요금제 신청 승인 · 반려, 운영자의 해지(REVOKED)를 신청자에게 알린다. 같은 건에는 한 번만."""
+    try:
+        title, body = rules.plan_review_text(plan, status, reason)
+        return notify(profile, rules.PLAN_REVIEW,
+                      f"PLAN_REVIEW:{profile.id}:{status}:{key_at or plan}",
+                      title, body, link="price",
+                      payload={"plan": plan, "status": status, "reason": reason or ""})
+    except Exception:
+        logger.exception("요금제 결과 알림 실패 user=%s", getattr(profile, "id", None))
+        return None
+
+
+def pending_plan_requests():
+    """심사 대기 중인 요금제 신청 — [(AppUser, 신청 dict)] 신청 시각 오래된 순."""
+    rows = []
+    for p in AppUser.objects.filter(profile_metadata__has_key="plan_request").select_related("user"):
+        req = (p.profile_metadata or {}).get("plan_request")
+        if isinstance(req, dict) and req.get("status") == "PENDING":
+            rows.append((p, req))
+    rows.sort(key=lambda r: str(r[1].get("requested_at") or ""))
+    return rows
+
+
+def notify_admin_plan_pending(admin_profile):
+    """운영(ADMIN) 계정 — 요금제 신청 대기가 있으면 'N건 대기' 알림을 한 번 띄운다.
+
+    직업 인증 대기(notify_admin_job_pending)와 같은 방식 — 새 신청이 들어올 때마다 한 건씩만 생긴다.
+    """
+    try:
+        rows = pending_plan_requests()
+        if not rows:
+            return None
+        who, req = rows[-1]
+        n = len(rows)
+        name = who.nickname or who.user.username
+        label = rules.PLAN_LABEL.get(str(req.get("plan") or "").upper(), req.get("plan") or "-")
+        body = f"새 신청: {name} · {label}" + (f"\n그 밖에 {n - 1}건이 더 기다리고 있어요." if n > 1 else "")
+        return notify(admin_profile, rules.PLAN_REVIEW,
+                      f"PLAN_PENDING:{req.get('requested_at') or who.id}",
+                      f"요금제 신청 대기 {n}건", body, link="price",
+                      payload={"admin_pending": n})
+    except Exception:
+        logger.exception("요금제 신청 대기 알림 실패 admin=%s", getattr(admin_profile, "id", None))
+        return None
+
+
 def pending_job_requests():
     """심사 대기 중인 직업 인증 신청 — [(AppUser, 신청 dict)] 신청 시각 오래된 순."""
     rows = []

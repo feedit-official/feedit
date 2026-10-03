@@ -22,6 +22,7 @@ import { buildXlsx, canvasToPdf, canvasToPng, captureElement, saveBlob, shareIma
 import { metricXlsx } from './metric_export.js';
 import { trSideOpen } from '../../../app_shell/static/js/router.js';
 import { weeklyReport, weeklyVideos, savedProducts, setSavedProduct } from '../../../account/static/js/account_api.js';
+import { PLAN_EVENT, planEditAllowed, planGuard, planLockHTML } from '../../../account/static/js/plan.js';
 
 /* 탭 자리 — 키워드 검색바 / 커머스 탭 / 없음 세 가지로 갈린다 */
 function trTabsRender(id){
@@ -65,6 +66,38 @@ function trFillBarsV(){
 }
 
 let TR_CUR=null;
+const TR_EDIT_IDS=S_EDIT.map(s=>s.id);
+/* 요금제로 잠긴 EDIT 탭 — 머리글만 그 탭 것으로 두고, 검색창 · 저장/공유 대신 안내를 세운다 */
+function trRenderLocked(id){
+  const m=TR_META[id]||TR_META.myfeed;
+  $('#trTitle').textContent=m[0];
+  $('#trDesc').textContent=m[1]; $('#trDesc').hidden=!m[1];
+  trTabsRender('');                 /* 키워드 검색창을 세우지 않는다 */
+  const tw=$('#trTitleWrap'), tp=$('#trProfile');
+  if(tw)tw.hidden=false;
+  if(tp)tp.hidden=true;
+  const kk=$('#trKicker'); if(kk)kk.hidden=true;
+  const acts=$('#trHeadActs'); if(acts)acts.hidden=true;
+  const dm=$('#trDlMenu'); if(dm)dm.hidden=true;
+  const sw=$('#trSearch'); if(sw){ sw.hidden=true; fsHideSug(); }
+  const body=$('#trBody'); if(body)body.innerHTML=planLockHTML(m[0]);
+}
+/* 사이드바 EDIT 항목에 잠금 표시 — 베타 동안에는 붙지 않는다 */
+function trPaintLocks(){
+  $$('#sEdit .sItem').forEach(b=>{
+    const locked=!planEditAllowed(b.dataset.tr);
+    b.classList.toggle('planLocked',locked);
+    if(locked)b.title='프로 요금제부터 볼 수 있어요'; else b.removeAttribute('title');
+  });
+}
+document.addEventListener(PLAN_EVENT,()=>{
+  trPaintLocks();
+  /* 요금제가 바뀌었는데 보고 있던 탭의 잠금이 달라졌으면 그 자리에서 다시 그린다 */
+  if(document.body.dataset.view==='trend'&&TR_CUR&&TR_EDIT_IDS.indexOf(TR_CUR)>=0){
+    const locked=!!($('#trBody')&&$('#trBody .planLock'));
+    if(locked===planEditAllowed(TR_CUR))trRender(TR_CUR);
+  }
+});
 const TR_TRIED={};   /* 용어 → 마지막으로 물어본 때 */
 const STOCK_SAVED={items:[],status:'idle',error:'',loadedAt:0,promise:null};
 let stockSavedSeq=0, stockSavePending=false, stockSaveError='', stockCurrentProduct=null;
@@ -1044,6 +1077,10 @@ export function trRender(id){
   if(FS.id==='stock'&&id!=='stock')fsStockClear();
   sFootPaint();   /* 가입·정보수정·인증 승인 뒤에 들어와도 이름·직위가 최신이게 */
   if(typeof assocClosePop==='function')assocClosePop();
+  /* 요금제 (2026-10-03) — 베타가 끝나면 프리는 EDIT 중 언급량·온도만 연다.
+     베타 동안 planEditAllowed 는 언제나 true 라 이 줄은 아무것도 하지 않는다.
+     잠긴 탭은 지표를 받으러 가지도 않는다 — 아래 prime 보다 먼저 끊는다. */
+  if(TR_EDIT_IDS.indexOf(id)>=0&&!planEditAllowed(id)){ trRenderLocked(id); return }
 
   /* ★ 그리기 **전에** 지표를 받아 둔다.
      gChart 는 동기 함수라 그 안에서 기다릴 수가 없다. 그래서 여기서 미리
@@ -2368,6 +2405,7 @@ export function trBuild(){
     el.innerHTML=a.map(s=>'<button class="sItem" data-tr="'+s.id+'">'+
       '<span class="ic">'+s.ic+'</span><span class="tx">'+s.t+'</span></button>').join('') };
   mk(S_FEED,'#sFeed'); mk(S_EDIT,'#sEdit');
+  trPaintLocks();
   const first=$('.sItem'); if(first)first.classList.add('on');
   $('#sToggle').addEventListener('click',()=>{
     trSideOpen(!$('#side').classList.contains('open'));
@@ -2549,6 +2587,10 @@ async function wkDownload(fmt){
 document.addEventListener('keydown', e=>{ if(e.key==='Escape')wkMenuSet(false) });
 document.addEventListener('click', async e=>{
   const t=e.target.closest?e.target:null;
+  /* 요금제 (2026-10-03) — 리포트 내보내기(저장 · 공유)는 프로부터. 베타 동안 planGuard 는 언제나 통과한다. */
+  if(t&&t.closest('#trDownloadBtn, #trDlMenu [data-dl-fmt], #trShareBtn')&&!planGuard('report_export',trToast)){
+    wkMenuSet(false); return;
+  }
   const dl=t&&t.closest('#trDownloadBtn');
   if(dl){ const m=wkMenu(); wkMenuSet(!!m&&m.hidden); return }
   const pick=t&&t.closest('[data-dl-fmt]');

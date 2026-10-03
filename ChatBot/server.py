@@ -18,7 +18,9 @@
   GET  /v1/magazines?term=발레코어    추천 웹매거진 기사 (웹 검색)
   GET  /v1/me?plan=FREE              플랜과 하루 한도 (아직 계정이 없어 질의로 받는다)
   POST /v1/chat                      SSE 스트림
-       {question, mode, plan, conversation_id, history?, images?}
+       {question, mode, plan, conversation_id, history?, images?, plan_ticket?}
+       plan 은 베타 동안 무시된다(전부 BUSINESS). 베타가 끝나면(FEEDIT_PUBLIC_BETA=0)
+       plan 도 무시하고 Django 가 서명한 plan_ticket 만 믿는다 — 없거나 틀리면 FREE (2026-10-03).
        history 는 [{q, intent, terms:[{canonical,facet,term_key}]}] — 최근 8턴까지.
        보내면 그쪽을 쓰고, 안 보내면 서버가 conversation_id 로 기억한 것을 쓴다.
        images 는 data URL 문자열 배열(최대 MAX_IMAGES장, data:image/... 로 시작)이다.
@@ -656,7 +658,13 @@ class Handler(BaseHTTPRequestHandler):
         request_id = _request_id(req.get("request_id"))
         cancel_event = threading.Event()
         mode = "salmal" if req.get("mode") == "salmal" else "general"
-        plan = plans.effective(req.get("plan"))
+        # ★ 요금제 (2026-10-03). 베타 동안은 예전과 같다 — effective() 가 무엇을 받든 BUSINESS.
+        #   베타가 끝나면 요청이 적은 plan 을 믿지 않는다. Django 가 서명한 plan_ticket 만 믿고,
+        #   없거나 틀리면 FREE 로 본다(plans.verify_ticket). 하루 횟수도 확인증이 있으면
+        #   IP 가 아니라 계정으로 센다 — 한 IP 를 같이 쓰는 사람들이 서로의 횟수를 먹지 않게.
+        ticket = None if plans.PUBLIC_BETA else plans.verify_ticket(req.get("plan_ticket"))
+        plan = plans.effective(ticket["plan"] if ticket else None)
+        quota_key = f"user:{ticket['user']}" if ticket else self._client_ip()
         conv = str(req.get("conversation_id") or "")[:64] or None
         # 클라이언트가 최근 턴을 같이 보낼 수 있다 (세션 목록의 원본은 클라이언트다).
         # 안 보내면 서버 메모리의 같은 conversation_id 를 쓴다.
@@ -679,7 +687,7 @@ class Handler(BaseHTTPRequestHandler):
                                         "message": "이미지 용량이 너무 큽니다. 더 작은 이미지로 다시 시도해 주세요."})
             images.append(u)
 
-        if not daily_ok(self._client_ip(), plan):
+        if not daily_ok(quota_key, plan):
             limit = plans.QUOTA[plans.FREE]["turns"]
             return self._json(429, {
                 "ok": False, "reason": "DAILY_LIMIT",
@@ -822,6 +830,9 @@ def main():
     access = ("토큰 검사함" if CHAT_TOKEN else "토큰 없음(로컬 개발)") + (
         " · 공개 베타(전 기능 개방)" if plans.PUBLIC_BETA else "")
     print(f"  접근 {access} · 분당 {RATE_PER_MIN}회 제한")
+    if not plans.PUBLIC_BETA and not plans.ticket_secret():
+        print("  ⚠ 베타가 꺼져 있는데 요금제 서명 키(FEEDIT_PLAN_SECRET 또는 FEEDIT_CHAT_TOKEN)가 없습니다.\n"
+              "    모든 사용자를 FREE 로 봅니다.")
     if HOST not in ("127.0.0.1", "localhost") and not CHAT_TOKEN:
         print("  ⚠ 밖에 열면서 FEEDIT_CHAT_TOKEN 이 없습니다. 주소가 알려지면 누구나 질문할 수 있습니다.")
     try:

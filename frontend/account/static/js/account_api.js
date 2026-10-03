@@ -29,7 +29,12 @@ async function request(path, { method='GET', body, bootstrap=true, base='/api/au
   }
   if (payload && payload.data && payload.data.csrf_token) csrfToken = payload.data.csrf_token;
   if (!response.ok || !payload || payload.status !== 'ok') {
-    throw new Error((payload && payload.reason) || `로그인 API 오류 (${response.status})`);
+    const error = new Error((payload && payload.reason) || `로그인 API 오류 (${response.status})`);
+    /* 상태 숫자와 서버가 같이 보낸 값을 붙여 둔다 — 요금제 하루 한도(429)처럼
+       사유 말고도 남은 횟수 같은 값이 필요한 화면이 있다 (2026-10-03). */
+    error.status = response.status;
+    error.data = (payload && payload.data) || null;
+    throw error;
   }
   return payload.data;
 }
@@ -76,6 +81,23 @@ export const jobRequestsList = (status = 'PENDING') =>
   request('job-requests?status=' + encodeURIComponent(status));
 export const jobReviewDecide = ({ userId, approve, reason = '' }) =>
   request('job-review', { method:'POST', body:{ user_id:userId, approve, reason } });
+
+/* 요금제 — 신청 · 해지 · 신청 취소 · (관리자) 목록 · 승인/반려/해지 · 챗봇 하루 횟수
+   (backend/apps/api/plan_views.py · 2026-10-03). 베타 동안 서버는 신청을 받지 않는다(409). */
+export const planStatus = () =>
+  request('plan');
+export const planRequestSubmit = ({ plan, note = '', company = '', contact = '' }) =>
+  request('plan-request', { method:'POST', body:{ plan, note, company, contact } });
+export const cancelPlanRequest = () =>
+  request('plan-request', { method:'DELETE', body:{} });
+export const planRequestsList = (status = 'PENDING') =>
+  request('plan-requests?status=' + encodeURIComponent(status));
+export const planReviewDecide = ({ userId, approve, reason = '' }) =>
+  request('plan-review', { method:'POST', body:{ user_id:userId, approve, reason } });
+export const planRevoke = ({ userId, reason = '' }) =>
+  request('plan-review', { method:'POST', body:{ user_id:userId, op:'revoke', reason } });
+export const planChatUse = () =>
+  request('plan-chat-use', { method:'POST', body:{} });
 
 export const saveAccount = data =>
   request('profile', { method:'POST', body:data });

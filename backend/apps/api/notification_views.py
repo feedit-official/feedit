@@ -16,6 +16,7 @@ from apps.core.models import Notification, NotificationSetting, TermRequest
 
 from . import notifications as rules
 from . import notification_service as service
+from . import plan_policy
 from .activity_views import _body, _error, _login_profile, _text
 
 LIST_LIMIT = 30
@@ -77,6 +78,9 @@ def notifications(request):
         # ★ 운영 계정은 직업 인증 심사 대기 건수를 알림으로 받는다
         if request.user.is_superuser or request.user.is_staff:
             service.notify_admin_job_pending(profile)
+            # 요금제 신청 대기 (2026-10-03) — 베타 동안은 신청이 없으니 묻지도 않는다
+            if plan_policy.enforced():
+                service.notify_admin_plan_pending(profile)
         # 성별이 비어 있으면 한 번 묻는다 (2026-10-02) — 가입에서 성별을 받기 전의 회원
         service.ensure_gender_prompt(profile)
         rows = list(_mine(profile).order_by("-created_at", "-id")[:LIST_LIMIT])

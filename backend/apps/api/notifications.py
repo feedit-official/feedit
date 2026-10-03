@@ -42,6 +42,9 @@ ADMIN_NOTICE = "ADMIN_NOTICE"
 # 성별이 비어 있는 회원에게 한 번 — 가상 피팅 모델 · 코디 추천이 성별을 쓴다 (2026-10-02)
 PROFILE_GENDER = "PROFILE_GENDER"
 PROFILE_GENDER_KEY = "PROFILE_GENDER"
+# 요금제 신청 결과 · (운영 계정) 신청 대기 (2026-10-03, plan_views.py). 끌 수 없다 —
+# 쓰고 있는 요금제가 바뀌었다는 소식이라 꺼 두면 왜 기능이 막혔는지 알 길이 없다.
+PLAN_REVIEW = "PLAN_REVIEW"
 
 # 종류 → NotificationSetting 의 칸 이름
 SETTING_FIELD = {
@@ -241,6 +244,23 @@ def job_review_text(job_label, approved, reason=""):
     body = f"사유: {reason}\n" if reason else ""
     return (f"{label} 인증이 반려됐어요.",
             body + "회원정보 수정에서 서류를 다시 올려 신청할 수 있어요.")
+
+
+PLAN_LABEL = {"FREE": "프리", "PRO": "프로", "BUSINESS": "비즈니스"}
+
+
+def plan_review_text(plan, status, reason=""):
+    """요금제 신청 결과 — 승인 · 반려 · 운영자가 프리로 되돌림."""
+    label = PLAN_LABEL.get(str(plan or "").upper(), "요금제")
+    why = f"사유: {reason}\n" if reason else ""
+    if status == "APPROVED":
+        return (f"{label} 요금제 신청이 승인됐어요.",
+                f"지금부터 {label} 요금제의 기능을 쓰실 수 있어요.")
+    if status == "REVOKED":
+        return ("요금제가 프리로 바뀌었어요.",
+                why + "궁금한 점은 고객센터로 문의해 주세요.")
+    return (f"{label} 요금제 신청이 반려됐어요.",
+            why + "요금제 화면에서 다시 신청할 수 있어요.")
 
 
 def term_added_text(raw_term, canonical_name=""):

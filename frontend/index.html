@@ -182,6 +182,8 @@
           <!-- 홈페이지 피드백 — 불편사항·추가요청 / 수정사항·버그리포트 (xp_panel.js) -->
           <button type="button" id="menuFeedback"><i>✎</i>피드백 보내기</button>
           <button type="button" id="menuJobReview" hidden><i>✓</i>직업 인증 심사</button>
+          <!-- 요금제 신청 심사 — 운영 계정만 (account/static/js/plan.js · 2026-10-03) -->
+          <button type="button" id="menuPlanReview" hidden><i>₩</i>요금제 신청 심사</button>
           <hr>
           <button type="button" class="out" id="menuLogout"><i>→</i>로그아웃</button>
         </div>
@@ -1045,6 +1047,29 @@
       <button type="button" class="modalClose" data-close-modal aria-label="닫기"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
     <p class="jrLead">올라온 서류를 확인하고 승인하면<br>그때 배지와 사이드바 직위가 바뀝니다.</p>
     <div class="jrList" id="jobReviewList"></div>
+  </div>
+</div>
+<!-- 요금제 신청 심사 — 관리자용 (account/static/js/plan.js · 2026-10-03)
+     결제가 붙어 있지 않아 신청을 운영자가 확인해 승인한다. 승인하면 그 자리에서 요금제가 바뀐다. -->
+<div class="acctModal" id="planReviewModal">
+  <div class="modalCard wide">
+    <div class="modalHead"><h3>요금제 신청 심사</h3>
+      <button type="button" class="modalClose" data-close-modal aria-label="닫기"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+    <p class="jrLead">결제는 아직 붙어 있지 않습니다.<br>신청 내용을 확인하고 승인하면 그때 요금제가 바뀌고, 신청자에게 알림이 갑니다.</p>
+    <div class="jrList" id="planReviewList"></div>
+  </div>
+</div>
+<!-- 요금제 신청 · 해지 — 사용자용 (pricing/static/js/pricing.js · 2026-10-03)
+     베타 동안에는 열리지 않는다. 요금제 카드를 누르면 지금처럼 '베타 기간' 안내만 뜬다. -->
+<div class="acctModal" id="planModal">
+  <div class="modalCard">
+    <div class="modalHead"><h3 id="planModalTitle">요금제 신청</h3>
+      <button type="button" class="modalClose" data-close-modal aria-label="닫기"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+    <form id="planForm" class="planForm" novalidate>
+      <div id="planFormBody"></div>
+      <p class="fieldMsg err" id="planFormErr" hidden></p>
+      <div class="modalBtns" id="planFormBtns"></div>
+    </form>
   </div>
 </div>
 <div class="acctModal" id="savedModal">

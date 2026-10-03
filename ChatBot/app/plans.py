@@ -7,7 +7,13 @@
 """
 from __future__ import annotations
 
+import base64
+import binascii
+import hashlib
+import hmac
+import json
 import os
+import time
 
 FREE, PRO, BUSINESS = "FREE", "PRO", "BUSINESS"
 VALID = (FREE, PRO, BUSINESS)
@@ -124,3 +130,49 @@ def upsell(locked: list[str], plan: str) -> dict | None:
     return {"type": "upsell", "plan": PRO, "locked": locked,
             "why": f"이 질문에 더 답하려면 {head}{'이' if batchim else '가'} 필요합니다.",
             "unlocks": names}
+
+
+# ── 요금제 확인증 (2026-10-03) ──────────────────────────────
+#   이 서버는 Django 로그인 세션을 모른다. 그래서 예전에는 요청이 스스로 적은 plan 을
+#   그대로 믿었다(server.py 머리말 — "PRO 라고 우기면 못 막는다").
+#   베타가 끝나면(PUBLIC_BETA=False) Django 가 서명해 준 확인증만 믿는다.
+#     만드는 곳  backend/apps/api/plan_policy.py 의 sign_ticket
+#     모양       "v1.<base64url JSON {u, p, e}>.<base64url HMAC-SHA256>"
+#     서명 키    FEEDIT_PLAN_SECRET (없으면 FEEDIT_CHAT_TOKEN) — 두 서버가 같은 루트 .env 를 읽는다
+#   확인증이 없거나 틀리거나 시간이 지났으면 None — 부르는 쪽이 FREE 로 본다.
+#   베타 동안에는 effective() 가 어차피 BUSINESS 를 돌려주므로 이 함수를 부르지 않는다.
+
+def ticket_secret() -> str:
+    return (os.getenv("FEEDIT_PLAN_SECRET") or os.getenv("FEEDIT_CHAT_TOKEN") or "").strip()
+
+
+def _unb64(text: str) -> bytes:
+    return base64.urlsafe_b64decode(text + "=" * (-len(text) % 4))
+
+
+def verify_ticket(ticket, now=None, secret=None) -> dict | None:
+    """맞으면 {"user": "12", "plan": "PRO"}, 아니면 None."""
+    secret = ticket_secret() if secret is None else secret
+    if not secret or not isinstance(ticket, str) or len(ticket) > 600:
+        return None
+    parts = ticket.split(".")
+    if len(parts) != 3 or parts[0] != "v1":
+        return None
+    head = f"{parts[0]}.{parts[1]}"
+    want = hmac.new(secret.encode("utf-8"), head.encode("ascii", "replace"), hashlib.sha256).digest()
+    try:
+        got = _unb64(parts[2])
+        body = json.loads(_unb64(parts[1]).decode("utf-8"))
+    except (ValueError, binascii.Error, UnicodeDecodeError):
+        return None
+    if not hmac.compare_digest(want, got) or not isinstance(body, dict):
+        return None
+    try:
+        if int(body.get("e") or 0) < int(time.time() if now is None else now):
+            return None
+    except (TypeError, ValueError):
+        return None
+    user = str(body.get("u") or "")[:40]
+    if not user:
+        return None
+    return {"user": user, "plan": normalize(body.get("p"))}

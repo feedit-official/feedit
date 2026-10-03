@@ -19,6 +19,9 @@
 /* 알파 테스트 모드 — 시연 15일 한정 (app_shell/static/js/alpha.js 와 한 쌍) */
 import { alphaChatUse } from '../../../account/static/js/account_api.js';
 import { setAlphaState } from '../../../app_shell/static/js/alpha.js';
+/* 요금제 (2026-10-03) — 베타가 끝나면 알파 대신 요금제의 하루 횟수를 센다 (account/static/js/plan.js) */
+import { planChatUse } from '../../../account/static/js/account_api.js';
+import { planApplyChat, planEnforced } from '../../../account/static/js/plan.js';
 /* 질문 유형별 리포트 템플릿 그림 (2026-10-02) — 진단·판정·원인·비교·순위·연관·관측 부족 */
 import { TEMPLATE_BLOCKS, TEMPLATE_LABEL } from './chat_templates.js';
 export { storyHTML, tickerRange } from './chat_templates.js';
@@ -174,6 +177,28 @@ export async function isUp({force=false}={}){
 /* ── SSE 스트림 읽기 ──────────────────────────────────
    EventSource 는 POST 를 못 보낸다. fetch + ReadableStream 으로 직접 판다. */
 export async function askStream(payload, on, options={}){
+  /* ── 요금제 (2026-10-03) — 베타가 끝난 뒤에만 ─────────────
+     서버(plan_views.plan_chat_use)가 오늘 횟수를 세고, 통과하면 챗봇 서버에 넘길
+     확인증(ticket)을 준다. 챗봇은 이 확인증으로 요금제를 안다 — 요청이 스스로 적은
+     plan 은 베타 이후 믿지 않는다. 베타 동안(planEnforced()=false)은 아래 알파 블록이 그대로 돈다. */
+  let planTicket = null;
+  if (planEnforced()) {
+    try {
+      const d = await planChatUse();
+      planApplyChat(d);
+      planTicket = (d && d.ticket) || null;
+    } catch (err) {
+      if (err && err.status === 429) {
+        if (err.data) planApplyChat(err.data);
+        /* 하루 한도 — 목업 답으로 떨어지지 않도록 표식을 달아 던진다 (chat_popup.js 가 본다) */
+        const stop = new Error(err.message);
+        stop.planQuota = true;
+        throw stop;
+      }
+      /* 그 밖의 실패(백엔드 미기동 등)로 챗봇을 막지는 않는다.
+         확인증이 없으면 챗봇 서버가 FREE 로 보고 IP 로 한 번 더 센다. */
+    }
+  } else {
   /* ── 알파 테스트 모드 (시연 15일 한정) ─────────────────
      보내기 직전에 서버에서 한 번 차감한다. 남은 횟수가 0이면 여기서 끊고
      사람이 읽을 수 있는 문구를 던진다. 알파 계정이 아니면 그냥 통과한다.
@@ -189,10 +214,11 @@ export async function askStream(payload, on, options={}){
     }
     /* 그 밖의 실패(백엔드 미기동 등)로 챗봇을 막지는 않는다 */
   }
+  }
 
   const res = await fetch(API_BASE + '/v1/chat', {
     method:'POST', headers:{'Content-Type':'application/json'},
-    body: await chatBody(payload), signal:options.signal
+    body: await chatBody(planTicket ? { ...payload, plan_ticket: planTicket } : payload), signal:options.signal
   });
   if(!res.ok || !res.body) throw new Error('HTTP ' + res.status);
 

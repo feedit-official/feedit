@@ -25,4 +25,5 @@
 @import './app_shell/static/css/ticker.css';
 @import './home/static/css/chat_popup.css';
 @import './account/static/css/job.css';
+@import './account/static/css/plan.css';   /* 요금제 신청 · 심사 · 잠금 — 베타 이후에만 쓰인다 */
 @import './app_shell/static/css/responsive.css';

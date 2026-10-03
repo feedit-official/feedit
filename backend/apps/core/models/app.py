@@ -779,6 +779,8 @@ class Notification(models.Model):
         ADMIN_NOTICE = "ADMIN_NOTICE", "운영 공지"
         # 성별이 비어 있는 기존 회원에게 한 번 — 누르면 성별을 고른다 (2026-10-02)
         PROFILE_GENDER = "PROFILE_GENDER", "프로필 정보 요청"
+        # 요금제 신청 결과 · (운영 계정) 신청 대기 (apps/api/plan_views.py, 2026-10-03)
+        PLAN_REVIEW = "PLAN_REVIEW", "요금제 신청 결과"
 
     user = models.ForeignKey(
         AppUser,
