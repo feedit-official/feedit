@@ -26,6 +26,7 @@ import './account/static/js/profile.js';
 import './account/static/js/xp_track.js';   /* 경험치 — 접속 · 트렌드 분석 체류 기록 */
 import './account/static/js/xp_panel.js';   /* 경험치 창 · 홈페이지 피드백 창 */
 import './account/static/js/notify.js';
+import './account/static/js/data_api.js';   /* 데이터 API 키 — 비즈니스 요금제 · 베타 이후에만 메뉴가 선다 */
 import './app_shell/static/js/ticker.js';   /* 상단 실시간 공지 — 2026-10-02 */
 import './style/static/js/search.js';
 import './trend/static/js/assoc_popover.js';

@@ -184,6 +184,8 @@
           <button type="button" id="menuJobReview" hidden><i>✓</i>직업 인증 심사</button>
           <!-- 요금제 신청 심사 — 운영 계정만 (account/static/js/plan.js · 2026-10-03) -->
           <button type="button" id="menuPlanReview" hidden><i>₩</i>요금제 신청 심사</button>
+          <!-- 데이터 API 키 — 비즈니스 요금제 · 베타 이후에만 (account/static/js/data_api.js · 2026-10-03) -->
+          <button type="button" id="menuDataApi" hidden><i>{}</i>데이터 API</button>
           <hr>
           <button type="button" class="out" id="menuLogout"><i>→</i>로그아웃</button>
         </div>
@@ -1057,6 +1059,15 @@
       <button type="button" class="modalClose" data-close-modal aria-label="닫기"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
     <p class="jrLead">결제는 아직 붙어 있지 않습니다.<br>신청 내용을 확인하고 승인하면 그때 요금제가 바뀌고, 신청자에게 알림이 갑니다.</p>
     <div class="jrList" id="planReviewList"></div>
+  </div>
+</div>
+<!-- 데이터 API 키 관리 — 비즈니스 요금제 (account/static/js/data_api.js · 2026-10-03)
+     베타 동안에는 메뉴가 서지 않아 열 수 없다. 키 원문은 만든 직후 한 번만 보인다. -->
+<div class="acctModal" id="dataApiModal">
+  <div class="modalCard wide">
+    <div class="modalHead"><h3>데이터 API</h3>
+      <button type="button" class="modalClose" data-close-modal aria-label="닫기"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+    <div id="dataApiBody"></div>
   </div>
 </div>
 <!-- 요금제 신청 · 해지 — 사용자용 (pricing/static/js/pricing.js · 2026-10-03)

@@ -99,6 +99,15 @@ export const planRevoke = ({ userId, reason = '' }) =>
 export const planChatUse = () =>
   request('plan-chat-use', { method:'POST', body:{} });
 
+/* 데이터 API 키 — 비즈니스 요금제 (backend/apps/api/data_api_views.py · 2026-10-03).
+   베타 동안 서버는 키를 만들지 않는다(409). 원문 키는 만든 응답(data.key)에 한 번만 온다. */
+export const dataKeys = () =>
+  request('data-keys');
+export const createDataKey = (name = '') =>
+  request('data-keys', { method:'POST', body:{ name } });
+export const revokeDataKey = keyId =>
+  request('data-keys', { method:'DELETE', body:{ key_id:keyId } });
+
 export const saveAccount = data =>
   request('profile', { method:'POST', body:data });
 

@@ -7,8 +7,8 @@
 from django.urls import path
 
 from . import (
-    activity_views, alpha_views, auth_views, chat_views, job_views, notification_views, plan_views, salmal_views,
-    views, xp_views,
+    activity_views, alpha_views, auth_views, chat_views, data_api_views, job_views, notification_views, plan_views,
+    salmal_views, views, xp_views,
 )
 from .crawl_views import (
     CrawlRunDetailAPIView,
@@ -50,6 +50,10 @@ urlpatterns = [
     path("auth/plan-requests", plan_views.plan_requests, name="auth-plan-requests"),  # (관리자) 목록
     path("auth/plan-review", plan_views.plan_review, name="auth-plan-review"),       # (관리자) 승인·반려·해지
     path("auth/plan-chat-use", plan_views.plan_chat_use, name="auth-plan-chat-use"),  # 챗봇 한 번 — 횟수 · 확인증
+    # ── 데이터 API 연동 (data_api_views.py · 2026-10-03) — 비즈니스 요금제 · 베타 동안은 닫혀 있다 ──
+    path("auth/data-keys", data_api_views.data_keys, name="auth-data-keys"),        # 내 API 키 목록 · 만들기 · 폐기
+    path("data", data_api_views.data_index, name="data-index"),                    # (API 키) 지표 목록
+    path("data/<str:metric>", data_api_views.data_metric, name="data-metric"),     # (API 키) 지표 하나
     path("auth/weekly-videos", auth_views.weekly_videos, name="auth-weekly-videos"),
     # ── 사용자 활동 기록 · 금주의 리포트 (activity_views.py) ──
     path("auth/event", activity_views.event, name="auth-event"),                    # 검색 · 챗봇 사용

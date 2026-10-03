@@ -48,6 +48,7 @@ docker compose --env-file .env -f docker/compose.chat.yml up -d --build
 | `FEEDIT_BACKEND_API` | 기본 `http://feedit-api:8000/api` |
 | `FEEDIT_PUBLIC_BETA`, `FEEDIT_CHAT_TOKEN` | 베타와 토큰 검사 정책을 함께 확인 |
 | `FEEDIT_PLAN_SECRET` | 요금제 확인증 서명 키(Django 서명 · 챗봇 검사). 비우면 `FEEDIT_CHAT_TOKEN` 을 쓴다. 베타 동안은 쓰이지 않는다 |
+| `FEEDIT_DATA_API_PER_DAY`, `FEEDIT_DATA_API_PER_MIN` | 데이터 API(비즈니스) 한도. 기본 계정당 하루 10000 · 키당 분당 60. 베타 동안은 쓰이지 않는다 |
 | `FEEDIT_CHAT_ORCHESTRATOR` | 모델 도구 오케스트레이션 사용 설정 |
 | `DASHBOARD_OTP_REQUIRED` | 관리자 TOTP 강제. HTTPS·마이그레이션·최초 등록 확인 후 `1` |
 | `DASHBOARD_SESSION_AGE` | 마지막 활동 기준 관리자 세션 수명(초), 기본 3600 |
@@ -70,6 +71,9 @@ Django 와 챗봇이 루트 `.env` 의 같은 변수를 봅니다.
 2. 루트 `.env` 에 `FEEDIT_PUBLIC_BETA=0`, 그리고 `FEEDIT_CHAT_TOKEN` 이 비어 있다면 `FEEDIT_PLAN_SECRET` 을 넣습니다.
 3. API · 챗봇 컨테이너를 둘 다 다시 띄웁니다. 한쪽만 띄우면 화면과 챗봇이 다른 요금제를 말합니다.
 4. 확인: 일반 계정으로 트렌드 분석 › 연관어가 잠기는지, 요금제 화면에서 프로 신청 → 운영 계정 메뉴 '요금제 신청 심사' 에서 승인 → 잠금이 풀리는지.
+5. 데이터 API: 비즈니스(또는 운영) 계정 메뉴 '데이터 API' 에서 키를 만들고
+   `curl -G "https://<버셀 주소>/api/data/trend" -H "Authorization: Bearer fdk_…" --data-urlencode "term=발레코어"` 가 200 인지.
+   새 프론트 배포가 필요하다(`vercel.json` 의 `/api/data/:metric` 다시 쓰기 규칙). 사용법: [데이터 API](DATA_API.md).
 
 결제는 붙어 있지 않습니다. 승인은 운영자가 확인했다는 뜻입니다. 되돌릴 때는 `FEEDIT_PUBLIC_BETA=1` 로 바꾸고 두 컨테이너를 다시 띄웁니다(신청 · 승인 기록은 남습니다).
 

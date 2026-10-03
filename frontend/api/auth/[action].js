@@ -11,6 +11,8 @@ const ALLOWED = new Set(['me', 'signup', 'login', 'logout', 'withdraw', 'profile
   'job-request', 'job-requests', 'job-review',
   // 요금제 신청 · 관리자 승인 · 챗봇 하루 횟수 (backend/apps/api/plan_views.py · 2026-10-03)
   'plan', 'plan-request', 'plan-requests', 'plan-review', 'plan-chat-use',
+  // 데이터 API 키 관리 — 비즈니스 요금제 (backend/apps/api/data_api_views.py · 2026-10-03)
+  'data-keys',
   // 챗봇 대화 기록 (backend/apps/api/chat_views.py)
   'chats',
   // 경험치 · 홈페이지 피드백 (backend/apps/api/xp_views.py)

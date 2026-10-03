@@ -17,6 +17,10 @@
     {
       "source": "/api/salmal/cards/:id",
       "destination": "/api/salmal/cards?__card=:id"
+    },
+    {
+      "source": "/api/data/:metric",
+      "destination": "/api/data?__metric=:metric"
     }
   ],
   "headers": [

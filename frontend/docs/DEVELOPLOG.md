@@ -5488,3 +5488,42 @@ KREAM 주소를 대표로 고르던 문제도 확인했다. 무신사 계열 이
 - '리포트 내보내기' 에 공유(이미지)까지 넣었다. 공유를 프리에 열고 싶으면 `dispatch.js` · `chat_popup.js` 의 `planGuard('report_export')` 자리만 빼면 된다.
 - 자주 묻는 질문의 '랭킹은 TOP 10까지' 는 베타 동안 그대로 두었다(요금제 표에 없는 제한이다).
 - 베타 종료 순서는 `docs/DEPLOYMENT.md` '베타 종료 — 요금제 켜기'.
+
+## 2026-10-03 13:11 KST — Claude (Opus 5.5) · 데이터 API 연동(비즈니스 요금제) — 베타 이후에만 열리게
+
+### 무엇을 왜 고쳤나
+
+- 바로 앞 로그(12:25)에 "데이터 API 연동은 권한 값만 있고 API 자체는 없다" 고 적었다. **이 로그로 정정한다 — 이제 있다.**
+- 비즈니스 회원이 키(`fdk_…`)로 트렌드 지표를 JSON 으로 받아 간다. 계산은 화면과 같은 `views.py` 함수를 그대로 부른다.
+- 요금제와 같은 스위치(`FEEDIT_PUBLIC_BETA`)를 본다. 베타 동안은 키를 만들 수 없고 지표 주소는 `403 BETA`, 메뉴도 서지 않는다.
+
+### 무엇이 생겼나
+
+- 서버 `backend/apps/api/data_api.py`(키 · 한도 · 지표 목록, DB 없음) · `data_api_views.py`
+  (`/api/auth/data-keys` 키 목록 · 만들기 · 폐기, `/api/data` · `/api/data/<지표>` 키 인증).
+  키는 SHA-256 해시만 `profile_metadata.data_api_keys` 에 — 새 표 · 마이그레이션 없음. 원문은 만든 응답에 한 번만.
+  매 요청마다 지금 요금제를 다시 본다(내려가면 `403 PLAN`, 키는 남는다). 한도: 하루 10000(DB) · 키당 분당 60(프로세스 메모리).
+  지표: trend · search · assoc · sentiment · lifecycle · discount · resale · terms. 상품 목록 · 사전 통째는 넣지 않았다.
+- 버셀: 새 함수를 만들지 않았다(11개 그대로). `[kind].js` 가 `kind === 'data'` 를 `_lib/data_relay.js` 로 넘기고,
+  `vercel.json` 이 `/api/data/:metric` 을 `/api/data?__metric=` 으로 바꾼다. **항상 no-store** — 다른 지표 주소처럼 엣지에
+  5분 캐시하면 키 없는 요청에 남의 응답이 나갈 수 있다. 상태 숫자 · `Retry-After` 를 그대로 돌려준다.
+- 화면 `account/static/js/data_api.js` + 계정 메뉴 '데이터 API'(`#menuDataApi`) · 창(`#dataApiModal`):
+  베타 이후 + 비즈니스/운영일 때만 메뉴가 선다. 키 만들기(원문 한 번 · 복사) · 폐기 · 오늘 사용량 · curl 예시 · 지표 표.
+- 문서 `docs/DATA_API.md`(비즈니스 고객에게 건넬 사용법) · `DEPLOYMENT.md` 베타 종료 5번 · `.env.example` 한도 변수.
+
+### 어떻게 확인했나
+
+- `apps.api.test_data_api` 9건(DB 없이) · `apps.api.test_data_api_views` 7건 — 로컬 임시 PostgreSQL 컨테이너(운영 RDS 아님):
+  베타 잠금 · 비즈니스 흐름(목록 · trend · terms · X-API-Key · 사용량 · 마지막 사용) · 프리 403 · 내려간 계정 403 → 폐기 → 401 ·
+  위조/남의 번호 키 401 · 없는 지표 404(횟수 안 씀) · 하루/분당 429 · 운영 계정 · 키 5개 상한 · 로그인 필요.
+  전체 `apps.api apps.dashboard apps.core` 실패 목록은 HEAD 와 같다(39건 기존) · 253 → 269건.
+- 화면 새 `tests/data_api.test.mjs` 33건 — 중계(경로 · 키 머리글 · 공유 토큰 · no-store · 429/Retry-After · 405 · 이상한 지표 · 할인률 중계 그대로 · 503, 함수 수 ≤ 11),
+  화면(베타 메뉴 없음 · 프리/프로 없음 · 비즈니스 있음 · 만들기 · 원문 한 번 · 복사 · 닫으면 원문 버림 · 폐기 · 베타로 돌아가면 숨김).
+  나머지 `npm test` 파일별 결과 · ChatBot `tests/run.sh` 결과가 HEAD 와 같다. `vite build` 통과.
+  브라우저 1440px · 375px 로 창을 봤다 — 375px 에서 표 셋째 칸 머리만 남아 있던 것을 고쳤다.
+
+### 남은 것 · 주의
+
+- 분당 한도는 워커마다 따로 센다(Redis 캐시가 Django 에 설정돼 있지 않다). 하루 한도는 정확하다.
+- 키는 버셀 주소로만 쓴다. EC2 의 `/api/` 는 공유 토큰 미들웨어가 그대로 막는다(바꾸지 않았다).
+- 프론트 배포 전에는 `/api/data/<지표>` 다시 쓰기 규칙이 없다 — 베타 동안은 어차피 닫혀 있어 영향 없다.
