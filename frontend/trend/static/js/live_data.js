@@ -154,6 +154,26 @@ export function stateOfUrl(url) {
   return URL_CACHE.get(url) || { status: 'unknown', reason: '아직 확인하지 않았습니다.' };
 }
 
+/* 온보딩 가이드가 저장된 예시 응답을 기존 렌더러로 보여 줄 때만 쓴다.
+ * 네트워크를 호출하지 않고 기존 캐시 자리에 잠시 얹으며, 반환된 함수를
+ * 실행하면 사용자가 가이드를 열기 전 캐시 상태로 정확히 되돌아간다. */
+export function installGuideDemo({ trends = [], urls = [] } = {}) {
+  const beforeTrend = trends.map(({ term }) => [term, CACHE.has(term), CACHE.get(term)]);
+  const beforeUrl = urls.map(({ url }) => [url, URL_CACHE.has(url), URL_CACHE.get(url)]);
+  trends.forEach(({ term, payload }) => {
+    const entry = toEntry(payload);
+    entry.at = Date.now();
+    CACHE.set(String(term || '').trim(), entry);
+  });
+  urls.forEach(({ url, payload }) => URL_CACHE.set(url, {
+    status: 'ok', reason: '', data: payload.data, extra: payload, at: Date.now(), guideDemo: true,
+  }));
+  return () => {
+    beforeTrend.forEach(([key, had, value]) => had ? CACHE.set(key, value) : CACHE.delete(key));
+    beforeUrl.forEach(([key, had, value]) => had ? URL_CACHE.set(key, value) : URL_CACHE.delete(key));
+  };
+}
+
 export function sentimentUrl(term, facet = '') {
   const p = new URLSearchParams({ term: String(term || ''), days: '400' });
   if (facet === '브랜드' || facet === 'BRAND') p.set('subject', 'brand');

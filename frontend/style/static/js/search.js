@@ -923,6 +923,17 @@ function fsClosePop(){
   $('#fsPopBg').setAttribute('inert','');
 }
 
+/* 온보딩 전용: 저장된 후보를 같은 세부 검색 모달에 그리되 API는 호출하지 않는다. */
+export function fsOpenGuidePop(){
+  const pop=$('.fsPop'); if(pop){ pop.style.transform=''; pop.style.transition=''; }
+  FS.open=true;
+  $('#fsPopBg').classList.add('on');
+  $('#fsPopBg').removeAttribute('inert');
+  const more=$('#fsMore'); if(more)more.classList.add('on');
+  fsPaintPop();
+}
+export function fsCloseGuidePop(){ fsClosePop() }
+
 /* ★ 2026-09-19 — '이전 24개 / 다음 24개' 를 걷어냈다. 칸을 끝까지 내리면
    다음 묶음을 이어 붙인다 — 상품명은 스크롤로만 본다. */
 function fsStockPageHTML(ax){

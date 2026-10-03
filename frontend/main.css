@@ -27,3 +27,4 @@
 @import './account/static/css/job.css';
 @import './account/static/css/plan.css';   /* 요금제 신청 · 심사 · 잠금 — 베타 이후에만 쓰인다 */
 @import './app_shell/static/css/responsive.css';
+@import './app_shell/static/css/assistant_hub.css'; /* 전 페이지 도움말 허브 — 기존 반응형 뒤에서 최종 배치 */

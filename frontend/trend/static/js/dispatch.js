@@ -1074,6 +1074,7 @@ function searchCardHTML(term){
 
 export function trRender(id){
   TR_CUR=id;
+  const guideDemo=document.body.classList.contains('trend-guide-demo');
   if(FS.id==='stock'&&id!=='stock')fsStockClear();
   sFootPaint();   /* 가입·정보수정·인증 승인 뒤에 들어와도 이름·직위가 최신이게 */
   if(typeof assocClosePop==='function')assocClosePop();
@@ -1089,7 +1090,7 @@ export function trRender(id){
 
      받아 오기 전에는 stateOf() 가 'unknown' 이라 예전처럼 씨드 난수로 그린다.
      받아 온 뒤 다시 그리면서 실값 또는 '측정 불가'로 바뀐다. */
-  if(id==='temp'||id==='assoc'){
+  if(!guideDemo&&(id==='temp'||id==='assoc')){
     const kw=KW.q||fsItem();
     /* ★ 한 번 시도한 말은 잠깐 다시 안 묻는다.
        실패는 캐시하지 않기로 했는데(고친 뒤 재시도가 돼야 하니까),
@@ -1107,12 +1108,12 @@ export function trRender(id){
     }
   }
   /* 연관어 · 할인률 · 리세일 · 수명주기는 URL 단위로 받는다 */
-  if(id==='assoc'&&KW.q) primeOnce(id,'/api/assoc?term='+encodeURIComponent(KW.q));
+  if(!guideDemo&&id==='assoc'&&KW.q) primeOnce(id,'/api/assoc?term='+encodeURIComponent(KW.q));
   /* ★ 2026-09-22 — 검색 지표는 언급 지표(/api/trend)와 **다른 주소**다.
      '뭐라고 말했나'와 '뭘 찾아봤나'를 한 카드에 섞지 않기로 해서 호출도 따로 간다. */
-  if(id==='temp'&&KW.q) primeOnce(id,searchUrl(KW.q));
-  if(id==='sentiment'&&KW.q) primeOnce(id,sentimentUrl(KW.q,KW.f));
-  if(EDIT_API[id]&&(id==='stock'?!!FS.stockItem:fsItem())) primeOnce(id,editUrl(id));
+  if(!guideDemo&&id==='temp'&&KW.q) primeOnce(id,searchUrl(KW.q));
+  if(!guideDemo&&id==='sentiment'&&KW.q) primeOnce(id,sentimentUrl(KW.q,KW.f));
+  if(!guideDemo&&EDIT_API[id]&&(id==='stock'?!!FS.stockItem:fsItem())) primeOnce(id,editUrl(id));
   const m=TR_META[id]||TR_META.myfeed;
   $('#trTitle').textContent=m[0];
   $('#trDesc').textContent=m[1]; $('#trDesc').hidden=!m[1];
@@ -1486,7 +1487,7 @@ export function trRender(id){
          검색(네이버·구글)은 "뭘 찾아봤나"다. 계산 근거가 달라
          한 막대그래프에 세우면 "무신사 82도 / 구글 56도"처럼
          비교 불가능한 숫자가 나란히 서게 된다. 그래서 칸을 나눈다. */
-      searchCardHTML(KW.q);
+      (guideDemo?'':searchCardHTML(KW.q));
     /* 월별 컬럼 — 막대에 올리면 그 달의 값을 말풍선으로 띄운다.
        (피크 말고는 숫자를 달지 않으므로, 나머지 값을 읽는 길은 이것과 표 보기다) */
     (function(){
@@ -1905,7 +1906,7 @@ export function trRender(id){
   /* ══════════════ 할인률 변화 ══════════════
      값: /api/discount → snapshot.product_source_snapshot (세부 검색 조건에 걸린 상품) + 대표 용어 온도 */
   else if (id === 'stock') {
-    stockLoadSaved();
+    if(!guideDemo)stockLoadSaved();
     if (!document.getElementById('dzDashboard')) {
       const dashHTML = `
         <section class="stockPicker panelC" id="dzDashboard">
