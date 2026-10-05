@@ -212,6 +212,16 @@
           <button type="button" class="notiSetLink" id="notiSetLink"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>알림 설정</button>
         </div>
       </span>
+      <!-- 전체 가이드 — 알림 오른쪽. 모든 페이지 가이드를 한 흐름으로 연다 (app_shell/static/js/assistant_hub.js startGuideTour).
+           로그인 전에도 보인다. 오른쪽 아래 도움말 허브의 '가이드라인'은 지금 화면만 설명한다. -->
+      <button type="button" class="tourBtn" id="tourBtn" aria-label="전체 가이드 열기" aria-haspopup="dialog" title="전체 가이드">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M3.5 15.3 12 11.5l8.5 3.8L12 19.1Z"/>
+          <path d="M3.5 15.3v2.3l8.5 3.8 8.5-3.8v-2.3M12 19.1v2.3"/>
+          <g class="tourStick"><path d="M12 15.2V8.6"/><circle cx="12" cy="6" r="2.6" fill="currentColor"/></g>
+        </svg>
+      </button>
     </div>
   </header>
 
