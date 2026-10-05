@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 /* 전 페이지 도움말 허브.
  * 기존 챗봇·트렌드·스타일 구현은 건드리지 않고 공개 진입 함수만 호출한다.
  * 화면 가이드는 alpha.js 와 분리해, 알파 계정 여부와 무관하게 사용할 수 있다. */
@@ -6,6 +7,14 @@ import { AUTH } from '../../../account/static/js/profile.js';
 import { SM_ON } from '../../../home/static/js/chat.js';
 import { openChatWith, openChatPopup, closeChatPopup, cpToggleMode } from '../../../home/static/js/chat_popup.js';
 import { stOpen } from '../../../style/static/js/style_page.js';
+=======
+/* 오른쪽 하단 챗봇 버튼 + 화면별 가이드.
+ * 버튼은 어느 화면에서든 챗봇 팝업만 연다 (2026-10-05, 메뉴 허브에서 단일 버튼으로 되돌림).
+ * 화면 가이드(startContextGuide)는 alpha.js 와 분리된 그대로 남겨 둔다.
+ * 지금은 화면에서 가이드를 여는 입구가 없다 — 다시 붙일 때 이 함수를 부르면 된다. */
+import { trSideOpen } from './router.js';
+import { openChatWith } from '../../../home/static/js/chat_popup.js';
+>>>>>>> def3fa62cf835c695da667534254582d67392cf7
 import { trRender } from '../../../trend/static/js/dispatch.js';
 import { KW, josa } from '../../../trend/static/js/render_helpers.js';
 import { installGuideDemo, sentimentUrl } from '../../../trend/static/js/live_data.js';
@@ -25,38 +34,9 @@ import resaleDemo from '../../../trend/static/demo/resale.json' with { type:'jso
 /* 내 피드 가이드의 EDIT 대표 화면 — 로컬 Django /api/trend?term=가을&days=400 응답을 그대로 저장했다. */
 import autumnDemo from '../../../trend/static/demo/temp_autumn.json' with { type:'json' };
 
-const HINT_KEY = 'feedit.assist.hint.v1';
-
 let guide = null;
 let guideStep = 0;
 let guideRaf = 0;
-
-function hintSeen(){
-  try { return localStorage.getItem(HINT_KEY) === '1'; } catch (_) { return false; }
-}
-function markHintSeen(){
-  try { localStorage.setItem(HINT_KEY, '1'); } catch (_) {}
-}
-
-export function setAssistOpen(open){
-  const hub = document.getElementById('assistHub');
-  const toggle = document.getElementById('chatFab');
-  const menu = document.getElementById('assistMenu');
-  if(!hub || !toggle || !menu) return;
-  hub.classList.toggle('open', !!open);
-  toggle.setAttribute('aria-expanded', String(!!open));
-  toggle.setAttribute('aria-label', open ? 'FEEDiT 도움말 메뉴 닫기' : 'FEEDiT 도움말 메뉴 열기');
-  menu.setAttribute('aria-hidden', String(!open));
-  if(open){
-    markHintSeen();
-    const hint = document.getElementById('assistHint');
-    if(hint) hint.hidden = true;
-    requestAnimationFrame(() => {
-      const first = menu.querySelector('.assistAction');
-      if(first) first.focus({ preventScroll:true });
-    });
-  }
-}
 
 function currentView(){ return document.body.dataset.view || 'home'; }
 
@@ -749,6 +729,7 @@ const FAB_HINT = {
 
 function genericSteps(view){
   if(view === 'home') return [
+<<<<<<< HEAD
     {
       targets:['#hotBar', '.hot'],
       title:'지금 뜨는 키워드부터 확인해요',
@@ -788,6 +769,17 @@ function genericSteps(view){
       body:'마감된 내 카드에 구매 여부와 후기를 남겨요.\n남긴 결과는 투표한 사람들의\n적중 기록에 쓰여요.',
     },
     FAB_HINT,
+=======
+    { targets:['#hotBar', '.hot'], icon:'F', title:'오늘의 흐름을 먼저 훑어보세요', body:'홈에서는 지금 주목받는 패션 흐름과 추천 질문을 빠르게 확인할 수 있습니다.' },
+    { targets:['.chatWrap'], icon:'✦', title:'자연어로 바로 물어보세요', body:'궁금한 아이템이나 코디를 문장으로 입력하면 FEEDiT이 관련 데이터를 찾아 답합니다.' },
+    { targets:['#mNav'], icon:'↗', title:'목적에 맞는 화면으로 이동하세요', body:'트렌드 분석, 살!말?, 스타일 메뉴가 각각 다른 질문을 해결합니다.' },
+    { targets:['#chatFab'], icon:'✦', title:'챗봇은 이 버튼으로 열어요', body:'어느 화면에서든 눌러서 바로 질문할 수 있습니다.' },
+  ];
+  if(view === 'style') return [
+    { targets:['.styleTitle', '#styleHome'], icon:'S', title:'취향에 가까운 코어를 골라보세요', body:'스타일을 고르면 배경 설명부터 현재 아이템까지 한 흐름으로 볼 수 있습니다.' },
+    { targets:['#stCats', '#styleHome'], icon:'↗', title:'카테고리를 눌러 상세로 들어가세요', body:'관심 스타일을 선택하면 관련 상품과 Virtual Fitting으로 이어집니다.' },
+    { targets:['#chatFab'], icon:'✦', title:'궁금하면 챗봇에 물어보세요', body:'스타일을 보다가도 이 버튼으로 챗봇을 바로 열 수 있습니다.' },
+>>>>>>> def3fa62cf835c695da667534254582d67392cf7
   ];
   if(view === 'price') return [
     {
@@ -807,6 +799,7 @@ function genericSteps(view){
     },
   ];
   return [
+<<<<<<< HEAD
     {
       targets:[`#v-${view}`, '#mNav'],
       title:'이 화면의 주요 기능을 둘러보세요',
@@ -818,6 +811,11 @@ function genericSteps(view){
       body:'트렌드 분석, 살!말?, 스타일, 요금제를\n오갈 수 있어요.',
     },
     FAB_HINT,
+=======
+    { targets:[`#v-${view}`, '#mNav'], icon:'F', title:'현재 화면의 핵심 기능을 둘러보세요', body:'화면 안의 주요 카드와 버튼을 따라가면 FEEDiT의 분석 흐름을 사용할 수 있습니다.' },
+    { targets:['#mNav'], icon:'↗', title:'다른 기능도 바로 이어서 볼 수 있어요', body:'상단 메뉴에서 분석, 커뮤니티, 스타일 화면을 오갈 수 있습니다.' },
+    { targets:['#chatFab'], icon:'✦', title:'챗봇은 언제든 열 수 있어요', body:'현재 화면에서 이 버튼을 누르면 챗봇이 바로 열립니다.' },
+>>>>>>> def3fa62cf835c695da667534254582d67392cf7
   ];
 }
 
@@ -1483,9 +1481,38 @@ export async function startGuideTour(){
 
 export async function startContextGuide(){
   closeGuide();
+<<<<<<< HEAD
   setAssistOpen(false);
   const view = chatPopupOpen() ? 'chat' : currentView();
   const prepared = await preparePageGuide(view);
+=======
+  const view = currentView();
+  let restoreSide=null;
+  let steps;
+  if(view === 'trend'){
+    const item=activeTrendItem();
+    const side=document.getElementById('side');
+    const wasOpen=!!side?.classList.contains('open');
+    if(!wasOpen){ trSideOpen(true); await frame(); }
+    restoreSide={ wasOpen };
+    const restoreDemo=mountTrendGuideDemo(item);
+    steps=trendSteps(item);
+    guideStep = 0;
+    guide = buildGuide(steps);
+    guide.restoreSide=restoreSide;
+    guide.restoreDemo=restoreDemo;
+    paintGuideStep();
+    return;
+  }else if(view === 'salmal'){
+    const restoreDemo=mountSalmalGuideDemo();
+    steps=salmalSteps();
+    guideStep = 0;
+    guide = buildGuide(steps);
+    guide.restoreDemo=restoreDemo;
+    paintGuideStep();
+    return;
+  }else steps=genericSteps(view);
+>>>>>>> def3fa62cf835c695da667534254582d67392cf7
   guideStep = 0;
   guide = buildGuide(prepared.steps);
   guide.view = view;
@@ -1494,15 +1521,8 @@ export async function startContextGuide(){
   paintGuideStep();
 }
 
-function onAssistAction(action){
-  setAssistOpen(false);
-  if(action === 'chat') return openChatWith('', null);
-  if(action === 'trend') return goView('trend');
-  if(action === 'style') return goView('style');
-  if(action === 'guide') return startContextGuide();
-}
-
 function boot(){
+<<<<<<< HEAD
   /* 헤더 알림 오른쪽의 조이스틱 버튼 — 전체 가이드를 연다. 하단 도움말 허브와는 따로 동작한다. */
   const tourBtn = document.getElementById('tourBtn');
   if(tourBtn) tourBtn.addEventListener('click', () => { startGuideTour(); });
@@ -1522,22 +1542,20 @@ function boot(){
   addEventListener('popstate', () => { if(guide?.tour) closeGuide(); });
 
   const hub = document.getElementById('assistHub');
+=======
+>>>>>>> def3fa62cf835c695da667534254582d67392cf7
   const toggle = document.getElementById('chatFab');
-  const menu = document.getElementById('assistMenu');
-  const hint = document.getElementById('assistHint');
-  if(!hub || !toggle || !menu) return;
-  if(hint) hint.hidden = hintSeen();
+  if(!toggle) return;
   toggle.addEventListener('click', e => {
     e.stopPropagation();
-    setAssistOpen(!hub.classList.contains('open'));
+    openChatWith('', null);
   });
-  menu.addEventListener('click', e => {
-    const button = e.target.closest('[data-assist]');
-    if(button) onAssistAction(button.dataset.assist);
+<<<<<<< HEAD
+=======
+  document.addEventListener('keydown', e => {
+    if(e.key === 'Escape' && guide) closeGuide();
   });
-  document.addEventListener('click', e => {
-    if(!hub.contains(e.target)) setAssistOpen(false);
-  });
+>>>>>>> def3fa62cf835c695da667534254582d67392cf7
 }
 
 if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);

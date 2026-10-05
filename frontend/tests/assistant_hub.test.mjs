@@ -45,12 +45,22 @@ document.body.dataset.view = 'home';
 const click = el => el.dispatchEvent(new dom.window.MouseEvent('click', { bubbles:true }));
 const wait = (ms=0) => new Promise(resolve => setTimeout(resolve, ms));
 
-assert.equal(document.querySelectorAll('[data-assist]').length, 4, '허브 메뉴는 정확히 네 개여야 한다');
-assert.equal(document.querySelectorAll('[data-assist] > svg').length, 4, '각 메뉴에는 기능별 픽토그램이 있어야 한다');
-click(document.getElementById('chatFab'));
-assert.ok(document.getElementById('assistHub').classList.contains('open'), '원형 버튼을 누르면 메뉴가 열려야 한다');
-assert.equal(document.getElementById('assistMenu').getAttribute('aria-hidden'), 'false');
-assert.equal(document.getElementById('assistHint').hidden, true, '처음 연 뒤에는 사전 안내 말풍선이 사라져야 한다');
+/* 오른쪽 하단 버튼은 챗봇만 연다 (2026-10-05) — 메뉴·안내 말풍선이 없어야 한다. */
+assert.equal(document.querySelectorAll('[data-assist]').length, 0, '버튼 메뉴가 남아 있으면 안 된다');
+assert.equal(document.getElementById('assistMenu'), null);
+assert.equal(document.getElementById('assistHint'), null);
+assert.equal(document.getElementById('chatFab').getAttribute('aria-label'), '챗봇 열기');
+const P = await import(`${F}/account/static/js/profile.js`);
+P.AUTH.in = true;
+for(const view of ['home', 'trend', 'style', 'salmal']){
+  document.body.dataset.view = view;
+  document.getElementById('cpOverlay').classList.remove('on');
+  click(document.getElementById('chatFab'));
+  await wait(5);
+  assert.ok(document.getElementById('cpOverlay').classList.contains('on'), view + ' 화면에서 버튼이 챗봇을 열지 않았다');
+}
+document.getElementById('cpOverlay').classList.remove('on');
+document.body.dataset.view = 'home';
 
 await HUB.startContextGuide();
 await wait(10);
