@@ -713,6 +713,49 @@ export async function startContextGuide(){
   paintGuideStep();
 }
 
+/* 원형 버튼 아이콘은 "마지막으로 누른 메뉴"가 아니라 "지금 보고 있는 화면"을 따른다.
+ * 상단 내비로 이동해도 맞게 보이도록 body[data-view] 를 기준으로 삼는다.
+ * 챗봇·가이드라인은 화면이 아니라 위에 뜨는 창이므로 여기서 표시하지 않는다. */
+const VIEW_ACTION = { trend:'trend', style:'style' };
+let defaultGlyph = '';
+let shownAction = null;
+
+export function syncAssistCurrent(){
+  const glyph = document.getElementById('assistGlyph');
+  const menu = document.getElementById('assistMenu');
+  if(!glyph || !menu) return;
+  const action = VIEW_ACTION[currentView()] || null;
+  menu.querySelectorAll('[data-assist]').forEach(button => {
+    const on = button.dataset.assist === action;
+    button.classList.toggle('isCurrent', on);
+    if(on) button.setAttribute('aria-current', 'page');
+    else button.removeAttribute('aria-current');
+  });
+  if(action === shownAction) return;
+  shownAction = action;
+  const source = action && menu.querySelector(`[data-assist="${action}"] > svg`);
+  glyph.innerHTML = source ? source.outerHTML : defaultGlyph;
+  glyph.classList.remove('swap');
+  void glyph.offsetWidth;
+  glyph.classList.add('swap');
+}
+
+function moveMenuFocus(menu, key){
+  const items = [...menu.querySelectorAll('.assistAction')];
+  const at = items.indexOf(document.activeElement);
+  if(at < 0) return false;
+  /* 메뉴는 버튼에서 위로 쌓인다. 위 화살표가 다음 항목, 아래 화살표가 이전 항목. */
+  let next = at;
+  if(key === 'ArrowUp') next = Math.min(items.length - 1, at + 1);
+  else if(key === 'ArrowDown') next = at - 1;
+  else if(key === 'Home') next = 0;
+  else if(key === 'End') next = items.length - 1;
+  else return false;
+  if(next < 0) document.getElementById('chatFab')?.focus();
+  else items[next].focus();
+  return true;
+}
+
 function onAssistAction(action){
   setAssistOpen(false);
   if(action === 'chat') return openChatWith('', null);
@@ -728,6 +771,15 @@ function boot(){
   const hint = document.getElementById('assistHint');
   if(!hub || !toggle || !menu) return;
   if(hint) hint.hidden = hintSeen();
+  const glyph = document.getElementById('assistGlyph');
+  if(glyph) defaultGlyph = glyph.innerHTML.trim();
+  syncAssistCurrent();
+  if(typeof MutationObserver === 'function'){
+    new MutationObserver(syncAssistCurrent).observe(document.body, { attributes:true, attributeFilter:['data-view'] });
+  }
+  menu.addEventListener('keydown', e => {
+    if(moveMenuFocus(menu, e.key)) e.preventDefault();
+  });
   toggle.addEventListener('click', e => {
     e.stopPropagation();
     setAssistOpen(!hub.classList.contains('open'));
@@ -742,7 +794,10 @@ function boot(){
   document.addEventListener('keydown', e => {
     if(e.key !== 'Escape') return;
     if(guide) closeGuide();
-    else setAssistOpen(false);
+    else if(hub.classList.contains('open')){
+      setAssistOpen(false);
+      toggle.focus({ preventScroll:true });
+    }
   });
 }
 
