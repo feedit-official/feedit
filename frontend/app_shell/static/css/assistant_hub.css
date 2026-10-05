@@ -1,108 +1,23 @@
-/* 전 페이지 도움말 허브 — 기존 화면 위에 독립적으로 얹히는 레이어. */
+/* 오른쪽 하단 챗봇 버튼 — 모든 메인 화면에 얹히는 레이어. 누르면 챗봇 팝업만 연다. */
 .assistHub{
   position:fixed;right:clamp(18px,3vw,36px);bottom:clamp(18px,3vw,34px);z-index:120;
   width:64px;height:64px;pointer-events:none;opacity:0;visibility:hidden;
   transition:opacity .25s ease,visibility .25s ease;
 }
 body.mainmode .assistHub{opacity:1;visibility:visible}
-.assistHub button,.assistHint{font-family:var(--sans, Pretendard, sans-serif)}
-
-/* 원형 버튼 — 닫혀 있을 땐 현재 화면 아이콘, 열리면 × 로 바뀐다.
-   레일과 한 몸처럼 보이도록 들썩이는 hover 대신 색만 바꾼다. */
-.assistToggle{
-  position:absolute;right:5px;bottom:.5px;z-index:4;width:50px;height:50px;border-radius:50%;
-  display:grid;place-items:center;border:0;background:#0d0d0d;color:#fff;pointer-events:auto;cursor:pointer;
-  box-shadow:0 13px 30px -13px rgba(0,0,0,.52);
-  transition:background .25s ease,box-shadow .3s ease;
-}
-.assistToggle:hover{background:#1d1c1a}
-.assistToggle:focus-visible{outline:2px solid var(--coral,#ff6b4a);outline-offset:3px}
-.assistHub.open .assistToggle{background:#0d0d0d;box-shadow:none}
-.assistGlyph,.assistClose{grid-area:1/1;display:grid;place-items:center;
-  transition:opacity .22s ease,transform .38s cubic-bezier(.2,.9,.25,1)}
-.assistGlyph svg,.assistClose svg{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
-.assistClose{opacity:0;transform:rotate(-90deg) scale(.6)}
-.assistHub.open .assistGlyph{opacity:0;transform:rotate(90deg) scale(.6)}
-.assistHub.open .assistClose{opacity:1;transform:none}
-.assistGlyph.swap{animation:assistSwap .46s cubic-bezier(.2,.9,.25,1)}
-@keyframes assistSwap{0%{opacity:0;transform:translateY(7px) scale(.7)}100%{opacity:1;transform:none}}
-
-.assistHint{font-family:var(--sans, Pretendard, sans-serif)}
+/* 챗봇 팝업이 열려 있으면 숨긴다 — 같은 기능이고, 팝업 전송 버튼 자리와 겹친다. */
+body.mainmode:has(#cpOverlay.on) .assistHub{opacity:0;visibility:hidden}
 
 .assistToggle{
-  position:absolute;right:5px;bottom:.5px;z-index:4;width:50px;height:50px;border-radius:50%;
+  position:absolute;right:5px;bottom:.5px;width:50px;height:50px;border-radius:50%;
   display:grid;place-items:center;border:0;background:#0d0d0d;color:#fff;pointer-events:auto;cursor:pointer;
   box-shadow:0 13px 30px -13px rgba(0,0,0,.52);
   transition:transform .32s cubic-bezier(.2,.8,.2,1),background .25s ease,box-shadow .25s ease;
 }
 .assistToggle svg{width:21px;height:21px}
-.assistToggle:hover{transform:translateY(-2px) scale(1.035);background:#1d1c1a}
-.assistHub.open .assistToggle{transform:rotate(5deg) scale(.95);background:#1d1c1a;box-shadow:0 12px 28px -14px rgba(0,0,0,.56)}
-
-.assistHint{
-  position:absolute;right:30px;bottom:76px;width:180px;box-sizing:border-box;padding:12px 15px 13px;
-  border:1px solid rgba(255,255,255,.48);border-radius:12px;background:rgba(30,29,27,.92);color:#fff;
-  box-shadow:0 14px 30px -16px rgba(0,0,0,.55);backdrop-filter:blur(12px);pointer-events:none;
-  transform:rotate(-6deg);transform-origin:right bottom;transition:opacity .18s ease,transform .25s ease;
-}
-.assistHint[hidden],.assistHub.open .assistHint{display:block;opacity:0;visibility:hidden;transform:rotate(-6deg) translateY(8px)}
-.assistHint b{display:block;font-size:13px;line-height:1.35;letter-spacing:-.02em}
-.assistHint span{display:block;margin-top:3px;font-size:11.5px;color:rgba(255,255,255,.76)}
-.assistHint i{position:absolute;right:9px;bottom:-27px;width:36px;height:26px;border-right:2px solid rgba(255,255,255,.9);border-bottom:2px solid rgba(255,255,255,.9);border-radius:0 0 18px 0;transform:rotate(18deg)}
-.assistHint i::after{content:"";position:absolute;right:-5px;bottom:-3px;width:8px;height:8px;border-right:2px solid #fff;border-bottom:2px solid #fff;transform:rotate(-25deg)}
-
-/* 펼친 동안 뒤 화면(홈 입력창 전송 버튼 등)이 레일과 겹쳐 보이지 않도록 종이색으로 한 겹 가라앉힌다.
-   클릭은 막지 않는다 — 바깥 클릭으로 닫히는 기존 동작을 그대로 쓴다. */
-.assistHub::before{
-  content:"";position:fixed;inset:0;z-index:0;background:rgba(243,241,237,.72);
-  opacity:0;pointer-events:none;transition:opacity .3s ease;
-}
-.assistHub.open::before{opacity:1}
-
-/* 레일 — 원형 버튼이 그대로 위로 늘어난 캡슐. 메뉴는 아래(버튼 가까운 쪽)부터
-   챗봇 · 트렌드 분석 · 스타일 · 가이드라인 순으로 올라온다. */
-.assistMenu{
-  --rail-open:230px;
-  position:absolute;right:5px;bottom:.5px;z-index:3;width:50px;height:50px;border-radius:25px;
-  background:#0d0d0d;pointer-events:none;opacity:0;
-  transition:height .36s cubic-bezier(.4,0,.2,1) .06s,box-shadow .3s ease,opacity 0s linear .42s;
-}
-.assistHub.open .assistMenu{
-  height:var(--rail-open);opacity:1;pointer-events:auto;box-shadow:0 22px 44px -18px rgba(0,0,0,.55);
-  transition:height .44s cubic-bezier(.2,.9,.25,1),box-shadow .3s ease,opacity 0s;
-}
-.assistAction{
-  position:absolute;right:5px;width:40px;height:40px;padding:0;border:0;border-radius:50%;
-  display:grid;place-items:center;background:transparent;color:#f3f1ed;cursor:pointer;
-  opacity:0;visibility:hidden;pointer-events:none;transform:translateY(14px) scale(.82);
-  transition:opacity .18s ease,visibility .18s ease,transform .3s cubic-bezier(.2,.9,.25,1),background .2s ease;
-}
-.assistAction:nth-child(1){bottom:52px}
-.assistAction:nth-child(2){bottom:96px}
-.assistAction:nth-child(3){bottom:140px}
-.assistAction:nth-child(4){bottom:184px}
-.assistAction svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
-.assistAction span{
-  position:absolute;right:calc(100% + 17px);top:50%;padding:6px 12px;border:1px solid rgba(25,24,22,.12);border-radius:999px;
-  background:var(--paper,#f3f1ed);color:#191816;font-size:12px;font-weight:600;letter-spacing:-.02em;white-space:nowrap;
-  box-shadow:0 10px 22px -16px rgba(0,0,0,.5);
-  opacity:0;transform:translate(8px,-50%);transition:opacity .2s ease,transform .3s cubic-bezier(.2,.9,.25,1),background .2s ease,color .2s ease;
-}
-.assistHub.open .assistAction{opacity:1;visibility:visible;pointer-events:auto;transform:none}
-.assistHub.open .assistAction span{opacity:1;transform:translate(0,-50%)}
-.assistHub.open .assistAction:nth-child(1),.assistHub.open .assistAction:nth-child(1) span{transition-delay:.07s}
-.assistHub.open .assistAction:nth-child(2),.assistHub.open .assistAction:nth-child(2) span{transition-delay:.11s}
-.assistHub.open .assistAction:nth-child(3),.assistHub.open .assistAction:nth-child(3) span{transition-delay:.15s}
-.assistHub.open .assistAction:nth-child(4),.assistHub.open .assistAction:nth-child(4) span{transition-delay:.19s}
-.assistHub:not(.open) .assistAction:nth-child(4){transition-delay:0s}
-.assistHub:not(.open) .assistAction:nth-child(3){transition-delay:.03s}
-.assistHub:not(.open) .assistAction:nth-child(2){transition-delay:.06s}
-.assistHub:not(.open) .assistAction:nth-child(1){transition-delay:.09s}
-.assistAction:hover,.assistAction:focus-visible{background:rgba(255,255,255,.12);outline:none}
-.assistAction:hover span,.assistAction:focus-visible span{background:#191816;color:#fff;border-color:#191816}
-/* 지금 보고 있는 화면 — 코럴 점과 코럴 아이콘 */
-.assistAction.isCurrent{color:var(--coral,#ff6b4a)}
-.assistAction.isCurrent::after{content:"";position:absolute;top:6px;right:6px;width:6px;height:6px;border-radius:50%;background:var(--coral,#ff6b4a)}
+.assistToggle:hover{transform:translateY(-2px) scale(1.035);background:#1d1c1a;box-shadow:0 16px 32px -14px rgba(0,0,0,.6)}
+.assistToggle:active{transform:scale(.96)}
+.assistToggle:focus-visible{outline:2px solid var(--coral,#ff6b4a);outline-offset:3px}
 
 /* 독립 온보딩 투어 — 알파 계정 안내와 섞지 않는다. */
 .guideTour{position:fixed;inset:0;z-index:9600}
@@ -189,19 +104,13 @@ body.mainmode .assistHub{opacity:1;visibility:visible}
   .smGuideStage .smGuideGrid{grid-template-columns:1fr}
 }
 
-@media(min-width:701px){
-  /* 펼쳤을 때 마지막 카드까지 화면 안에 머물도록, 원형 버튼을 원래 여백과 비슷한 높이에 둔다. */
-  .assistHub{right:clamp(8px,1.6vw,20px);bottom:clamp(40px,4.5vh,56px)}
-}
-
 @media(min-width:701px) and (max-height:680px){
-  /* 낮은 노트북 화면에서는 홈 입력창의 전송 버튼을 피해 왼쪽 아래로 물린다. */
-  .assistHub{right:4px;bottom:-22px}
+  /* 낮은 노트북 화면에서는 홈 입력창의 전송 버튼을 피해 모서리 쪽으로 붙인다. */
+  .assistHub{right:8px;bottom:8px}
 }
 
 @media(max-width:700px){
-  .assistHub{right:6px;bottom:2px}
-  .assistHint{right:24px;bottom:72px}
+  .assistHub{right:8px;bottom:calc(10px + env(safe-area-inset-bottom, 0px))}
   .guideCard{padding:18px 17px 15px}
   .guideHead{grid-template-columns:44px minmax(0,1fr);gap:11px}
   .guideIcon{width:44px;height:44px;border-radius:11px;font-size:21px}
@@ -215,6 +124,5 @@ body.mainmode .assistHub{opacity:1;visibility:visible}
 }
 
 @media(prefers-reduced-motion:reduce){
-  .assistHub::before,.assistToggle,.assistAction,.assistAction span,.assistMenu,.assistGlyph,.assistClose,.assistHint,.guideSpot{transition:none}
-  .assistGlyph.swap{animation:none}
+  .assistToggle,.guideSpot{transition:none}
 }

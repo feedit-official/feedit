@@ -45,46 +45,22 @@ document.body.dataset.view = 'home';
 const click = el => el.dispatchEvent(new dom.window.MouseEvent('click', { bubbles:true }));
 const wait = (ms=0) => new Promise(resolve => setTimeout(resolve, ms));
 
-assert.equal(document.querySelectorAll('[data-assist]').length, 4, '허브 메뉴는 정확히 네 개여야 한다');
-assert.equal(document.querySelectorAll('[data-assist] > svg').length, 4, '각 메뉴에는 기능별 픽토그램이 있어야 한다');
-click(document.getElementById('chatFab'));
-assert.ok(document.getElementById('assistHub').classList.contains('open'), '원형 버튼을 누르면 메뉴가 열려야 한다');
-assert.equal(document.getElementById('assistMenu').getAttribute('aria-hidden'), 'false');
-assert.equal(document.getElementById('assistHint').hidden, true, '처음 연 뒤에는 사전 안내 말풍선이 사라져야 한다');
-
-/* 레일형 메뉴 (2026-10-05) — 원형 버튼 아이콘은 지금 보고 있는 화면을 따른다. */
-const glyph = document.getElementById('assistGlyph');
-const glyphPath = () => glyph.querySelector('svg path')?.getAttribute('d');
-const bubblePath = glyphPath();
-assert.ok(bubblePath, '닫힌 버튼에는 기본 말풍선 아이콘이 있어야 한다');
-assert.equal(document.querySelectorAll('.assistAction.isCurrent').length, 0, '홈에서는 현재 화면 표시가 없어야 한다');
-document.body.dataset.view = 'trend';
-await wait(5);
-assert.equal(glyphPath(), document.querySelector('[data-assist="trend"] > svg path').getAttribute('d'),
-  '트렌드 분석 화면에서는 원형 버튼이 트렌드 아이콘이어야 한다');
-assert.equal(document.querySelector('[data-assist="trend"]').getAttribute('aria-current'), 'page');
-document.body.dataset.view = 'style';
-await wait(5);
-assert.equal(glyphPath(), document.querySelector('[data-assist="style"] > svg path').getAttribute('d'),
-  '스타일 화면에서는 원형 버튼이 스타일 아이콘이어야 한다');
-assert.equal(document.querySelector('[data-assist="trend"]').hasAttribute('aria-current'), false, '이전 화면 표시는 지워져야 한다');
+/* 오른쪽 하단 버튼은 챗봇만 연다 (2026-10-05) — 메뉴·안내 말풍선이 없어야 한다. */
+assert.equal(document.querySelectorAll('[data-assist]').length, 0, '버튼 메뉴가 남아 있으면 안 된다');
+assert.equal(document.getElementById('assistMenu'), null);
+assert.equal(document.getElementById('assistHint'), null);
+assert.equal(document.getElementById('chatFab').getAttribute('aria-label'), '챗봇 열기');
+const P = await import(`${F}/account/static/js/profile.js`);
+P.AUTH.in = true;
+for(const view of ['home', 'trend', 'style', 'salmal']){
+  document.body.dataset.view = view;
+  document.getElementById('cpOverlay').classList.remove('on');
+  click(document.getElementById('chatFab'));
+  await wait(5);
+  assert.ok(document.getElementById('cpOverlay').classList.contains('on'), view + ' 화면에서 버튼이 챗봇을 열지 않았다');
+}
+document.getElementById('cpOverlay').classList.remove('on');
 document.body.dataset.view = 'home';
-await wait(5);
-assert.equal(glyphPath(), bubblePath, '현재 화면이 메뉴에 없으면 기본 말풍선으로 돌아와야 한다');
-assert.equal(document.querySelectorAll('[aria-current="page"][data-assist]').length, 0);
-
-const actions = [...document.querySelectorAll('.assistAction')];
-actions[0].focus();
-actions[0].dispatchEvent(new dom.window.KeyboardEvent('keydown', { key:'ArrowUp', bubbles:true }));
-assert.equal(document.activeElement, actions[1], '위 화살표는 위쪽(다음) 메뉴로 옮겨야 한다');
-actions[1].dispatchEvent(new dom.window.KeyboardEvent('keydown', { key:'End', bubbles:true }));
-assert.equal(document.activeElement, actions[3]);
-actions[0].focus();
-actions[0].dispatchEvent(new dom.window.KeyboardEvent('keydown', { key:'ArrowDown', bubbles:true }));
-assert.equal(document.activeElement, document.getElementById('chatFab'), '맨 아래에서 아래 화살표는 원형 버튼으로 돌아가야 한다');
-document.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key:'Escape', bubbles:true }));
-assert.ok(!document.getElementById('assistHub').classList.contains('open'), 'Esc 로 레일이 닫혀야 한다');
-assert.equal(document.activeElement, document.getElementById('chatFab'), '닫은 뒤 포커스는 원형 버튼으로 돌아가야 한다');
 
 await HUB.startContextGuide();
 await wait(10);

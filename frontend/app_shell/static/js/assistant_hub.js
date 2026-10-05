@@ -1,7 +1,8 @@
-/* 전 페이지 도움말 허브.
- * 기존 챗봇·트렌드·스타일 구현은 건드리지 않고 공개 진입 함수만 호출한다.
- * 화면 가이드는 alpha.js 와 분리해, 알파 계정 여부와 무관하게 사용할 수 있다. */
-import { goView, trSideOpen } from './router.js';
+/* 오른쪽 하단 챗봇 버튼 + 화면별 가이드.
+ * 버튼은 어느 화면에서든 챗봇 팝업만 연다 (2026-10-05, 메뉴 허브에서 단일 버튼으로 되돌림).
+ * 화면 가이드(startContextGuide)는 alpha.js 와 분리된 그대로 남겨 둔다.
+ * 지금은 화면에서 가이드를 여는 입구가 없다 — 다시 붙일 때 이 함수를 부르면 된다. */
+import { trSideOpen } from './router.js';
 import { openChatWith } from '../../../home/static/js/chat_popup.js';
 import { trRender } from '../../../trend/static/js/dispatch.js';
 import { KW } from '../../../trend/static/js/render_helpers.js';
@@ -20,38 +21,9 @@ import lifeDemo from '../../../trend/static/demo/life.json' with { type:'json' }
 import stockDemo from '../../../trend/static/demo/stock.json' with { type:'json' };
 import resaleDemo from '../../../trend/static/demo/resale.json' with { type:'json' };
 
-const HINT_KEY = 'feedit.assist.hint.v1';
-
 let guide = null;
 let guideStep = 0;
 let guideRaf = 0;
-
-function hintSeen(){
-  try { return localStorage.getItem(HINT_KEY) === '1'; } catch (_) { return false; }
-}
-function markHintSeen(){
-  try { localStorage.setItem(HINT_KEY, '1'); } catch (_) {}
-}
-
-export function setAssistOpen(open){
-  const hub = document.getElementById('assistHub');
-  const toggle = document.getElementById('chatFab');
-  const menu = document.getElementById('assistMenu');
-  if(!hub || !toggle || !menu) return;
-  hub.classList.toggle('open', !!open);
-  toggle.setAttribute('aria-expanded', String(!!open));
-  toggle.setAttribute('aria-label', open ? 'FEEDiT 도움말 메뉴 닫기' : 'FEEDiT 도움말 메뉴 열기');
-  menu.setAttribute('aria-hidden', String(!open));
-  if(open){
-    markHintSeen();
-    const hint = document.getElementById('assistHint');
-    if(hint) hint.hidden = true;
-    requestAnimationFrame(() => {
-      const first = menu.querySelector('.assistAction');
-      if(first) first.focus({ preventScroll:true });
-    });
-  }
-}
 
 function currentView(){ return document.body.dataset.view || 'home'; }
 
@@ -467,12 +439,12 @@ function genericSteps(view){
     { targets:['#hotBar', '.hot'], icon:'F', title:'오늘의 흐름을 먼저 훑어보세요', body:'홈에서는 지금 주목받는 패션 흐름과 추천 질문을 빠르게 확인할 수 있습니다.' },
     { targets:['.chatWrap'], icon:'✦', title:'자연어로 바로 물어보세요', body:'궁금한 아이템이나 코디를 문장으로 입력하면 FEEDiT이 관련 데이터를 찾아 답합니다.' },
     { targets:['#mNav'], icon:'↗', title:'목적에 맞는 화면으로 이동하세요', body:'트렌드 분석, 살!말?, 스타일 메뉴가 각각 다른 질문을 해결합니다.' },
-    { targets:['#chatFab'], icon:'?', title:'이 버튼에서 다시 시작할 수 있어요', body:'챗봇과 주요 화면, 가이드라인을 언제든 다시 불러올 수 있습니다.' },
+    { targets:['#chatFab'], icon:'✦', title:'챗봇은 이 버튼으로 열어요', body:'어느 화면에서든 눌러서 바로 질문할 수 있습니다.' },
   ];
   if(view === 'style') return [
     { targets:['.styleTitle', '#styleHome'], icon:'S', title:'취향에 가까운 코어를 골라보세요', body:'스타일을 고르면 배경 설명부터 현재 아이템까지 한 흐름으로 볼 수 있습니다.' },
     { targets:['#stCats', '#styleHome'], icon:'↗', title:'카테고리를 눌러 상세로 들어가세요', body:'관심 스타일을 선택하면 관련 상품과 Virtual Fitting으로 이어집니다.' },
-    { targets:['#chatFab'], icon:'?', title:'도움이 필요하면 다시 열어보세요', body:'챗봇·트렌드 분석·가이드를 이곳에서 바로 실행할 수 있습니다.' },
+    { targets:['#chatFab'], icon:'✦', title:'궁금하면 챗봇에 물어보세요', body:'스타일을 보다가도 이 버튼으로 챗봇을 바로 열 수 있습니다.' },
   ];
   if(view === 'price') return [
     {
@@ -494,7 +466,7 @@ function genericSteps(view){
   return [
     { targets:[`#v-${view}`, '#mNav'], icon:'F', title:'현재 화면의 핵심 기능을 둘러보세요', body:'화면 안의 주요 카드와 버튼을 따라가면 FEEDiT의 분석 흐름을 사용할 수 있습니다.' },
     { targets:['#mNav'], icon:'↗', title:'다른 기능도 바로 이어서 볼 수 있어요', body:'상단 메뉴에서 분석, 커뮤니티, 스타일 화면을 오갈 수 있습니다.' },
-    { targets:['#chatFab'], icon:'?', title:'필요할 때 가이드를 다시 여세요', body:'현재 화면에서 언제든 이 도움말 허브를 사용할 수 있습니다.' },
+    { targets:['#chatFab'], icon:'✦', title:'챗봇은 언제든 열 수 있어요', body:'현재 화면에서 이 버튼을 누르면 챗봇이 바로 열립니다.' },
   ];
 }
 
@@ -680,7 +652,6 @@ function buildGuide(steps){
 
 export async function startContextGuide(){
   closeGuide();
-  setAssistOpen(false);
   const view = currentView();
   let restoreSide=null;
   let steps;
@@ -713,91 +684,15 @@ export async function startContextGuide(){
   paintGuideStep();
 }
 
-/* 원형 버튼 아이콘은 "마지막으로 누른 메뉴"가 아니라 "지금 보고 있는 화면"을 따른다.
- * 상단 내비로 이동해도 맞게 보이도록 body[data-view] 를 기준으로 삼는다.
- * 챗봇·가이드라인은 화면이 아니라 위에 뜨는 창이므로 여기서 표시하지 않는다. */
-const VIEW_ACTION = { trend:'trend', style:'style' };
-let defaultGlyph = '';
-let shownAction = null;
-
-export function syncAssistCurrent(){
-  const glyph = document.getElementById('assistGlyph');
-  const menu = document.getElementById('assistMenu');
-  if(!glyph || !menu) return;
-  const action = VIEW_ACTION[currentView()] || null;
-  menu.querySelectorAll('[data-assist]').forEach(button => {
-    const on = button.dataset.assist === action;
-    button.classList.toggle('isCurrent', on);
-    if(on) button.setAttribute('aria-current', 'page');
-    else button.removeAttribute('aria-current');
-  });
-  if(action === shownAction) return;
-  shownAction = action;
-  const source = action && menu.querySelector(`[data-assist="${action}"] > svg`);
-  glyph.innerHTML = source ? source.outerHTML : defaultGlyph;
-  glyph.classList.remove('swap');
-  void glyph.offsetWidth;
-  glyph.classList.add('swap');
-}
-
-function moveMenuFocus(menu, key){
-  const items = [...menu.querySelectorAll('.assistAction')];
-  const at = items.indexOf(document.activeElement);
-  if(at < 0) return false;
-  /* 메뉴는 버튼에서 위로 쌓인다. 위 화살표가 다음 항목, 아래 화살표가 이전 항목. */
-  let next = at;
-  if(key === 'ArrowUp') next = Math.min(items.length - 1, at + 1);
-  else if(key === 'ArrowDown') next = at - 1;
-  else if(key === 'Home') next = 0;
-  else if(key === 'End') next = items.length - 1;
-  else return false;
-  if(next < 0) document.getElementById('chatFab')?.focus();
-  else items[next].focus();
-  return true;
-}
-
-function onAssistAction(action){
-  setAssistOpen(false);
-  if(action === 'chat') return openChatWith('', null);
-  if(action === 'trend') return goView('trend');
-  if(action === 'style') return goView('style');
-  if(action === 'guide') return startContextGuide();
-}
-
 function boot(){
-  const hub = document.getElementById('assistHub');
   const toggle = document.getElementById('chatFab');
-  const menu = document.getElementById('assistMenu');
-  const hint = document.getElementById('assistHint');
-  if(!hub || !toggle || !menu) return;
-  if(hint) hint.hidden = hintSeen();
-  const glyph = document.getElementById('assistGlyph');
-  if(glyph) defaultGlyph = glyph.innerHTML.trim();
-  syncAssistCurrent();
-  if(typeof MutationObserver === 'function'){
-    new MutationObserver(syncAssistCurrent).observe(document.body, { attributes:true, attributeFilter:['data-view'] });
-  }
-  menu.addEventListener('keydown', e => {
-    if(moveMenuFocus(menu, e.key)) e.preventDefault();
-  });
+  if(!toggle) return;
   toggle.addEventListener('click', e => {
     e.stopPropagation();
-    setAssistOpen(!hub.classList.contains('open'));
-  });
-  menu.addEventListener('click', e => {
-    const button = e.target.closest('[data-assist]');
-    if(button) onAssistAction(button.dataset.assist);
-  });
-  document.addEventListener('click', e => {
-    if(!hub.contains(e.target)) setAssistOpen(false);
+    openChatWith('', null);
   });
   document.addEventListener('keydown', e => {
-    if(e.key !== 'Escape') return;
-    if(guide) closeGuide();
-    else if(hub.classList.contains('open')){
-      setAssistOpen(false);
-      toggle.focus({ preventScroll:true });
-    }
+    if(e.key === 'Escape' && guide) closeGuide();
   });
 }
 
