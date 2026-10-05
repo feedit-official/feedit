@@ -293,12 +293,12 @@ assert.equal(searchCalls, 0, '가이드가 실제 검색 API 진입점을 호출
 assert.equal(tabClicks, 0, '가이드가 다른 분석 탭으로 이동하면 안 된다');
 
 /* 전체 가이드 (2026-10-05) — 헤더 알림 오른쪽 조이스틱 버튼이 모든 페이지 가이드를 한 흐름으로 잇는다.
- * 하단 도움말 허브는 그대로 두고, 왼쪽 목차에서 장을 고르면 그 페이지로 옮겨 간다. */
+ * 하단 버튼은 챗봇만 여는 단일 버튼 그대로이고, 왼쪽 목차에서 장을 고르면 그 페이지로 옮겨 간다. */
 const tourBtn = document.getElementById('tourBtn');
 assert.ok(tourBtn, '헤더에 전체 가이드 버튼이 있어야 한다');
 assert.equal(tourBtn.parentElement.id, 'mHeadR', '전체 가이드 버튼은 헤더 오른쪽 묶음 안에 있어야 한다');
 assert.equal(tourBtn.previousElementSibling?.id, 'notiWrap', '전체 가이드 버튼은 알림 버튼 바로 오른쪽이어야 한다');
-assert.equal(document.querySelectorAll('[data-assist]').length, 4, '하단 도움말 허브 메뉴는 그대로여야 한다');
+assert.equal(document.querySelectorAll('[data-assist]').length, 0, '하단 버튼은 메뉴 없이 챗봇만 여는 단일 버튼이어야 한다');
 
 /* 위 단계들은 body.dataset.view 만 바꿨다. 라우터도 실제로 트렌드 분석에 둔 채 시작해,
  * 다른 페이지에서 눌러도 홈부터 시작하는지 본다. */

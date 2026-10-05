@@ -241,7 +241,6 @@ body.guide-open #trendGateModal{display:none!important}
   .tgPreviewHead{align-items:flex-start;flex-direction:column;gap:3px}
 }
 
-<<<<<<< HEAD
 @media(max-width:760px){
   /* 좁은 화면에서는 왼쪽 목차 대신 설명창 위 칩으로 장을 고른다. */
   .tourToc{display:none}
@@ -259,8 +258,4 @@ body.guide-open #trendGateModal{display:none!important}
 @media(prefers-reduced-motion:reduce){
   .assistToggle,.assistAction,.assistHint,.guideSpot,.tourToc,.tourBtn .tourStick{transition:none}
   .guideCard.enter{animation:none}
-=======
-@media(prefers-reduced-motion:reduce){
-  .assistToggle,.guideSpot{transition:none}
->>>>>>> def3fa62cf835c695da667534254582d67392cf7
 }
