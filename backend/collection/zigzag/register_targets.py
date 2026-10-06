@@ -18,6 +18,10 @@ from .config import (
 )
 from .collector import ZigzagCnvCollector
 from .detail_ranking import DEFAULT_DETAIL_MAX_RANK
+from .options import (
+    DEFAULT_OPTION_MAX_DELAY,
+    DEFAULT_OPTION_MIN_DELAY,
+)
 from .reviews import (
     DEFAULT_REVIEW_LIMIT,
     DEFAULT_REVIEW_MAX_DELAY,
@@ -74,6 +78,7 @@ def upsert_zigzag_detail_ranking_target(
     max_rank: int = DEFAULT_DETAIL_MAX_RANK,
     collect_reviews: bool = True,
     review_limit: int = DEFAULT_REVIEW_LIMIT,
+    collect_options: bool = True,
 ) -> CrawlTarget:
     source = Source.objects.get(code__iexact="zigzag")
     parent_id = str(parent_category_id)
@@ -113,6 +118,9 @@ def upsert_zigzag_detail_ranking_target(
                 "review_limit": int(review_limit),
                 "review_min_delay": DEFAULT_REVIEW_MIN_DELAY,
                 "review_max_delay": DEFAULT_REVIEW_MAX_DELAY,
+                "collect_options": bool(collect_options),
+                "option_min_delay": DEFAULT_OPTION_MIN_DELAY,
+                "option_max_delay": DEFAULT_OPTION_MAX_DELAY,
             },
             "interval_minutes": 1440,
             "priority": 5,
@@ -176,6 +184,7 @@ def upsert_zigzag_detail_ranking_targets(
     max_rank: int = DEFAULT_DETAIL_MAX_RANK,
     collect_reviews: bool = True,
     review_limit: int = DEFAULT_REVIEW_LIMIT,
+    collect_options: bool = True,
 ) -> list[CrawlTarget]:
     """
     Register detail-category ranking targets.
@@ -199,6 +208,7 @@ def upsert_zigzag_detail_ranking_targets(
                 max_rank=max_rank,
                 collect_reviews=collect_reviews,
                 review_limit=review_limit,
+                collect_options=collect_options,
             )
         )
 
@@ -212,6 +222,7 @@ def upsert_zigzag_targets(
     max_rank: int = DEFAULT_DETAIL_MAX_RANK,
     collect_reviews: bool = True,
     review_limit: int = DEFAULT_REVIEW_LIMIT,
+    collect_options: bool = True,
 ) -> list[CrawlTarget]:
     """
     Register all Zigzag collection targets.
@@ -232,6 +243,7 @@ def upsert_zigzag_targets(
                 max_rank=max_rank,
                 collect_reviews=collect_reviews,
                 review_limit=review_limit,
+                collect_options=collect_options,
             )
         )
 

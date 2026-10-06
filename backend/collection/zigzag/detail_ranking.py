@@ -13,6 +13,12 @@ from .config import (
     DEFAULT_MODULE_SLOT_ID,
     DEFAULT_ORDER,
 )
+from .options import (
+    DEFAULT_OPTION_MAX_DELAY,
+    DEFAULT_OPTION_MIN_DELAY,
+    ZigzagOptionError,
+    ZigzagProductOptionCollector,
+)
 from .reviews import (
     DEFAULT_REVIEW_LIMIT,
     DEFAULT_REVIEW_MAX_DELAY,
@@ -46,6 +52,7 @@ def collect_detail_category_ranking(
     # Match the Musinsa/ABLY ranking contract: detail rankings collect review
     # summaries and up to 20 review bodies unless explicitly disabled.
     collect_reviews = bool(params.get("collect_reviews", True))
+    collect_options = bool(params.get("collect_options", True))
     review_limit = ZigzagReviewCollector._validate_limit(
         params.get("review_limit", DEFAULT_REVIEW_LIMIT)
     )
@@ -101,6 +108,41 @@ def collect_detail_category_ranking(
                         }
                     )
 
+    option_errors: list[dict] = []
+    if collect_options:
+        with ZigzagProductOptionCollector(
+            min_delay=float(
+                params.get("option_min_delay", DEFAULT_OPTION_MIN_DELAY)
+            ),
+            max_delay=float(
+                params.get("option_max_delay", DEFAULT_OPTION_MAX_DELAY)
+            ),
+        ) as option_collector:
+            for product in snapshot.get("products") or []:
+                product_id = product.get("product_id")
+                if not product_id:
+                    continue
+                try:
+                    product["options"] = option_collector.collect_options(
+                        product_id
+                    )
+                except ZigzagOptionError as exc:
+                    logger.warning(
+                        "Zigzag option collection failed. "
+                        "source_product_id=%s error_type=%s error=%s",
+                        product_id,
+                        exc.__class__.__name__,
+                        exc,
+                    )
+                    option_errors.append(
+                        {
+                            "stage": "OPTION",
+                            "source_product_id": str(product_id),
+                            "error_type": exc.__class__.__name__,
+                            "error_message": str(exc),
+                        }
+                    )
+
     collected_at = datetime.now(timezone.utc).isoformat()
     collected_count = int(snapshot.get("collected_count") or 0)
     review_bundles = [
@@ -130,6 +172,36 @@ def collect_detail_category_ranking(
         ),
     }
     logger.info("Zigzag review collection summary=%s", review_summary)
+    option_bundles = [
+        product["options"]
+        for product in (snapshot.get("products") or [])
+        if isinstance(product.get("options"), dict)
+    ]
+    option_summary = {
+        "enabled": collect_options,
+        "requested_product_count": collected_count if collect_options else 0,
+        "successful_product_count": len(option_bundles),
+        "color_product_count": sum(
+            bool(bundle.get("colors")) for bundle in option_bundles
+        ),
+        "color_value_count": sum(
+            len(bundle.get("colors") or []) for bundle in option_bundles
+        ),
+        "variant_count": sum(
+            int(bundle.get("variant_count") or 0) for bundle in option_bundles
+        ),
+        "failed_product_count": len(option_errors),
+        "status": (
+            "DISABLED"
+            if not collect_options
+            else "PARTIAL"
+            if option_errors and option_bundles
+            else "FAILED"
+            if option_errors
+            else "SUCCESS"
+        ),
+    }
+    logger.info("Zigzag option collection summary=%s", option_summary)
     row = {
         **snapshot,
         "category_id": detail_category_id,
@@ -168,9 +240,11 @@ def collect_detail_category_ranking(
             "collect_reviews": collect_reviews,
             "review_limit": review_limit if collect_reviews else 0,
             "review_summary": review_summary,
+            "collect_options": collect_options,
+            "option_summary": option_summary,
         },
         "groups": {"detail_category": [row]},
-        "errors": review_errors,
+        "errors": review_errors + option_errors,
     }
 
     return {
@@ -186,8 +260,11 @@ def collect_detail_category_ranking(
         "payload": payload,
         "discovered_count": collected_count,
         "success_count": collected_count,
-        "failure_count": len(review_errors),
-        "platform_data": {"review_summary": review_summary},
+        "failure_count": len(review_errors) + len(option_errors),
+        "platform_data": {
+            "review_summary": review_summary,
+            "option_summary": option_summary,
+        },
     }
 
 

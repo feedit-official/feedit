@@ -236,6 +236,13 @@ CELERY_BEAT_SCHEDULE = {
         "task": "core.check_data_freshness",
         "schedule": crontab(hour=9, minute=20),
     },
+    "step04-metrics-daily": {
+    "task": "core.run_step04_metrics_daily",
+    "schedule": crontab(
+        hour=7,
+        minute=0,
+    ),
+},
 }
 
 # ★ 2026-09-20 — config/celery.py 와 같은 스위치 (크롤하지 않는 서버에서는 끈다)

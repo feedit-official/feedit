@@ -435,7 +435,7 @@ class ZigzagIngestion:
             "normalized_name": None,
             "thumbnail_url": product_data.get("image_url"),
             "product_url": None,
-            "attributes": {"tags": incoming_tags} if incoming_tags else {},
+            "attributes": self._build_product_attributes(product_data, incoming_tags),
             "first_seen_at": observed_at,
             "last_seen_at": observed_at,
             "detected_count": 1,
@@ -457,8 +457,9 @@ class ZigzagIngestion:
             if isinstance(product_source.attributes, dict)
             else {}
         )
-        merged_attributes = self._merge_attributes_tags(
+        merged_attributes = self._merge_product_attributes(
             current_attributes,
+            product_data,
             incoming_tags,
         )
         update_fields: list[str] = []
@@ -516,7 +517,7 @@ class ZigzagIngestion:
             "normalized_name": None,
             "thumbnail_url": product_data.get("image_url"),
             "product_url": None,
-            "attributes": {"tags": incoming_tags} if incoming_tags else {},
+            "attributes": self._build_product_attributes(product_data, incoming_tags),
             "first_seen_at": observed_at,
             "last_seen_at": observed_at,
             "detected_count": 1,
@@ -540,8 +541,9 @@ class ZigzagIngestion:
             if isinstance(product_source.attributes, dict)
             else {}
         )
-        merged_attributes = self._merge_attributes_tags(
+        merged_attributes = self._merge_product_attributes(
             current_attributes,
+            product_data,
             incoming_tags,
         )
 
@@ -774,7 +776,8 @@ class ZigzagIngestion:
         )
 
         return snapshot, False
-
+    
+    
     @classmethod
     def _build_cnv_tags(cls, context: dict) -> dict:
         tag_attribute = base_cleaning(context.get("tag_attribute"))
@@ -814,6 +817,233 @@ class ZigzagIngestion:
         if category_rows:
             tags["category"] = category_rows
         return tags
+    @classmethod
+    def _build_product_attributes(
+        cls,
+        product_data: dict,
+        incoming_tags: dict,
+    ) -> dict:
+        """ProductSource.attributes에 저장할 Zigzag 상품 속성을 만든다.
+
+        상세 옵션 API가 붙은 RAW의 product["options"]를 기준으로
+        색상/사이즈/옵션 그룹/실제 판매 조합을 보존한다.
+        """
+        attributes: dict = {}
+        if incoming_tags:
+            attributes["tags"] = incoming_tags
+
+        option_attributes = cls._extract_option_attributes(product_data)
+        attributes.update(option_attributes)
+        return attributes
+
+    @classmethod
+    def _extract_option_attributes(cls, product_data: dict) -> dict:
+        """Zigzag 상세 옵션을 ProductSource.attributes용 구조로 정규화한다."""
+        options = product_data.get("options")
+        if not isinstance(options, dict):
+            return {}
+
+        result: dict = {}
+
+        # Colors
+        colors: list[dict] = []
+        for value in options.get("colors") or []:
+            if not isinstance(value, dict):
+                continue
+
+            row = {
+                "id": base_cleaning(value.get("id") or value.get("value_id")),
+                "name": base_cleaning(value.get("name") or value.get("value")),
+                "hex": base_cleaning(value.get("hex") or value.get("code")),
+                "static_url": base_cleaning(value.get("static_url")),
+                "jpeg_url": base_cleaning(value.get("jpeg_url")),
+            }
+            row = {k: v for k, v in row.items() if v is not None}
+
+            if row.get("name") and row not in colors:
+                colors.append(row)
+
+        if colors:
+            result["colors"] = colors
+            result["color_count"] = len(colors)
+
+        # Sizes
+        sizes: list[dict] = []
+        for value in options.get("sizes") or []:
+            if isinstance(value, dict):
+                row = {
+                    "id": base_cleaning(value.get("id") or value.get("value_id")),
+                    "name": base_cleaning(value.get("name") or value.get("value")),
+                    "code": base_cleaning(value.get("code")),
+                }
+            else:
+                row = {
+                    "id": None,
+                    "name": base_cleaning(value),
+                    "code": None,
+                }
+
+            row = {k: v for k, v in row.items() if v is not None}
+
+            if row.get("name") and row not in sizes:
+                sizes.append(row)
+
+        if sizes:
+            result["sizes"] = sizes
+            result["size_count"] = len(sizes)
+
+        # Option groups
+        groups: list[dict] = []
+        for group in options.get("option_groups") or []:
+            if not isinstance(group, dict):
+                continue
+
+            values: list[dict] = []
+            for value in group.get("values") or group.get("value_list") or []:
+                if not isinstance(value, dict):
+                    continue
+
+                clean_value = {
+                    "id": base_cleaning(value.get("id") or value.get("value_id")),
+                    "value": base_cleaning(value.get("value") or value.get("name")),
+                    "code": base_cleaning(value.get("code") or value.get("hex")),
+                }
+                clean_value = {
+                    k: v for k, v in clean_value.items()
+                    if v is not None
+                }
+
+                if clean_value.get("value"):
+                    values.append(clean_value)
+
+            clean_group = {
+                "id": base_cleaning(group.get("id")),
+                "name": base_cleaning(group.get("name")),
+                "required": group.get("required"),
+                "option_type": base_cleaning(group.get("option_type")),
+                "values": values,
+            }
+            clean_group = {
+                k: v for k, v in clean_group.items()
+                if v is not None
+            }
+
+            if clean_group.get("name"):
+                groups.append(clean_group)
+
+        if groups:
+            result["option_groups"] = groups
+
+        # Actual purchasable variants.
+        # Collector stores color/size inside variant["attributes"].
+        variants: list[dict] = []
+        for variant in options.get("variants") or []:
+            if not isinstance(variant, dict):
+                continue
+
+            variant_attributes = variant.get("attributes") or []
+            color = base_cleaning(variant.get("color"))
+            size = base_cleaning(variant.get("size"))
+
+            normalized_variant_attributes: list[dict] = []
+
+            for attribute in variant_attributes:
+                if not isinstance(attribute, dict):
+                    continue
+
+                attr_name = base_cleaning(attribute.get("name"))
+                attr_value = base_cleaning(attribute.get("value"))
+
+                clean_attribute = {
+                    "id": base_cleaning(attribute.get("id")),
+                    "name": attr_name,
+                    "value": attr_value,
+                    "value_id": base_cleaning(attribute.get("value_id")),
+                }
+                clean_attribute = {
+                    k: v for k, v in clean_attribute.items()
+                    if v is not None
+                }
+
+                if clean_attribute:
+                    normalized_variant_attributes.append(clean_attribute)
+
+                if not color and attr_name == "색상":
+                    color = attr_value
+                elif not size and attr_name == "사이즈":
+                    size = attr_value
+
+            clean_variant = {
+                "id": base_cleaning(
+                    variant.get("id") or variant.get("source_item_id")
+                ),
+                "name": base_cleaning(variant.get("name")),
+                "color": color,
+                "size": size,
+                "price": cls._json_number(variant.get("price")),
+                "price_delta": cls._json_number(variant.get("price_delta")),
+                "final_price": cls._json_number(variant.get("final_price")),
+                "sales_status": base_cleaning(variant.get("sales_status")),
+                "display_status": base_cleaning(variant.get("display_status")),
+                "remain_stock": cls._json_number(variant.get("remain_stock")),
+                "variant_type": base_cleaning(variant.get("variant_type")),
+                "attributes": normalized_variant_attributes,
+            }
+            clean_variant = {
+                k: v for k, v in clean_variant.items()
+                if v is not None
+            }
+
+            if clean_variant:
+                variants.append(clean_variant)
+
+        if variants:
+            result["variants"] = variants
+            result["variant_count"] = len(variants)
+
+        color_images = options.get("color_images")
+        if isinstance(color_images, list) and color_images:
+            result["color_images"] = color_images
+
+        return result
+
+    @classmethod
+    def _merge_product_attributes(
+        cls,
+        current_attributes: dict,
+        product_data: dict,
+        incoming_tags: dict,
+    ) -> dict:
+        merged = cls._merge_attributes_tags(current_attributes, incoming_tags)
+        incoming = cls._extract_option_attributes(product_data)
+        if not incoming:
+            return merged
+
+        # 옵션 상세 API는 해당 관측 시점의 authoritative snapshot으로 취급.
+        # 기존 tokenizer/enrichment 속성은 건드리지 않고 Zigzag option key만 갱신한다.
+        for key in (
+            "colors", "color_count", "sizes", "size_count",
+            "option_groups", "variants", "variant_count", "color_images",
+        ):
+            if key in incoming:
+                merged[key] = incoming[key]
+        return merged
+
+    @staticmethod
+    def _json_number(value: Any) -> int | float | None:
+        if value is None or isinstance(value, bool):
+            return None
+        if isinstance(value, (int, float)):
+            return value
+        try:
+            text = str(value).strip()
+            if not text:
+                return None
+            number = float(text)
+            return int(number) if number.is_integer() else number
+        except (TypeError, ValueError):
+            return None
+
     @classmethod
     def _merge_attributes_tags(
         cls,
