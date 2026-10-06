@@ -226,7 +226,10 @@ def b_compare(nodes: list[dict], as_of: str) -> dict | None:
     if len(ok) < 2:
         return None
     mx = max(int(n.get("temp") or 0) for n in ok) or 1
-    return {"type": "bars", "slot": "full", "title": "나란히 보기", "meta": as_of,
+    # ★ 무슨 점수인지 제목에 밝힌다 (2026-10-02) — "나란히 보기 · 86점" 만으로는 트렌드 온도인지
+    #   살말 지수인지 알 수 없었다.
+    return {"type": "bars", "slot": "full", "title": "트렌드 온도 나란히 보기",
+            "meta": " · ".join(x for x in ("점 = 트렌드 온도(0~100)", as_of) if x),
             "items": [{"k": n["canonical"], "w": round(100 * int(n.get("temp") or 0) / mx),
                        "v": f"{int(n.get('temp') or 0)}점"} for n in ok]}
 

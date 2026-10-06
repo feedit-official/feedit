@@ -4,6 +4,8 @@
 
 /* vercel.json 의 api 함수 기본값(30초)과 같은 값을 둔다 — 분류는 비전 호출
  * 한 번이라 그 안에 끝난다. */
+import { clientIp } from '../_lib/client_ip.js';
+
 export const config = { runtime: 'nodejs', maxDuration: 30 };
 
 export default async function handler(req, res) {
@@ -33,6 +35,7 @@ export default async function handler(req, res) {
     if (process.env.CHAT_BACKEND_TOKEN) {
       headers['X-FEEDiT-Token'] = process.env.CHAT_BACKEND_TOKEN;
     }
+    { const ip = clientIp(req); if (ip && process.env.CHAT_BACKEND_TOKEN) headers['X-FEEDiT-Client-IP'] = ip; }
     const forwarded = req.headers && (req.headers['x-forwarded-for'] || req.headers['x-real-ip']);
     if (forwarded) headers['X-Forwarded-For'] = String(forwarded).split(',')[0].trim();
 

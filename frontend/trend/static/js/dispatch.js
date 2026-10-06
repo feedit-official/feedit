@@ -22,6 +22,7 @@ import { buildXlsx, canvasToPdf, canvasToPng, captureElement, saveBlob, shareIma
 import { metricXlsx } from './metric_export.js';
 import { trSideOpen } from '../../../app_shell/static/js/router.js';
 import { weeklyReport, weeklyVideos, savedProducts, setSavedProduct } from '../../../account/static/js/account_api.js';
+import { PLAN_EVENT, planEditAllowed, planGuard, planLockHTML } from '../../../account/static/js/plan.js';
 
 /* 탭 자리 — 키워드 검색바 / 커머스 탭 / 없음 세 가지로 갈린다 */
 function trTabsRender(id){
@@ -65,6 +66,38 @@ function trFillBarsV(){
 }
 
 let TR_CUR=null;
+const TR_EDIT_IDS=S_EDIT.map(s=>s.id);
+/* 요금제로 잠긴 EDIT 탭 — 머리글만 그 탭 것으로 두고, 검색창 · 저장/공유 대신 안내를 세운다 */
+function trRenderLocked(id){
+  const m=TR_META[id]||TR_META.myfeed;
+  $('#trTitle').textContent=m[0];
+  $('#trDesc').textContent=m[1]; $('#trDesc').hidden=!m[1];
+  trTabsRender('');                 /* 키워드 검색창을 세우지 않는다 */
+  const tw=$('#trTitleWrap'), tp=$('#trProfile');
+  if(tw)tw.hidden=false;
+  if(tp)tp.hidden=true;
+  const kk=$('#trKicker'); if(kk)kk.hidden=true;
+  const acts=$('#trHeadActs'); if(acts)acts.hidden=true;
+  const dm=$('#trDlMenu'); if(dm)dm.hidden=true;
+  const sw=$('#trSearch'); if(sw){ sw.hidden=true; fsHideSug(); }
+  const body=$('#trBody'); if(body)body.innerHTML=planLockHTML(m[0]);
+}
+/* 사이드바 EDIT 항목에 잠금 표시 — 베타 동안에는 붙지 않는다 */
+function trPaintLocks(){
+  $$('#sEdit .sItem').forEach(b=>{
+    const locked=!planEditAllowed(b.dataset.tr);
+    b.classList.toggle('planLocked',locked);
+    if(locked)b.title='프로 요금제부터 볼 수 있어요'; else b.removeAttribute('title');
+  });
+}
+document.addEventListener(PLAN_EVENT,()=>{
+  trPaintLocks();
+  /* 요금제가 바뀌었는데 보고 있던 탭의 잠금이 달라졌으면 그 자리에서 다시 그린다 */
+  if(document.body.dataset.view==='trend'&&TR_CUR&&TR_EDIT_IDS.indexOf(TR_CUR)>=0){
+    const locked=!!($('#trBody')&&$('#trBody .planLock'));
+    if(locked===planEditAllowed(TR_CUR))trRender(TR_CUR);
+  }
+});
 const TR_TRIED={};   /* 용어 → 마지막으로 물어본 때 */
 const STOCK_SAVED={items:[],status:'idle',error:'',loadedAt:0,promise:null};
 let stockSavedSeq=0, stockSavePending=false, stockSaveError='', stockCurrentProduct=null;
@@ -1041,9 +1074,14 @@ function searchCardHTML(term){
 
 export function trRender(id){
   TR_CUR=id;
+  const guideDemo=document.body.classList.contains('trend-guide-demo');
   if(FS.id==='stock'&&id!=='stock')fsStockClear();
   sFootPaint();   /* 가입·정보수정·인증 승인 뒤에 들어와도 이름·직위가 최신이게 */
   if(typeof assocClosePop==='function')assocClosePop();
+  /* 요금제 (2026-10-03) — 베타가 끝나면 프리는 EDIT 중 언급량·온도만 연다.
+     베타 동안 planEditAllowed 는 언제나 true 라 이 줄은 아무것도 하지 않는다.
+     잠긴 탭은 지표를 받으러 가지도 않는다 — 아래 prime 보다 먼저 끊는다. */
+  if(TR_EDIT_IDS.indexOf(id)>=0&&!planEditAllowed(id)){ trRenderLocked(id); return }
 
   /* ★ 그리기 **전에** 지표를 받아 둔다.
      gChart 는 동기 함수라 그 안에서 기다릴 수가 없다. 그래서 여기서 미리
@@ -1052,7 +1090,7 @@ export function trRender(id){
 
      받아 오기 전에는 stateOf() 가 'unknown' 이라 예전처럼 씨드 난수로 그린다.
      받아 온 뒤 다시 그리면서 실값 또는 '측정 불가'로 바뀐다. */
-  if(id==='temp'||id==='assoc'){
+  if(!guideDemo&&(id==='temp'||id==='assoc')){
     const kw=KW.q||fsItem();
     /* ★ 한 번 시도한 말은 잠깐 다시 안 묻는다.
        실패는 캐시하지 않기로 했는데(고친 뒤 재시도가 돼야 하니까),
@@ -1070,12 +1108,12 @@ export function trRender(id){
     }
   }
   /* 연관어 · 할인률 · 리세일 · 수명주기는 URL 단위로 받는다 */
-  if(id==='assoc'&&KW.q) primeOnce(id,'/api/assoc?term='+encodeURIComponent(KW.q));
+  if(!guideDemo&&id==='assoc'&&KW.q) primeOnce(id,'/api/assoc?term='+encodeURIComponent(KW.q));
   /* ★ 2026-09-22 — 검색 지표는 언급 지표(/api/trend)와 **다른 주소**다.
      '뭐라고 말했나'와 '뭘 찾아봤나'를 한 카드에 섞지 않기로 해서 호출도 따로 간다. */
-  if(id==='temp'&&KW.q) primeOnce(id,searchUrl(KW.q));
-  if(id==='sentiment'&&KW.q) primeOnce(id,sentimentUrl(KW.q,KW.f));
-  if(EDIT_API[id]&&(id==='stock'?!!FS.stockItem:fsItem())) primeOnce(id,editUrl(id));
+  if(!guideDemo&&id==='temp'&&KW.q) primeOnce(id,searchUrl(KW.q));
+  if(!guideDemo&&id==='sentiment'&&KW.q) primeOnce(id,sentimentUrl(KW.q,KW.f));
+  if(!guideDemo&&EDIT_API[id]&&(id==='stock'?!!FS.stockItem:fsItem())) primeOnce(id,editUrl(id));
   const m=TR_META[id]||TR_META.myfeed;
   $('#trTitle').textContent=m[0];
   $('#trDesc').textContent=m[1]; $('#trDesc').hidden=!m[1];
@@ -1185,8 +1223,9 @@ export function trRender(id){
      선별 노출한다. 큐레이션 카드는 실제 VOTES 데이터(투표율·마감·매치
      점수)를 그대로 쓰고, 게시자 페르소나만 표시용으로 얹었다. */
   if(id==='myfeed'){
-    const won=n=>n.toLocaleString('ko-KR')+'원';
-    const hoursTx=h=>h>=24?Math.round(h/24)+'일':h+'시간';
+    /* 가격 · 마감이 비어 있는 카드도 있다 — 살!말? 본 화면(vote_app.js fmtWon · fmtHours)과 같은 말로 쓴다 */
+    const won=n=>Number.isFinite(n)?n.toLocaleString('ko-KR')+'원':'가격 정보 없음';
+    const hoursTx=h=>Number.isFinite(h)?(h>=24?Math.round(h/24)+'일':h+'시간'):'기간 정보 없음';
     /* 카드 구조와 상품 정보는 살!말? 본 화면과 같은 JSON 값을 쓴다.
        매칭 이유와 태그만 카드 바깥의 내 취향 전용 정보로 덧붙인다. */
     const salCard=p=>
@@ -1418,7 +1457,7 @@ export function trRender(id){
               yoy===null?'1년치가 모여야 나옵니다':'같은 날 언급량 차이',yoy===null||yoy>=0?1:0)+
         kpi('신규 진입 키워드',newKw?trEsc(newKw.term):'–','',newKw?'최근 7일 새로 감지 · '+Math.round(newKw.temp||0)+'°':'최근 7일 새로 잡힌 말 없음',1)+'</div>'+
       '<div class="trGrid">'+
-        '<div class="panelC"><div class="gHead"><h3>언급량 · 온도 추이</h3></div>'+
+        '<div class="panelC"><div class="gHead"><h3>'+trEsc(kw)+' · 언급량 지수 · 트렌드 온도 추이</h3></div>'+
           /* ★ 2026-09-22 — 기본 단위를 '일별' 로. 차트 엔진 기본값은 'w'(26주) 라
              그대로 두면 최근 1주가 아니라 반년치가 뜬다. 여기서 못 박는다.
              사용자가 주별·월별을 누르면 그때 바뀐다(토글은 그대로 동작). */
@@ -1449,7 +1488,7 @@ export function trRender(id){
          검색(네이버·구글)은 "뭘 찾아봤나"다. 계산 근거가 달라
          한 막대그래프에 세우면 "무신사 82도 / 구글 56도"처럼
          비교 불가능한 숫자가 나란히 서게 된다. 그래서 칸을 나눈다. */
-      searchCardHTML(KW.q);
+      (guideDemo?'':searchCardHTML(KW.q));
     /* 월별 컬럼 — 막대에 올리면 그 달의 값을 말풍선으로 띄운다.
        (피크 말고는 숫자를 달지 않으므로, 나머지 값을 읽는 길은 이것과 표 보기다) */
     (function(){
@@ -1657,9 +1696,9 @@ export function trRender(id){
       kpi('가장 뜨거운 축', trEsc(topCat), '', '축별 동시 언급 문서 합산 1위', 1) +
       kpi('축당 평균 다양성', (ALL.length / cats.length).toFixed(1), '개', '핵심 연관어 수', 1) + '</div>' +
       '<div class="trGrid">' +
-      '<div class="panelC"><div class="gHead"><h3>연관어 수 추이</h3></div>' +
+      '<div class="panelC"><div class="gHead"><h3>' + trEsc(kw) + ' · 연관어 수 추이</h3></div>' +
       '<div data-chart="assocMain"></div>' +
-      '<div class="note"><i>◆</i>연관어 수가 온도보다 먼저 꺾이면 화제성은 남았지만 다양성이 좁아지고 있다는 신호입니다.</div></div>' +
+      '<div class="note"><i>◆</i>날마다 ' + trEsc(kw) + josa(kw, '과', '와') + ' 함께 언급된 연관어의 개수입니다. 이 수가 트렌드 온도보다 먼저 꺾이면 화제성은 남았지만 다양성이 좁아지고 있다는 신호입니다.</div></div>' +
       '<div class="panelC"><div class="ph"><h3>축별 비중</h3><em>KEYWORDS</em></div>' +
       '<table class="mTable"><tr><th>축</th><th></th><th>키워드 수</th></tr>' +
       catTotals.map(c => {
@@ -1868,7 +1907,7 @@ export function trRender(id){
   /* ══════════════ 할인률 변화 ══════════════
      값: /api/discount → snapshot.product_source_snapshot (세부 검색 조건에 걸린 상품) + 대표 용어 온도 */
   else if (id === 'stock') {
-    stockLoadSaved();
+    if(!guideDemo)stockLoadSaved();
     if (!document.getElementById('dzDashboard')) {
       const dashHTML = `
         <section class="stockPicker panelC" id="dzDashboard">
@@ -2368,6 +2407,7 @@ export function trBuild(){
     el.innerHTML=a.map(s=>'<button class="sItem" data-tr="'+s.id+'">'+
       '<span class="ic">'+s.ic+'</span><span class="tx">'+s.t+'</span></button>').join('') };
   mk(S_FEED,'#sFeed'); mk(S_EDIT,'#sEdit');
+  trPaintLocks();
   const first=$('.sItem'); if(first)first.classList.add('on');
   $('#sToggle').addEventListener('click',()=>{
     trSideOpen(!$('#side').classList.contains('open'));
@@ -2549,6 +2589,10 @@ async function wkDownload(fmt){
 document.addEventListener('keydown', e=>{ if(e.key==='Escape')wkMenuSet(false) });
 document.addEventListener('click', async e=>{
   const t=e.target.closest?e.target:null;
+  /* 요금제 (2026-10-03) — 리포트 내보내기(저장 · 공유)는 프로부터. 베타 동안 planGuard 는 언제나 통과한다. */
+  if(t&&t.closest('#trDownloadBtn, #trDlMenu [data-dl-fmt], #trShareBtn')&&!planGuard('report_export',trToast)){
+    wkMenuSet(false); return;
+  }
   const dl=t&&t.closest('#trDownloadBtn');
   if(dl){ const m=wkMenu(); wkMenuSet(!!m&&m.hidden); return }
   const pick=t&&t.closest('[data-dl-fmt]');

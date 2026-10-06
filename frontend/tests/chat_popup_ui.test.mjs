@@ -63,11 +63,92 @@ const wait = (ms = 0) => new Promise(r => setTimeout(r, ms));
 
 await import(`${F}/main.js`);
 const CP = await import(`${F}/home/static/js/chat_popup.js`);
+const CHAT_API = await import(`${F}/home/static/js/chat_api.js`);
+const { youtubeVideoId } = await import(`${F}/home/static/js/chat_video.js`);
 const P  = await import(`${F}/account/static/js/profile.js`);
 P.AUTH.in = true;                        /* 로그인 관문을 지난 상태로 둔다 */
 
 const thread = () => document.querySelector('#cpThread');
 const click = (el) => el.dispatchEvent(new dom.window.MouseEvent('click', {bubbles:true}));
+
+await t('챗봇 원인 템플릿의 영상 근거를 썸네일·인앱 재생·전체화면·YouTube 링크로 표시한다', () => {
+  const video='https://www.youtube.com/watch?v=dQw4w9WgXcQ';
+  const html=CHAT_API.reportHTML({blocks:[{type:'generative_report',slot:'full',template:'why',title:'원인',modules:[{
+    id:'why',kind:'evidence',presentation:'hero',span:12,block:{type:'timeline',term:'플리스 재킷',window:2,
+      points:[{d:'2026-10-02',m:2},{d:'2026-10-03',m:4}],spikes:[],
+      evidence:[{src:'유튜브',kind:'영상',body:'착장 영상',url:video,at:'2026-10-03'}]}}]}]});
+  thread().innerHTML=html;
+  const card=thread().querySelector('.tlCard--video .chatVideo');
+  assert.ok(card,'영상 근거 카드가 없다');
+  assert.match(card.querySelector('img').src,/i\.ytimg\.com\/vi\/dQw4w9WgXcQ\/hqdefault\.jpg/);
+  assert.equal(card.querySelector('iframe'),null,'클릭 전에 외부 플레이어를 로드했다');
+  assert.equal(card.querySelector('.chatVideoActions a').href,video);
+  let fullscreenCalled=false;
+  card.requestFullscreen=()=>{ fullscreenCalled=true; return Promise.resolve(); };
+  click(card.querySelector('[data-chat-video-fullscreen]'));
+  assert.ok(fullscreenCalled,'전체화면 버튼이 동작하지 않는다');
+  click(card.querySelector('[data-chat-video-play]'));
+  const frame=card.querySelector('iframe');
+  assert.ok(frame,'화면 안에서 플레이어가 열리지 않았다');
+  assert.match(frame.src,/youtube-nocookie\.com\/embed\/dQw4w9WgXcQ\?autoplay=1/);
+  assert.ok(frame.hasAttribute('allowfullscreen'));
+  assert.equal(card.querySelector('.chatVideoActions a').href,video,'원본 이동 링크가 유지되어야 한다');
+});
+
+await t('같은 영상의 설명·댓글은 썸네일 하나에 묶고, 재생하면 카드 폭으로 펼친다', () => {
+  const v='https://www.youtube.com/watch?v=dQw4w9WgXcQ';
+  const other='https://youtu.be/aaaaaaaaaaa';
+  const html=CHAT_API.reportHTML({blocks:[{type:'generative_report',slot:'full',template:'why',title:'원인',modules:[{
+    id:'why',kind:'evidence',presentation:'hero',span:12,block:{type:'timeline',term:'플리스 재킷',window:2,
+      points:[{d:'2026-10-02',m:2},{d:'2026-10-03',m:4}],spikes:[],
+      evidence:[
+        {src:'커뮤니티',kind:'POST',body:'가볍고 따뜻해요',url:'https://community.example.com/p/1',at:'2026-09-27'},
+        {src:'유튜브',kind:'COMMENT',body:'셔츠랑 둘 다 샀어요',url:v+'&lc=abc',at:'2026-09-28'},
+        {src:'유튜브',kind:'DESCRIPTION',body:'가을 필수 아우터',url:v,at:'2026-09-28'},
+        {src:'유튜브',kind:'COMMENT',body:'셔츠랑 둘 다 샀어요',url:v,at:'2026-09-28'},
+        {src:'유튜브',kind:'DESCRIPTION',body:'다른 영상',url:other,at:'2026-09-29'},
+      ]}}]}]});
+  thread().innerHTML=html;
+  const videos=[...thread().querySelectorAll('.chatVideo')];
+  assert.equal(videos.length,2,'같은 영상은 카드 하나여야 한다');
+  assert.equal(thread().querySelectorAll('.tlCard').length,3,'근거 묶음은 세 개여야 한다');
+  const first=videos[0];
+  assert.equal(first.dataset.videoId,'dQw4w9WgXcQ');
+  assert.equal(first.querySelectorAll('img').length,1);
+  const notes=[...first.querySelectorAll('.chatVideoNotes li')];
+  assert.equal(notes.length,2,'중복 문장은 한 번만 남겨야 한다');
+  assert.deepEqual(notes.map(li=>li.querySelector('.chatVideoTag').textContent),['설명','댓글'],'설명이 댓글보다 먼저 와야 한다');
+  assert.match(first.querySelector('.chatVideoCount').textContent,/근거 2건/);
+  assert.equal(first.querySelector('.chatVideoNo').textContent,'02','번호는 묶은 뒤 순서를 따라야 한다');
+  click(first.querySelector('[data-chat-video-play]'));
+  assert.ok(first.classList.contains('isPlaying'),'재생하면 카드가 펼쳐져야 한다');
+  assert.match(first.querySelector('iframe').title,/가을 필수 아우터/);
+});
+
+await t('링크 템플릿에서 같은 영상이 두 번 오면 한 번만 그린다', () => {
+  const html=CHAT_API.reportHTML({blocks:[{type:'links',slot:'full',items:[
+    {url:'https://youtu.be/dQw4w9WgXcQ',title:'영상 추천'},
+    {url:'https://www.youtube.com/watch?v=dQw4w9WgXcQ',title:'같은 영상'},
+    {url:'https://magazine.example.com/story',title:'웹매거진'},
+  ]}]});
+  thread().innerHTML=html;
+  assert.equal(thread().querySelectorAll('.chatVideo').length,1);
+  assert.equal(thread().querySelector('.rank .row .n').textContent,'02','중복을 뺀 뒤 번호를 다시 매겨야 한다');
+});
+
+await t('링크 템플릿은 유효한 영상만 플레이어로 바꾸고 매거진 링크는 유지한다', () => {
+  const html=CHAT_API.reportHTML({blocks:[{type:'links',slot:'full',items:[
+    {url:'https://youtu.be/dQw4w9WgXcQ',title:'영상 추천'},
+    {url:'https://magazine.example.com/story',title:'웹매거진'},
+    {url:'https://youtube.com.evil.example/watch?v=dQw4w9WgXcQ',title:'가짜 영상'},
+  ]}]});
+  thread().innerHTML=html;
+  assert.equal(thread().querySelectorAll('.chatVideo').length,1);
+  assert.equal(thread().querySelectorAll('.rank .row[data-href]').length,2);
+  assert.match(thread().textContent,/웹매거진/);
+  assert.equal(youtubeVideoId('https://youtu.be/x'),null);
+  assert.equal(youtubeVideoId('https://youtube.com.evil.example/watch?v=dQw4w9WgXcQ'),null);
+});
 
 await t('사진 관찰값이 다음 요청의 history에 그대로 남는다', () => {
   const visual = {
@@ -562,12 +643,37 @@ await t('질문 없이 바로 빈 착장 위젯을 연다', async () => {
                '살말 팝업으로 열리지 않았다');
 });
 
-await t('팝업 버튼이 독립 착장을 연다', async () => {
+await t('팝업 버튼이 독립 착장을 연다 — 살!말? 대화 안이면 이 대화/새 대화를 먼저 묻는다', async () => {
   const count = () => CP.cpStore().convos.length;
+  const where = () => document.querySelector('#cpWhere');
   const before = count();
   click(document.querySelector('#cpVtonQuick'));
   await wait(40);
+  const asked = !where().hidden;
+  if (asked) {
+    assert.equal(count(), before, '고르기 전에는 아무것도 만들지 않는다');
+    click(where().querySelector('[data-where="new"]'));
+    await wait(40);
+  }
   assert.equal(count(), before + 1, '팝업 버튼이 새 착장을 열지 않았다');
+  /* 이제 살!말? 대화 안 — 다시 누르면 묻고, '이 대화에서' 는 대화를 늘리지 않는다 */
+  const c = CP.cpStore().convos.find(x => x.id === CP.cpStore().activeId);
+  const fits = () => c.messages.filter(m => m.fit).length;
+  const had = fits();
+  click(document.querySelector('#cpVtonQuick'));
+  await wait(40);
+  assert.equal(where().hidden, false, '살!말? 대화 안에서는 어디서 열지 묻는다');
+  assert.match(where().textContent, /이 대화에서/);
+  click(where().querySelector('[data-where="here"]'));
+  await wait(40);
+  assert.equal(where().hidden, true);
+  assert.equal(count(), before + 1, '이 대화에서 열면 대화가 늘지 않는다');
+  assert.equal(fits(), had + 1, '이 대화 아래에 착장 칸이 하나 더 열린다');
+  /* × 는 취소 */
+  click(document.querySelector('#cpVtonQuick')); await wait(20);
+  click(where().querySelector('[data-where="close"]')); await wait(20);
+  assert.equal(fits(), had + 1);
+  assert.equal(count(), before + 1);
 });
 
 /* 챗봇이 고른 연출이 슬라이드에 그대로 선다 (2026-10-01).
@@ -719,6 +825,53 @@ await t('결과 뒤 다른 룩 제안 — 상황을 잇고, 보여 준 상품과
   own.messages.push({role:'ai',html:'',fit:{...CP.cpFitFromServer({items:[]},''),fromServer:false,result:'data:image/png;base64,eA=='}});
   CP.cpRenderThread();
   assert.equal(thread().querySelector('.cpFitNext'),null);
+});
+
+await t('답 아래 [입혀보기] 는 한 번에 반응한다 — 열린 착장 칸을 접지 않고 바로 만든다', async () => {
+  fitBody=null;
+  const fit=CP.cpFitFromServer({items:[{slot:'상의',image:'https://image.msscdn.net/a.jpg',name:'셔츠',
+    url:'https://www.musinsa.com/products/31'}],styles:['미니멀']},'');
+  const c=CP.cpNewConvo();
+  c.messages.push({role:'me',text:'데이트룩'});
+  c.messages.push({role:'ai',html:'<p>코디</p>',fit,actionsHtml:
+    '<div class="act"><button class="pill ghost actBtn" data-virtual-fit="1"><span>입혀보기</span></button></div>'});
+  CP.cpRenderThread();
+  assert.ok(thread().querySelector('.cpFit'),'답과 함께 칸이 열려 있다');
+  click(thread().querySelector('[data-virtual-fit]')); await wait(60);
+  assert.ok(thread().querySelector('.cpFit'),'첫 누름에 칸이 닫히면 안 된다');
+  assert.ok(fitBody&&fitBody.items.length===1,'첫 누름에 바로 만든다');
+  /* 이미 만든 뒤에는 다시 만들지 않는다 — 칸만 보여 준다 */
+  fitBody=null;
+  click(thread().querySelector('[data-virtual-fit]')); await wait(30);
+  assert.equal(fitBody,null);
+  assert.ok(thread().querySelector('.cpFit'));
+});
+
+await t('답하는 중에 들어온 질문은 끊지 않고 대기열에 넣었다가, 답이 끝나면 이어서 묻는다', async () => {
+  CP.openChatWith('발레코어 요즘 어때?', null, {fresh:true});
+  const c=CP.cpStore().convos.find(x=>x.id===CP.cpStore().activeId);
+  /* 첫 답이 도는 중 — 칩을 누르거나 새로 친 질문 */
+  CP.openChatWith('그럼 비슷한 스타일은?', null);
+  assert.equal(CP.cpQueueSize(),1,'바로 보내지 않고 기다린다');
+  const box=document.querySelector('#cpQueue');
+  assert.equal(box.hidden,false);
+  assert.match(box.textContent,/그럼 비슷한 스타일은\?/);
+  assert.deepEqual(c.messages.filter(m=>m.role==='me').map(m=>m.text),['발레코어 요즘 어때?'],
+    '대기 중인 질문은 아직 대화에 들어가지 않는다');
+  /* 첫 답이 끝나면 이어서 묻는다 */
+  for(let i=0;i<40&&CP.cpQueueSize();i++) await wait(30);
+  await wait(200);
+  assert.equal(CP.cpQueueSize(),0);
+  assert.equal(box.hidden,true);
+  assert.deepEqual(c.messages.filter(m=>m.role==='me').map(m=>m.text),
+    ['발레코어 요즘 어때?','그럼 비슷한 스타일은?']);
+  /* × 로 빼면 묻지 않는다 */
+  CP.openChatWith('하나', null);
+  CP.openChatWith('뺄 질문', null);
+  click(document.querySelector('#cpQueue [data-q-drop]'));
+  assert.equal(CP.cpQueueSize(),0);
+  await wait(400);
+  assert.ok(!c.messages.some(m=>m.text==='뺄 질문'));
 });
 
 console.log(`\n${pass}개 통과 · ${fail}개 실패`);

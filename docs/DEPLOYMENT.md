@@ -47,6 +47,8 @@ docker compose --env-file .env -f docker/compose.chat.yml up -d --build
 | `FEEDIT_TEXT_OPENAI_API_KEY` | 배치 텍스트 분석 |
 | `FEEDIT_BACKEND_API` | 기본 `http://feedit-api:8000/api` |
 | `FEEDIT_PUBLIC_BETA`, `FEEDIT_CHAT_TOKEN` | 베타와 토큰 검사 정책을 함께 확인 |
+| `FEEDIT_PLAN_SECRET` | 요금제 확인증 서명 키(Django 서명 · 챗봇 검사). 비우면 `FEEDIT_CHAT_TOKEN` 을 쓴다. 베타 동안은 쓰이지 않는다 |
+| `FEEDIT_DATA_API_PER_DAY`, `FEEDIT_DATA_API_PER_MIN` | 데이터 API(비즈니스) 한도. 기본 계정당 하루 10000 · 키당 분당 60. 베타 동안은 쓰이지 않는다 |
 | `FEEDIT_CHAT_ORCHESTRATOR` | 모델 도구 오케스트레이션 사용 설정 |
 | `DASHBOARD_OTP_REQUIRED` | 관리자 TOTP 강제. HTTPS·마이그레이션·최초 등록 확인 후 `1` |
 | `DASHBOARD_SESSION_AGE` | 마지막 활동 기준 관리자 세션 수명(초), 기본 3600 |
@@ -54,8 +56,26 @@ docker compose --env-file .env -f docker/compose.chat.yml up -d --build
 | `DJANGO_SECURE_COOKIES` | 관리자 HTTPS 확인 후 `1`; 세션·CSRF 쿠키만 Secure 처리 |
 | `DJANGO_SECURE_SSL_REDIRECT` | 모든 API 클라이언트를 HTTPS로 전환한 뒤 `1`; 그전에는 `0` |
 | `DJANGO_HSTS_SECONDS` | 최초 0, 안정화 뒤 300 → 86400 → 31536000 순으로 증가 |
+| `GUNICORN_WORKERS`, `GUNICORN_THREADS` | API 동시 처리. 기본 3 × 4 (gthread). 이전 sync 3개는 동시 요청 3개가 한계였다 (2026-10-02) |
+| `DB_CONN_MAX_AGE` | Django RDS 연결 재사용(초), 기본 60. 0 이면 요청마다 새로 접속 |
+| `FEEDIT_RDS_POOL` | 챗봇 RDS 연결 수, 기본 4. 예전에는 연결 하나를 모든 요청이 나눠 썼다 |
 
 `FEEDIT_PUBLIC_BETA`의 코드 기본값은 1입니다. 공유 토큰·플랜 정책이 비베타 모드와 달라집니다. 알파 계정(`FEEDIT_ALPHA_MODE`, `FEEDIT_ALPHA_UNTIL`, `FEEDIT_ALPHA_CHAT_QUOTA`)과 별도 정책이므로 각각 확인합니다. 화면의 사용량 차감만으로 서버 비용 제한이 강제된다고 간주하지 않습니다.
+
+### 베타 종료 — 요금제 켜기 (2026-10-03)
+
+요금제(프리 · 프로 · 비즈니스)는 코드에 들어 있지만 `FEEDIT_PUBLIC_BETA` 가 켜져 있는 동안(기본값)은 아무것도 막지 않습니다.
+Django 와 챗봇이 루트 `.env` 의 같은 변수를 봅니다.
+
+1. `python manage.py migrate core 0070` — 알림 종류 하나 추가(DB 변화 없음). 요금제 값은 `app_user.profile_metadata` 에 둡니다.
+2. 루트 `.env` 에 `FEEDIT_PUBLIC_BETA=0`, 그리고 `FEEDIT_CHAT_TOKEN` 이 비어 있다면 `FEEDIT_PLAN_SECRET` 을 넣습니다.
+3. API · 챗봇 컨테이너를 둘 다 다시 띄웁니다. 한쪽만 띄우면 화면과 챗봇이 다른 요금제를 말합니다.
+4. 확인: 일반 계정으로 트렌드 분석 › 연관어가 잠기는지, 요금제 화면에서 프로 신청 → 운영 계정 메뉴 '요금제 신청 심사' 에서 승인 → 잠금이 풀리는지.
+5. 데이터 API: 비즈니스(또는 운영) 계정 메뉴 '데이터 API' 에서 키를 만들고
+   `curl -G "https://<버셀 주소>/api/data/trend" -H "Authorization: Bearer fdk_…" --data-urlencode "term=발레코어"` 가 200 인지.
+   새 프론트 배포가 필요하다(`vercel.json` 의 `/api/data/:metric` 다시 쓰기 규칙). 사용법: [데이터 API](DATA_API.md).
+
+결제는 붙어 있지 않습니다. 승인은 운영자가 확인했다는 뜻입니다. 되돌릴 때는 `FEEDIT_PUBLIC_BETA=1` 로 바꾸고 두 컨테이너를 다시 띄웁니다(신청 · 승인 기록은 남습니다).
 
 ## 프록시와 DB 변경
 

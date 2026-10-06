@@ -85,5 +85,58 @@ class VisionMemoryTests(unittest.TestCase):
         self.assertNotIn("최근 이미지 설명", block)
 
 
+class PhotoWithDataQuestionTests(unittest.TestCase):
+    """사진 + "어울리는 바지 추천해줘" 처럼 데이터가 필요한 질문 (2026-10-02).
+    사진 설명으로 끝내지 않고, 본 것을 앞 턴으로 붙여 도구 루프에 넘긴다."""
+
+    def setUp(self):
+        self.engine = ChatEngine.__new__(ChatEngine)
+        self.engine.use_llm = True
+        self.engine.gate = _Gate()
+        self.engine.memory = history.Memory()
+        self.engine.store = self.engine.salmal = self.engine.taste = None
+
+    @patch("app.engine.agent_path.enabled", return_value=True)
+    @patch("app.engine.llm.available", return_value=True)
+    @patch("app.engine.llm.vision", return_value=OBSERVATION)
+    def test_recommend_question_goes_to_tools_with_the_photo_as_context(self, *_):
+        seen = {}
+
+        def fake_ask(q, **kw):
+            seen["q"], seen["history"] = q, kw["history"]
+            return {"ok": True, "kind": "agent", "intent": "agent", "headline": "<p>바지 셋</p>",
+                    "terms": [], "blocks": []}
+
+        with patch("app.engine.agent_path.ask", side_effect=fake_ask):
+            rep = self.engine._vision_ask("이거랑 어울리는 바지 추천해줘", "general",
+                                          ["data:image/png;base64,AA=="], "conv-2")
+        self.assertEqual(seen["q"], "이거랑 어울리는 바지 추천해줘")
+        self.assertEqual(seen["history"][-1]["visual"]["item"], "미디 스커트")
+        self.assertIn("블랙 미디 스커트", rep["headline"])          # 본 것을 먼저 말하고
+        self.assertTrue(rep["headline"].endswith("<p>바지 셋</p>"))   # 도구 답이 이어진다
+        self.assertEqual(rep["visual_context"]["item"], "미디 스커트")
+        self.assertEqual(self.engine.memory.recent("conv-2")[-1]["visual"]["item"], "미디 스커트")
+
+    @patch("app.engine.agent_path.enabled", return_value=True)
+    @patch("app.engine.llm.available", return_value=True)
+    @patch("app.engine.llm.vision", return_value=OBSERVATION)
+    def test_plain_look_question_stays_a_photo_answer(self, *_):
+        with patch("app.engine.agent_path.ask") as ask:
+            rep = self.engine._vision_ask("이거 뭐야?", "general",
+                                          ["data:image/png;base64,AA=="], "conv-3")
+        ask.assert_not_called()
+        self.assertEqual(rep["intent"], "vision.image")
+
+    @patch("app.engine.agent_path.enabled", return_value=True)
+    @patch("app.engine.llm.available", return_value=True)
+    @patch("app.engine.llm.vision", return_value=OBSERVATION)
+    def test_tool_failure_falls_back_to_the_photo_answer(self, *_):
+        with patch("app.engine.agent_path.ask", side_effect=RuntimeError("down")):
+            rep = self.engine._vision_ask("요즘 이런 거 유행해?", "general",
+                                          ["data:image/png;base64,AA=="], "conv-4")
+        self.assertTrue(rep["ok"])
+        self.assertEqual(rep["intent"], "vision.image")
+
+
 if __name__ == "__main__":
     unittest.main()

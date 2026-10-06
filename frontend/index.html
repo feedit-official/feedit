@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
 <!-- Roboto Flex = 영문 · 로고(Semibold 600) · Space Grotesk = 연대 숫자 -->
-<link href="https://fonts.googleapis.com/css2?family=Roboto+Flex:wght@400;500;600;700&amp;family=Space+Grotesk:wght@400;500;700&amp;family=Noto+Serif+KR:wght@700&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Roboto+Flex:wght@400;500;600;700&amp;family=Space+Grotesk:wght@400;500;700&amp;display=swap" rel="stylesheet">
 <!-- 동적 서브셋(dynamic-subset) 버전 대신 정적 가변 폰트 하나를 통째로 받는다 —
      동적 서브셋은 화면에 어떤 글자가 있는지 JS로 스캔해 그 글자 범위만 뒤늦게 받아오는 방식이라,
      이 앱처럼 페이지 전환마다 새 텍스트가 나중에 꽂히면(예: "살!말?"의 "말")
@@ -182,6 +182,10 @@
           <!-- 홈페이지 피드백 — 불편사항·추가요청 / 수정사항·버그리포트 (xp_panel.js) -->
           <button type="button" id="menuFeedback"><i>✎</i>피드백 보내기</button>
           <button type="button" id="menuJobReview" hidden><i>✓</i>직업 인증 심사</button>
+          <!-- 요금제 신청 심사 — 운영 계정만 (account/static/js/plan.js · 2026-10-03) -->
+          <button type="button" id="menuPlanReview" hidden><i>₩</i>요금제 신청 심사</button>
+          <!-- 데이터 API 키 — 비즈니스 요금제 · 베타 이후에만 (account/static/js/data_api.js · 2026-10-03) -->
+          <button type="button" id="menuDataApi" hidden><i>{}</i>데이터 API</button>
           <hr>
           <button type="button" class="out" id="menuLogout"><i>→</i>로그아웃</button>
         </div>
@@ -208,6 +212,16 @@
           <button type="button" class="notiSetLink" id="notiSetLink"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>알림 설정</button>
         </div>
       </span>
+      <!-- 전체 가이드 — 알림 오른쪽. 모든 페이지 가이드를 한 흐름으로 연다 (app_shell/static/js/assistant_hub.js startGuideTour).
+           로그인 전에도 보인다. 오른쪽 아래 도움말 허브의 '가이드라인'은 지금 화면만 설명한다. -->
+      <button type="button" class="tourBtn" id="tourBtn" aria-label="전체 가이드 열기" aria-haspopup="dialog" title="전체 가이드">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M3.5 15.3 12 11.5l8.5 3.8L12 19.1Z"/>
+          <path d="M3.5 15.3v2.3l8.5 3.8 8.5-3.8v-2.3M12 19.1v2.3"/>
+          <g class="tourStick"><path d="M12 15.2V8.6"/><circle cx="12" cy="6" r="2.6" fill="currentColor"/></g>
+        </svg>
+      </button>
     </div>
   </header>
 
@@ -269,12 +283,6 @@
       </div>
     </div>
 
-    <!-- 화면 오른쪽 하단 — 챗봇 팝업을 곧장 띄우는 진입점 -->
-    <button class="chatFab" id="chatFab" type="button" aria-label="챗봇 열기">
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <path d="M4 5.5C4 4.67157 4.67157 4 5.5 4H18.5C19.3284 4 20 4.67157 20 5.5V15.5C20 16.3284 19.3284 17 18.5 17H9L5 20.5V17H5.5C4.67157 17 4 16.3284 4 15.5V5.5Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"></path>
-      </svg>
-    </button>
   </section>
 
   <!-- ══════════════ 트렌드 분석 ══════════════ -->
@@ -488,6 +496,15 @@
 
   <!-- 팝업은 뷰 밖에 둔다. 뷰에 남는 transform 이 position:fixed 기준을 바꾸기 때문. -->
 <div class="toast" id="toast"></div>
+
+<!-- ===== 오른쪽 하단 챗봇 버튼 — 모든 메인 화면에서 챗봇 팝업을 바로 연다 ===== -->
+<div class="assistHub" id="assistHub">
+  <button class="chatFab assistToggle" id="chatFab" type="button" aria-label="챗봇 열기">
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M4 5.5C4 4.67157 4.67157 4 5.5 4H18.5C19.3284 4 20 4.67157 20 5.5V15.5C20 16.3284 19.3284 17 18.5 17H9L5 20.5V17H5.5C4.67157 17 4 16.3284 4 15.5V5.5Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"></path>
+    </svg>
+  </button>
+</div>
 
 <!-- ===== 연관어 근거 팝오버 (트렌드 · 연관어 페이지) ===== -->
 <div class="assocPop" id="assocPop">
@@ -706,6 +723,9 @@
 <!-- ===== 챗봇 팝업 (일반 모드 / 살말 모드 공용 — 프로필·대화 목록만 갈아입는다) ===== -->
 <div class="modalOverlay cpOverlay" id="cpOverlay">
   <div class="modalShell cpShell">
+    <!-- 입혀보기를 어디서 열지 — 이 대화 / 새 대화 (chat_popup.js cpChooseWhere). 팝업 전체 위에 뜬다.
+         cpBox 안에 두면 좁은 화면에서 상자가 옆으로 밀려 있을 때 함께 밀린다 — 바깥 껍데기에 단다 -->
+    <div class="cpWhere" id="cpWhere" hidden></div>
     <div class="cpBox" id="cpBox">
       <aside class="cpSide">
         <div class="cpProfile">
@@ -736,6 +756,8 @@
         <!-- 살말 모드에서 즐겨입는 스타일이 비어 있을 때만 뜬다(취향 = 판단의 35%) -->
         <div class="cpTaste" id="cpTaste" hidden></div>
         <div class="cpInputWrap">
+          <!-- 답하는 중에 들어온 다음 질문 (chat_popup.js cpQueue) -->
+          <div class="cpQueue" id="cpQueue" aria-live="polite" hidden></div>
           <div class="imgAttach cpImgAttach" id="cpImgAttach" hidden></div>
           <div class="cpInputRow">
             <button type="button" class="imgAddBtn cpImgAddBtn" id="cpImgAdd" aria-label="이미지 첨부"><i>+</i></button>
@@ -1042,6 +1064,38 @@
     <div class="jrList" id="jobReviewList"></div>
   </div>
 </div>
+<!-- 요금제 신청 심사 — 관리자용 (account/static/js/plan.js · 2026-10-03)
+     결제가 붙어 있지 않아 신청을 운영자가 확인해 승인한다. 승인하면 그 자리에서 요금제가 바뀐다. -->
+<div class="acctModal" id="planReviewModal">
+  <div class="modalCard wide">
+    <div class="modalHead"><h3>요금제 신청 심사</h3>
+      <button type="button" class="modalClose" data-close-modal aria-label="닫기"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+    <p class="jrLead">결제는 아직 붙어 있지 않습니다.<br>신청 내용을 확인하고 승인하면 그때 요금제가 바뀌고, 신청자에게 알림이 갑니다.</p>
+    <div class="jrList" id="planReviewList"></div>
+  </div>
+</div>
+<!-- 데이터 API 키 관리 — 비즈니스 요금제 (account/static/js/data_api.js · 2026-10-03)
+     베타 동안에는 메뉴가 서지 않아 열 수 없다. 키 원문은 만든 직후 한 번만 보인다. -->
+<div class="acctModal" id="dataApiModal">
+  <div class="modalCard wide">
+    <div class="modalHead"><h3>데이터 API</h3>
+      <button type="button" class="modalClose" data-close-modal aria-label="닫기"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+    <div id="dataApiBody"></div>
+  </div>
+</div>
+<!-- 요금제 신청 · 해지 — 사용자용 (pricing/static/js/pricing.js · 2026-10-03)
+     베타 동안에는 열리지 않는다. 요금제 카드를 누르면 지금처럼 '베타 기간' 안내만 뜬다. -->
+<div class="acctModal" id="planModal">
+  <div class="modalCard">
+    <div class="modalHead"><h3 id="planModalTitle">요금제 신청</h3>
+      <button type="button" class="modalClose" data-close-modal aria-label="닫기"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+    <form id="planForm" class="planForm" novalidate>
+      <div id="planFormBody"></div>
+      <p class="fieldMsg err" id="planFormErr" hidden></p>
+      <div class="modalBtns" id="planFormBtns"></div>
+    </form>
+  </div>
+</div>
 <div class="acctModal" id="savedModal">
   <div class="modalCard wide">
     <div class="modalHead"><h3>찜한 아이템</h3>
@@ -1143,6 +1197,20 @@
     <div class="modalHead"><h3 id="stFitTitle">Virtual Fitting</h3>
       <button type="button" class="modalClose" id="stFitClose" aria-label="닫기"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
     <div class="infFeed" id="stFitGrid"></div>
+  </div>
+</div>
+
+<!-- ── 성별 고르기 (알림 '성별을 알려 주세요' 에서 연다 · notify.js openGenderAsk) ── -->
+<div class="acctModal genderAsk" id="genderAskModal" role="dialog" aria-modal="true" aria-labelledby="genderAskTitle">
+  <div class="modalCard">
+    <div class="modalHead"><h3 id="genderAskTitle">성별을 알려 주세요</h3>
+      <button type="button" class="modalClose" data-gender-close aria-label="닫기"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+    <p class="genderAskLead">코디 입혀보기 모델과 추천 코디를 성별에 맞춰 드려요.<br>마이페이지 &gt; 프로필 수정에서 언제든 바꿀 수 있어요.</p>
+    <div class="genderAskChoices">
+      <button type="button" class="genderAskBtn g-woman" data-gender="FEMALE"><span aria-hidden="true">♀</span><b>Female</b><em>여성</em></button>
+      <button type="button" class="genderAskBtn g-man" data-gender="MALE"><span aria-hidden="true">♂</span><b>Male</b><em>남성</em></button>
+    </div>
+    <p class="fieldMsg" id="genderAskMsg" role="alert"></p>
   </div>
 </div>
 

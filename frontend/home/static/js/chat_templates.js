@@ -20,12 +20,18 @@
    ★ 클래스는 전부 chat_report.css 의 '리포트 템플릿' 블록에 있다.
    ══════════════════════════════════════════════════════ */
 
+import { chatVideoHTML, groupVideoEvidence, videoKindLabel } from './chat_video.js';
+
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c =>
   ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
 const num = v => (v === null || v === undefined || v === '' || !Number.isFinite(Number(v))) ? null : Number(v);
 const r1 = v => String(Math.round(v * 10) / 10);
 const f1 = v => v.toFixed(1);
 const comma = v => Math.round(v).toLocaleString('ko-KR');
+/* '발레코어와' · '카고팬츠와' · '레더 재킷과' — 지표 이름 앞에 누구의 값인지 붙일 때 (2026-10-02) */
+const hasFinal = w => { const ch = String(w || '').trim().slice(-1); const c = ch.charCodeAt(0);
+  return c >= 0xAC00 && c <= 0xD7A3 ? (c - 0xAC00) % 28 !== 0 : /[0-9lmnLMN]$/.test(ch); };
+const wa = w => esc(w) + (hasFinal(w) ? '과' : '와');
 const DAY = 864e5;
 const dayNo = iso => {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || ''));
@@ -116,7 +122,7 @@ function tickerChart(series, n){
   const shapes = [c.hi, mid, c.lo].map(v => hline(c.L, c.R, c.Y(v), 'tplGrid')).join('') +
     '<path ' + sv('tkArea') + ' d="' + c.area + '"/>' + hline(c.L, c.R, c.Y(avg), 'tkAvg') +
     '<path ' + sv('tkLine') + ' d="' + c.line + '"/>';
-  const over = [c.hi, mid, c.lo].map(v => lbl(0, c.Y(v), W, H, String(v), 'tplAxis')).join('') +
+  const over = [c.hi, mid, c.lo].map(v => lbl(0, c.Y(v), W, H, String(v) + '°', 'tplAxis')).join('') +
     lbl(c.L + 4, c.Y(avg) - 9, W, H, '기간 평균 ' + r1(avg) + '°', 'tplNote') +
     pt(lx, ly, W, H, 'tkDot') + lbl(lx - 10, ly - 14, W, H, Math.round(end) + '°', 'tkEnd', 'r') +
     lbl(c.L, 178, W, H, mmdd(c.pts[0].d), 'tplAxis') +
@@ -147,7 +153,7 @@ function ticker(b){
         '<button type="button" class="tkRange' + (c.n === pick ? ' on' : '') + '" data-tk-range="' + c.n +
         '" aria-pressed="' + (c.n === pick) + '">' + c.n + '일</button>').join('') + '</div>' : '';
   const notes = charts.map(c => '<span class="tkRangeNote' + (c.n === pick ? ' on' : '') + '" data-range="' + c.n +
-    '">최근 ' + c.n + '일 동안 <b>' + (c.change >= 0 ? '+' : '−') + r1(Math.abs(c.change)) + '°</b></span>').join('');
+    '">트렌드 온도 · 최근 ' + c.n + '일 동안 <b>' + (c.change >= 0 ? '+' : '−') + r1(Math.abs(c.change)) + '°</b></span>').join('');
   const svgs = charts.map(c => c.svg.replace('class="tplPlot tkChart"',
     'class="tplPlot tkChart' + (c.n === pick ? ' on' : '') + '" data-range="' + c.n + '"')).join('');
 
@@ -163,13 +169,15 @@ function ticker(b){
   const m7 = num(b.mention_7d), m28 = num(b.mention_28d);
   const side = (plats.length || assoc.length || m7 !== null)
     ? '<aside class="tkSide">' +
-      (plats.length ? '<div class="tkSideBlock"><h4>플랫폼별 온도</h4>' + plats.map(p =>
+      /* ★ 누구의 값인지 머리에 적는다 (2026-10-02) — 티커 두 개가 나란히 서면 '플랫폼별 온도'
+         '같이 뜨는 말' 이 어느 키워드 것인지 구분되지 않았다. */
+      (plats.length ? '<div class="tkSideBlock"><h4>' + esc(b.term) + ' · 플랫폼별 트렌드 온도</h4>' + plats.map(p =>
         '<div class="tkPlat"><span>' + esc(p.name) + '</span><u><i data-w="' + Math.max(0, Math.min(100, Math.round(num(p.temp)))) +
         '"></i></u><b>' + Math.round(num(p.temp)) + '°</b></div>').join('') + '</div>' : '') +
-      (m7 !== null || m28 !== null ? '<div class="tkSideBlock"><h4>언급량</h4><div class="tkMentions">' +
+      (m7 !== null || m28 !== null ? '<div class="tkSideBlock"><h4>' + esc(b.term) + ' · 언급량 (건)</h4><div class="tkMentions">' +
         (m7 !== null ? '<div><span>최근 7일</span><b>' + comma(m7) + '</b></div>' : '') +
         (m28 !== null ? '<div><span>최근 28일</span><b>' + comma(m28) + '</b></div>' : '') + '</div></div>' : '') +
-      (assoc.length ? '<div class="tkSideBlock"><h4>같이 뜨는 말</h4><div class="tkAssoc">' + assoc.map(a =>
+      (assoc.length ? '<div class="tkSideBlock"><h4>' + wa(b.term) + ' 같이 뜨는 말 (연관어)</h4><div class="tkAssoc">' + assoc.map(a =>
         '<button type="button" class="tplChip tplChip--btn' + (a.is_new ? ' tplChip--new' : '') + '" data-kw="' + esc(a.name) + '">' +
         esc(a.name) + (a.is_new ? '<em>NEW</em>' : '') + '</button>').join('') + '</div></div>' : '') +
       '</aside>' : '';
@@ -267,7 +275,13 @@ function timeline(b){
     '<path ' + sv('tlSpike') + ' d="' + groups.spike.join(' ') + '"/>' + leads, over.join('')) +
     (marks ? '<ol class="tlMarks">' + marks + '</ol>' : '');
 
-  const cards = (b.evidence || []).slice(0, 3).map((e, i) => {
+  /* 같은 영상에서 나온 설명·댓글은 카드 하나로 묶는다 — 썸네일이 겹쳐 반복되지 않게. */
+  const evMeta = e => [e.at ? mmdd(e.at) : '', e.tone || ''].filter(Boolean).join(' · ');
+  const cards = groupVideoEvidence(b.evidence).slice(0, 3).map((g, i) => {
+    const e = g.items[0];
+    if(g.video) return '<div class="tlCard tlCard--video">' +
+      chatVideoHTML({url:e.url, no:String(i + 1).padStart(2, '0'), source:e.src || 'YOUTUBE',
+        notes:g.items.map(x => ({ label:videoKindLabel(x.kind), text:x.body, meta:evMeta(x) }))}) + '</div>';
     const tag = e.url ? 'a' : 'div';
     const href = e.url ? ' href="' + esc(e.url) + '" target="_blank" rel="noopener"' : '';
     return '<' + tag + ' class="tlCard"' + href + '>' +
@@ -297,7 +311,8 @@ function versus(b){
   if(num(a.temp) === null || num(c.temp) === null) return '';
   const side = (s, cls) => '<div class="vsSide ' + cls + '">' +
     '<span class="vsName"><i></i>' + esc(s.term) + '</span>' +
-    '<span class="vsTemp">' + Math.round(num(s.temp)) + '<small>°</small></span>' +
+    '<span class="vsTemp" title="트렌드 온도">' + Math.round(num(s.temp)) + '<small>°</small></span>' +
+    '<span class="vsMetric">트렌드 온도</span>' +
     '<span class="vsMeta">' + delta(s.delta_1w, '°') +
       (s.verdict ? '<span class="tplChip">' + esc(s.verdict) + '</span>' : '') + '</span></div>';
   /* 두 선을 같은 축에 — 날짜가 겹치는 구간에서 앞뒤가 바뀐 마지막 날을 '역전' 으로 적는다 */
@@ -331,7 +346,7 @@ function versus(b){
     const endA = xa[xa.length - 1], endB = xb[xb.length - 1];
     const gap = Math.abs(endA[1] - endB[1]) < 14 ? (endA[1] < endB[1] ? [-7, 7] : [7, -7]) : [0, 0];
     const W = 824, H = 176;
-    const over = [hi, Math.round((hi + lo) / 2), lo].map(v => lbl(0, Y(v), W, H, String(v), 'tplAxis')).join('') +
+    const over = [hi, Math.round((hi + lo) / 2), lo].map(v => lbl(0, Y(v), W, H, String(v) + '°', 'tplAxis')).join('') +
       (cross ? lbl(X(cross) + 6, 12, W, H, '역전 · ' + mmdd(cross), 'tlHead') : '') +
       pt(endA[0], endA[1], W, H, 'vsDotA') + pt(endB[0], endB[1], W, H, 'vsDotB') +
       lbl(endA[0] + 10, endA[1] + gap[0], W, H, a.term, 'vsEndA') +
@@ -342,6 +357,9 @@ function versus(b){
       [hi, Math.round((hi + lo) / 2), lo].map(v => hline(o.left, W - o.right, Y(v), 'tplGrid')).join('') +
       (cross ? vline(X(cross), o.top, H - o.bottom, 'vsCross') : '') +
       '<path ' + sv('vsLineA') + ' d="' + path(xa) + '"/><path ' + sv('vsLineB') + ' d="' + path(xb) + '"/>', over);
+    /* 그래프가 무슨 값인지 · 어느 선이 누구인지 — 끝 이름표는 좁은 화면에서 숨으므로 범례를 따로 둔다 */
+    chart = '<div class="vsChartHead"><b>트렌드 온도 추이 (°)</b>' +
+      '<span class="vsKey a"><i></i>' + esc(a.term) + '</span><span class="vsKey b"><i></i>' + esc(c.term) + '</span></div>' + chart;
   }
   const rows = (b.rows || []).filter(r => num(r.a) !== null && num(r.b) !== null).map(r => {
     const lo = num(r.lo) ?? Math.min(r.a, r.b), hi = num(r.hi) ?? Math.max(r.a, r.b);
@@ -352,12 +370,13 @@ function versus(b){
     return '<div class="vsRow"><span class="vsK">' + esc(r.k) + '</span>' +
       '<div class="vsTrack"><i class="vsSpan" style="left:' + f1(left) + '%;width:' + f1(width) + '%"></i>' +
         '<i class="vsDot a" style="left:' + f1(pa) + '%"></i><i class="vsDot b" style="left:' + f1(pb) + '%"></i>' +
-        '<em class="vsLab a' + (pa <= pb ? ' l' : '') + '" style="left:' + f1(pa) + '%">' + esc(r.av) + '</em>' +
-        '<em class="vsLab b' + (pb < pa ? ' l' : '') + '" style="left:' + f1(pb) + '%">' + esc(r.bv) + '</em></div>' +
+        '<em class="vsLab a' + (pa <= pb ? ' l' : '') + '" style="left:' + f1(pa) + '%" title="' + esc(a.term) + '">' + esc(r.av) + '</em>' +
+        '<em class="vsLab b' + (pb < pa ? ' l' : '') + '" style="left:' + f1(pb) + '%" title="' + esc(c.term) + '">' + esc(r.bv) + '</em></div>' +
       '<span class="vsWin ' + (r.better || 'tie') + '">' + esc(win) + '</span></div>';
   }).join('');
   return '<div class="vs"><div class="vsHero">' + side(a, 'a') + '<span class="vsBadge">VS</span>' + side(c, 'b') + '</div>' +
-    chart + (rows ? '<div class="vsRows"><div class="vsRow vsRow--head"><span>지표</span><span>두 대상의 거리</span><span>앞선 쪽</span></div>' +
+    chart + (rows ? '<div class="vsRows"><div class="vsRow vsRow--head"><span>지표</span><span>두 대상의 거리 ' +
+      '<i class="vsKey a"><i></i>' + esc(a.term) + '</i><i class="vsKey b"><i></i>' + esc(c.term) + '</i></span><span>앞선 쪽</span></div>' +
     rows + '</div>' : '') + '</div>';
 }
 
@@ -372,7 +391,7 @@ function leaderboard(b){
     '<button type="button" class="lbCard' + (i === 0 ? ' lbCard--top' : '') + '" data-kw="' + esc(it.term) + '">' +
       '<span class="lbRank">' + (it.rank || i + 1) + '</span>' +
       '<span class="lbName">' + esc(it.term) + '</span>' +
-      '<span class="lbTemp">' + temp(it) + '</span>' +
+      '<span class="lbTemp" title="트렌드 온도">' + temp(it) + '<small>트렌드 온도</small></span>' +
       '<span class="lbMeta">' + (it.verdict ? '<span class="tplChip tplChip--' + bandClass(it.band) + '">' + esc(it.verdict) + '</span>' : '') +
         esc([it.facet, day(it)].filter(Boolean).join(' · ')) + '</span>' +
     '</button>').join('');
@@ -382,11 +401,12 @@ function leaderboard(b){
       '<span class="lbName">' + esc(it.term) + '<small>' + esc([it.facet, day(it)].filter(Boolean).join(' · ')) + '</small></span>' +
       (it.verdict ? '<span class="tplChip tplChip--' + bandClass(it.band) + '">' + esc(it.verdict) + '</span>' : '<span></span>') +
       '<u><i data-w="' + Math.max(0, Math.min(100, Math.round(num(it.temp) || 0))) + '"></i></u>' +
-      '<b>' + temp(it) + '</b></button>').join('');
+      '<b title="트렌드 온도">' + temp(it) + '</b></button>').join('');
   const foot = (num(b.window_days) ? '최근 ' + num(b.window_days) + '일 안에서 용어마다 마지막 날의 온도순' : '트렌드 온도순') +
     (b.short ? ' · 찾은 것 ' + items.length + '개가 전부예요' : '') + ' · 누르면 그 용어를 물어봐요';
   return '<div class="lb"><div class="lbPodium">' + podium + '</div>' +
-    (rest ? '<div class="lbRows">' + rest + '</div>' : '') + '<p class="tplFoot">' + esc(foot) + '</p></div>';
+    (rest ? '<div class="lbRows"><div class="lbRowsHead"><span>순위 · 용어</span><span>트렌드 온도 (°)</span></div>' + rest + '</div>' : '') +
+    '<p class="tplFoot">' + esc(foot) + '</p></div>';
 }
 
 /* ── 판정: 살말 도장 ─────────────────────────────────── */
@@ -417,7 +437,7 @@ function verdict(b){
         '"></i><i class="' + (conf >= 3 ? 'on' : '') + '"></i><b>' + esc(b.confidence || '낮음') + '</b></div>' +
         '<span>근거 충족 ' + (num(b.coverage) || 0) + '%</span></div>' +
     '</div>' +
-    (rows ? '<div class="vdParts"><div class="vdPartsHead"><b>' + Math.round(score) + '점은 이렇게 나왔어요</b>' +
+    (rows ? '<div class="vdParts"><div class="vdPartsHead"><b>살말 지수 ' + Math.round(score) + '점은 이렇게 나왔어요</b>' +
       '<span>막대 길이 = 가중치 · 채운 만큼 = 점수</span></div>' + rows +
       (b.missing_note ? '<p class="tplFoot">' + esc(b.missing_note) + '</p>' : '') + '</div>' : '') +
   '</div>';
@@ -479,7 +499,8 @@ function orbit(b){
   return '<div class="ob"><div class="obMap" role="img" aria-label="' + esc(b.term) + '를 가운데 두고 같이 언급되는 말을 연관 강도 순으로 배치">' +
     '<svg viewBox="0 0 100 100" aria-hidden="true">' + rings + '</svg>' +
     '<span class="obCenter">' + esc(b.term) + '</span>' + bubbles + '</div>' +
-    '<div class="obList"><div class="obListHead"><b>연관 강도 순</b><span>×는 우연보다 몇 배 자주 같이 나오나</span></div>' + list +
+    '<div class="obList"><div class="obListHead"><b>' + esc(b.term) + ' 연관어 · 연관 강도 순</b>' +
+      '<span>×는 ' + wa(b.term) + ' 우연보다 몇 배 자주 같이 나오나</span></div>' + list +
     '<p class="tplFoot">NEW 는 이번 주 처음 같이 언급된 말 · 누르면 그 말을 물어봐요</p></div></div>';
 }
 
@@ -513,7 +534,7 @@ function lowsignal(b){
     '<div class="lsFacts">' +
       (b.first_seen ? '<div><span>처음 보인 날</span><b>' + esc(mmdd(b.first_seen)) + '</b></div>' : '') +
       (srcs ? '<div><span>주로 나온 곳</span><b>' + srcs + '</b></div>' : '') +
-      (near.length ? '<div><span>같이 보인 말</span><p>' + near.map(x => '<button type="button" class="tplChip tplChip--btn" data-kw="' +
+      (near.length ? '<div><span>' + wa(b.term) + ' 같이 보인 말</span><p>' + near.map(x => '<button type="button" class="tplChip tplChip--btn" data-kw="' +
         esc(x) + '">' + esc(x) + '</button>').join('') + '</p></div>' : '') +
     '</div>' +
     '<div class="lsActs"><button type="button" class="tplBtn" data-kw="' + esc(b.term + '랑 비슷한 스타일 알려줘') + '">비슷한 스타일 보기</button></div>' +

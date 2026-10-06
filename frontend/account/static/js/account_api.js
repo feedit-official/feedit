@@ -29,7 +29,12 @@ async function request(path, { method='GET', body, bootstrap=true, base='/api/au
   }
   if (payload && payload.data && payload.data.csrf_token) csrfToken = payload.data.csrf_token;
   if (!response.ok || !payload || payload.status !== 'ok') {
-    throw new Error((payload && payload.reason) || `로그인 API 오류 (${response.status})`);
+    const error = new Error((payload && payload.reason) || `로그인 API 오류 (${response.status})`);
+    /* 상태 숫자와 서버가 같이 보낸 값을 붙여 둔다 — 요금제 하루 한도(429)처럼
+       사유 말고도 남은 횟수 같은 값이 필요한 화면이 있다 (2026-10-03). */
+    error.status = response.status;
+    error.data = (payload && payload.data) || null;
+    throw error;
   }
   return payload.data;
 }
@@ -77,8 +82,43 @@ export const jobRequestsList = (status = 'PENDING') =>
 export const jobReviewDecide = ({ userId, approve, reason = '' }) =>
   request('job-review', { method:'POST', body:{ user_id:userId, approve, reason } });
 
+/* 요금제 — 신청 · 해지 · 신청 취소 · (관리자) 목록 · 승인/반려/해지 · 챗봇 하루 횟수
+   (backend/apps/api/plan_views.py · 2026-10-03). 베타 동안 서버는 신청을 받지 않는다(409). */
+export const planStatus = () =>
+  request('plan');
+export const planRequestSubmit = ({ plan, note = '', company = '', contact = '' }) =>
+  request('plan-request', { method:'POST', body:{ plan, note, company, contact } });
+export const cancelPlanRequest = () =>
+  request('plan-request', { method:'DELETE', body:{} });
+export const planRequestsList = (status = 'PENDING') =>
+  request('plan-requests?status=' + encodeURIComponent(status));
+export const planReviewDecide = ({ userId, approve, reason = '' }) =>
+  request('plan-review', { method:'POST', body:{ user_id:userId, approve, reason } });
+export const planRevoke = ({ userId, reason = '' }) =>
+  request('plan-review', { method:'POST', body:{ user_id:userId, op:'revoke', reason } });
+export const planChatUse = () =>
+  request('plan-chat-use', { method:'POST', body:{} });
+
+/* 데이터 API 키 — 비즈니스 요금제 (backend/apps/api/data_api_views.py · 2026-10-03).
+   베타 동안 서버는 키를 만들지 않는다(409). 원문 키는 만든 응답(data.key)에 한 번만 온다. */
+export const dataKeys = () =>
+  request('data-keys');
+export const createDataKey = (name = '') =>
+  request('data-keys', { method:'POST', body:{ name } });
+export const revokeDataKey = keyId =>
+  request('data-keys', { method:'DELETE', body:{ key_id:keyId } });
+
 export const saveAccount = data =>
   request('profile', { method:'POST', body:data });
+
+/* 성별만 저장 — 알림의 '성별을 알려 주세요' 에서 (2026-10-02).
+   /profile 은 닉네임 · 키 · 몸무게까지 다시 검사해, 예전 기준 계정은 다른 칸 때문에 막힐 수 있다. */
+export const saveGender = gender =>
+  request('gender', { method:'POST', body:{ gender } });
+
+/* 상단 띠 공지 — 로그인 없이 본다. 실패는 조용히 빈 목록(띠가 안 뜰 뿐이다) */
+export const liveAnnouncements = () =>
+  request('announcements').then(d => (d && Array.isArray(d.items)) ? d.items : []).catch(() => []);
 
 /* term 을 주면 그 키워드 태그가 붙은 영상만 찾는다 (금주의 리포트 · 가장 많이 검색한 키워드) */
 export const weeklyVideos = (term = '') =>

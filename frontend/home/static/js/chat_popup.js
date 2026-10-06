@@ -3,6 +3,7 @@ import { SM_ON, STYLES, LIKED, M_QUESTIONS, SM_QUESTIONS, ansCardHTML, smSwitch 
 import { API_BASE, classifyFitImages, sendAnswerFeedback, isUp, askStream, reportHTML, notesHTML, followupHTML, actionsHTML, refusalHTML, requestLexicon, fillBars, MAX_IMAGES, imageFileToDataURL, bindImageDrop, wantsVirtualFit, responseCardHTML, storyHTML, tickerRange } from './chat_api.js';
 import { AUTH, ME, openStyleSelect, requireAuth } from '../../../account/static/js/profile.js';
 import { logChat, chatList, chatLoad, chatSaveTurn, chatImport, chatUpdate, chatTruncate, chatDelete } from '../../../account/static/js/account_api.js';
+import { planGuard } from '../../../account/static/js/plan.js';
 
 /* ══════════════════════════════════════════════════════
    챗봇 팝업 — 일반 모드 · 살말 모드
@@ -280,6 +281,7 @@ function cpImgPaint(){
   box.hidden = cpImages.length===0;
   box.innerHTML = cpImages.map((im,i)=>
     '<span class="imgChip"><img src="'+im.url+'" alt=""><button type="button" data-rm="'+i+'" aria-label="사진 삭제">×</button></span>').join('');
+  if(cpActiveRun)cpRunButton(true);      /* 답하는 중에 사진을 넣으면 버튼이 '다음 질문' 으로 */
 }
 async function cpImgPick(files){
   for(const f of files){
@@ -515,6 +517,8 @@ export function cpDeleteConvo(id){
   /* 답변을 만드는 중인 대화를 지우면 그 응답부터 멈춘다 */
   if(cpActiveRun&&cpActiveRun.c&&cpActiveRun.c.id===id)cpStop();
   const gone=s.convos[at];
+  for(let i=cpQueue.length-1;i>=0;i--) if(cpQueue[i].c===gone)cpQueue.splice(i,1);
+  cpQueuePaint();
   if(AUTH.in&&gone&&gone.key)chatDelete({mode:cpModeOf(gone),key:gone.key});
   s.convos.splice(at,1);
   if(s.activeId===id)s.activeId=s.convos.length?s.convos[Math.min(at,s.convos.length-1)].id:null;
@@ -1171,6 +1175,13 @@ function cpMorph(a,b){
   bc.forEach((n,i)=>{ if(i<ac.length)cpMorph(ac[i],n); else a.appendChild(n); });
   for(let i=bc.length;i<ac.length;i++)ac[i].remove();
 }
+/* 착장 칸을 화면 안으로 — 버튼을 눌렀는데 칸이 화면 밖이면 반응이 없는 것처럼 보인다 */
+function cpFitReveal(m){
+  const key=String(m&&m.fit&&m.fit.key||'');
+  const th=$('#cpThread'); if(!th||!key)return;
+  const sec=[...th.querySelectorAll('.cpFit')].find(x=>x.dataset.fitKey===key);
+  if(sec&&sec.scrollIntoView)sec.scrollIntoView({behavior:'smooth',block:'nearest'});
+}
 function cpFitRender(m){
   const th=$('#cpThread');
   const key=String(m&&m.fit&&m.fit.key||'');
@@ -1579,11 +1590,63 @@ async function cpAskLive(c,aiMsg,text,images){
 }
 function cpRunButton(running){
   const btn=$('#cpSend'); if(!btn)return;
-  btn.classList.toggle('stop',running);
-  btn.textContent=running?'■':'→';
-  btn.setAttribute('aria-label',running?'답변 중단':'보내기');
-  btn.title=running?'답변 생성을 중단합니다':'';
+  /* 답하는 중에 입력칸에 무언가 쳐 두었으면 '중단' 이 아니라 '다음 질문으로 넣기' 다 */
+  const ta=$('#cpInput');
+  const typed=Boolean((ta&&ta.value.trim())||cpImages.length);
+  const queue=running&&typed;
+  btn.classList.toggle('stop',running&&!queue);
+  btn.classList.toggle('queue',queue);
+  btn.textContent=queue?'↑':running?'■':'→';
+  btn.setAttribute('aria-label',queue?'다음 질문으로 보내기':running?'답변 중단':'보내기');
+  btn.title=queue?'지금 답이 끝나면 이어서 묻습니다':running?'답변 생성을 중단합니다':'';
 }
+/* ── 답하는 중에 들어온 질문 — 대기열 (2026-10-02) ───────────────
+   예전에는 답이 도는 중에 칩 · 버튼을 누르거나 새로 물으면 새 요청이 바로 나갔다.
+   앞 요청은 서버에서 계속 돌면서 화면의 '마지막 말풍선' 에 글자를 흘려, 앞 답이 끊기고
+   뒤 답과 섞였다. 이제는 막지도 버리지도 않는다 — 대기열에 넣고 지금 답이 끝나는 대로
+   이어서 묻는다. 다음 질문은 앞 답을 history 로 보고 답하므로 중간에 덧붙인 말이
+   그대로 반영된다(ChatGPT · Claude 의 '답하는 중 입력' 과 같은 흐름). 줄 끝 × 로 뺀다. */
+const cpQueue=[];
+let cpQSeq=0;
+function cpQueuePaint(){
+  const box=$('#cpQueue'); if(!box)return;
+  if(!cpQueue.length){ box.hidden=true; box.innerHTML=''; cpRunButton(Boolean(cpActiveRun)); return; }
+  box.hidden=false;
+  box.innerHTML='<span class="cpQHead">답이 끝나면 이어서 물어요</span>'+cpQueue.map(q=>{
+    const n=(q.opts&&q.opts.images||[]).length;
+    const label=q.text||(n?'사진 '+n+'장':'');
+    return '<div class="cpQItem"><i class="cpQDot" aria-hidden="true"></i>'+
+      '<span class="cpQText">'+cpEsc(label)+(q.text&&n?' <em>· 사진 '+n+'장</em>':'')+'</span>'+
+      '<button type="button" class="cpQDrop" data-q-drop="'+q.id+'" aria-label="대기 중인 질문 빼기">×</button></div>';
+  }).join('');
+  cpRunButton(Boolean(cpActiveRun));
+}
+function cpEnqueue(text,key,opts){
+  const o={...(opts||{})};
+  /* 어느 대화에 물었는지 기억한다 — 기다리는 동안 다른 대화로 옮겨 가도 제자리에 묻는다 */
+  const c=o.forceNew?null:cpActiveConvo();
+  cpQueue.push({id:++cpQSeq,c,text,key,opts:o});
+  cpQueuePaint();
+}
+function cpQueueDrain(){
+  if(cpActiveRun||!cpQueue.length)return;
+  const q=cpQueue.shift();
+  cpQueuePaint();
+  const alive=q.c&&cpStore().convos.includes(q.c);
+  if(q.c&&!alive){ cpQueueDrain(); return; }     /* 그사이 지운 대화 — 건너뛴다 */
+  cpAsk(q.text,q.key,{...q.opts,fromQueue:true,convo:q.c||null});
+}
+export function cpQueueSize(){ return cpQueue.length }
+document.addEventListener('click',e=>{
+  const drop=e.target.closest&&e.target.closest('#cpQueue [data-q-drop]'); if(!drop)return;
+  const at=cpQueue.findIndex(q=>q.id===Number(drop.dataset.qDrop));
+  if(at>=0)cpQueue.splice(at,1);
+  cpQueuePaint();
+});
+/* 입력칸에 치는 동안 버튼 모양(중단 ↔ 다음 질문)을 맞춘다 */
+document.addEventListener('input',e=>{
+  if(e.target&&e.target.id==='cpInput'&&cpActiveRun)cpRunButton(true);
+});
 export function cpStop(){
   const run=cpActiveRun; if(!run)return;
   run.controller.abort();
@@ -1596,7 +1659,9 @@ function cpAsk(text,key,opts){
   /* 승인된 코디 — 이 턴에만 서버의 build_fit 이 목록에 있다(tools.specs_for) */
   const fit=(opts&&opts.fit)||null;
   if(!text && !images.length)return;
-  let c=(opts&&opts.forceNew)?cpNewConvo():cpActiveConvo(); if(!c)c=cpNewConvo();
+  if(cpActiveRun&&!(opts&&opts.fromQueue)){ cpEnqueue(text,key,opts); return; }
+  let c=(opts&&opts.convo)?opts.convo
+       :(opts&&opts.forceNew)?cpNewConvo():cpActiveConvo(); if(!c)c=cpNewConvo();
   /* 서버에서 아직 본문을 안 받은 대화면 받고 나서 잇는다 — 앞 턴이 있어야 챗봇이 맥락을 잇는다 */
   if(c.loaded===false&&c.sid){
     cpEnsureLoaded(c).finally(()=>cpAskInto(c,text,key,images,fit));
@@ -1644,7 +1709,7 @@ function cpAskInto(c,text,key,images,fit){
         aiMsg.pending=false; aiMsg.html='<p>답변 생성을 중단했습니다.</p>';
         aiMsg.cardHtml=''; aiMsg.followHtml=''; aiMsg.cueHtml=''; aiMsg.actionsHtml='';
         if(cpActiveConvo()===c)cpRenderThread();
-      }else if(e&&e.alphaQuota){
+      }else if(e&&(e.alphaQuota||e.planQuota||e.tooLarge)){   /* 알파 · 요금제 하루 횟수 소진 · 사진 용량 초과 — 목업으로 떨어지지 않고 사유를 말한다 */
         /* 알파 테스트 계정의 챗봇 횟수 소진 — 목업 답으로 떨어지면 안 된다.
            (시연 15일 한정. chat_api.js 의 같은 표식과 한 쌍) */
         aiMsg.pending=false; aiMsg.cardHtml=''; aiMsg.followHtml='';
@@ -1659,6 +1724,8 @@ function cpAskInto(c,text,key,images,fit){
       delete aiMsg.run;
       if(cpActiveRun===run){cpActiveRun=null;cpRunButton(false)}
       cpSave();          /* 답이 끝난 상태 그대로 남긴다 */
+      /* 기다리던 다음 질문 — 화면이 이 답을 다 그린 뒤에 보낸다 */
+      if(cpQueue.length)setTimeout(cpQueueDrain,120);
       /* 중단한 답은 서버에 남기지 않는다 — 다른 기기에서 반쪽 답을 보게 된다 */
       if(!run.controller.signal.aborted&&!aiMsg.pending&&(aiMsg.html||aiMsg.cardHtml||aiMsg.key))
         void cpPersistTurn(c,meMsg,aiMsg);
@@ -1666,8 +1733,9 @@ function cpAskInto(c,text,key,images,fit){
   })();
 }
 export function cpSend(){
-  if(cpActiveRun){cpStop();return}
   const ta=$('#cpInput'); const v=(ta&&ta.value.trim())||'';
+  /* 답하는 중: 쳐 둔 것이 없으면 중단, 있으면 다음 질문으로 넣는다(cpAsk 가 대기열로 보낸다) */
+  if(cpActiveRun&&!v&&!cpImages.length){cpStop();return}
   if(!v && !cpImages.length)return;
   /* ★ 로그인 관문 (2026-09-13). 예전에는 여기서 그냥 돌아섰다 —
      "발레코어 요즘 어때?" 를 치다 로그인 화면으로 넘어가면 로그인을 마쳐도
@@ -1728,21 +1796,37 @@ export function openVirtualTryOn(){
     requireAuth(()=>openVirtualTryOn());
     return;
   }
+  /* ★ 살!말? 대화 안에서 누르면 어디서 열지 묻는다 (2026-10-02). 예전에는 누를 때마다
+     새 대화가 생겨 목록이 'Virtual Try On' 으로 쌓였다. 일반 모드에서 넘어오면 묻지 않고
+     새 대화로 연다 — 일반 대화에 착장 칸을 끼우면 두 모드의 경계가 흐려진다. */
+  const here=SM_ON?cpActiveConvo():null;
+  if(here&&here.messages.length){
+    cpChooseWhere('어디서 입혀볼까요?',()=>cpVtonInto(here),()=>cpVtonNew());
+    return;
+  }
+  cpVtonNew();
+}
+const CP_VTON_HELLO='<p>입혀보고 싶은 아이템 사진을 종류별로 올려 주세요.</p>';
+function cpVtonNew(){
   if(!SM_ON)smSwitch(true,null,true);
   openChatPopup();
   const c=cpNewConvo();
   c.title='Virtual Try On';
   c.transient=true;
-  c.messages.push({
-    role:'ai',pending:false,key:null,
-    html:'<p>입혀보고 싶은 아이템 사진을 종류별로 올려 주세요.</p>',
-    fit:cpNewFit([],''),
-  });
+  cpVtonInto(c);
+}
+function cpVtonInto(c){
+  const m={role:'ai',pending:false,key:null,html:CP_VTON_HELLO,fit:cpNewFit([],'')};
+  c.messages.push(m);
+  c.at=Date.now();
   cpRenderList();
   cpRenderThread();
   cpSave();
+  cpFitReveal(m);
   setTimeout(()=>{
-    const first=$('#cpThread [data-vf-pick="0"]');
+    const key=String(m.fit&&m.fit.key||'');
+    const sec=[...document.querySelectorAll('#cpThread .cpFit')].find(x=>x.dataset.fitKey===key);
+    const first=sec&&sec.querySelector('[data-vf-pick="0"]');
     if(first)first.focus();
   },300);
 }
@@ -1750,9 +1834,21 @@ export function openVirtualTryOn(){
 /* 승인된 코디를 살!말? 로 넘긴다 (2026-09-22).
    openVirtualTryOn 과 같은 이동 경로(smSwitch → 새 대화)를 쓰되, 빈 위젯이 아니라
    질문 한 턴을 보낸다 — 서버가 상품 사진을 실제로 보고(build_fit) 연출을 확정한 뒤
-   착장 칸이 채워진다. 떠나온 일반 대화에는 이어진 자리를 남긴다(from). */
+   착장 칸이 채워진다. 떠나온 일반 대화에는 이어진 자리를 남긴다(from).
+   ★ 이미 살!말? 대화 안이면 이 대화에서 입혀볼지 새 대화로 열지 묻는다 (2026-10-02).
+     일반 모드에서 넘어온 코디는 묻지 않고 새 대화다. */
 export function cpConfirmFit(fit){
   if(!AUTH.in){ requireAuth(()=>cpConfirmFit(fit)); return; }
+  const here=SM_ON?cpActiveConvo():null;
+  if(here&&here.messages.length){
+    cpChooseWhere('이 코디를 어디서 입혀볼까요?',
+      ()=>cpAsk('이 코디로 입혀보기',null,{fit,convo:here}),
+      ()=>cpConfirmFitNew(fit));
+    return;
+  }
+  cpConfirmFitNew(fit);
+}
+function cpConfirmFitNew(fit){
   const from=cpActiveConvo();
   if(!SM_ON)smSwitch(true,null,true);
   openChatPopup();
@@ -1760,8 +1856,47 @@ export function cpConfirmFit(fit){
   const styles=(fit&&fit.styles||[]).filter(Boolean).join('·');
   c.title='코디 입혀보기'+(styles?' · '+styles:'');
   if(from)c.from=cpConvId(from);
-  cpAsk('이 코디로 입혀보기',null,{fit});
+  cpAsk('이 코디로 입혀보기',null,{fit,convo:c});
 }
+
+/* ── 어디서 입혀볼까 — 이 대화 / 새 대화 (2026-10-02) ──────────────
+   팝업 안에 뜨는 작은 선택 카드. 고르기 전에는 아무것도 만들지 않는다.
+   바깥(대화 영역)을 누르거나 Esc · × 로 닫으면 그냥 취소다. */
+let cpWherePending=null;
+export function cpChooseWhere(title,onHere,onNew){
+  const box=$('#cpWhere');
+  if(!box){ onNew(); return; }
+  cpWherePending={onHere,onNew};
+  box.innerHTML='<div class="cpWhereCard" role="dialog" aria-labelledby="cpWhereT">'+
+    '<button type="button" class="cpWhereX" data-where="close" aria-label="닫기">×</button>'+
+    '<span class="cpWhereKick">VIRTUAL TRY ON</span>'+
+    '<b id="cpWhereT">'+cpEsc(title)+'</b>'+
+    '<p>지금 대화에 이어서 열면 앞의 질문과 답을 그대로 보면서 입혀볼 수 있어요.</p>'+
+    '<div class="cpWhereBtns">'+
+      '<button type="button" class="cpWhereBtn" data-where="here"><b>이 대화에서</b><span>아래에 착장 칸을 열어요</span></button>'+
+      '<button type="button" class="cpWhereBtn new" data-where="new"><b>새 대화로</b><span>목록에 따로 남겨요</span></button>'+
+    '</div></div>';
+  box.hidden=false;
+  setTimeout(()=>{ const b=box.querySelector('[data-where="here"]'); if(b)b.focus(); },30);
+}
+function cpWhereClose(pick){
+  const box=$('#cpWhere'); if(box){ box.hidden=true; box.innerHTML=''; }
+  const p=cpWherePending; cpWherePending=null;
+  if(!p)return;
+  if(pick==='here')p.onHere(); else if(pick==='new')p.onNew();
+}
+document.addEventListener('click',e=>{
+  const box=$('#cpWhere'); if(!box||box.hidden)return;
+  const b=e.target.closest&&e.target.closest('#cpWhere [data-where]');
+  if(b){ cpWhereClose(b.dataset.where); return; }
+  if(e.target===box)cpWhereClose('close');
+});
+document.addEventListener('keydown',e=>{
+  const box=$('#cpWhere');
+  if(e.key!=='Escape'||!box||box.hidden)return;
+  /* 팝업 전체를 닫는 Esc 처리기보다 먼저 — 선택 카드만 닫는다 */
+  e.preventDefault(); e.stopImmediatePropagation(); cpWhereClose('close');
+});
 
 /* 팝업 상단 좌측 마크 — 눌리면 동전이 뒤집히듯 한 바퀴 돌며 일반/살말 모드를 바꾼다.
    실제 모드 값은 SM_ON 하나뿐이라 홈 챗바의 토글과 같은 smSwitch() 를 그대로 쓰고,
@@ -1790,6 +1925,29 @@ document.addEventListener('click', e=>{
   if(kw){ cpAsk(kw.dataset.kw, cpKeyFor(kw.dataset.kw)); return; }
   const md=e.target.closest('#cpThread [data-mode]');
   if(md){ smSwitch(md.dataset.mode==='salmal'); return; }
+  const play=e.target.closest('#cpThread [data-chat-video-play]');
+  if(play){
+    const card=play.closest('.chatVideo'), screen=card?.querySelector('.chatVideoScreen');
+    const id=card?.dataset.videoId;
+    if(screen && /^[A-Za-z0-9_-]{11}$/.test(id || '')){
+      const frame=document.createElement('iframe');
+      frame.src='https://www.youtube-nocookie.com/embed/'+id+'?autoplay=1&rel=0';
+      frame.title=(card.dataset.title || 'YouTube 영상')+' 재생';
+      frame.setAttribute('allow','accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture; fullscreen');
+      frame.setAttribute('allowfullscreen','');
+      frame.setAttribute('referrerpolicy','strict-origin-when-cross-origin');
+      screen.replaceChildren(frame);
+      card.classList.add('isPlaying');   /* 작은 썸네일 자리에서 재생하지 않고 카드 폭으로 펼친다 */
+    }
+    return;
+  }
+  const fullscreen=e.target.closest('#cpThread [data-chat-video-fullscreen]');
+  if(fullscreen){
+    const card=fullscreen.closest('.chatVideo');
+    const request=card?.requestFullscreen || card?.webkitRequestFullscreen;
+    if(request) Promise.resolve(request.call(card)).catch(()=>{});
+    return;
+  }
   const hr=e.target.closest('#cpThread [data-href]');
   if(hr){ window.open(hr.dataset.href, '_blank', 'noopener'); return; }
   const rq=e.target.closest('#cpThread [data-lexreq]');
@@ -1883,19 +2041,25 @@ document.addEventListener('click', e=>{
     const c=cpActiveConvo();
     const m=cpAIMessageFor(fit);
     if(m){
+      /* ★ 열려 있으면 접지 않는다 (2026-10-02 제보: "입혀보기를 두 번 눌러야 반응한다").
+         확정된 코디는 답과 함께 착장 칸이 이미 펼쳐져 있는데, 이 버튼이 예전엔 접기·펴기라
+         첫 번째 누름이 칸을 **닫았다** — 사용자에겐 반응이 없는 것처럼 보였고, 두 번째에야
+         다시 열렸다. 이제는 이름 그대로 '입혀보기' 다: 칸으로 데려가고, 아직 만든 사진이
+         없고 넣은 옷이 있으면 바로 만든다. */
       if(m.fit){
-        if(m.fit.loading)return;
-        m.fitSaved=m.fit; delete m.fit;
-        cpRenderThread();
+        cpFitReveal(m);
+        const ready=cpFitItems(m.fit).some(r=>r.image||r.imageUrl);
+        if(!m.fit.loading&&!m.fit.result&&ready)cpGenerateFitMessage(m);
         return;
       }
-      if(m.fitSaved){ m.fit=m.fitSaved; delete m.fitSaved; cpRenderThread(); return; }
+      if(m.fitSaved){ m.fit=m.fitSaved; delete m.fitSaved; cpRenderThread(); cpFitReveal(m); return; }
       const aiIndex=c.messages.indexOf(m);
       const user=c.messages.slice(0,aiIndex).reverse().find(x=>x.role==='me');
       const images=(user&&user.images)||[];
       m.fit=cpNewFit(images,'');
       cpRenderThread();
       cpFitAutoSort(m);
+      cpFitReveal(m);
     }
     return;
   }
@@ -2045,12 +2209,14 @@ document.addEventListener('click', e=>{
   /* 리포트 템플릿 (2026-10-02) — 티커 기간 전환 · 스토리 이미지 저장 */
   const tkRange=e.target.closest('#cpThread [data-tk-range]');
   if(tkRange){ tickerRange(tkRange); return; }
+  /* 요금제 (2026-10-03) — 리포트 내보내기(이미지 저장 · 공유 · 스토리)는 프로부터.
+     베타 동안 planGuard 는 언제나 통과한다. */
   const rpStory=e.target.closest('#cpThread [data-rp-story]');
-  if(rpStory){ cpStorySave(rpStory); return; }
+  if(rpStory){ if(planGuard('report_export',cpToast))cpStorySave(rpStory); return; }
   const rpSave=e.target.closest('#cpThread [data-rp-save]');
-  if(rpSave){ cpReportSave(rpSave); return; }
+  if(rpSave){ if(planGuard('report_export',cpToast))cpReportSave(rpSave); return; }
   const rpShare=e.target.closest('#cpThread [data-rp-share]');
-  if(rpShare){ cpReportShare(rpShare); return; }
+  if(rpShare){ if(planGuard('report_export',cpToast))cpReportShare(rpShare); return; }
   /* 탭 리포트(구조안 02) — 서버 왕복 없이 그 카드 안에서만 전환한다. */
   const tb=e.target.closest('#cpThread [data-tab]');
   if(tb){

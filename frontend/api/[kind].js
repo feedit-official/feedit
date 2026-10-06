@@ -15,6 +15,8 @@
 
 import { viaBackend } from './_lib/db.js';
 import { failed } from './_lib/reply.js';
+/* 데이터 API (비즈니스 요금제 · 2026-10-03) — 키 확인은 Django 가 한다. 캐시하지 않는다. */
+import { relayData } from './_lib/data_relay.js';
 
 /* ★ 2026-09-22 — 'search'(검색 지표)를 여기 얹는다.
      처음엔 api/search.js 로 따로 뒀는데, 그러면 함수가 12개(한도)에 딱 차서
@@ -26,6 +28,8 @@ export default async function handler(req, res) {
   const url = new URL(req.url, 'http://x');
   // 파일 이름 [kind] 로 들어온 값 — 쿼리에도 kind 로 붙어 오므로 경로에서 직접 읽는다.
   const kind = url.pathname.replace(/^\/api\//, '').split('/')[0];
+  /* ★ 지표 쿼리 주소들과 달리 API 키로 오고, 엣지에 캐시하면 안 된다 — 따로 넘긴다 */
+  if (kind === 'data') return relayData(req, res, url);
   if (!ALLOWED.has(kind)) {
     res.statusCode = 404;
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -59,7 +63,10 @@ export default async function handler(req, res) {
     : resaleProducts
       ? '/resale/products'
       : `/${kind}`;
-  const relayed = await viaBackend(backendPath + (q ? `?${q}` : ''));
+  /* 리세일 집계와 상품 후보는 스냅샷을 많이 훑는다. 기본 8초는 정상 집계도
+     끊어 버려 화면에 "This operation was aborted"가 나타났다. */
+  const relayed = await viaBackend(backendPath + (q ? `?${q}` : ''),
+    kind === 'resale' ? 25000 : 8000);
   if (!relayed) {
     return failed(
       res,

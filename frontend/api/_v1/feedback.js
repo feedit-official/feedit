@@ -1,6 +1,8 @@
 /* POST /api/v1/feedback — 답변 하나에 대한 도움됨/아쉬움을 챗봇 서버로 넘긴다.
  * 무엇이 자주 틀리는지 알 방법이 이것뿐이다(2026-09-13). */
 
+import { clientIp } from '../_lib/client_ip.js';
+
 export const config = { runtime: 'nodejs', maxDuration: 30 };
 
 export default async function handler(req, res) {
@@ -30,6 +32,7 @@ export default async function handler(req, res) {
     if (process.env.CHAT_BACKEND_TOKEN) {
       headers['X-FEEDiT-Token'] = process.env.CHAT_BACKEND_TOKEN;
     }
+    { const ip = clientIp(req); if (ip && process.env.CHAT_BACKEND_TOKEN) headers['X-FEEDiT-Client-IP'] = ip; }
     const forwarded = req.headers && (req.headers['x-forwarded-for'] || req.headers['x-real-ip']);
     if (forwarded) headers['X-Forwarded-For'] = String(forwarded).split(',')[0].trim();
 

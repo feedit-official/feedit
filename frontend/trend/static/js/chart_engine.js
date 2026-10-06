@@ -153,13 +153,24 @@ export function gChart(host,cfg){
 }
 
 /* 좌표계에 실제로 그리는 부분. 값이 어디서 왔든 그리는 방법은 같다. */
-function gPaint(el,cfg,g,labels,sets){
-  const H=cfg.h||210,PL=34,PR=14,PT=14,PB=28;
-  /* cfg.wide — 가로 전체 카드(.trGrid.one)에 놓인 차트.
-     viewBox 가 620×210 로 고정이면 폭을 늘린 만큼 높이 · 글씨 · 선 굵기가 같이 커진다.
-     그래서 폭(W)만 늘린다 — 원래 자리(1.5fr 칸)보다 넓어진 비율만큼 W 를 키우면
-     높이와 글씨는 원래 크기 그대로, 가로로만 늘어난다. */
-  const W=cfg.wide?gWideW(el):620;
+function gPaint(el,cfg,g,labels,sets,quiet){
+  /* ★ 실제 화면 폭으로 그린다 (2026-10-02 — "큰 모니터에서 그래프 글씨가 뭉개진다").
+     예전에는 viewBox 를 620×210 으로 고정하고 카드 폭에 맞춰 SVG 를 통째로 늘렸다.
+     맥북(카드 ≈735px)에선 1.2배라 티가 안 났지만, 27인치(카드 ≈1390px)에선 2.2배로
+     늘어나 8.5 단위 글씨가 19px 로 부풀고, 배율이 정수가 아니라 저해상도(DPR 1) 화면에서
+     글자 가장자리가 번졌다. 이제 viewBox 폭 = 카드의 실제 px 폭이라 1:1 로 그려진다 —
+     글씨는 어느 화면에서나 같은 크기(CSS .axl)로 또렷하고, 높이는 폭을 따라 조금만
+     자란다(기본 높이의 1.45배까지). 폭이 바뀌면(창 크기 · 숨었던 탭이 보일 때) 다시 그린다.
+     자리를 못 재는 순간(숨은 탭 · jsdom)에는 예전처럼 620 기준으로 그려 두고 늘린다. */
+  const host=el.querySelector('.chartBox');
+  const live=Math.round((host&&host.clientWidth)||el.clientWidth||0);
+  const measured=live>=200;
+  const baseH=cfg.h||210;
+  const W=measured?live:(cfg.wide?gWideW(el):620);
+  const H=measured?Math.round(Math.min(baseH*1.45,Math.max(baseH,W*baseH/620))):baseH;
+  const PL=34,PR=14,PT=14,PB=28;
+  el._gArgs=[cfg,g,labels,sets]; el._gW=measured?W:0;
+  gWatch(el);
   const n=labels.length;
   const isBar=cfg.type==='bar';
   const all=sets.reduce((a,s)=>a.concat(s.data),[]).filter(v=>v!=null);
@@ -209,7 +220,9 @@ function gPaint(el,cfg,g,labels,sets){
       '</svg>'+
       '<div class="gTip"></div>'+
     '</div>'+
-    (cfg.sets.length>1?'<div class="gLegend">'+sets.map(s=>
+    /* 범례는 한 계열이어도 단다 (2026-10-02) — '연관어 수' · '화제성 레벨' 처럼 하나만 그린
+       그래프는 축에 숫자만 있어 무슨 지표인지가 각주에만 숨어 있었다. */
+    (sets.length?'<div class="gLegend">'+sets.map(s=>
       '<span><i'+(isBar?' class="sq"':'')+' style="background:'+colorOf(s)+'"></i>'+s.name+'</span>').join('')+'</div>':'');
   /* 판독 — viewBox 가 늘어나므로 화면 좌표를 비율로 되돌려 인덱스를 찾는다 */
   const box=el.querySelector('.chartBox'), svg=el.querySelector('svg'), tip=el.querySelector('.gTip');
@@ -226,11 +239,14 @@ function gPaint(el,cfg,g,labels,sets){
     hds.forEach((h,k)=>{ h.setAttribute('cx',X(i)); h.setAttribute('cy',Y(sets[k].data[i]??LO)) });
     tip.innerHTML='<span class="dt">'+labels[i]+'</span>'+sets.map(s=>
       '<span class="vv"><i style="background:'+(isBar&&colorOf(s)!=='var(--pink-0)'?colorOf(s):(s.accent?'var(--coral)':'var(--paper)'))  /* 검정 막대는 검정 말풍선 위에서 안 보여 종이색 점으로 */+'"></i>'+
-      (isBar?'<span>'+s.name.replace(/\s*\(.*\)$/,'')+'</span>':'')+
+      /* 무슨 값인지 늘 적는다 (2026-10-02) — 선 그래프는 색 점과 숫자만 있어 어느 지표인지 몰랐다 */
+      '<span>'+s.name.replace(/\s*\(.*\)$/,'')+'</span>'+
       '<b>'+fmt(s,s.data[i])+'</b><span>'+(s.data[i]==null?'':(s.unit||''))+'</span></span>').join('');
-    tip.style.left=(X(i)/W*100)+'%';
     const ys=sets.map(s=>s.data[i]).filter(v=>v!=null).map(Y);
-    tip.style.top=((ys.length?Math.min.apply(null,ys):H-PB)/H*100-4)+'%';
+    const ty=(ys.length?Math.min.apply(null,ys):H-PB);
+    /* 1:1 로 그렸으면 정수 px 에 세운다 — 소수점 위치의 말풍선 글씨가 번지지 않게 */
+    if(measured){ tip.style.left=Math.round(X(i)/W*r.width)+'px'; tip.style.top=Math.round(ty/H*r.height-H*.04)+'px'; }
+    else{ tip.style.left=(X(i)/W*100)+'%'; tip.style.top=(ty/H*100-4)+'%'; }
   };
   svg.addEventListener('mousemove',read);
   svg.addEventListener('mouseleave',()=>box.classList.remove('hov'));
@@ -243,8 +259,23 @@ function gPaint(el,cfg,g,labels,sets){
     /* 막대는 바닥에서 솟아오르게 — anime.js 가 없으면 그냥 서 있는 채로 둔다 */
     const bs=el.querySelectorAll('.gBar');
     if(HAS_A&&bs.length){ try{ aAnimate(bs,{scaleY:[0,1],duration:620,delay:aStagger(6),ease:'out(3)'}); }catch(e){} }
-  } else gDraw(el.querySelectorAll('.ln,.ln2'),1050,180);
+  } else if(!quiet) gDraw(el.querySelectorAll('.ln,.ln2'),1050,180);
   return el;
+}
+/* 카드 폭이 바뀌면 같은 값으로 다시 그린다 — 연출 없이. 높이만 바뀐 것(다시 그린 결과)은 무시한다. */
+function gWatch(el){
+  if(el._gRO||typeof ResizeObserver==='undefined')return;
+  el._gRO=new ResizeObserver(()=>{
+    const host=el.querySelector('.chartBox');
+    const w=Math.round((host&&host.clientWidth)||el.clientWidth||0);
+    if(w<200||Math.abs(w-(el._gW||0))<=4)return;
+    cancelAnimationFrame(el._gRaf);
+    el._gRaf=requestAnimationFrame(()=>{
+      const a=el._gArgs; if(!a||!el.isConnected)return;
+      gPaint(el,a[0],a[1],a[2],a[3],true);
+    });
+  });
+  el._gRO.observe(el);
 }
 function gWideW(el){
   const grid=el.closest('.trGrid'), panel=el.closest('.panelC');

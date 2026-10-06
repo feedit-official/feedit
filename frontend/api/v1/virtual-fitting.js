@@ -1,6 +1,8 @@
 /* POST /api/v1/virtual-fitting — Vercel에서 EC2 챗봇의 착장 생성 API로 중계한다.
  * 브라우저가 EC2 주소나 공유 토큰을 직접 알지 않도록 chat.js와 같은 경계를 쓴다. */
 
+import { clientIp } from '../_lib/client_ip.js';
+
 export const config = { runtime: 'nodejs', maxDuration: 300 };
 
 export default async function handler(req, res) {
@@ -30,6 +32,7 @@ export default async function handler(req, res) {
     if (process.env.CHAT_BACKEND_TOKEN) {
       headers['X-FEEDiT-Token'] = process.env.CHAT_BACKEND_TOKEN;
     }
+    { const ip = clientIp(req); if (ip && process.env.CHAT_BACKEND_TOKEN) headers['X-FEEDiT-Client-IP'] = ip; }
     const forwarded = req.headers && (req.headers['x-forwarded-for'] || req.headers['x-real-ip']);
     if (forwarded) headers['X-Forwarded-For'] = String(forwarded).split(',')[0].trim();
 

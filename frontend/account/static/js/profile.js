@@ -8,6 +8,7 @@ import { goView } from '../../../app_shell/static/js/router.js';
 import { rkLevelOf, rkName, rkPaintAll, rkPaintAv, xpPaint } from './rank.js';
 import { trRender } from '../../../trend/static/js/dispatch.js';
 import { jobFieldApply, jobFieldBind, jobFieldCheck, jobFieldReset, jobReviewBind, jobReviewRender } from './job.js';
+import { PLAN_EVENT, planApply, planEnforced, planReviewBind, planReviewRender, planSignedOut } from './plan.js';
 import { emailCode, emailVerify, googleLogin, googleSignupAccount, kakaoLogin, kakaoSignupAccount, kakaoStart, loginAccount, logoutAccount, prepareGoogle, saveAccount, saveLiked, session, signupAccount, withdrawAccount, xpState } from './account_api.js';
 /* 내 계정 — 운영자라 최고 등급 고정 */
 /* ★ 2026-09-19 — 예전 기본값(혁진 · xp 9400 · 적중 94 · 찜 128 · ADMIN)은 시연용 목업이었다.
@@ -63,6 +64,9 @@ function applyAccount(user){
   ME.role=user.role||'user';
   /* 요금제 — 서버가 준다 (ADMIN · FREE · 이후 알파 테스트용 TEST) */
   ME.plan=user.plan||(ME.role==='admin'?'ADMIN':'FREE');
+  /* 요금제 상태 (plan.js · 2026-10-03). 베타 동안 서버는 enforced:false 를 보내 아무것도 막지 않는다.
+     user.billing 이 없는 응답(옛 서버)이면 지금 상태를 그대로 둔다. */
+  planApply(user.billing);
   badgesApply(user.badges||{});
   xpApply(user.xp);
   ME.job=user.job||'';
@@ -76,6 +80,8 @@ function applyAccount(user){
   /* 이름·직업·소개가 바뀌었음을 알린다 — 트렌드 머리·사이드바가 받아 다시 칠한다 */
   try{ document.dispatchEvent(new CustomEvent('feedit:account')) }catch(e){}
 }
+/* 다른 모듈이 서버에서 받은 사용자 응답을 그대로 반영할 때 (알림의 성별 고르기 등) */
+export function applyAccountUser(user){ applyAccount(user) }
 /* ★ 2026-09-20 — 로그아웃하면 ME 를 로그인 전 기본값으로 되돌린다.
    예전엔 값을 그대로 두어서, 로그아웃 뒤 트렌드 분석(로그인 안내 뒤편)에
    앞 계정의 이름·취향 피드가 그대로 비쳤다. */
@@ -83,6 +89,7 @@ function resetAccount(){
   Object.assign(ME,{id:null,name:'FEEDiT 사용자',mail:'',initial:'F',xp:0,xpFixed:false,xpInfo:null,height:'',weight:'',gender:'',
     plan:'FREE',saved:0,role:'user',job:'',jobRequest:null,major:'',votes:0,bio:'',birth:'',ava:0});
   ME.styles.clear();
+  planSignedOut();
   try{ document.dispatchEvent(new CustomEvent('feedit:account')) }catch(e){}
 }
 const styleNames=()=>STYLES.filter(s=>ME.styles.has(s.id)).map(s=>s.n);
@@ -248,6 +255,7 @@ function authPaint(){
     const mj = $('#menuJobReview');
     /* 직업 인증 심사는 운영(ADMIN) 계정에만 보인다 */
     if(mj) mj.hidden = ME.role !== 'admin';
+    planMenuPaint();
   }else{
     hintClear();
     b.className = 'pill';
@@ -256,6 +264,13 @@ function authPaint(){
     acctMenu(false);
   }
 }
+/* 요금제 신청 심사 메뉴 — 운영 계정만, 그리고 베타가 끝난 뒤에만 (2026-10-03).
+   베타 동안에는 신청이 들어올 수 없으니 메뉴도 세우지 않는다 — 베타 화면은 운영 계정에게도 지금과 같다. */
+function planMenuPaint(){
+  const mp = $('#menuPlanReview');
+  if(mp) mp.hidden = !(AUTH.in && ME.role === 'admin' && planEnforced());
+}
+document.addEventListener(PLAN_EVENT, planMenuPaint);
 function cpEscHTML(t){ return String(t).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])) }
 /* 로그인 뒤 이름 버튼을 누르면 뜨는 작은 메뉴 */
 export function closeAcctMenu(){ acctMenu(false) }
@@ -765,6 +780,9 @@ export function acctBoot(){
   jobFieldBind('su');
   jobFieldBind('edit');
   jobReviewBind((ok, err) => acctToast(err ? err : ok ? '승인했어요. 해당 사용자의 직업·배지가 반영됩니다.' : '반려했어요.'));
+  planReviewBind((done, err) => acctToast(err ? err
+    : done === 'approve' ? '승인했어요. 해당 사용자의 요금제가 바로 바뀝니다.'
+    : done === 'revoke' ? '프리로 되돌렸어요.' : '반려했어요.'));
 
   /* ── 회원가입 ── */
   const sf = $('#signupForm');
@@ -1167,6 +1185,15 @@ if(suW) suW.addEventListener('input', bodyHint);
     if(ME.role !== 'admin') return;
     acctMenu(false); jobReviewRender(); acctModal('jobReviewModal', true);
   };
+  /* 요금제 신청 심사 (2026-10-03) — 계정 메뉴 · 알림(신청 대기 N건)에서 연다 */
+  const openPlanReview = () => {
+    acctMenu(false);
+    if(ME.role !== 'admin') return;   /* 운영 계정만 — 서버도 403 으로 막는다 */
+    planReviewRender(); acctModal('planReviewModal', true);
+  };
+  const mpr = $('#menuPlanReview');
+  if(mpr) mpr.addEventListener('click', openPlanReview);
+  window.feeditOpenPlanReview = openPlanReview;
   const ml = $('#menuLogout');
   if(ml) ml.addEventListener('click', () => { acctMenu(false); authLogout() });
   document.addEventListener('click', e => {
@@ -1178,6 +1205,8 @@ if(suW) suW.addEventListener('input', bodyHint);
   rkPaintAll();      /* 화면에 이미 떠 있는 아바타들도 한 번 맞춰 둔다 */
   /* 새로고침해도 Django 세션 쿠키로 로그인 상태와 프로필을 복원한다. */
   session().then(data=>{
+    /* 로그인 전에도 요금제 화면은 베타인지 알아야 한다 (plan.js) */
+    if(!data.authenticated) planApply(data.billing);
     if(!data.authenticated||!data.user)return;
     applyAccount(data.user); AUTH.in=true; authPaint();
     likedAfterAuth();

@@ -19,13 +19,16 @@
 from __future__ import annotations
 
 import logging
+import uuid
 from datetime import timedelta
 
+from django.core.cache import cache
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import Count, Max, Min, Q
 from django.utils import timezone
 
 from apps.core.models import (
+    Announcement,
     AppUser,
     ChatSession,
     DictionaryTerm,
@@ -321,6 +324,53 @@ def notify_job_review(profile, job, approved, reason="", requested_at=""):
         return None
 
 
+def notify_plan_review(profile, plan, status, reason="", key_at=""):
+    """요금제 신청 승인 · 반려, 운영자의 해지(REVOKED)를 신청자에게 알린다. 같은 건에는 한 번만."""
+    try:
+        title, body = rules.plan_review_text(plan, status, reason)
+        return notify(profile, rules.PLAN_REVIEW,
+                      f"PLAN_REVIEW:{profile.id}:{status}:{key_at or plan}",
+                      title, body, link="price",
+                      payload={"plan": plan, "status": status, "reason": reason or ""})
+    except Exception:
+        logger.exception("요금제 결과 알림 실패 user=%s", getattr(profile, "id", None))
+        return None
+
+
+def pending_plan_requests():
+    """심사 대기 중인 요금제 신청 — [(AppUser, 신청 dict)] 신청 시각 오래된 순."""
+    rows = []
+    for p in AppUser.objects.filter(profile_metadata__has_key="plan_request").select_related("user"):
+        req = (p.profile_metadata or {}).get("plan_request")
+        if isinstance(req, dict) and req.get("status") == "PENDING":
+            rows.append((p, req))
+    rows.sort(key=lambda r: str(r[1].get("requested_at") or ""))
+    return rows
+
+
+def notify_admin_plan_pending(admin_profile):
+    """운영(ADMIN) 계정 — 요금제 신청 대기가 있으면 'N건 대기' 알림을 한 번 띄운다.
+
+    직업 인증 대기(notify_admin_job_pending)와 같은 방식 — 새 신청이 들어올 때마다 한 건씩만 생긴다.
+    """
+    try:
+        rows = pending_plan_requests()
+        if not rows:
+            return None
+        who, req = rows[-1]
+        n = len(rows)
+        name = who.nickname or who.user.username
+        label = rules.PLAN_LABEL.get(str(req.get("plan") or "").upper(), req.get("plan") or "-")
+        body = f"새 신청: {name} · {label}" + (f"\n그 밖에 {n - 1}건이 더 기다리고 있어요." if n > 1 else "")
+        return notify(admin_profile, rules.PLAN_REVIEW,
+                      f"PLAN_PENDING:{req.get('requested_at') or who.id}",
+                      f"요금제 신청 대기 {n}건", body, link="price",
+                      payload={"admin_pending": n})
+    except Exception:
+        logger.exception("요금제 신청 대기 알림 실패 admin=%s", getattr(admin_profile, "id", None))
+        return None
+
+
 def pending_job_requests():
     """심사 대기 중인 직업 인증 신청 — [(AppUser, 신청 dict)] 신청 시각 오래된 순."""
     rows = []
@@ -471,3 +521,134 @@ def run_daily(now=None):
 def run_weekly(now=None):
     now = now or timezone.now()
     return {"weekly_report": run_weekly_reports(now)}
+
+
+# ── ⑥ 성별 요청 (2026-10-02) ───────────────────────────────
+#   가입에서 성별을 받기 시작한 것(2026-10-01) 이전의 회원 · 알파 계정은 성별이 비어 있다.
+#   가상 피팅 기본 모델 · 코디 추천이 성별을 쓰므로 한 번 묻는다. 알림 목록을 열 때(30초
+#   폴링) 확인한다 — 배치를 따로 돌리지 않아도 새로 들어온 빈 계정까지 빠짐없이 받는다.
+#   ★ 같은 키로 한 번만 만든다. 사용자가 지웠으면 다시 만들지 않는다(행이 남는다).
+
+GENDER_CHECK_TTL = 60 * 60     # 한 사람당 한 시간에 한 번만 DB 를 본다 (폴링 30초마다라)
+
+
+def ensure_gender_prompt(profile):
+    if profile is None or getattr(profile, "gender", None):
+        return None
+    key = f"noti:gender-prompt:{profile.pk}"
+    if not cache.add(key, 1, GENDER_CHECK_TTL):
+        return None
+    title, body = rules.gender_prompt_text()
+    try:
+        return notify(profile, rules.PROFILE_GENDER, rules.PROFILE_GENDER_KEY, title, body,
+                      link="", payload={"action": "gender"})
+    except Exception:
+        logger.exception("성별 요청 알림 실패 user=%s", profile.pk)
+        return None
+
+
+def clear_gender_prompt(profile):
+    """성별을 정하면 그 알림은 할 일이 끝났다 — 읽음 처리하고 목록에서 내린다."""
+    if profile is None:
+        return 0
+    now = timezone.now()
+    return (Notification.objects
+            .filter(user=profile, dedup_key=rules.PROFILE_GENDER_KEY, deleted_at__isnull=True)
+            .update(read_at=now, deleted_at=now))
+
+
+# ── ⑦ 운영 공지 (관리자 화면에서 보냄, 2026-10-02) ──────────────
+
+def notice_targets(target, ids=None, names=None):
+    """보낼 대상 → (AppUser QuerySet, 찾지 못한 이름 목록).
+
+    target: all(전체) · no_gender(성별 미입력) · pick(번호 · 닉네임으로 고름)
+    탈퇴 · 비활성 계정에는 보내지 않는다.
+    """
+    qs = AppUser.objects.filter(user__is_active=True)
+    missing = []
+    if target == "all":
+        return qs, missing
+    if target == "no_gender":
+        return qs.filter(Q(gender__isnull=True) | Q(gender="")), missing
+    if target == "pick":
+        ids, names = list(ids or []), list(names or [])
+        by_name = {p.nickname: p.pk for p in qs.filter(nickname__in=names)} if names else {}
+        missing = [n for n in names if n not in by_name]
+        found_ids = set(qs.filter(pk__in=ids).values_list("pk", flat=True)) if ids else set()
+        missing += [str(i) for i in ids if i not in found_ids]
+        return qs.filter(pk__in=found_ids | set(by_name.values())), missing
+    raise ValueError("보낼 대상을 골라 주세요.")
+
+
+def send_admin_notice(profiles, title, body="", link="", by=""):
+    """운영 공지를 한 번에 만든다. → {"batch", "sent", "skipped"}
+
+    · 같은 발송은 같은 키(ADMIN_NOTICE:<batch>)라 두 번 눌러도 한 사람에게 한 건이다
+    · '알림 전체 끄기' 를 한 사람은 건너뛴다 (allowed() 와 같은 규칙)
+    · 500 명씩 끊어 넣는다 — 한 번에 수만 행을 메모리에 들지 않는다
+    """
+    title, body, link = rules.clean_notice(title, body, link)
+    batch = uuid.uuid4().hex[:12]
+    key = f"{rules.ADMIN_NOTICE}:{batch}"
+    muted = set(NotificationSetting.objects.filter(enabled=False).values_list("user_id", flat=True))
+    sent = skipped = 0
+    chunk = []
+    payload = {"batch": batch, "by": str(by or "")[:60]}
+
+    def flush():
+        nonlocal sent
+        if chunk:
+            Notification.objects.bulk_create(chunk, ignore_conflicts=True)
+            sent += len(chunk)
+            chunk.clear()
+
+    for pk in profiles.values_list("pk", flat=True).iterator(chunk_size=500):
+        if pk in muted:
+            skipped += 1
+            continue
+        chunk.append(Notification(user_id=pk, kind=rules.ADMIN_NOTICE, dedup_key=key,
+                                  title=title, body=body, link=link, payload=payload))
+        if len(chunk) >= 500:
+            flush()
+    flush()
+    logger.info("운영 공지 발송 batch=%s sent=%s skipped=%s by=%s", batch, sent, skipped, by)
+    return {"batch": batch, "sent": sent, "skipped": skipped}
+
+
+def admin_notice_history(limit=20):
+    """보낸 공지 묶음 — 최근 순. 읽은 사람 수를 같이 센다."""
+    rows = (Notification.objects.filter(kind=rules.ADMIN_NOTICE)
+            .values("dedup_key")
+            .annotate(sent=Count("id"), read=Count("read_at"), at=Min("created_at"),
+                      title=Max("title"), body=Max("body"), link=Max("link"))
+            .order_by("-at")[:limit])
+    return [{**r, "batch": r["dedup_key"].split(":", 1)[-1]} for r in rows]
+
+
+# ── ⑧ 상단 띠 공지 (2026-10-02) ──────────────────────────────
+
+TICKER_CACHE_KEY = "noti:ticker:live"
+TICKER_CACHE_TTL = 15          # 초. 방문자 모두가 30초마다 묻는다 — DB 는 15초에 한 번만
+
+
+def live_announcements(now=None, use_cache=True):
+    """지금 걸려 있는 공지 — 최근 것 먼저, 최대 3개."""
+    if use_cache:
+        hit = cache.get(TICKER_CACHE_KEY)
+        if hit is not None:
+            return hit
+    now = now or timezone.now()
+    rows = (Announcement.objects.filter(active=True, starts_at__lte=now)
+            .filter(Q(ends_at__isnull=True) | Q(ends_at__gt=now))
+            .order_by("-starts_at", "-id")[:3])
+    out = [{"id": a.id, "message": a.message, "link": a.link,
+            "starts_at": a.starts_at.isoformat(),
+            "ends_at": a.ends_at.isoformat() if a.ends_at else None} for a in rows]
+    cache.set(TICKER_CACHE_KEY, out, TICKER_CACHE_TTL)
+    return out
+
+
+def forget_live_announcements():
+    """관리자가 올리거나 내리면 바로 반영되게 (같은 프로세스의 캐시를 비운다)."""
+    cache.delete(TICKER_CACHE_KEY)

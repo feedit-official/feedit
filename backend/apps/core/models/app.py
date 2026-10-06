@@ -1,4 +1,5 @@
 from django.db import models
+from django.utils import timezone
 
 
 class AppUser(models.Model):
@@ -268,6 +269,48 @@ class UserSavedItem(models.Model):
         blank=True,
         related_name="saved_by_users",
         verbose_name="콘텐츠",
+    )
+
+    # ── 가격 하락 알림(1번)이 쓰는 기준값 ──────────────────────────
+    # 찜한 순간의 가격을 여기에 박아 둔다. 스냅샷 시계열만으로는
+    # '언제 대비 내렸는지'가 사람마다 달라 판정이 흔들린다.
+    saved_price = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="찜 시점 가격",
+    )
+
+    # 그 가격을 읽은 판매처. 한 상품에 판매처가 여럿이면 비교 대상을 고정한다.
+    saved_price_source = models.ForeignKey(
+        "core.ProductSource",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="saved_price_items",
+        verbose_name="가격 기준 판매처",
+    )
+
+    saved_price_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="찜 시점 가격 관측일시",
+    )
+
+    # 마지막으로 알린 가격. 같은 하락을 며칠 내리 알리지 않기 위해 남긴다.
+    notified_price = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="마지막 알림 가격",
+    )
+
+    notified_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="마지막 알림 시각",
     )
 
     created_at = models.DateTimeField(
@@ -774,6 +817,12 @@ class Notification(models.Model):
         VOTE_COMMENT = "VOTE_COMMENT", "살!말? 새 댓글"
         # 운영 계정만 받는다 — 수집 실패 · 장기 미갱신 (apps/core/services/ops_alerts.py, 2026-09-27)
         OPS_ALERT = "OPS_ALERT", "운영 알림"
+        # 운영자가 관리자 화면에서 보낸 공지 (dashboard notice_views, 2026-10-02)
+        ADMIN_NOTICE = "ADMIN_NOTICE", "운영 공지"
+        # 성별이 비어 있는 기존 회원에게 한 번 — 누르면 성별을 고른다 (2026-10-02)
+        PROFILE_GENDER = "PROFILE_GENDER", "프로필 정보 요청"
+        # 요금제 신청 결과 · (운영 계정) 신청 대기 (apps/api/plan_views.py, 2026-10-03)
+        PLAN_REVIEW = "PLAN_REVIEW", "요금제 신청 결과"
 
     user = models.ForeignKey(
         AppUser,
@@ -864,6 +913,39 @@ class Notification(models.Model):
 
     def __str__(self):
         return f"{self.user} / {self.get_kind_display()}"
+
+
+class Announcement(models.Model):
+    """홈페이지 상단 가운데에 흘러가는 실시간 공지 한 줄 (2026-10-02).
+
+    알림(Notification)은 받는 사람이 정해진 '편지' 고, 이것은 모든 방문자가 보는
+    '게시판' 이다 — 로그인하지 않은 사람에게도 보인다. 그래서 사용자 행이 없다.
+    화면은 30초마다 지금 걸린 공지를 받아 간다(/api/auth/announcements).
+    """
+
+    message = models.CharField(max_length=140, verbose_name="공지 문구")
+
+    # 눌렀을 때 갈 화면 — 알림의 link 와 같은 화면 이름(goView). 비우면 누를 곳이 없다.
+    link = models.CharField(max_length=200, blank=True, default="", verbose_name="이동 화면")
+
+    starts_at = models.DateTimeField(default=timezone.now, verbose_name="시작")
+    # 비우면 운영자가 내릴 때까지
+    ends_at = models.DateTimeField(null=True, blank=True, verbose_name="종료")
+    active = models.BooleanField(default=True, verbose_name="게시 중")
+
+    created_by = models.CharField(max_length=150, blank=True, default="", verbose_name="올린 사람")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="생성일시")
+
+    class Meta:
+        db_table = '"app"."announcement"'
+        verbose_name = "실시간 공지"
+        verbose_name_plural = "실시간 공지"
+        indexes = [
+            models.Index(fields=["active", "starts_at"], name="idx_announce_live"),
+        ]
+
+    def __str__(self):
+        return self.message[:40]
 
 
 class NotificationSetting(models.Model):

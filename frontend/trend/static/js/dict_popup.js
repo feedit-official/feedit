@@ -15,6 +15,7 @@ const SHOW_MAX=300;   /* 브랜드처럼 많은 칸은 이만큼만 그리고 �
 let ROWS=null, loading=null, built=false, failed=false;
 let sel=null;            /* {f,label} — 사전 전체에서 하나 */
 const find={};           /* 칸별 찾기 글자 */
+let guideSnapshot=null;  /* 가이드가 닫히면 실제 사전 상태를 그대로 돌려놓는다 */
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,
   c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const norm=s=>String(s||'').replace(/\s/g,'').toLowerCase();
@@ -123,6 +124,31 @@ function open(){
 function close(){
   const bg=$('#dictPopBg'); if(!bg)return;
   bg.classList.remove('on'); bg.setAttribute('inert','');
+}
+
+/* 온보딩 전용: 실제 사전 API를 부르지 않고 저장된 용어로 같은 모달을 연다. */
+export function openDictionaryGuideDemo(rows, selected){
+  build();
+  if(!guideSnapshot)guideSnapshot={ROWS,failed,sel:sel?{...sel}:null,find:{...find}};
+  ROWS=Array.isArray(rows)?rows:[];
+  failed=false;
+  sel=selected&&selected.f&&selected.label?{f:selected.f,label:selected.label}:null;
+  paintAll();
+  const bg=$('#dictPopBg');
+  bg.classList.add('on'); bg.removeAttribute('inert');
+}
+
+export function closeDictionaryGuideDemo(){
+  close();
+  if(!guideSnapshot)return;
+  ROWS=guideSnapshot.ROWS;
+  failed=guideSnapshot.failed;
+  sel=guideSnapshot.sel;
+  Object.keys(find).forEach(key=>delete find[key]);
+  Object.assign(find,guideSnapshot.find);
+  guideSnapshot=null;
+  /* 다음 실제 사전 열기 전에 DOM도 실제 상태로 되돌린다. */
+  paintAll();
 }
 
 document.addEventListener('click',e=>{

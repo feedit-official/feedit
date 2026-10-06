@@ -8,16 +8,20 @@
      WEEKLY_REPORT  주간 트렌드 리포트 — 주 1회
      BADGE          뱃지 달성
      TERM_ADDED     요청한 용어가 사전에 올라갔을 때
+     ADMIN_NOTICE   운영자가 관리자 화면에서 보낸 공지 (2026-10-02)
+     PROFILE_GENDER 성별이 비어 있는 회원에게 한 번 — 누르면 바로 고른다 (2026-10-02)
+     PLAN_REVIEW    요금제 신청 승인 · 반려 · 운영자의 해지, (운영) 신청 대기 N건 (2026-10-03)
 
    내 취향 스타일의 단계 변화 · FEEDiT Pick 갱신은 아직 없다.
    판정 규칙과 Pick 의 정의가 확정되면 그때 더한다 — 지금 칸만 만들어 두면
    켜 놓고 기다려도 아무것도 오지 않는다. */
 import { $, $$ } from '../../../core/static/js/dom.js';
-import { AUTH } from './profile.js';
+import { AUTH, acctToast, applyAccountUser } from './profile.js';
 import { goView } from '../../../app_shell/static/js/router.js';
+import { planRefresh } from './plan.js';
 import {
   deleteAllNotifications, deleteNotification, notifications, notificationSettings,
-  readAllNotifications, readNotification, requestTerm, saveNotificationSettings, session,
+  readAllNotifications, readNotification, requestTerm, saveGender, saveNotificationSettings, session,
 } from './account_api.js';
 
 /* 설정 모달에 그릴 종류. 서버(notifications.SETTING_FIELD)와 같은 값이어야 한다. */
@@ -34,6 +38,11 @@ const KINDS = [
 const KIND_NAME = Object.fromEntries(KINDS.map(k => [k.id, k.n]));
 /* 운영 계정만 받는 알림 — 수집 실패 · 장기 미갱신 (2026-09-27). 끌 수 없어 설정 모달(KINDS)에는 없다 */
 KIND_NAME.OPS_ALERT = '운영 알림';
+/* 운영 공지 · 성별 요청 (2026-10-02) — 끌 수 있는 칸이 따로 없다('전체 알림' 만 따른다) */
+KIND_NAME.ADMIN_NOTICE = '공지';
+KIND_NAME.PROFILE_GENDER = '프로필';
+/* 요금제 신청 결과 · (운영) 신청 대기 (2026-10-03) — 끌 수 없다. 쓰는 요금제가 바뀌었다는 소식이다 */
+KIND_NAME.PLAN_REVIEW = '요금제';
 
 /* 종류별 아이콘 (2026-09-19 디자인 개편) — 라벨 글자 대신 작은 원 안의 선 아이콘으로 구분한다 */
 const SVG = d => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" ' +
@@ -49,11 +58,18 @@ const KIND_ICON = {
   VOTE_COMMENT:  SVG('<path d="M4 5.5h16v10H9.5L5 19.5v-4H4z"/><path d="M8 9.5h8M8 12.3h5"/>'),
   /* 운영 알림 — 경고 삼각형 */
   OPS_ALERT:     SVG('<path d="M12 4l9 16H3z"/><path d="M12 10v4.5M12 17.2v.3"/>'),
+  /* 운영 공지 — 확성기 */
+  ADMIN_NOTICE:  SVG('<path d="M4 10v4h3l6 4V6L7 10z"/><path d="M16.5 9a4 4 0 010 6M19 6.5a7.5 7.5 0 010 11"/>'),
+  /* 성별 요청 — 사람 윤곽 */
+  PROFILE_GENDER: SVG('<circle cx="12" cy="8" r="3.6"/><path d="M5 20c.8-3.6 3.6-5.6 7-5.6s6.2 2 7 5.6"/>'),
+  /* 요금제 — 카드 */
+  PLAN_REVIEW:   SVG('<rect x="3" y="5.5" width="18" height="13" rx="2"/><path d="M3 10h18M7 15h4"/>'),
 };
 /* 운영 계정이 받는 '직업 인증 심사 대기' — 서류 판 */
 const CLIPBOARD = SVG('<rect x="5" y="4.5" width="14" height="16.5" rx="2"/><path d="M9 4.5V3h6v1.5"/><path d="M8.5 10h7M8.5 13.5h7M8.5 17h4"/>');
-const kindName = it => (it.kind === 'JOB_REVIEW' && it.payload && it.payload.admin_pending) ? '직업 인증 심사' : (KIND_NAME[it.kind] || '알림');
-const iconOf = it => (it.kind === 'JOB_REVIEW' && it.payload && it.payload.admin_pending) ? CLIPBOARD : (KIND_ICON[it.kind] || BELL);
+const adminPending = it => (it.kind === 'JOB_REVIEW' || it.kind === 'PLAN_REVIEW') && it.payload && it.payload.admin_pending;
+const kindName = it => adminPending(it) ? (it.kind === 'PLAN_REVIEW' ? '요금제 신청 심사' : '직업 인증 심사') : (KIND_NAME[it.kind] || '알림');
+const iconOf = it => adminPending(it) ? CLIPBOARD : (KIND_ICON[it.kind] || BELL);
 const BELL = SVG('<path d="M6 16V11a6 6 0 0112 0v5l1.5 2h-15z"/><path d="M10 20a2 2 0 004 0"/>');
 
 const POLL_MS = 30000;          /* 30초마다 다시 센다 — 새 알림은 오른쪽 위 토스트로도 띄운다 */
@@ -245,6 +261,8 @@ function toastNew(){
   const fresh = NT.items.filter(it => !it.read && !toastSeen.has(it.id));
   NT.items.forEach(it => toastSeen.add(it.id));
   toastSave();
+  /* 요금제 결과가 새로 왔으면 지금 요금제를 다시 받아 둔다 — 승인되자마자 잠금이 풀리게 (2026-10-03) */
+  if(fresh.some(it => it.kind === 'PLAN_REVIEW' && !(it.payload && it.payload.admin_pending))) planRefresh();
   if(!fresh.length || NT.open) return;
   /* 가려진 탭이거나 아직 인트로(로딩 · 설명 페이지)면 모아 둔다 —
      본문(홈)에 들어온 뒤 한 장으로 합쳐 띄운다 */
@@ -347,9 +365,14 @@ async function openTarget(it){
       /* 운영 계정 — 심사 창을 바로 연다. 신청자 — 결과를 볼 수 있는 마이페이지 */
       if(p.admin_pending && window.feeditOpenJobReview){ window.feeditOpenJobReview(); return }
       goView('mypage'); return;
+    case 'PLAN_REVIEW':
+      /* 운영 계정 — 요금제 신청 심사 창. 신청자 — 지금 요금제가 표시되는 요금제 화면 */
+      if(p.admin_pending && window.feeditOpenPlanReview){ window.feeditOpenPlanReview(); return }
+      planRefresh(); goView('price'); return;
     case 'BADGE':
       if(p.badge_id && window.feeditOpenBadge){ window.feeditOpenBadge(p.badge_id); return }
       goView('mypage'); return;
+    case 'PROFILE_GENDER': openGenderAsk(); return;
     case 'PRICE_DROP':     goTrendTab('saved'); return;
     case 'WEEKLY_REPORT':  goTrendTab('report'); return;
     case 'TERM_ADDED':
@@ -363,6 +386,48 @@ async function openTarget(it){
       if(it.link) goView(it.link);
   }
 }
+
+/* ── 성별 고르기 (2026-10-02) ──────────────────────────────
+   '성별을 알려 주세요' 알림을 누르면 뜬다. 고르는 순간 저장한다 — 버튼을 한 번 더
+   누르게 하지 않는다. 저장되면 서버가 그 알림을 내리고(clear_gender_prompt),
+   화면은 ME.gender 를 바꿔 입혀보기 기본 모델 · 코디 추천이 바로 따른다. */
+let genderBusy = false;
+export function openGenderAsk(){
+  const m = $('#genderAskModal'); if(!m) return;
+  const msg = $('#genderAskMsg'); if(msg) msg.textContent = '';
+  m.querySelectorAll('[data-gender]').forEach(b => b.classList.remove('on'));
+  m.classList.add('show');
+  setTimeout(() => { const b = m.querySelector('[data-gender]'); if(b) b.focus() }, 60);
+}
+function closeGenderAsk(){ const m = $('#genderAskModal'); if(m) m.classList.remove('show') }
+async function pickGender(btn){
+  if(genderBusy) return;
+  const value = btn.dataset.gender;
+  const msg = $('#genderAskMsg');
+  genderBusy = true;
+  btn.classList.add('on');
+  try{
+    const data = await saveGender(value);
+    if(data && data.user) applyAccountUser(data.user);
+    closeGenderAsk();
+    acctToast('성별을 저장했어요 · 입혀보기 모델과 코디 추천이 맞춰져요');
+    notiRefresh();
+  }catch(e){
+    btn.classList.remove('on');
+    if(msg) msg.textContent = (e && e.message) || '저장하지 못했어요. 잠시 후 다시 시도해 주세요.';
+  }finally{ genderBusy = false }
+}
+document.addEventListener('click', e => {
+  const t = e.target;
+  if(!t || !t.closest) return;
+  const pick = t.closest('#genderAskModal [data-gender]');
+  if(pick){ pickGender(pick); return }
+  if(t.closest('#genderAskModal [data-gender-close]') || t.id === 'genderAskModal') closeGenderAsk();
+});
+document.addEventListener('keydown', e => {
+  const m = $('#genderAskModal');
+  if(e.key === 'Escape' && m && m.classList.contains('show')) closeGenderAsk();
+});
 
 /* ── 패널 여닫기 ──────────────────────────────────────── */
 function panel(on){

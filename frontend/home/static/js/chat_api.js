@@ -19,8 +19,12 @@
 /* 알파 테스트 모드 — 시연 15일 한정 (app_shell/static/js/alpha.js 와 한 쌍) */
 import { alphaChatUse } from '../../../account/static/js/account_api.js';
 import { setAlphaState } from '../../../app_shell/static/js/alpha.js';
+/* 요금제 (2026-10-03) — 베타가 끝나면 알파 대신 요금제의 하루 횟수를 센다 (account/static/js/plan.js) */
+import { planChatUse } from '../../../account/static/js/account_api.js';
+import { planApplyChat, planEnforced } from '../../../account/static/js/plan.js';
 /* 질문 유형별 리포트 템플릿 그림 (2026-10-02) — 진단·판정·원인·비교·순위·연관·관측 부족 */
 import { TEMPLATE_BLOCKS, TEMPLATE_LABEL } from './chat_templates.js';
+import { chatVideoHTML, youtubeVideoId } from './chat_video.js';
 export { storyHTML, tickerRange } from './chat_templates.js';
 
 /* ★ 배포된 곳에서는 같은 도메인의 /api 를 쓴다.
@@ -78,6 +82,47 @@ function loadImage(file){
   });
 }
 
+/* 요청 본문 상한 — api/_v1/chat.js 의 MAX_BODY_BYTES 와 같은 값 (버셀 함수 한도 4.5MB 아래).
+   사진 여러 장이 이 값을 넘으면 보내기 전에 한 단계씩 더 줄인다. 줄여도 넘으면
+   보내지 않고 사람이 읽을 수 있는 말로 멈춘다 — 서버까지 가서 조용히 끊기지 않게. */
+export const MAX_CHAT_BODY = 4_300_000;
+const SHRINK_STEPS = [[960, 0.74], [720, 0.66], [560, 0.6]];
+
+function bodyBytes(text){
+  try{ return new TextEncoder().encode(text).length }catch(e){ return String(text||'').length }
+}
+function shrinkDataURL(url, dim, quality){
+  return new Promise((resolve)=>{
+    const img = new Image();
+    img.onload = () => {
+      const w0 = img.naturalWidth || img.width, h0 = img.naturalHeight || img.height;
+      const scale = Math.min(1, dim / Math.max(w0, h0 || 1));
+      const cv = document.createElement('canvas');
+      cv.width = Math.max(1, Math.round(w0 * scale)); cv.height = Math.max(1, Math.round(h0 * scale));
+      const ctx = cv.getContext && cv.getContext('2d');
+      if(!ctx){ resolve(url); return; }
+      ctx.drawImage(img, 0, 0, cv.width, cv.height);
+      try{ resolve(cv.toDataURL('image/jpeg', quality)) }catch(e){ resolve(url) }
+    };
+    img.onerror = () => resolve(url);
+    img.src = url;
+  });
+}
+/* payload 를 JSON 으로 만들고, 상한을 넘으면 사진을 줄여 다시 만든다. */
+export async function chatBody(payload){
+  let body = JSON.stringify(payload);
+  const imgs = payload && Array.isArray(payload.images) ? payload.images : null;
+  if(bodyBytes(body) <= MAX_CHAT_BODY || !imgs || !imgs.length) return body;
+  for(const [dim, q] of SHRINK_STEPS){
+    const smaller = await Promise.all(imgs.map(u => shrinkDataURL(u, dim, q)));
+    body = JSON.stringify({...payload, images: smaller});
+    if(bodyBytes(body) <= MAX_CHAT_BODY) return body;
+  }
+  const err = new Error('사진 용량이 너무 커서 보내지 못했습니다. 사진 수를 줄여 다시 보내 주세요.');
+  err.tooLarge = true;
+  throw err;
+}
+
 export async function imageFileToDataURL(file){
   const img = await loadImage(file);
   const scale = Math.min(1, IMG_MAX_DIM / Math.max(img.naturalWidth || img.width, img.naturalHeight || img.height));
@@ -133,6 +178,28 @@ export async function isUp({force=false}={}){
 /* ── SSE 스트림 읽기 ──────────────────────────────────
    EventSource 는 POST 를 못 보낸다. fetch + ReadableStream 으로 직접 판다. */
 export async function askStream(payload, on, options={}){
+  /* ── 요금제 (2026-10-03) — 베타가 끝난 뒤에만 ─────────────
+     서버(plan_views.plan_chat_use)가 오늘 횟수를 세고, 통과하면 챗봇 서버에 넘길
+     확인증(ticket)을 준다. 챗봇은 이 확인증으로 요금제를 안다 — 요청이 스스로 적은
+     plan 은 베타 이후 믿지 않는다. 베타 동안(planEnforced()=false)은 아래 알파 블록이 그대로 돈다. */
+  let planTicket = null;
+  if (planEnforced()) {
+    try {
+      const d = await planChatUse();
+      planApplyChat(d);
+      planTicket = (d && d.ticket) || null;
+    } catch (err) {
+      if (err && err.status === 429) {
+        if (err.data) planApplyChat(err.data);
+        /* 하루 한도 — 목업 답으로 떨어지지 않도록 표식을 달아 던진다 (chat_popup.js 가 본다) */
+        const stop = new Error(err.message);
+        stop.planQuota = true;
+        throw stop;
+      }
+      /* 그 밖의 실패(백엔드 미기동 등)로 챗봇을 막지는 않는다.
+         확인증이 없으면 챗봇 서버가 FREE 로 보고 IP 로 한 번 더 센다. */
+    }
+  } else {
   /* ── 알파 테스트 모드 (시연 15일 한정) ─────────────────
      보내기 직전에 서버에서 한 번 차감한다. 남은 횟수가 0이면 여기서 끊고
      사람이 읽을 수 있는 문구를 던진다. 알파 계정이 아니면 그냥 통과한다.
@@ -148,10 +215,11 @@ export async function askStream(payload, on, options={}){
     }
     /* 그 밖의 실패(백엔드 미기동 등)로 챗봇을 막지는 않는다 */
   }
+  }
 
   const res = await fetch(API_BASE + '/v1/chat', {
     method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify(payload), signal:options.signal
+    body: await chatBody(planTicket ? { ...payload, plan_ticket: planTicket } : payload), signal:options.signal
   });
   if(!res.ok || !res.body) throw new Error('HTTP ' + res.status);
 
@@ -270,12 +338,17 @@ const BLOCK = {
 
   /* 출처. 제목이 없거나 주소 그대로면 호스트만 남긴다 —
      본문에 주소가 통째로 붙어 나오던 것을 여기로 옮겼다 (서버 mdclean.py). */
-  links: b => '<div class="rank" style="margin-top:14px">' + (b.items || []).map((o, i) => {
+  links: b => '<div class="rank" style="margin-top:14px">' + (b.items || []).filter((o, i, all) => {
+    /* 같은 영상이 두 번 오면 처음 것만 — 같은 썸네일이 연달아 뜨지 않게 */
+    const id = youtubeVideoId(o?.url);
+    return !id || all.findIndex(x => youtubeVideoId(x?.url) === id) === i;
+  }).map((o, i) => {
     let host = '', url = String(o.url || '');
     try{ host = new URL(url).hostname.replace(/^www\./, '') }catch(e){}
     let title = String(o.title || '').replace(/\s+/g, ' ').trim();
     if(!title || title === url || /^https?:\/\//.test(title)) title = host || url;
     if(title.length > 46) title = title.slice(0, 45).trim() + '…';
+    if(youtubeVideoId(url)) return chatVideoHTML({url, title, no:String(i + 1).padStart(2, '0'), source:'YOUTUBE'});
     return '<div class="row" data-href="' + esc(url) + '">' +
       '<span class="n">' + String(i + 1).padStart(2, '0') + '</span>' +
       '<span class="k">' + esc(title) + '</span>' +
@@ -438,7 +511,10 @@ export function refusalHTML(err){
     /* 링크 상품을 못 이은 경우엔 등록 요청을 붙이지 않는다 — 등록할 말이
        상품명(영문 전체)이라 사전 항목이 될 수 없다. 대신 한 단어를 되묻는
        문장이 message 에 이미 들어 있다. (2026-09-13) */
-    (err.reason === 'LINK_NOT_IDENTIFIED' ? '' :
+    /* ★ 사전에 없는 말일 때만 붙인다 (2026-10-02). 예전에는 사진 분석 실패 · 서버 오류 ·
+       용량 초과에도 '패션 용어가 맞다면 등록을 요청해 주세요' 가 붙어, 무엇이 잘못됐는지
+       오히려 흐렸다. reason 이 비어 있는 옛 응답은 예전처럼 붙인다. */
+    (err.reason && err.reason !== 'NOT_IN_LEXICON' ? '' :
     /* JS 훅은 클래스가 아니라 data 속성으로 단다.
        CSS 에 없는 클래스를 붙이면 "이건 스타일이 있나" 를 매번 확인해야 한다.
        버튼 모양은 .kwReq .ask button 이 이미 갖고 있다. */

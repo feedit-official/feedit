@@ -78,7 +78,7 @@ class RankToolTests(unittest.TestCase):
     def test_card_shows_the_window_and_older_dates(self):
         block = agent_blocks._rank_block(self.rank(), "2026-10-01")
         # 10개를 물었는데 2개뿐이라 그 사실도 함께 적힌다
-        self.assertEqual(block["meta"], "최근 7일 · 2026-10-01 기준 · 찾은 것 2개가 전부입니다")
+        self.assertEqual(block["meta"], "트렌드 온도순 · 최근 7일 · 2026-10-01 기준 · 찾은 것 2개가 전부입니다")
         self.assertEqual([r["small"] for r in block["rows"]], ["스타일 · 9/29", "스타일 · 9/30"])
 
 

@@ -41,9 +41,12 @@ from apps.core.models import (
 )
 
 from . import email_verify, google_auth, kakao_auth
+from . import notification_service
 from .activity_views import active_saved_count, active_vote_count
 from .badges import badge_states
 from .job_views import job_request_public
+from . import plan_policy
+from .plan_views import billing_state
 from .xp_service import mark_visit, xp_state
 
 
@@ -143,6 +146,9 @@ def _user_payload(user, profile):
         # 요금제 — 운영 계정은 ADMIN, 그 밖은 profile_metadata.plan (없으면 FREE).
         #   알파 테스트용 TEST 플랜은 같은 칸에 "TEST" 로 넣을 예정이다.
         "plan": "ADMIN" if user.is_superuser else (meta.get("plan") or "FREE"),
+        # 요금제 상태 (plan_policy.py · 2026-10-03). 베타 동안은 enforced=false · features 전부 열림 —
+        #   화면은 enforced 가 true 일 때만 막는다. 위 "plan" 칸은 예전 뜻(표시용) 그대로 둔다.
+        "billing": billing_state(user, profile),
         "styles": styles,
         # 찜·투표 수는 기록 API(activity_views)가 남긴 '현재 상태' 기준으로 센다.
         "saved_count": active_saved_count(profile),
@@ -280,6 +286,8 @@ def me(request):
                 "google_pending": _social_pending_public(request, "google"),
                 "kakao_enabled": kakao_auth.is_configured(),
                 "kakao_pending": _social_pending_public(request, "kakao"),
+                # 요금제 화면이 베타인지 알아야 한다 (로그인 전에도) — plan_policy.py
+                "billing": plan_policy.guest_state(),
                 "user": None,
             },
         })
@@ -732,6 +740,34 @@ def profile(request):
     except (ValidationError, ValueError) as exc:
         messages = exc.messages if isinstance(exc, ValidationError) else [str(exc)]
         return _error(" ".join(messages))
+    if profile_obj.gender:
+        notification_service.clear_gender_prompt(profile_obj)
+    return JsonResponse(_auth_payload(request, request.user, profile_obj))
+
+
+@require_POST
+def gender(request):
+    """POST /api/auth/gender  {"gender": "FEMALE" | "MALE"}  (2026-10-02)
+
+    알림의 '성별을 알려 주세요' 에서 고른다. 성별 하나만 바꾼다 — /auth/profile 은
+    닉네임 · 키 · 몸무게를 같이 다시 검사해서, 예전 기준으로 가입한 계정은 성별만
+    고르려 해도 다른 칸 때문에 막힐 수 있다.
+    """
+    if not request.user.is_authenticated:
+        return _error("로그인이 필요합니다.", status=401)
+    data = _json(request)
+    if data is None:
+        return _error("요청 형식이 올바른 JSON이 아닙니다.")
+    try:
+        value = _gender(data.get("gender"))
+    except ValueError as exc:
+        return _error(str(exc))
+    if value is None:
+        return _error("성별을 골라 주세요.")
+    profile_obj = _profile(request.user, create=True)
+    profile_obj.gender = value
+    profile_obj.save(update_fields=["gender", "updated_at"])
+    notification_service.clear_gender_prompt(profile_obj)
     return JsonResponse(_auth_payload(request, request.user, profile_obj))
 
 

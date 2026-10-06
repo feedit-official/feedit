@@ -315,7 +315,8 @@ document.addEventListener('keydown',e=>{
   window.open(product.dataset.productUrl,'_blank','noopener,noreferrer');
 });
 $('#mHome')&&$('#mHome').addEventListener('click',()=>goView('home'));
-$('#chatFab')&&$('#chatFab').addEventListener('click',()=>openChatWith('',null));
+/* #chatFab 은 전역 도움말 허브의 펼침 버튼으로 바뀌었다.
+   챗봇 열기는 assistant_hub.js 의 '챗봇' 메뉴가 맡는다. */
 $('#mSend')&&$('#mSend').addEventListener('click',sendChat);
 /* 살!말? 버튼은 이제 뷰 이동이 아니라 모드 전환이다 */
 $('#smToggle')&&$('#smToggle').addEventListener('click',e=>{ e.stopPropagation(); smSwitch(!SM_ON,e) });

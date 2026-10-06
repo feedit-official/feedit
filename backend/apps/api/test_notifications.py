@@ -162,3 +162,26 @@ class VoteCommentTextTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AdminNoticeRuleTest(unittest.TestCase):
+    """관리자가 보내는 알림 · 상단 띠 공지 문구 다듬기 (2026-10-02)."""
+
+    def test_clean_notice_keeps_line_breaks_and_trims(self):
+        from apps.api.notifications import clean_notice
+        self.assertEqual(clean_notice(" 점검  안내 ", "첫 줄\r\n\n\n\n둘째   줄", "trend"),
+                         ("점검 안내", "첫 줄\n\n둘째 줄", "trend"))
+
+    def test_clean_notice_rejects_empty_long_and_unknown_link(self):
+        from apps.api.notifications import NOTICE_TITLE_MAX, clean_notice
+        for args in (("",), ("가" * (NOTICE_TITLE_MAX + 1),), ("t", "", "admin")):
+            with self.assertRaises(ValueError):
+                clean_notice(*args)
+
+    def test_ticker_is_one_line(self):
+        from apps.api.notifications import clean_ticker
+        self.assertEqual(clean_ticker("가을\n리포트  오픈", "home"), ("가을 리포트 오픈", "home"))
+
+    def test_parse_recipients_numbers_are_ids_rest_are_nicknames(self):
+        from apps.api.notifications import parse_recipients
+        self.assertEqual(parse_recipients("12, 진, @민지\n34;12"), ([12, 34], ["진", "민지"]))
